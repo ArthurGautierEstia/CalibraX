@@ -1,0 +1,175 @@
+
+/* Global */
+QWidget {
+    background-color: #121212;
+    color: #E0E0E0;
+    font-family: "Roboto", "Segoe UI";
+    font-size: 14px;
+}
+
+/* Boutons */
+QPushButton {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+QPushButton:hover {
+    background-color: #2C2C2C;
+}
+QPushButton:pressed {
+    background-color: #FF6F00; /* Accent orange KUKA */
+    color: #FFFFFF;
+}
+
+/* Tables */
+
+QTableWidget {
+    background-color: #1E1E1E;
+    gridline-color: #2C2C2C;
+    color: #E0E0E0;
+    selection-background-color: #FF6F00;
+    selection-color: #FFFFFF;
+    border: 1px solid #2C2C2C;
+    border-right:none;
+    border-radius: 10px; /* Coins arrondis */
+    padding: 6px;
+    margin: 0px 2px 0px 2px;
+}
+
+/* Headers */
+QHeaderView::section {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    padding: 8px;
+    border: 1px solid #2C2C2C;
+    border-left:none;
+    border-top: none;
+    border-bottom: 1px solid #2C2C2C;
+    border-radius: 0px;
+}
+
+/* Hover sur cellules */
+QTableWidget::item:hover {
+    background-color: #2C2C2C;
+}
+
+QTableCornerButton::section {
+    background-color: #1E1E1E;
+    border: 1px solid #2C2C2C;
+    border-top: none;
+    border-left: none;
+}
+
+
+
+
+/* Sliders */
+QSlider::groove:horizontal {
+    height: 8px;
+    background: #2C2C2C;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: #FF6F00;
+    width: 24px;
+    margin: -2px 0px;
+    border-radius: 6px;
+}
+
+/* SpinBox & LineEdit */
+QSpinBox, QLineEdit {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    border: 1px solid #2C2C2C;
+    border-radius: 4px;
+    padding: 4px;
+}
+QSpinBox:focus, QLineEdit:focus {
+    border: 1px solid #FF6F00;
+}
+
+/* Labels */
+QLabel {
+    color: #E0E0E0;
+}
+
+
+
+/* ===== Scrollbar HORIZONTALE (track fixe 10px, sans boutons) ===== */
+QScrollBar:horizontal {
+    background: #1E1E1E;     /* Track */
+    height: 12px;
+    margin: 0;               /* Aucun espace réservé aux boutons */
+    border: none;
+    border-radius: 0px;      /* Arrondi du track */
+}
+
+/* Zones entre le thumb et les extrémités : doivent matcher le track */
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: #1E1E1E;     /* EXACTEMENT la même couleur que le track */
+    border: none;
+    border-radius: 0px;      /* Même arrondi que le track */
+}
+
+/* Thumb (légèrement plus fin via margin) */
+QScrollBar::handle:horizontal {
+    background: #2C2C2C;
+    min-width: 20px;
+    border: none;
+    border-radius: 4px;      /* Un peu moins arrondi que le track */
+    margin: 2px 0px 2px 0px; /* 1 px en haut/bas -> thumb visuellement plus fin */
+}
+QScrollBar::handle:horizontal:hover {
+    background: #FF6F00;     /* Accent orange KUKA au survol */
+}
+
+/* Boutons supprimés */
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+    height: 0px;
+    background: none;
+    border: none;
+}
+
+
+/* ===== Scrollbar VERTICALE (track fixe 10px, sans boutons) ===== */
+QScrollBar:vertical {
+    background: #1E1E1E;
+    width: 10px;
+    margin: 0;
+    border: none;
+    border-radius: 0px;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: #1E1E1E;
+    border: none;
+    border-radius: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #2C2C2C;
+    min-height: 20px;
+    border: none;
+    border-radius: 4px;
+    margin: 0px 1px 0px 1px; /* 1 px gauche/droite -> thumb visuellement plus fin */
+}
+QScrollBar::handle:vertical:hover {
+    background: #FF6F00;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    width: 0px;
+    height: 0px;
+    background: none;
+    border: none;
+}
+
+
+
