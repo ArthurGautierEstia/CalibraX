@@ -66,6 +66,7 @@ class RobotController(QObject):
             self.robot_model.from_dict(data)
             self.robot_model.current_config_file = file_name
             
+            
             # Mettre à jour les vues
             self.update_view_from_model()
             
@@ -83,7 +84,8 @@ class RobotController(QObject):
         self.correction_widget.set_corrections(
             [[str(val) for val in row] for row in self.robot_model.corrections]
         )
-
+        self.robot_model.set_axis_limits(self.robot_model.axis_limits)
+        
 
 class JointController(QObject):
     """Contrôleur pour la gestion des coordonnées articulaires"""
