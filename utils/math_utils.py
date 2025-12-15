@@ -49,7 +49,7 @@ def matrix_to_euler_zyx(T):
     rx = np.degrees(np.arctan2(T[2,1], T[2,2]))
     ry = np.degrees(np.arctan2(-T[2,0], np.sqrt(T[2,1]**2 + T[2,2]**2)))
     rz = np.degrees(np.arctan2(T[1,0], T[0,0]))
-    return np.array([rx, ry, rz])
+    return np.array([rz, ry, rx])
 
 def euler_to_rotation_matrix(A, B, C, degrees=True):
     """Convertit des angles d'Euler ZYX en matrice de rotation 3x3"""
@@ -57,13 +57,13 @@ def euler_to_rotation_matrix(A, B, C, degrees=True):
         A, B, C = np.radians([A, B, C])
     
     Rx = np.array([[1, 0, 0],
-                   [0, np.cos(A), -np.sin(A)],
-                   [0, np.sin(A), np.cos(A)]])
+                   [0, np.cos(C), -np.sin(C)],
+                   [0, np.sin(C), np.cos(C)]])
     Ry = np.array([[np.cos(B), 0, np.sin(B)],
                    [0, 1, 0],
                    [-np.sin(B), 0, np.cos(B)]])
-    Rz = np.array([[np.cos(C), -np.sin(C), 0],
-                   [np.sin(C), np.cos(C), 0],
+    Rz = np.array([[np.cos(A), -np.sin(A), 0],
+                   [np.sin(A), np.cos(A), 0],
                    [0, 0, 1]])
     return Rz @ Ry @ Rx
 
