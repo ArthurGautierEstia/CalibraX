@@ -22,7 +22,7 @@ class KinematicsEngine(QObject):
         
         # Connecter au modèle pour recalculer automatiquement
         self.robot_model.configuration_changed.connect(self.compute_forward_kinematics)
-        self.robot_model.joints_changed.connect(self.compute_forward_kinematics)
+        
     
     def get_parameters(self):
         """Récupère les paramètres pour le calcul cinématique"""
@@ -35,7 +35,7 @@ class KinematicsEngine(QObject):
             
             # Pour les 6 premiers joints, ajouter la valeur articulaire
             if i < 6:
-                q_deg = self.robot_model.joint_values[i]
+                q_deg = self.robot_model.reel_joint_values[i]
                 q = np.radians(q_deg)
                 theta = theta_offset + q
                 corr = [self.robot_model.get_correction(i, j) for j in range(6)]

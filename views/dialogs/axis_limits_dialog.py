@@ -1,17 +1,18 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
-    QTableWidgetItem, QPushButton, QApplication
+    QTableWidgetItem, QPushButton, QApplication, QCheckBox
 )
 
 class AxisLimitsDialog(QDialog):
     """Dialog pour configurer les limites des axes et la position home"""
     
-    def __init__(self, parent, current_limits, home_position=None):
+    def __init__(self, parent, current_limits, home_position=None, reversed_axes=None):
         super().__init__(parent)
         self.setWindowTitle("Paramètrage des axes")
-        self.setGeometry(100, 100, 500, 400)
+        self.setGeometry(100, 100, 600, 400)
         self.current_limits = current_limits
         self.home_position = home_position if home_position else [0, -90, 90, 0, 90, 0]
+        self.reversed_axes = reversed_axes if reversed_axes else {f"q{i+1}": False for i in range(6)}
         
         self.setup_ui()
         self.center_on_screen()
@@ -20,15 +21,17 @@ class AxisLimitsDialog(QDialog):
         """Initialise l'interface du dialog"""
         limits_layout = QVBoxLayout()
         
-        # Créer une table pour les limites avec colonne Home Position
-        self.table_limits = QTableWidget(6, 3)
-        self.table_limits.setHorizontalHeaderLabels(["Min (°)", "Max (°)", "Home (°)"])
+        # Créer une table pour les limites avec colonne Home Position et Inversé
+        self.table_limits = QTableWidget(6, 4)
+        self.table_limits.setHorizontalHeaderLabels(["Min (°)", "Max (°)", "Home (°)", "Inversé"])
         self.table_limits.setVerticalHeaderLabels([f"q{i+1}" for i in range(6)])
         self.table_limits.horizontalHeader().setDefaultSectionSize(100)
         limits_layout.addWidget(self.table_limits)
         
         # Initialiser la table avec les valeurs actuelles
         for i in range(6):
+            axis_name = f"q{i+1}"
+            
             # Min value
             min_item = QTableWidgetItem(str(self.current_limits[i][0]))
             self.table_limits.setItem(i, 0, min_item)
@@ -40,6 +43,13 @@ class AxisLimitsDialog(QDialog):
             # Home Position
             home_item = QTableWidgetItem(str(self.home_position[i]))
             self.table_limits.setItem(i, 2, home_item)
+            
+            # Colonne Inversé (checkbox)
+            checkbox = QCheckBox()
+            # Vérifier si l'axe est inversé (-1) en fonction de la liste
+            is_reversed = isinstance(self.reversed_axes, list) and self.reversed_axes[i] == -1
+            checkbox.setChecked(is_reversed)
+            self.table_limits.setCellWidget(i, 3, checkbox)
         
         # Boutons
         btn_layout = QHBoxLayout()
@@ -78,3 +88,11 @@ class AxisLimitsDialog(QDialog):
             home_val = int(self.table_limits.item(i, 2).text())
             home_pos.append(home_val)
         return home_pos
+    
+    def get_axis_reversed(self):
+        """Retourne l'état d'inversion pour chaque axe"""
+        axis_reversed = []
+        for i in range(6):
+            checkbox = self.table_limits.cellWidget(i, 3)
+            axis_reversed.append(-1 if checkbox.isChecked() else 1)
+        return axis_reversed

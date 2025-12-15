@@ -22,6 +22,7 @@ class RobotController(QObject):
         
         # Connecter les changements du modèle à la vue
         self.robot_model.configuration_changed.connect(self.update_view_from_model)
+        self.robot_model.joints_changed.emit()  # Forcer une mise à jour initiale
     
     def on_dh_value_changed(self, row, col, value):
         """Callback quand une valeur DH change dans la vue"""
@@ -121,17 +122,20 @@ class JointController(QObject):
         dialog = AxisLimitsDialog(
             self.joint_widget,
             self.robot_model.axis_limits,
-            self.robot_model.home_position
+            self.robot_model.home_position,
+            self.robot_model.axis_reversed
         )
         
         if dialog.exec_() == QDialog.Accepted:
             # Récupérer les nouvelles limites et home position
             new_limits = dialog.get_limits()
             new_home = dialog.get_home_position()
+            new_axis_reversed = dialog.get_axis_reversed()
             
             # Mettre à jour le modèle
             self.robot_model.set_axis_limits(new_limits)
             self.robot_model.set_home_position(new_home)
+            self.robot_model.set_reverse_axis(new_axis_reversed)
     
     def update_view_from_model(self):
         """Met à jour la vue depuis le modèle"""

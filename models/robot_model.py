@@ -19,6 +19,8 @@ class RobotModel(QObject):
         
         # État actuel des joints (degrés)
         self.joint_values = [0, 0, 0, 0, 0, 0]
+        self.reel_joint_values = [0, 0, 0, 0, 0, 0]
+        self.axis_reversed = [1, 1, 1, 1, 1, 1]  # 1 = normal, -1 = inversé
         
         # Paramètres DH (7 lignes: 6 joints + tool)
         self.dh_params = [[0, 0, 0, 0] for _ in range(7)]
@@ -48,12 +50,20 @@ class RobotModel(QObject):
         """Modifie la valeur d'un joint"""
         if 0 <= index < 6:
             self.joint_values[index] = value
+            self.reel_joint_values[index] = value * self.axis_reversed[index]
             self.joints_changed.emit()
+        
     
     def set_all_joints(self, values):
         """Définit toutes les valeurs de joints"""
         self.joint_values = values[:6]
+        self.reel_joint_values = [values[i] * self.axis_reversed[i] for i in range(6)]
         self.joints_changed.emit()
+    
+    def set_reverse_axis(self, axis_reversed):
+        """Définit les multiplicateurs d'axes (1 ou -1)"""
+        self.axis_reversed = axis_reversed
+        self.configuration_changed.emit()
     
     def set_dh_params(self, params):
         """Définit les paramètres DH"""
@@ -85,6 +95,7 @@ class RobotModel(QObject):
             "q": self.joint_values,
             "name": [self.robot_name],
             "axis_limits": self.axis_limits,
+            "axis_reversed": self.axis_reversed,
             "home_position": self.home_position
         }
     
@@ -100,10 +111,18 @@ class RobotModel(QObject):
         # Corrections
         if "corr" in data:
             self.corrections = [[float(val) if val else 0 for val in row] for row in data["corr"]]
+
+        # Multiplicateurs d'axes
+        if "axis_reversed" in data:
+            self.axis_reversed = data["axis_reversed"]
+        else:
+            self.axis_reversed = [1, 1, 1, 1, 1, 1]
         
         # Joints
         if "q" in data:
-            self.joint_values = data["q"][:6]
+            self.set_all_joints(data["q"][:6])
+        else:
+            self.set_all_joints(self.home_position)
         
         # Nom
         if "name" in data and len(data["name"]) > 0:
@@ -113,6 +132,7 @@ class RobotModel(QObject):
         if "axis_limits" in data:
             self.axis_limits = data["axis_limits"]
         
+        
         # Home position
         if "home_position" in data:
             self.home_position = data["home_position"]
@@ -120,4 +140,4 @@ class RobotModel(QObject):
             self.home_position = [0, -90, 90, 0, 90, 0]
         
         self.configuration_changed.emit()
-        self.joints_changed.emit()
+        
