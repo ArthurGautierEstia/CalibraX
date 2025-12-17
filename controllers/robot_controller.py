@@ -86,7 +86,7 @@ class RobotController(QObject):
             [[str(val) for val in row] for row in self.robot_model.corrections]
         )
         self.robot_model.set_axis_limits(self.robot_model.axis_limits)
-        
+        self.robot_model.set_all_joints(self.robot_model.initial_joint_values)
 
 class JointController(QObject):
     """Contrôleur pour la gestion des coordonnées articulaires"""

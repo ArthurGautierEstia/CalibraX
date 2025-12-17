@@ -120,9 +120,9 @@ class RobotModel(QObject):
         
         # Joints
         if "q" in data:
-            self.set_all_joints(data["q"][:6])
+            self.initial_joint_values = data["q"][:6]
         else:
-            self.set_all_joints(self.home_position)
+            self.initial_joint_values = [0, 0, 0, 0, 0, 0]
         
         # Nom
         if "name" in data and len(data["name"]) > 0:
