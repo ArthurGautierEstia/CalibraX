@@ -1,14 +1,16 @@
 from PyQt5.QtCore import QObject
 from utils.file_io import FileIOHandler
+import numpy as np
 
 class MeasurementController(QObject):
     """Contrôleur pour la gestion des mesures"""
     
-    def __init__(self, measurement_model, correction_model, measurement_widget):
+    def __init__(self, measurement_model, correction_model, measurement_widget, kinematics_engine):
         super().__init__()
         self.measurement_model = measurement_model
         self.correction_model = correction_model
         self.measurement_widget = measurement_widget
+        self.kinematics_engine = kinematics_engine
         self.file_io = FileIOHandler()
         
         # Connecter les signaux
@@ -44,14 +46,21 @@ class MeasurementController(QObject):
     
     def on_repere_selected(self, repere_name):
         """Callback quand un repère est sélectionné dans l'arbre"""
-        repere = self.measurement_model.get_repere_by_name(repere_name)
-        if repere:
-            # Récupérer la matrice de rotation
-            rotation_matrix = self.measurement_model.get_rotation_matrix(repere)
-            
-            # Afficher dans le widget
-            self.measurement_widget.display_repere_data(repere, rotation_matrix)
-    
+        measured_repere = self.measurement_model.get_repere_by_name(repere_name)
+        T_measured = self.measurement_model.to_matrix(measured_repere)
+        print(f"repère mesuré matrice:\n{T_measured}")
+        T_dh = self.kinematics_engine.get_matrix_at_joint(int(repere_name.split('_')[-1]))
+        print(f"Repère DH: \n{T_dh}")
+
+        # Calcul de la transformation relative
+        T_DH_inv = np.linalg.inv(T_dh)
+        delta_T = np.dot(T_DH_inv, T_measured)
+
+        # Afficher dans le widget
+        self.measurement_widget.display_repere_data(delta_T)
+        print("Matrice de différence :\n", delta_T)
+
+
     def update_view_from_model(self):
         """Met à jour la vue depuis le modèle"""
         repere_names = self.measurement_model.get_all_repere_names()

@@ -81,7 +81,8 @@ class MGDApplication:
         self.measurement_controller = MeasurementController(
             self.measurement_model,
             self.correction_model,
-            self.window.get_measurement_widget()
+            self.window.get_measurement_widget(),
+            self.kinematics_engine
         )
     
     def setup_additional_connections(self):

@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QFont
+from math import atan2, sqrt, degrees
 
 class MeasurementWidget(QWidget):
     """Widget pour l'importation et la gestion des mesures"""
@@ -85,26 +86,48 @@ class MeasurementWidget(QWidget):
             font.setBold(item.text(0) == ref_name)
             item.setFont(0, font)
     
-    def display_repere_data(self, repere, rotation_matrix):
-        """Affiche les données d'un repère dans la table"""
+    def display_repere_data(self, delta_T):
+        """
+        Affiche les écarts X, Y, Z, RX, RY, RZ calculés à partir de delta_T dans table_me.
+        delta_T : matrice homogène 4x4 (numpy array)
+        """
         self.table_me.blockSignals(True)
-        
+
+        # --- 1. Extraire la translation (en mm) ---
+        X = delta_T[0, 3]
+        Y = delta_T[1, 3]
+        Z = delta_T[2, 3]
+
+        # --- 2. Extraire la rotation (angles d'Euler ZYX en degrés) ---
+        r11, r12, r13 = delta_T[0, 0], delta_T[0, 1], delta_T[0, 2]
+        r21, r22, r23 = delta_T[1, 0], delta_T[1, 1], delta_T[1, 2]
+        r31, r32, r33 = delta_T[2, 0], delta_T[2, 1], delta_T[2, 2]
+
+        # Calcul des angles (en radians)
+        ry = atan2(-r31, sqrt(r11**2 + r21**2))  # rotation autour Y
+        rx = atan2(r32, r33)                     # rotation autour X
+        rz = atan2(r21, r11)                     # rotation autour Z
+
+        # Conversion en degrés
+        RX, RY, RZ = degrees(rx), degrees(ry), degrees(rz)
+
+        # --- 3. Afficher dans la table ---
         # Ligne 0 : Translation
-        self.table_me.setItem(0, 0, QTableWidgetItem(f"{repere['X']:.2f}"))
-        self.table_me.setItem(0, 1, QTableWidgetItem(f"{repere['Y']:.2f}"))
-        self.table_me.setItem(0, 2, QTableWidgetItem(f"{repere['Z']:.2f}"))
-        
+        self.table_me.setItem(0, 0, QTableWidgetItem(f"{X:.2f}"))
+        self.table_me.setItem(0, 1, QTableWidgetItem(f"{Y:.2f}"))
+        self.table_me.setItem(0, 2, QTableWidgetItem(f"{Z:.2f}"))
+
         # Ligne 1 : Rotation
-        self.table_me.setItem(1, 0, QTableWidgetItem(f"{repere['A']:.2f}"))
-        self.table_me.setItem(1, 1, QTableWidgetItem(f"{repere['B']:.2f}"))
-        self.table_me.setItem(1, 2, QTableWidgetItem(f"{repere['C']:.2f}"))
-        
-        # Lignes 2-4 : Axes X, Y, Z de la matrice de rotation
-        for i in range(3):  # Pour chaque axe
-            for j in range(3):  # Pour chaque composante
-                self.table_me.setItem(2 + i, j, QTableWidgetItem(f"{rotation_matrix[j, i]:.6f}"))
-        
-        self.table_me.blockSignals(False)
+        self.table_me.setItem(1, 0, QTableWidgetItem(f"{RX:.2f}"))
+        self.table_me.setItem(1, 1, QTableWidgetItem(f"{RY:.2f}"))
+        self.table_me.setItem(1, 2, QTableWidgetItem(f"{RZ:.2f}"))
+
+        # --- 4. Afficher la matrice delta_T (optionnel) ---
+        for i in range(3):  # lignes
+            for j in range(3):  # colonnes
+                self.table_me.setItem(2 + i, j, QTableWidgetItem(f"{delta_T[i, j]:.6f}"))
+
+        self.table_me.blockSignals
     
     def clear_measurements(self):
         """Efface les mesures"""
