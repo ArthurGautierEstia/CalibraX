@@ -53,7 +53,6 @@ class RobotModel(QObject):
             self.reel_joint_values[index] = value * self.axis_reversed[index]
             self.joints_changed.emit()
         
-    
     def set_all_joints(self, values):
         """Définit toutes les valeurs de joints"""
         self.joint_values = values[:6]

@@ -24,7 +24,6 @@ class KinematicsEngine(QObject):
         self.robot_model.configuration_changed.connect(self.compute_forward_kinematics)
         self.robot_model.joints_changed.connect(self.compute_forward_kinematics)
         
-    
     def get_parameters(self):
         """Récupère les paramètres pour le calcul cinématique"""
         params = []

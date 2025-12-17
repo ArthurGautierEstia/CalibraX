@@ -83,7 +83,7 @@ class VisualizationController(QObject):
     def toggle_cad_visibility(self, visible):
         """Bascule la visibilité du robot CAD"""
         self.cad_visible = visible
-        
+        print(f"CAD visibility set to: {visible}")
         if visible:
             # Si pas encore chargé, charger les mesh
             if len(self.viewer_widget.robot_links) == 0:

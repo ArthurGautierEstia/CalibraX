@@ -6,12 +6,13 @@ from views.dialogs.axis_limits_dialog import AxisLimitsDialog
 class RobotController(QObject):
     """Contrôleur pour la gestion de la configuration du robot"""
     
-    def __init__(self, robot_model, kinematics_engine, dh_widget, correction_widget):
+    def __init__(self, robot_model, kinematics_engine, dh_widget, correction_widget, visualization_controller):
         super().__init__()
         self.robot_model = robot_model
         self.kinematics_engine = kinematics_engine
         self.dh_widget = dh_widget
         self.correction_widget = correction_widget
+        self.visualization_controller = visualization_controller
         self.file_io = FileIOHandler()
         
         # Connecter les signaux des widgets aux méthodes du contrôleur
@@ -62,6 +63,9 @@ class RobotController(QObject):
             self.dh_widget,
             "Charger configuration"
         )
+
+        
+
         if data:
             # Charger dans le modèle
             self.robot_model.from_dict(data)
@@ -72,6 +76,9 @@ class RobotController(QObject):
             self.update_view_from_model()
             
             print(f"Configuration chargée: {file_name}")
+        
+        if self.visualization_controller.cad_visible:
+            self.visualization_controller.load_robot_cad()
     
     def update_view_from_model(self):
         """Met à jour la vue depuis le modèle"""

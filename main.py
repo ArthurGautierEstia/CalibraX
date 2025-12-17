@@ -48,12 +48,20 @@ class MGDApplication:
     
     def setup_controllers(self):
         """Initialise tous les contrôleurs"""
+                
+        # Contrôleur de visualisation
+        self.visualization_controller = VisualizationController(
+            self.kinematics_engine,
+            self.robot_model,
+            self.window.get_viewer_widget()
+        )
         # Contrôleur de configuration robot
         self.robot_controller = RobotController(
             self.robot_model,
             self.kinematics_engine,
             self.window.get_dh_widget(),
-            self.window.get_correction_widget()
+            self.window.get_correction_widget(),
+            self.visualization_controller
         )
         
         # Contrôleur des joints
@@ -67,13 +75,7 @@ class MGDApplication:
             self.kinematics_engine,
             self.window.get_result_widget()
         )
-        
-        # Contrôleur de visualisation
-        self.visualization_controller = VisualizationController(
-            self.kinematics_engine,
-            self.robot_model,
-            self.window.get_viewer_widget()
-        )
+
         
         # Contrôleur de mesures
         self.measurement_controller = MeasurementController(
