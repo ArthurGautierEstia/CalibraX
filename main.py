@@ -86,10 +86,6 @@ class MGDApplication:
     
     def setup_additional_connections(self):
         """Configure les connexions additionnelles entre composants"""
-        # Connecter le mode pas à pas
-        self.window.get_joint_widget().step_by_step_requested.connect(
-            self.visualization_controller.toggle_step_mode
-        )
         
         # Connecter la visibilité du CAD
         self.window.get_dh_widget().cad_toggled.connect(

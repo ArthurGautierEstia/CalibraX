@@ -171,5 +171,29 @@ QScrollBar::sub-line:vertical {
     border: none;
 }
 
+/* ===== Liste des repères (Overlay 3D) ===== */
+QListWidget {
+    background-color: rgba(30, 30, 30, 200);  /* #1E1E1E semi-transparent */
+    color: #E0E0E0;
+    border: 1px solid #2C2C2C;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;  /* Enlève le contour de focus */
+}
+
+QListWidget::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 2px 0px;
+}
+
+QListWidget::item:hover {
+    background-color: rgba(44, 44, 44, 150);  /* #2C2C2C semi-transparent */
+}
+
+/* Pas de sélection bleue (géré par le code via NoSelection) */
+QListWidget::item:selected {
+    background-color: transparent;
+}
 
 
