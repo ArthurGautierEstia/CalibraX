@@ -1,6 +1,7 @@
 from PyQt5.QtCore import QObject
 from utils.file_io import FileIOHandler
 import numpy as np
+from utils.math_utils import euler_to_rotation_matrix
 
 class MeasurementController(QObject):
     """Contrôleur pour la gestion des mesures"""
@@ -18,10 +19,13 @@ class MeasurementController(QObject):
         self.measurement_widget.set_as_reference_requested.connect(self.set_as_reference)
         self.measurement_widget.calculate_corrections_requested.connect(self.calculate_corrections)
         self.measurement_widget.repere_selected.connect(self.on_repere_selected)
-        
+        self.measurement_widget.display_mode_changed.connect(self.on_combo_box_1_changed)
+        self.measurement_widget.rotation_type_changed.connect(self.on_combo_box_2_changed)
+        self.measurement_widget.clear_measurements_requested.connect(self.measurement_model.clear)
+
         # Connecter les changements du modèle à la vue
         self.measurement_model.measurements_changed.connect(self.update_view_from_model)
-        self.measurement_model.reference_changed.connect(self.on_reference_changed)
+        self.measurement_model.reference_changed.connect(self.measurement_widget.set_reference_bold)
     
     def import_measurements(self):
         """Importe les mesures depuis un fichier JSON"""
@@ -47,7 +51,7 @@ class MeasurementController(QObject):
     def on_repere_selected(self, repere_name):
         """Callback quand un repère est sélectionné dans l'arbre"""
         measured_repere = self.measurement_model.get_repere_by_name(repere_name)
-        T_measured = self.measurement_model.to_matrix(measured_repere)
+        T_measured = self.measurement_model.repere_to_matrix(measured_repere)
         print(f"repère mesuré matrice:\n{T_measured}")
         T_dh = self.kinematics_engine.get_matrix_at_joint(int(repere_name.split('_')[-1]))
         print(f"Repère DH: \n{T_dh}")
@@ -60,7 +64,6 @@ class MeasurementController(QObject):
         self.measurement_widget.display_repere_data(delta_T)
         print("Matrice de différence :\n", delta_T)
 
-
     def update_view_from_model(self):
         """Met à jour la vue depuis le modèle"""
         repere_names = self.measurement_model.get_all_repere_names()
@@ -69,3 +72,13 @@ class MeasurementController(QObject):
     def on_reference_changed(self, ref_name):
         """Callback quand le repère de référence change"""
         self.measurement_widget.set_reference_bold(ref_name)
+
+    def on_combo_box_1_changed(self, display_mode):
+        """Callback quand les options d'affichage changent"""
+        self.measurement_model.set_display_mode(display_mode)
+
+    def on_combo_box_2_changed(self, rotation_type):
+        """Callback quand le type de rotation change"""
+        if (rotation_type == "EulerXYZ"):
+            
+            self.measurement_model.set_rotation_type(rotation_type)

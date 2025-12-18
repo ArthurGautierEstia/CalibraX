@@ -27,7 +27,6 @@ class VisualizationController(QObject):
         self.viewer_widget.axes_toggled.connect(self.toggle_axes)
         self.viewer_widget.frame_visibility_toggled.connect(self.toggle_single_frame)
 
-    
     def update_visualization(self):
         """Met à jour la visualisation 3D"""
         matrices = self.kinematics_engine.dh_matrices

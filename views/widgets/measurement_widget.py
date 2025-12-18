@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
-    QTableWidget, QTableWidgetItem, QAbstractItemView
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox
 )
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QFont
@@ -15,7 +15,10 @@ class MeasurementWidget(QWidget):
     set_as_reference_requested = pyqtSignal()
     calculate_corrections_requested = pyqtSignal()
     repere_selected = pyqtSignal(str)  # nom du repère
-    
+    display_mode_changed = pyqtSignal(str)  # display_mode
+    rotation_type_changed = pyqtSignal(str)  # rotation_type
+    clear_measurements_requested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
@@ -50,20 +53,43 @@ class MeasurementWidget(QWidget):
         self.btn_set_as_ref.clicked.connect(self.set_as_reference_requested.emit)
         self.btn_calculate_corr = QPushButton("Calculer les corrections")
         self.btn_calculate_corr.clicked.connect(self.calculate_corrections_requested.emit)
+        self.btn_clear = QPushButton("Effacer")
+        self.btn_clear.clicked.connect(self.clear_measurements)
         tables_btn_layout.addWidget(self.btn_set_as_ref)
         tables_btn_layout.addWidget(self.btn_calculate_corr)
+        tables_btn_layout.addWidget(self.btn_clear) 
         tables_btn_layout.addStretch()
         me_layout.addLayout(tables_btn_layout, 1, 1)
         
         layout.addLayout(me_layout)
-        
+
+
+        tables_display_me = QVBoxLayout()
+        choice_table = QGridLayout()
+        label_1 = QLabel("Afficher : ")
+        display_mode = QComboBox()
+        display_mode.addItems(["Repères", "Ecarts"])
+        display_mode.currentTextChanged.connect(self.display_mode_changed)
+        label_2 = QLabel("Rotation : ")
+        rotation_type = QComboBox()
+        rotation_type.addItems(["EulerXYZ", "Fixed EulerXYZ"])
+        rotation_type.currentTextChanged.connect(self.rotation_type_changed)
+
+        choice_table.addWidget(label_1, 0, 0)
+        choice_table.addWidget(display_mode, 0, 1)
+        choice_table.addWidget(label_2, 0, 2)
+        choice_table.addWidget(rotation_type, 0, 3)
+
+        tables_display_me.addLayout(choice_table)
+
         # Table des mesures
         self.table_me = QTableWidget(5, 3)
         self.table_me.setHorizontalHeaderLabels(["X", "Y", "Z"])
         self.table_me.setVerticalHeaderLabels(["Translation (mm)", "Rotation (°)", "X axis", "Y axis", "Z axis"])
         self.table_me.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.table_me.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        layout.addWidget(self.table_me)
+        tables_display_me.addWidget(self.table_me)
+        layout.addLayout(tables_display_me)
         
         self.setLayout(layout)
     
