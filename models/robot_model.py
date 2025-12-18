@@ -8,6 +8,11 @@ class RobotModel(QObject):
     configuration_changed = pyqtSignal()
     joints_changed = pyqtSignal()
     limits_changed = pyqtSignal()
+    axis_reversed_changed = pyqtSignal()
+    dh_params_changed = pyqtSignal()
+    corrections_changed = pyqtSignal()
+    home_position_changed = pyqtSignal()
+    robot_name_changed = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -34,7 +39,7 @@ class RobotModel(QObject):
     def set_robot_name(self, name):
         """Définit le nom du robot"""
         self.robot_name = name
-        self.configuration_changed.emit()
+        self.robot_name_changed.emit(name)
     
     def set_axis_limits(self, limits):
         """Définit les limites des axes"""
@@ -44,7 +49,7 @@ class RobotModel(QObject):
     def set_home_position(self, home_pos):
         """Définit la position home"""
         self.home_position = home_pos
-        self.configuration_changed.emit()
+        self.home_position_changed.emit()
     
     def set_joint_value(self, index, value):
         """Modifie la valeur d'un joint"""
@@ -62,17 +67,17 @@ class RobotModel(QObject):
     def set_reverse_axis(self, axis_reversed):
         """Définit les multiplicateurs d'axes (1 ou -1)"""
         self.axis_reversed = axis_reversed
-        self.configuration_changed.emit()
+        self.axis_reversed_changed.emit()
     
     def set_dh_params(self, params):
         """Définit les paramètres DH"""
         self.dh_params = params
-        self.configuration_changed.emit()
+        self.dh_params_changed.emit()
     
     def set_corrections(self, corrections):
         """Définit les corrections 6D"""
         self.corrections = corrections
-        self.configuration_changed.emit()
+        self.corrections_changed.emit()
     
     def get_dh_param(self, row, col):
         """Récupère un paramètre DH spécifique"""
@@ -98,8 +103,11 @@ class RobotModel(QObject):
             "home_position": self.home_position
         }
     
-    def from_dict(self, data):
+    def load_configuration(self, data, file_name):
         """Import depuis dictionnaire (pour chargement JSON)"""
+        # Nom de la configuration
+        self.robot_model.current_config_file = file_name
+
         # DH params
         if "dh" in data:
             self.dh_params = [[float(val) if val else 0 for val in row] for row in data["dh"]]

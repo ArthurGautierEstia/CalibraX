@@ -24,7 +24,9 @@ class RobotController(QObject):
         
         # Connecter les changements du modèle à la vue
         self.robot_model.configuration_changed.connect(self.update_view_from_model)
-        self.robot_model.joints_changed.emit()  # Forcer une mise à jour initiale
+        self.robot_model.robot_name_changed.connect(self.dh_widget.set_robot_name)
+        self.robot_model.dh_params_changed.connect(self.dh_widget.set_dh_params(self.robot_model.dh_params))
+        
     
     def on_dh_value_changed(self, row, col, value):
         """Callback quand une valeur DH change dans la vue"""
@@ -58,25 +60,17 @@ class RobotController(QObject):
             self.robot_model.current_config_file = file_name
             print(f"Configuration sauvegardée: {file_name}")
     
-    def load_configuration(self):
+    def import_configuration(self):
         """Charge une configuration depuis un fichier"""
         file_name, data = self.file_io.load_json(
             self.dh_widget,
             "Charger configuration"
         )
 
-        
-
         if data:
             # Charger dans le modèle
-            self.robot_model.from_dict(data)
-            self.robot_model.current_config_file = file_name
-            
-            
-            # Mettre à jour les vues
-            self.update_view_from_model()
-            
-            print(f"Configuration chargée: {file_name}")
+            self.robot_model.load_configuration(data,file_name)    
+        
         
         if self.visualization_controller.cad_visible:
             self.visualization_controller.load_robot_cad()
@@ -108,10 +102,11 @@ class JointController(QObject):
         self.robot_model = robot_model
         self.joint_widget = joint_widget
         self.visualization_controller = visualization_controller
+    
+    def setup_connections(self):
         
         # Connecter les signaux
-        self.joint_widget.joint_value_changed.connect(self.on_joint_value_changed)
-        self.joint_widget.home_position_requested.connect(self.apply_home_position)
+        self.joint_widget.joint_value_changed.connect(self.robot_model.set_joint_value)
         self.joint_widget.axis_limits_config_requested.connect(self.configure_axis_limits)
         
         # Connecter les changements du modèle à la vue
@@ -121,15 +116,7 @@ class JointController(QObject):
         # Initialiser les limites dans la vue
         self.update_limits_in_view()
     
-    def on_joint_value_changed(self, index, value):
-        """Callback quand une valeur de joint change"""
-        self.robot_model.set_joint_value(index, value)
-    
-    def apply_home_position(self):
-        """Applique la position home"""
-        self.robot_model.set_all_joints(self.robot_model.home_position)
-        self.update_view_from_model()
-    
+
     def configure_axis_limits(self):
         """Ouvre le dialogue de configuration des limites d'axes"""
         dialog = AxisLimitsDialog(
