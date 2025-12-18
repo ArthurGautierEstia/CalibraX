@@ -2,10 +2,11 @@ from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QDialog
 from utils.file_io import FileIOHandler
 from views.dialogs.axis_limits_dialog import AxisLimitsDialog
+from PyQt5.QtCore import pyqtSignal
 
 class RobotController(QObject):
     """Contrôleur pour la gestion de la configuration du robot"""
-    
+
     def __init__(self, robot_model, kinematics_engine, dh_widget, correction_widget, visualization_controller):
         super().__init__()
         self.robot_model = robot_model
@@ -93,15 +94,20 @@ class RobotController(QObject):
             [[str(val) for val in row] for row in self.robot_model.corrections]
         )
         self.robot_model.set_axis_limits(self.robot_model.axis_limits)
-        self.robot_model.set_all_joints(self.robot_model.initial_joint_values)
+        if self.visualization_controller.cad_loaded:
+            self.robot_model.set_all_joints(self.robot_model.joint_values)
+        else:
+            self.robot_model.set_all_joints(self.robot_model.initial_joint_values)
 
 class JointController(QObject):
     """Contrôleur pour la gestion des coordonnées articulaires"""
+    axis_parameters_changed = pyqtSignal()
     
-    def __init__(self, robot_model, joint_widget):
+    def __init__(self, robot_model, joint_widget, visualization_controller):
         super().__init__()
         self.robot_model = robot_model
         self.joint_widget = joint_widget
+        self.visualization_controller = visualization_controller
         
         # Connecter les signaux
         self.joint_widget.joint_value_changed.connect(self.on_joint_value_changed)
@@ -139,10 +145,14 @@ class JointController(QObject):
             new_home = dialog.get_home_position()
             new_axis_reversed = dialog.get_axis_reversed()
             
+            
             # Mettre à jour le modèle
             self.robot_model.set_axis_limits(new_limits)
             self.robot_model.set_home_position(new_home)
             self.robot_model.set_reverse_axis(new_axis_reversed)
+
+            # Mettre à jour la vue
+            self.visualization_controller.update_visualization()
     
     def update_view_from_model(self):
         """Met à jour la vue depuis le modèle"""

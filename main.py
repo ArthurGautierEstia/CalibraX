@@ -67,7 +67,8 @@ class MGDApplication:
         # Contrôleur des joints
         self.joint_controller = JointController(
             self.robot_model,
-            self.window.get_joint_widget()
+            self.window.get_joint_widget(),
+            self.visualization_controller
         )
         
         # Contrôleur des résultats
@@ -104,8 +105,8 @@ class MGDApplication:
     def on_configuration_changed(self):
         """Callback quand la configuration change"""
         # Recharger le CAD si une nouvelle config est chargée
-        if self.robot_model.current_config_file:
-            self.visualization_controller.reload_robot_cad()
+        # if self.robot_model.current_config_file:
+        #      self.visualization_controller.load_robot_cad()
     
     def run(self):
         """Lance l'application"""

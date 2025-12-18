@@ -18,6 +18,8 @@ class VisualizationController(QObject):
         self.show_axes = True
         self.frames_visibility = []  # Visibilité individuelle des repères
         self.cad_visible = False
+        self.cad_loaded = False
+        
         
         # Connecter les signaux
         self.kinematics_engine.kinematics_updated.connect(self.update_visualization)
@@ -53,7 +55,7 @@ class VisualizationController(QObject):
                  self.viewer_widget.draw_all_frames(matrices, self.frames_visibility)
 
         # 5. Mettre à jour le robot CAD
-        if self.cad_visible or len(self.viewer_widget.robot_links) > 0:
+        if self.cad_loaded:
             self.viewer_widget.update_robot_poses(self.kinematics_engine.corrected_matrices)
     
     def toggle_transparency(self):
@@ -77,13 +79,16 @@ class VisualizationController(QObject):
         """Bascule la visibilité du robot CAD"""
         self.cad_visible = visible
         print(f"CAD visibility set to: {visible}")
+        
         if visible:
-            # Si pas encore chargé, charger les mesh
-            if len(self.viewer_widget.robot_links) == 0:
+            # Charger le CAD seulement s'il n'a jamais été chargé
+            if not self.cad_loaded:
                 self.load_robot_cad()
             else:
+                # Sinon, simplement afficher le modèle déjà chargé
                 self.viewer_widget.set_robot_visibility(True)
         else:
+            # Cacher sans décharger
             self.viewer_widget.set_robot_visibility(False)
     
     def load_robot_cad(self):
@@ -95,12 +100,14 @@ class VisualizationController(QObject):
         
         # Charger les mesh avec les matrices corrigées
         self.viewer_widget.add_robot_links(self.kinematics_engine.corrected_matrices)
+
+        self.cad_loaded = True
     
-    def reload_robot_cad(self):
-        """Recharge le CAD du robot (après changement de configuration)"""
-        # Nettoyer les anciens mesh
-        self.viewer_widget.clear_robot_links()
+    # def reload_robot_cad(self):
+    #     """Recharge le CAD du robot (après changement de configuration)"""
+    #     # Nettoyer les anciens mesh
+    #     self.viewer_widget.clear_robot_links()
         
-        # Recharger si CAD était visible
-        if self.cad_visible:
-            self.load_robot_cad()
+    #     # Recharger si CAD était visible
+    #     if self.cad_visible:
+    #         self.viewer_widget.update_robot_poses(self.kinematics_engine.corrected_matrices)
