@@ -7,26 +7,57 @@ from PyQt5.QtCore import pyqtSignal
 class RobotController(QObject):
     """Contrôleur pour la gestion de la configuration du robot"""
 
-    def __init__(self, robot_model, kinematics_engine, dh_widget, correction_widget, visualization_controller):
+    def __init__(self, robot_model, kinematics_engine, dh_widget, correction_widget, joint_widget, visualization_controller):
         super().__init__()
         self.robot_model = robot_model
         self.kinematics_engine = kinematics_engine
         self.dh_widget = dh_widget
         self.correction_widget = correction_widget
+        self.joint_widget = joint_widget
         self.visualization_controller = visualization_controller
         self.file_io = FileIOHandler()
         
+    def setup_connections(self):
+        """Configure les connexions entre les vue et les modèle"""    
         # Connecter les signaux des widgets aux méthodes du contrôleur
-        self.dh_widget.load_config_requested.connect(self.load_configuration)
+        self.dh_widget.load_config_requested.connect(self.import_configuration)
         self.dh_widget.save_config_requested.connect(self.save_configuration)
         self.dh_widget.dh_value_changed.connect(self.on_dh_value_changed)
         self.correction_widget.correction_value_changed.connect(self.on_correction_value_changed)
+        self.joint_widget.joint_value_changed.connect(self.robot_model.set_joint_value)
+        self.joint_widget.axis_limits_config_requested.connect(self.configure_axis_limits)
         
         # Connecter les changements du modèle à la vue
         self.robot_model.configuration_changed.connect(self.update_view_from_model)
-        self.robot_model.robot_name_changed.connect(self.dh_widget.set_robot_name)
-        self.robot_model.dh_params_changed.connect(self.dh_widget.set_dh_params(self.robot_model.dh_params))
+        self.robot_model.robot_name_changed.connect(self.dh_widget.set_robot_name) 
+        self.robot_model.dh_params_changed.connect(self.on_dh_params_changed)
+        self.robot_model.joints_changed.connect(self.on_joints_changed)
+        self.robot_model.limits_changed.connect(self.on_limits_changed)
+
+    
+    def configure_axis_limits(self):
+        """Ouvre le dialogue de configuration des limites d'axes"""
+        dialog = AxisLimitsDialog(
+            self.joint_widget,
+            self.robot_model.axis_limits,
+            self.robot_model.home_position,
+            self.robot_model.axis_reversed
+        )
         
+        if dialog.exec_() == QDialog.Accepted:
+            # Récupérer les nouvelles limites et home position
+            new_limits = dialog.get_limits()
+            new_home = dialog.get_home_position()
+            new_axis_reversed = dialog.get_axis_reversed()
+            
+            
+            # Mettre à jour le modèle
+            self.robot_model.set_axis_limits(new_limits)
+            self.robot_model.set_home_position(new_home)
+            self.robot_model.set_reverse_axis(new_axis_reversed)
+
+            # Mettre à jour la vue
+            self.visualization_controller.update_visualization()   
     
     def on_dh_value_changed(self, row, col, value):
         """Callback quand une valeur DH change dans la vue"""
@@ -92,64 +123,18 @@ class RobotController(QObject):
             self.robot_model.set_all_joints(self.robot_model.joint_values)
         else:
             self.robot_model.set_all_joints(self.robot_model.initial_joint_values)
+    
+    def on_dh_params_changed(self):
+        """Callback quand les paramètres DH changent"""
+        self.dh_widget.set_dh_params(self.robot_model.dh_params)
 
-class JointController(QObject):
-    """Contrôleur pour la gestion des coordonnées articulaires"""
-    axis_parameters_changed = pyqtSignal()
-    
-    def __init__(self, robot_model, joint_widget, visualization_controller):
-        super().__init__()
-        self.robot_model = robot_model
-        self.joint_widget = joint_widget
-        self.visualization_controller = visualization_controller
-    
-    def setup_connections(self):
-        
-        # Connecter les signaux
-        self.joint_widget.joint_value_changed.connect(self.robot_model.set_joint_value)
-        self.joint_widget.axis_limits_config_requested.connect(self.configure_axis_limits)
-        
-        # Connecter les changements du modèle à la vue
-        self.robot_model.joints_changed.connect(self.update_view_from_model)
-        self.robot_model.limits_changed.connect(self.update_limits_in_view)
-        
-        # Initialiser les limites dans la vue
-        self.update_limits_in_view()
-    
-
-    def configure_axis_limits(self):
-        """Ouvre le dialogue de configuration des limites d'axes"""
-        dialog = AxisLimitsDialog(
-            self.joint_widget,
-            self.robot_model.axis_limits,
-            self.robot_model.home_position,
-            self.robot_model.axis_reversed
-        )
-        
-        if dialog.exec_() == QDialog.Accepted:
-            # Récupérer les nouvelles limites et home position
-            new_limits = dialog.get_limits()
-            new_home = dialog.get_home_position()
-            new_axis_reversed = dialog.get_axis_reversed()
-            
-            
-            # Mettre à jour le modèle
-            self.robot_model.set_axis_limits(new_limits)
-            self.robot_model.set_home_position(new_home)
-            self.robot_model.set_reverse_axis(new_axis_reversed)
-
-            # Mettre à jour la vue
-            self.visualization_controller.update_visualization()
-    
-    def update_view_from_model(self):
-        """Met à jour la vue depuis le modèle"""
+    def on_joints_changed(self):
+        """Callback quand les joints changent"""
         self.joint_widget.set_all_joints(self.robot_model.joint_values)
     
-    def update_limits_in_view(self):
-        """Met à jour les limites dans la vue"""
+    def on_limits_changed(self):
+        """Callback quand les limites changent"""
         self.joint_widget.update_axis_limits(self.robot_model.axis_limits)
-
-
 class ResultController(QObject):
     """Contrôleur pour la gestion des résultats (TCP)"""
     

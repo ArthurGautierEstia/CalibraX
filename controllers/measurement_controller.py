@@ -13,7 +13,9 @@ class MeasurementController(QObject):
         self.measurement_widget = measurement_widget
         self.kinematics_engine = kinematics_engine
         self.file_io = FileIOHandler()
-        
+
+    def setup_connections(self):
+        """Configure les connexions entre la vue et le modèle"""
         # Connecter les signaux
         self.measurement_widget.import_measurements_requested.connect(self.import_measurements)
         self.measurement_widget.set_as_reference_requested.connect(self.set_as_reference)

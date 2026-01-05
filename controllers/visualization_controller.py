@@ -4,12 +4,12 @@ import numpy as np
 class VisualizationController(QObject):
     """Contrôleur pour la visualisation 3D"""
     
-    def __init__(self, kinematics_engine, robot_model, viewer_widget):
+    def __init__(self, kinematics_engine, robot_model, viewer_widget, dh_widget):
         super().__init__()
         self.kinematics_engine = kinematics_engine
         self.robot_model = robot_model
         self.viewer_widget = viewer_widget
-        
+        self.dh_widget = dh_widget
         # État du mode pas à pas
         self.step_mode = False
         self.step_index = 0
@@ -20,12 +20,14 @@ class VisualizationController(QObject):
         self.cad_visible = False
         self.cad_loaded = False
         
-        
+    def setup_connections(self):
+        """Configure les connexions entre la vue et le modèle"""    
         # Connecter les signaux
         self.kinematics_engine.kinematics_updated.connect(self.update_visualization)
         self.viewer_widget.transparency_toggled.connect(self.toggle_transparency)
         self.viewer_widget.axes_toggled.connect(self.toggle_axes)
         self.viewer_widget.frame_visibility_toggled.connect(self.toggle_single_frame)
+        self.dh_widget.cad_toggled.connect(self.toggle_cad_visibility)
 
     def update_visualization(self):
         """Met à jour la visualisation 3D"""

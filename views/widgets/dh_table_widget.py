@@ -33,7 +33,7 @@ class DHTableWidget(QWidget):
         th_layout.addWidget(self.label_robot_name_th, 0, 0)
         
         self.cad_cb = QCheckBox("CAD")
-        self.cad_cb.stateChanged.connect(lambda state: self.cad_toggled.emit(state == 2))
+        self.cad_cb.stateChanged.connect(self.cad_toggled.emit)
         th_layout.addWidget(self.cad_cb, 0, 1)
         
         self.btn_load_th = QPushButton("Importer une configuration")

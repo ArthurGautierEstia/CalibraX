@@ -5,7 +5,7 @@ from models.robot_model import RobotModel
 from models.kinematics_engine import KinematicsEngine
 from models.measurement_model import MeasurementModel
 from models.correction_model import CorrectionModel
-from controllers.robot_controller import RobotController, JointController, ResultController
+from controllers.robot_controller import RobotController, ResultController
 from controllers.visualization_controller import VisualizationController
 from controllers.measurement_controller import MeasurementController
 
@@ -31,6 +31,7 @@ class MGDApplication:
             self.kinematics_engine,
             self.robot_model,
             self.window.get_viewer_widget(),
+            self.window.get_dh_widget(),
         )
 
         self.robot_controller = RobotController(
@@ -38,14 +39,10 @@ class MGDApplication:
             self.kinematics_engine,
             self.window.get_dh_widget(),
             self.window.get_correction_widget(),
-            self.visualization_controller,
-        )
-
-        self.joint_controller = JointController(
-            self.robot_model,
             self.window.get_joint_widget(),
             self.visualization_controller,
         )
+
 
         self.result_controller = ResultController(
             self.kinematics_engine,

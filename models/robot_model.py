@@ -106,7 +106,7 @@ class RobotModel(QObject):
     def load_configuration(self, data, file_name):
         """Import depuis dictionnaire (pour chargement JSON)"""
         # Nom de la configuration
-        self.robot_model.current_config_file = file_name
+        self.current_config_file = file_name
 
         # DH params
         if "dh" in data:
