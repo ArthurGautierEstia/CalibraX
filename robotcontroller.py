@@ -176,7 +176,10 @@ class RobotController(QObject):
         
         if dialog.exec_() == QDialog.Accepted:
             # Récupérer les données du dialogue
-            limits, home_pos, axis_reversed = dialog.get_values()
+            limits = dialog.get_limits()
+            home_pos = dialog.get_home_position()
+            axis_reversed = dialog.get_axis_reversed()
+
             
             # Mettre à jour le modèle
             self.robot_model.set_axis_limits(limits)
