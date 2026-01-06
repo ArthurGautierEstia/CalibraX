@@ -23,6 +23,57 @@ QPushButton:pressed {
     color: #FFFFFF;
 }
 
+/* ===== Listes déroulantes (QComboBox) ===== */
+
+/* ComboBox principale */
+QComboBox {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    border: 1px solid #2C2C2C;
+    border-radius: 4px;
+    padding: 4px 12px;
+    min-height: 16px;
+}
+
+/* ComboBox au survol */
+QComboBox:hover {
+    background-color: #2C2C2C;
+}
+
+/* ComboBox avec focus */
+QComboBox:focus {
+    border: 1px solid #3C3C3C;
+}
+
+/* Menu déroulant (liste des items) */
+QComboBox QAbstractItemView {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    selection-background-color: #2C2C2C;
+    selection-color: #E0E0E0;
+    outline: none;
+    padding: 2px;
+}
+
+/* Items du menu déroulant */
+QComboBox QAbstractItemView::item {
+    padding: 4px 12px;
+    border-radius: 2px;
+    min-height: 24px;
+}
+
+/* Item au survol */
+QComboBox QAbstractItemView::item:hover {
+    background-color: #3C3C3C;
+}
+
+/* Item sélectionné */
+QComboBox QAbstractItemView::item:selected {
+    background-color: #2C2C2C;
+}
+
 /* Tables */
 
 QTableWidget {
@@ -95,6 +146,47 @@ QLabel {
     color: #E0E0E0;
 }
 
+/* ===== Onglets (QTabWidget & QTabBar) ===== */
+
+/* Conteneur principal des tabs */
+QTabWidget::pane {
+    border: 1px solid #2C2C2C;
+    border-radius: 8px;
+    background-color: #1E1E1E;
+    top: -1px; /* Chevauche légèrement pour masquer la bordure du haut */
+}
+
+/* Barre d'onglets */
+QTabBar::tab {
+    background-color: #1E1E1E;
+    color: #808080;  /* Gris pour les onglets inactifs */
+    border: 1px solid #2C2C2C;
+    border-bottom: none;  /* Pas de bordure en bas pour l'onglet actif */
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 20px;
+    margin-right: 2px;  /* Espace entre les onglets */
+    min-width: 120px;
+}
+
+/* Onglet au survol */
+QTabBar::tab:hover {
+    background-color: #2C2C2C;
+    color: #E0E0E0;
+}
+
+/* Onglet sélectionné */
+QTabBar::tab:selected {
+    background-color: #1E1E1E;
+    color: #FF6F00;  /* Orange KUKA pour l'onglet actif */
+    border-bottom: 2px solid #FF6F00;  /* Barre orange en bas */
+    font-weight: bold;
+}
+
+/* Position des onglets (en haut par défaut) */
+QTabBar::tab:top {
+    margin-bottom: -1px;
+}
 
 
 /* ===== Scrollbar HORIZONTALE (track fixe 10px, sans boutons) ===== */
