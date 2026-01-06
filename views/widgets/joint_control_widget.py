@@ -85,26 +85,21 @@ class JointControlWidget(QWidget):
     
     def update_spinbox(self,spinbox, value):
         # Convertit le slider (int) en float avec 2 décimales
-        spinbox.blockSignals(True)
         spinbox.setValue(value / self.scale)
-        spinbox.blockSignals(False)
 
     def update_slider(self, slider,value):
         # Convertit le float en int pour le slider
-        slider.blockSignals(True)
         slider.setValue(int(round(value * self.scale)))
-        slider.blockSignals(False)
     
     def set_joint_value(self, index, value):
         """Définit la valeur d'un joint"""
         if 0 <= index < 6:
             self.spinboxes_q[index].blockSignals(True)
             self.sliders_q[index].blockSignals(True)
-            
             # Le spinbox reçoit la vraie valeur (float)
             self.spinboxes_q[index].setValue(float(value))
             # Le slider reçoit la valeur multipliée par scale (int)
-            self.sliders_q[index].setValue(int(round(value * self.scale)))
+            self.sliders_q[index].setValue(int(round(float(value) * self.scale)))
             
             self.spinboxes_q[index].blockSignals(False)
             self.sliders_q[index].blockSignals(False)
@@ -122,11 +117,11 @@ class JointControlWidget(QWidget):
             
             # Mettre à jour le slider
             self.sliders_q[i].setRange(min_val*self.scale, max_val*self.scale)
-            if current_value < min_val:
-                self.sliders_q[i].setValue(min_val)
-            elif current_value > max_val:
-                self.sliders_q[i].setValue(max_val)
-            
+            if current_value < min_val*self.scale:
+                self.sliders_q[i].setValue(min_val*self.scale)
+            elif current_value > max_val*self.scale:
+                self.sliders_q[i].setValue(max_val*self.scale)
+
             # Mettre à jour le spinbox
             current_spinbox_value = self.spinboxes_q[i].value()
             self.spinboxes_q[i].setRange(min_val, max_val)
