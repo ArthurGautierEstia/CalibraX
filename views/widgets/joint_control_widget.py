@@ -129,3 +129,15 @@ class JointControlWidget(QWidget):
                 self.spinboxes_q[i].setValue(min_val)
             elif current_spinbox_value > max_val:
                 self.spinboxes_q[i].setValue(max_val)
+    
+    def apply_axis_inversion(self, robot_model, old_reversed, new_reversed):
+        """Inverse les valeurs des spinboxes quand l'état d'inversion change"""
+        for i in range(6):
+            # Vérifier si l'état d'inversion a changé pour cet axe
+            if old_reversed[i] != new_reversed[i]:
+                # Inverser la valeur en la multipliant par -1
+                current_value = self.spinboxes_q[i].value()
+                inverted_value = -current_value
+                self.set_joint_value(i, inverted_value)
+                # Mettre à jour aussi le modèle avec la valeur inversée
+                robot_model.set_joint_value(i, inverted_value)
