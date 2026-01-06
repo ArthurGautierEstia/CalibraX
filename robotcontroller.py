@@ -252,8 +252,12 @@ class RobotController(QObject):
     
     def on_repere_selected(self, repere_name):
         """Callback: un repère a été sélectionné dans le widget"""
-        # TODO: Afficher les données du repère sélectionné
-        pass
+        # Chercher la mesure correspondante dans le widget
+        for measurement in self.measurement_widget.measurements:
+            if measurement.get("name") == repere_name:
+                # Afficher les données de la mesure dans la table
+                self.measurement_widget.display_measurement(measurement)
+                break
     
     def on_display_mode_changed(self, mode):
         """Callback: le mode d'affichage a changé (Repères/Écarts)"""

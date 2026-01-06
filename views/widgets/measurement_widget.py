@@ -5,7 +5,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QFont
-from math import atan2, sqrt, degrees
+from math import atan2, sqrt, degrees, sin, cos, radians
+import numpy as np
 
 class MeasurementWidget(QWidget):
     """Widget pour l'importation et la gestion des mesures"""
@@ -158,7 +159,87 @@ class MeasurementWidget(QWidget):
             for j in range(3):  # colonnes
                 self.table_me.setItem(2 + i, j, QTableWidgetItem(f"{delta_T[i, j]:.6f}"))
 
-        self.table_me.blockSignals
+        self.table_me.blockSignals(False)
+    
+    def display_measurement(self, measurement):
+        """
+        Affiche les données d'une mesure (X, Y, Z, A, B, C) dans la table.
+        measurement : dictionnaire avec clés 'X', 'Y', 'Z', 'A', 'B', 'C'
+        """
+        self.table_me.blockSignals(True)
+        
+        # Extraire les valeurs de la mesure
+        X = measurement.get("X", 0)
+        Y = measurement.get("Y", 0)
+        Z = measurement.get("Z", 0)
+        A = measurement.get("A", 0)  # Rotation autour X
+        B = measurement.get("B", 0)  # Rotation autour Y
+        C = measurement.get("C", 0)  # Rotation autour Z
+        
+        # Afficher la translation (ligne 0)
+        self.table_me.setItem(0, 0, QTableWidgetItem(f"{X:.2f}"))
+        self.table_me.setItem(0, 1, QTableWidgetItem(f"{Y:.2f}"))
+        self.table_me.setItem(0, 2, QTableWidgetItem(f"{Z:.2f}"))
+        
+        # Afficher la rotation (ligne 1)
+        self.table_me.setItem(1, 0, QTableWidgetItem(f"{A:.2f}"))
+        self.table_me.setItem(1, 1, QTableWidgetItem(f"{B:.2f}"))
+        self.table_me.setItem(1, 2, QTableWidgetItem(f"{C:.2f}"))
+        
+        # Calculer la matrice de rotation à partir des angles A, B, C (en degrés)
+        A_rad = radians(A)
+        B_rad = radians(B)
+        C_rad = radians(C)
+        
+        # Matrice de rotation autour X (A)
+        Rx = np.array([
+            [1, 0, 0],
+            [0, cos(A_rad), -sin(A_rad)],
+            [0, sin(A_rad), cos(A_rad)]
+        ])
+        
+        # Matrice de rotation autour Y (B)
+        Ry = np.array([
+            [cos(B_rad), 0, sin(B_rad)],
+            [0, 1, 0],
+            [-sin(B_rad), 0, cos(B_rad)]
+        ])
+        
+        # Matrice de rotation autour Z (C)
+        Rz = np.array([
+            [cos(C_rad), -sin(C_rad), 0],
+            [sin(C_rad), cos(C_rad), 0],
+            [0, 0, 1]
+        ])
+        
+        # Combinaison : Rz * Ry * Rx (ordre ZYX)
+        R = Rz @ Ry @ Rx
+        
+        # Extraire les composantes vectorielles (colonnes de la matrice)
+        # X axis = première colonne
+        x_axis = R[:, 0]
+        # Y axis = deuxième colonne
+        y_axis = R[:, 1]
+        # Z axis = troisième colonne
+        z_axis = R[:, 2]
+        
+        # Afficher les composantes (lignes 2, 3, 4)
+        # Ligne 2 : X axis
+        self.table_me.setItem(2, 0, QTableWidgetItem(f"{x_axis[0]:.6f}"))
+        self.table_me.setItem(2, 1, QTableWidgetItem(f"{x_axis[1]:.6f}"))
+        self.table_me.setItem(2, 2, QTableWidgetItem(f"{x_axis[2]:.6f}"))
+        
+        # Ligne 3 : Y axis
+        self.table_me.setItem(3, 0, QTableWidgetItem(f"{y_axis[0]:.6f}"))
+        self.table_me.setItem(3, 1, QTableWidgetItem(f"{y_axis[1]:.6f}"))
+        self.table_me.setItem(3, 2, QTableWidgetItem(f"{y_axis[2]:.6f}"))
+        
+        # Ligne 4 : Z axis
+        self.table_me.setItem(4, 0, QTableWidgetItem(f"{z_axis[0]:.6f}"))
+        self.table_me.setItem(4, 1, QTableWidgetItem(f"{z_axis[1]:.6f}"))
+        self.table_me.setItem(4, 2, QTableWidgetItem(f"{z_axis[2]:.6f}"))
+        
+        self.table_me.blockSignals(False)
     
     def clear_measurements(self):
         """Efface les mesures"""
