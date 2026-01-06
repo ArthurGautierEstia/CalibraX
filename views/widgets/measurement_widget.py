@@ -21,6 +21,7 @@ class MeasurementWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.measurements = []  # Stocker les mesures importées
         self.setup_ui()
     
     def setup_ui(self):
@@ -103,6 +104,10 @@ class MeasurementWidget(QWidget):
         for name in repere_names:
             item = QTreeWidgetItem([name])
             self.tree.addTopLevelItem(item)
+    
+    def set_measurements_data(self, measurements):
+        """Stocke les données des mesures"""
+        self.measurements = measurements
     
     def set_reference_bold(self, ref_name):
         """Met en gras le repère de référence"""

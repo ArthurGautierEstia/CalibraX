@@ -216,8 +216,29 @@ class RobotController(QObject):
     
     def on_import_measurements(self):
         """Callback: importer des mesures depuis fichier"""
-        # TODO: Implémenter l'import de mesures
-        pass
+        file_name, data = self.file_io.load_json(
+            self.measurement_widget,
+            "Importer"
+        )
+        if data:
+            # Si data est une liste de mesures (repères)
+            if isinstance(data, list):
+                # Ajouter chaque mesure au modèle
+                for measurement in data:
+                    self.robot_model.add_measurement(measurement)
+                
+                # Stocker les mesures dans le widget
+                self.measurement_widget.set_measurements_data(data)
+                
+                # Afficher les repères dans le widget de mesure
+                repere_names = [m.get("name", f"Repère {i}") for i, m in enumerate(data)]
+                self.measurement_widget.populate_tree(repere_names)
+            else:
+                # Si c'est un dictionnaire unique
+                self.robot_model.add_measurement(data)
+                self.measurement_widget.set_measurements_data([data])
+                repere_names = [data.get("name", "Repère")]
+                self.measurement_widget.populate_tree(repere_names)
     
     def on_set_as_reference(self):
         """Callback: définir le repère courant comme référence"""
