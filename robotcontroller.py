@@ -189,7 +189,7 @@ class RobotController(QObject):
             self.robot_model.set_axis_reversed(axis_reversed)
             
             # Appliquer l'inversion des valeurs des spinboxes si l'état d'inversion a changé
-            self.joint_widget.apply_axis_inversion(old_reversed, axis_reversed)
+            self.joint_widget.apply_axis_inversion(self.robot_model, old_reversed, axis_reversed)
     
     def on_step_by_step_requested(self):
         """Callback: affichage pas à pas demandé"""
