@@ -1,6 +1,7 @@
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QTabWidget
 from views.widgets.dh_table_widget import DHTableWidget
 from views.widgets.joint_control_widget import JointControlWidget
+from views.widgets.cartesian_control_widget import CartesianControlWidget
 from views.widgets.measurement_widget import MeasurementWidget
 from views.widgets.result_table_widget import ResultTableWidget
 from views.widgets.correction_table_widget import CorrectionTableWidget
@@ -20,9 +21,17 @@ class RobotWindow(QWidget):
         self.dh_widget = DHTableWidget()
         self.measurement_widget = MeasurementWidget()
         self.joint_widget = JointControlWidget()
+        self.cartesian_widget = CartesianControlWidget()
         self.result_widget = ResultTableWidget()
         self.correction_widget = CorrectionTableWidget()
         self.viewer_widget = Viewer3DWidget()
+        
+        # ====================================================================
+        # RÉGION: Création du TabWidget pour les contrôles
+        # ====================================================================
+        self.control_tabs = QTabWidget()
+        self.control_tabs.addTab(self.joint_widget, "Contrôle articulaire")
+        self.control_tabs.addTab(self.cartesian_widget, "Contrôle cartésien")
         
         # ====================================================================
         # RÉGION: Création du modèle
@@ -70,10 +79,10 @@ class RobotWindow(QWidget):
         left_layout.addWidget(self.measurement_widget)
         main_layout.addLayout(left_layout, 1)
         
-        # Colonne centrale: Contrôle joints + Résultats + Corrections
+        # Colonne centrale: Tabs de contrôle (Joints/Cartésien) + Résultats + Corrections
         center_layout = QVBoxLayout()
         center_layout.setSpacing(5)
-        center_layout.addWidget(self.joint_widget)
+        center_layout.addWidget(self.control_tabs)
         center_layout.addWidget(self.result_widget)
         center_layout.addWidget(self.correction_widget)
         main_layout.addLayout(center_layout, 1)
@@ -96,6 +105,12 @@ class RobotWindow(QWidget):
     
     def get_joint_widget(self):
         return self.joint_widget
+    
+    def get_cartesian_widget(self):
+        return self.cartesian_widget
+    
+    def get_control_tabs(self):
+        return self.control_tabs
     
     def get_result_widget(self):
         return self.result_widget
