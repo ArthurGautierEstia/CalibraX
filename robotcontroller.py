@@ -187,9 +187,6 @@ class RobotController(QObject):
             limits = dialog.get_limits()
             home_pos = dialog.get_home_position()
             axis_reversed = dialog.get_axis_reversed()
-            
-            # Récupérer l'ancienne valeur d'inversion avant mise à jour
-            old_reversed = self.robot_model.get_axis_reversed()
 
             # Mettre à jour le modèle
             self.robot_model.set_axis_limits(limits)
@@ -197,7 +194,7 @@ class RobotController(QObject):
             self.robot_model.set_axis_reversed(axis_reversed)
             
             # Appliquer l'inversion des valeurs des spinboxes si l'état d'inversion a changé
-            self.joint_widget.apply_axis_inversion(self.robot_model, old_reversed, axis_reversed)
+            self._update_kinematics()
     
     def on_step_by_step_requested(self):
         """Callback: affichage pas à pas demandé"""
