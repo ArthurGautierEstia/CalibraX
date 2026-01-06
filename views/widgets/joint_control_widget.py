@@ -100,8 +100,12 @@ class JointControlWidget(QWidget):
         if 0 <= index < 6:
             self.spinboxes_q[index].blockSignals(True)
             self.sliders_q[index].blockSignals(True)
-            self.spinboxes_q[index].setValue(value)
-            self.sliders_q[index].setValue(value)
+            
+            # Le spinbox reçoit la vraie valeur (float)
+            self.spinboxes_q[index].setValue(float(value))
+            # Le slider reçoit la valeur multipliée par scale (int)
+            self.sliders_q[index].setValue(int(round(value * self.scale)))
+            
             self.spinboxes_q[index].blockSignals(False)
             self.sliders_q[index].blockSignals(False)
     

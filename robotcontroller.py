@@ -279,7 +279,6 @@ class RobotController(QObject):
     def on_joints_changed(self):
         """Callback: les joints ont changé"""
         joint_values = self.robot_model.get_all_joint_values()
-        joint_values = [val * self.joint_widget.scale for val in joint_values]  # Appliquer le facteur d'échelle
         self.joint_widget.set_all_joints(joint_values)
         self._update_kinematics()
     
