@@ -8,7 +8,7 @@ class JointControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées articulaires"""
     
     # Signaux
-    joint_value_changed = pyqtSignal()  # index, value
+    joint_value_changed = pyqtSignal(int, float)  # index, value
     home_position_requested = pyqtSignal()
     axis_limits_config_requested = pyqtSignal()
     step_by_step_requested = pyqtSignal()
@@ -17,8 +17,9 @@ class JointControlWidget(QWidget):
         super().__init__(parent)
         self.sliders_q = []
         self.spinboxes_q = []
+        self.scale = 100  # Facteur d'échelle pour les sliders (2 décimales)
         self.setup_ui()
-    
+        
     def setup_ui(self):
         """Initialise l'interface du widget"""
         layout = QVBoxLayout(self)
@@ -33,7 +34,7 @@ class JointControlWidget(QWidget):
             row_layout = QHBoxLayout()
             label = QLabel(f"q{i+1} (°)")
             # Facteur d'échelle (pour 2 décimales)
-            self.scale = 100  # 1 unité slider = 0.01 spinbox
+              # 1 unité slider = 0.01 spinbox
 
             # Slider (int)
             slider = QSlider(Qt.Horizontal)
@@ -51,7 +52,7 @@ class JointControlWidget(QWidget):
 
             
             # Signal vers le contrôleur (depuis spinbox pour avoir la vraie valeur float)
-            spinbox.valueChanged.connect(self.joint_value_changed.emit)
+            spinbox.valueChanged.connect(lambda value, idx=i: self.joint_value_changed.emit(idx, value))
             
             row_layout.addWidget(label)
             row_layout.addWidget(slider)
@@ -116,7 +117,7 @@ class JointControlWidget(QWidget):
             current_value = self.sliders_q[i].value()
             
             # Mettre à jour le slider
-            self.sliders_q[i].setRange(min_val, max_val)
+            self.sliders_q[i].setRange(min_val*self.scale, max_val*self.scale)
             if current_value < min_val:
                 self.sliders_q[i].setValue(min_val)
             elif current_value > max_val:
