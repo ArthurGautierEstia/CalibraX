@@ -172,7 +172,6 @@ class Viewer3DWidget(QWidget):
                 self.viewer.addItem(mesh_item)
 
     def update_robot_poses(self, matrices):
-        # (Copier le code original ici)
         for i in range(min(len(self.robot_links), len(matrices))):
             mesh_item = self.robot_links[i]
             T = matrices[i]

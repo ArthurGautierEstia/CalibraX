@@ -30,6 +30,14 @@ class RobotController(QObject):
         self.measurement_widget = measurement_widget
         self.visualization_widget = visualization_widget
         self.file_io = FileIOHandler()
+
+        # ====================================================================
+        # RÉGION: État de la visualisation
+        # ====================================================================
+        self.frames_visibility = []
+        self.show_axes = True
+        self.cad_visible = False
+        self.cad_loaded = False
     
     def setup_connections(self):
         """Configure toutes les connexions de signaux"""
@@ -246,17 +254,19 @@ class RobotController(QObject):
     
     def on_transparency_toggled(self):
         """Callback: transparence du modèle 3D activée/désactivée"""
-        current_state = self.visualization_widget.transparency_enabled
-        self.visualization_widget.set_transparency(not current_state)
+        transparency_enabled = not self.visualization_widget.transparency_enabled
+        self.visualization_widget.set_transparency(transparency_enabled)
     
     def on_axes_toggled(self):
         """Callback: affichage des repères global activé/désactivé"""
-        self.visualization_widget.show_axes = not self.visualization_widget.show_axes
+        self.show_axes = not self.show_axes
+        self._update_visualization()
     
     def on_frame_visibility_toggled(self, frame_index):
         """Callback: visibilité d'un repère individuel a changé"""
-        # TODO: Implémenter le toggle de visibilité d'un repère
-        pass
+        if 0 <= frame_index < len(self.frames_visibility):
+            self.frames_visibility[frame_index] = not self.frames_visibility[frame_index]
+            self._update_visualization()
     
     # ============================================================================
     # RÉGION: Callbacks RobotModel (synchronisation modèle -> widgets)
@@ -336,6 +346,29 @@ class RobotController(QObject):
     # RÉGION: Méthodes utilitaires internes
     # ============================================================================
     
+    def _update_visualization(self):
+        """Met à jour la visualisation 3D avec repères et visibilité des frames"""
+        dh_matrices, corrected_matrices, _, _, _ = compute_forward_kinematics(self.robot_model)
+        num_frames = len(dh_matrices)
+        
+        # Initialiser la liste de visibilité si nécessaire
+        if len(self.frames_visibility) != num_frames:
+            self.frames_visibility = [True] * num_frames
+        
+        # Mettre à jour l'interface de la liste (affichage gras/normal)
+        self.visualization_widget.update_frame_list_ui(self.frames_visibility)
+        
+        # Effacer et redessiner la scène
+        self.visualization_widget.clear_viewer()
+        
+        # Afficher les repères selon la visibilité
+        if self.show_axes:
+            self.visualization_widget.draw_all_frames(dh_matrices, self.frames_visibility)
+        
+        # Mettre à jour le CAD si chargé
+        if self.cad_loaded:
+            self.visualization_widget.update_robot_poses(corrected_matrices)
+    
     def _update_kinematics(self):
         """Recalcule la cinématique directe et met à jour les poses TCP"""
         dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation = compute_forward_kinematics(self.robot_model)
@@ -344,7 +377,7 @@ class RobotController(QObject):
         self.robot_model.set_corrected_tcp_pose(corrected_pose)
         
         # Mettre à jour la visualisation
-        self.visualization_widget.update_robot_poses(corrected_matrices)
+        self._update_visualization()
     
     def _update_result_display(self):
         """Met à jour l'affichage des résultats"""
@@ -380,14 +413,22 @@ class RobotController(QObject):
         
         # Recalculer la cinématique
         self._update_kinematics()
+        # Mettre à jour le viewer
+        self._update_visualization()
     
     def _load_robot_cad(self):
-        """Charge le modèle CAD du robot"""
-        joint_values = self.robot_model.get_all_reel_joint_values()
-        dh_params = self.robot_model.get_dh_params()
+        """Charge le modèle CAD du robot (une seule fois)"""
+        if not self.robot_model.current_config_file:
+            print("Aucune configuration chargée, impossible de charger le CAD")
+            return
         
-        # Calculer les matrices de transformation
-        matrices = self.kinematics_engine.compute_all_frames(joint_values, dh_params)
-        
-        # Charger les maillages STL
-        self.visualization_widget.add_robot_links(matrices)
+        # Charger les mesh seulement s'ils ne l'ont pas déjà été
+        if not self.cad_loaded:
+            dh_matrices, corrected_matrices, _, _, _ = compute_forward_kinematics(self.robot_model)
+            self.visualization_widget.add_robot_links(corrected_matrices)
+            self.cad_loaded = True
+            self.cad_visible = True
+        else:
+            # Le CAD est déjà chargé, le rendre simplement visible
+            self.visualization_widget.set_robot_visibility(True)
+            self.cad_visible = True
