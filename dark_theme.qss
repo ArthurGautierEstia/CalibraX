@@ -79,14 +79,14 @@ QSlider::handle:horizontal {
 }
 
 /* SpinBox & LineEdit */
-QSpinBox, QLineEdit {
+QDoubleSpinBox, QLineEdit {
     background-color: #1E1E1E;
     color: #E0E0E0;
     border: 1px solid #2C2C2C;
     border-radius: 4px;
     padding: 4px;
 }
-QSpinBox:focus, QLineEdit:focus {
+QDoubleSpinBox:focus, QLineEdit:focus {
     border: 1px solid #FF6F00;
 }
 

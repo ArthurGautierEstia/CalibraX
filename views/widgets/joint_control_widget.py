@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QSlider, QSpinBox
+    QLabel, QPushButton, QSlider, QDoubleSpinBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -8,7 +8,7 @@ class JointControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées articulaires"""
     
     # Signaux
-    joint_value_changed = pyqtSignal(int, int)  # index, value
+    joint_value_changed = pyqtSignal()  # index, value
     home_position_requested = pyqtSignal()
     axis_limits_config_requested = pyqtSignal()
     step_by_step_requested = pyqtSignal()
@@ -32,19 +32,26 @@ class JointControlWidget(QWidget):
         for i in range(6):
             row_layout = QHBoxLayout()
             label = QLabel(f"q{i+1} (°)")
+            # Facteur d'échelle (pour 2 décimales)
+            self.scale = 100  # 1 unité slider = 0.01 spinbox
+
+            # Slider (int)
             slider = QSlider(Qt.Horizontal)
-            slider.setRange(-180, 180)
-            slider.setValue(0)
-            spinbox = QSpinBox()
-            spinbox.setRange(-180, 180)
-            spinbox.setValue(0)
+            slider.setRange(-180 * self.scale, 180 * self.scale)
+
+            # SpinBox (float)
+            spinbox = QDoubleSpinBox()
+            spinbox.setRange(-180.00, 180.00)
+            spinbox.setDecimals(2)
+            spinbox.setSingleStep(0.10)
+
+            # Connexions
+            slider.valueChanged.connect(lambda  value, s=spinbox : self.update_spinbox(s,value))
+            spinbox.valueChanged.connect(lambda value, s=slider: self.update_slider(s,value))
+
             
-            # Synchronisation slider <-> spinbox
-            slider.valueChanged.connect(spinbox.setValue)
-            spinbox.valueChanged.connect(slider.setValue)
-            
-            # Signal vers le contrôleur
-            slider.valueChanged.connect(lambda val, idx=i: self.joint_value_changed.emit(idx, val))
+            # Signal vers le contrôleur (depuis spinbox pour avoir la vraie valeur float)
+            spinbox.valueChanged.connect(self.joint_value_changed.emit)
             
             row_layout.addWidget(label)
             row_layout.addWidget(slider)
@@ -74,6 +81,18 @@ class JointControlWidget(QWidget):
         layout.addWidget(self.btn_step)
         
         self.setLayout(layout)
+    
+    def update_spinbox(self,spinbox, value):
+        # Convertit le slider (int) en float avec 2 décimales
+        spinbox.blockSignals(True)
+        spinbox.setValue(value / self.scale)
+        spinbox.blockSignals(False)
+
+    def update_slider(self, slider,value):
+        # Convertit le float en int pour le slider
+        slider.blockSignals(True)
+        slider.setValue(int(round(value * self.scale)))
+        slider.blockSignals(False)
     
     def set_joint_value(self, index, value):
         """Définit la valeur d'un joint"""

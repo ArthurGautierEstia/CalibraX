@@ -73,6 +73,13 @@ class RobotModel(QObject):
         """Définit les paramètres DH"""
         self.dh_params = params
         self.dh_params_changed.emit()
+    def set_dh_param(self, row, col, value):
+        """Définit un paramètre DH spécifique"""
+        if 0 <= row < 7 and 0 <= col < 4:
+            self.dh_params[row][col] = value
+            self.dh_params_changed.emit()
+        else:   
+            print(f"Index DH invalide: row={row}, col={col}")
     
     def set_corrections(self, corrections):
         """Définit les corrections 6D"""

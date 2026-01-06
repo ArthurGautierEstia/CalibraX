@@ -63,9 +63,7 @@ class RobotController(QObject):
         """Callback quand une valeur DH change dans la vue"""
         try:
             parsed_value = float(value) if value else 0
-            current_params = self.robot_model.dh_params
-            current_params[row][col] = parsed_value
-            self.robot_model.set_dh_params(current_params)
+            self.robot_model.set_dh_param(row, col, parsed_value)
         except ValueError:
             print(f"Valeur DH invalide: {value}")
     
