@@ -2,7 +2,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QDialog
 from utils.file_io import FileIOHandler
 from utils.math_utils import *
-from views.dialogs.axis_limits_dialog import AxisLimitsDialog
+from RobotTab.dialogs.axis_limits_dialog import AxisLimitsDialog
 
 class RobotController(QObject):
     """Contrôleur centralisé pour la gestion du robot et synchronisation des widgets"""

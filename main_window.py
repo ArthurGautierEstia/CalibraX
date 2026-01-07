@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QTabWidget
-from views.robotwindow import RobotWindow
+from RobotTab.robotwindow import RobotWindow
 
 class MainWindow(QMainWindow):
     """Fenêtre principale avec système d'onglets pour les différentes fonctionnalités"""

@@ -1,6 +1,6 @@
 import sys
 from PyQt5.QtWidgets import QApplication
-from views.main_window import MainWindow
+from main_window import MainWindow
 
 class MGDApplication:
     def __init__(self):
@@ -14,7 +14,7 @@ class MGDApplication:
 
     def load_theme(self):
         try:
-            with open("dark_theme.qss", "r") as f:
+            with open("themes/dark_theme.qss", "r") as f:
                 self.app.setStyleSheet(f.read())
         except FileNotFoundError:
             print("Fichier dark_theme.qss non trouvé, thème par défaut utilisé")

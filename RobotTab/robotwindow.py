@@ -1,13 +1,13 @@
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QTabWidget
-from views.widgets.dh_table_widget import DHTableWidget
-from views.widgets.joint_control_widget import JointControlWidget
-from views.widgets.cartesian_control_widget import CartesianControlWidget
-from views.widgets.measurement_widget import MeasurementWidget
-from views.widgets.result_table_widget import ResultTableWidget
-from views.widgets.correction_table_widget import CorrectionTableWidget
-from views.widgets.viewer_3d_widget import Viewer3DWidget
-from robotmodel import RobotModel
-from robotcontroller import RobotController
+from RobotTab.widgets.dh_table_widget import DHTableWidget
+from RobotTab.widgets.joint_control_widget import JointControlWidget
+from RobotTab.widgets.cartesian_control_widget import CartesianControlWidget
+from RobotTab.widgets.measurement_widget import MeasurementWidget
+from RobotTab.widgets.result_table_widget import ResultTableWidget
+from RobotTab.widgets.correction_table_widget import CorrectionTableWidget
+from RobotTab.widgets.viewer_3d_widget import Viewer3DWidget
+from RobotTab.robotmodel import RobotModel
+from RobotTab.robotcontroller import RobotController
 
 class RobotWindow(QWidget):
     """Fenêtre de configuration et contrôle du robot avec son propre MVC"""
