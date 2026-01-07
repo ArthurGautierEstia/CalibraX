@@ -7,8 +7,6 @@ from PyQt5.QtCore import pyqtSignal
 class ResultTableWidget(QWidget):
     """Widget pour afficher les positions cartésiennes (TCP)"""
     
-    # Signaux
-    jog_increment_requested = pyqtSignal(int, int)  # row, delta (+1 ou -1)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -24,35 +22,12 @@ class ResultTableWidget(QWidget):
         layout.addWidget(titre4)
         
         # Table des résultats
-        self.result_table = QTableWidget(6, 4)
-        self.result_table.setHorizontalHeaderLabels(["TCP", "TCP Corr", "Ecarts", "Jog"])
+        self.result_table = QTableWidget(6, 3)
+        self.result_table.setHorizontalHeaderLabels(["TCP", "TCP Corr", "Ecarts"])
         self.result_table.setVerticalHeaderLabels(["X (mm)", "Y (mm)", "Z (mm)", "A (°)", "B (°)", "C (°)"])
         self.result_table.horizontalHeader().setDefaultSectionSize(110)
         self.result_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.result_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        
-        # Ajouter les boutons + et - dans la colonne Jog (colonne 3)
-        for row in range(6):
-            # Créer les boutons
-            btn_plus = QPushButton("+")
-            btn_minus = QPushButton("-")
-            
-            # Connecter les signaux avec le numéro de ligne
-            btn_plus.clicked.connect(lambda checked, r=row: self.jog_increment_requested.emit(r, +1))
-            btn_minus.clicked.connect(lambda checked, r=row: self.jog_increment_requested.emit(r, -1))
-            
-            # Créer un layout horizontal pour les deux boutons
-            btn_layout = QHBoxLayout()
-            btn_layout.addWidget(btn_minus)
-            btn_layout.addWidget(btn_plus)
-            btn_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Créer un widget conteneur pour le layout
-            cell_widget = QWidget()
-            cell_widget.setLayout(btn_layout)
-            
-            # Insérer le widget dans la cellule (colonne 3)
-            self.result_table.setCellWidget(row, 3, cell_widget)
         
         layout.addWidget(self.result_table)
         self.setLayout(layout)

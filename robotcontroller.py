@@ -64,11 +64,6 @@ class RobotController(QObject):
         self.joint_widget.step_by_step_requested.connect(self.on_step_by_step_requested)
         
         # ====================================================================
-        # RÉGION: Connexions Result Widget -> Contrôleur
-        # ====================================================================
-        self.result_widget.jog_increment_requested.connect(self.on_jog_increment_requested)
-        
-        # ====================================================================
         # RÉGION: Connexions Measurement Widget -> Contrôleur
         # ====================================================================
         self.measurement_widget.import_measurements_requested.connect(self.on_import_measurements)
