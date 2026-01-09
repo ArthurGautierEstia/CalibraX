@@ -146,25 +146,7 @@ class CartesianControlWidget(QWidget):
             
             self.sliders_cart.append(slider)
             self.spinboxes_cart.append(spinbox)
-        
-        # ========================================================================
-        # RÉGION: Boutons de configuration
-        # ========================================================================
-        btn_layout = QVBoxLayout()
-        btn_grid = QGridLayout()
-        
-        self.btn_limits = QPushButton("Paramètrage des axes")
-        self.btn_limits.clicked.connect(self.axis_limits_config_requested.emit)
-        btn_grid.addWidget(self.btn_limits, 0, 0)
-        
-        self.btn_home_position = QPushButton("Position home")
-        self.btn_home_position.clicked.connect(self.home_position_requested.emit)
-        btn_grid.addWidget(self.btn_home_position, 0, 1)
-        
-        btn_layout.addLayout(btn_grid)
-        layout.addLayout(btn_layout)
-        
-        self.setLayout(layout)
+
     
     # ============================================================================
     # RÉGION: Méthodes privées

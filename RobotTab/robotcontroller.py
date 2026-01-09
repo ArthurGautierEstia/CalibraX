@@ -111,7 +111,6 @@ class RobotController(QObject):
         if data:
             self.robot_model.load_from_dict(data, file_name)
         
-    
     def on_save_configuration(self):
         """Callback: sauvegarder la configuration actuelle"""
         data = self.robot_model.to_dict()
@@ -282,6 +281,10 @@ class RobotController(QObject):
     def on_axes_toggled(self):
         """Callback: affichage des repères global activé/désactivé"""
         self.show_axes = not self.show_axes
+        if self.show_axes:
+            self.visualization_widget.btn_toggle_axes.setText("Masquer tous les Repères")
+        else:
+            self.visualization_widget.btn_toggle_axes.setText("Afficher tous les Repères")
         self._update_visualization()
     
     def on_frame_visibility_toggled(self, frame_index):
@@ -336,8 +339,6 @@ class RobotController(QObject):
         # Recalculer la cinématique
         self._update_kinematics()
         
-
-    
     def on_home_position_changed(self):
         """Callback: la position home a changé"""
         # Mettre à jour le widget si nécessaire
@@ -416,7 +417,6 @@ class RobotController(QObject):
         """Met à jour tous les widgets depuis le modèle (après chargement config)"""
         # Nom du robot
         self.dh_widget.set_robot_name(self.robot_model.get_robot_name())
-        self.measurement_widget.label_robot_name_me.setText(self.robot_model.get_robot_name())
         
         # Paramètres DH
         dh_params = self.robot_model.get_dh_params()
