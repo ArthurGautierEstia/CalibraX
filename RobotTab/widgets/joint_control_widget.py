@@ -11,7 +11,6 @@ class JointControlWidget(QWidget):
     joint_value_changed = pyqtSignal(int, float)  # index, value
     home_position_requested = pyqtSignal()
     axis_limits_config_requested = pyqtSignal()
-    step_by_step_requested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,10 +75,6 @@ class JointControlWidget(QWidget):
         
         btn_layout.addLayout(btn_grid)
         layout.addLayout(btn_layout)
-        
-        self.btn_step = QPushButton("Affichage pas à pas")
-        self.btn_step.clicked.connect(self.step_by_step_requested.emit)
-        layout.addWidget(self.btn_step)
         
         self.setLayout(layout)
     

@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import QDialog
+from PyQt5.QtWidgets import QDialog, QMessageBox
 from utils.file_io import FileIOHandler
 from utils.math_utils import *
 from RobotTab.dialogs.axis_limits_dialog import AxisLimitsDialog
@@ -46,6 +46,7 @@ class RobotController(QObject):
         # RÉGION: Connexions DH Widget -> Contrôleur
         # ====================================================================
         self.dh_widget.load_config_requested.connect(self.on_load_configuration)
+        self.dh_widget.text_changed_requested.connect(self.on_text_changed)
         self.dh_widget.save_config_requested.connect(self.on_save_configuration)
         self.dh_widget.dh_value_changed.connect(self.on_dh_value_changed)
         self.dh_widget.cad_toggled.connect(self.on_cad_toggled)
@@ -61,7 +62,6 @@ class RobotController(QObject):
         self.joint_widget.joint_value_changed.connect(self.on_joint_value_changed)
         self.joint_widget.home_position_requested.connect(self.on_home_position_requested)
         self.joint_widget.axis_limits_config_requested.connect(self.on_axis_limits_config_requested)
-        self.joint_widget.step_by_step_requested.connect(self.on_step_by_step_requested)
         
         # ====================================================================
         # RÉGION: Connexions Measurement Widget -> Contrôleur
@@ -111,6 +111,11 @@ class RobotController(QObject):
         if data:
             self.robot_model.load_from_dict(data, file_name)
         
+    def on_text_changed(self):
+        """Callback: le nom du robot a changé"""
+        name = self.dh_widget.get_robot_name()
+        self.robot_model.set_robot_name(name)
+
     def on_save_configuration(self):
         """Callback: sauvegarder la configuration actuelle"""
         data = self.robot_model.to_dict()
@@ -190,11 +195,6 @@ class RobotController(QObject):
             # Appliquer l'inversion des valeurs des spinboxes si l'état d'inversion a changé
             self._update_kinematics()
     
-    def on_step_by_step_requested(self):
-        """Callback: affichage pas à pas demandé"""
-        # TODO: Implémenter la fonctionnalité de pas à pas
-        pass
-    
     # ============================================================================
     # RÉGION: Callbacks Result Widget
     # ============================================================================
@@ -210,7 +210,7 @@ class RobotController(QObject):
     
     def on_import_measurements(self):
         """Callback: importer des mesures depuis fichier"""
-        file_name, data = self.file_io.load_json(
+        file_path, data = self.file_io.load_json(
             self.measurement_widget,
             "Importer"
         )
@@ -227,13 +227,23 @@ class RobotController(QObject):
                 # Afficher les repères dans le widget de mesure
                 repere_names = [m.get("name", f"Repère {i}") for i, m in enumerate(data)]
                 self.measurement_widget.populate_tree(repere_names)
+
+                #Afficher le nom du fichier de mesure
+                file_name = file_path.split("/")[-1]
+                file_name = file_name.replace(".json","")
+                self.measurement_widget.label_measure_filename.setText(file_name)
             else:
-                # Si c'est un dictionnaire unique
-                self.robot_model.add_measurement(data)
-                self.measurement_widget.set_measurements_data([data])
-                repere_names = [data.get("name", "Repère")]
-                self.measurement_widget.populate_tree(repere_names)
+                self._show_error_popup("Erreur d'importation", "Le fichier de mesure n'est pas au format adapté. Veuillez vérifier le contenu.")
+
     
+    def _show_error_popup(self, title, message):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
     def on_set_as_reference(self):
         """Callback: définir le repère courant comme référence"""
         # TODO: Implémenter la définition de référence

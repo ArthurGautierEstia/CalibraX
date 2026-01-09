@@ -35,9 +35,10 @@ class MeasurementWidget(QWidget):
         titre2.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(titre2)
         
-        self.label_robot_name_me = QLineEdit()
-        self.label_robot_name_me.setReadOnly(False)
-        me_layout.addWidget(self.label_robot_name_me, 0, 0)
+        self.label_measure_filename = QLineEdit()
+        self.label_measure_filename.setReadOnly(False)
+        self.label_measure_filename.setPlaceholderText("Nom du fichier de mesure")
+        me_layout.addWidget(self.label_measure_filename, 0, 0)
         
         self.btn_import_me = QPushButton("Importer")
         self.btn_import_me.clicked.connect(self.import_measurements_requested.emit)

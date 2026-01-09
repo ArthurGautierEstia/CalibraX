@@ -10,6 +10,7 @@ class DHTableWidget(QWidget):
     
     # Signaux
     load_config_requested = pyqtSignal()
+    text_changed_requested = pyqtSignal()
     save_config_requested = pyqtSignal()
     dh_value_changed = pyqtSignal(int, int, str)  # row, col, value
     cad_toggled = pyqtSignal(bool)
@@ -30,17 +31,19 @@ class DHTableWidget(QWidget):
         
         self.label_robot_name_th = QLineEdit()
         self.label_robot_name_th.setReadOnly(False)
+        self.label_robot_name_th.setPlaceholderText("Nom du robot")
+        self.label_robot_name_th.textChanged.connect(self.text_changed_requested.emit)
         th_layout.addWidget(self.label_robot_name_th, 0, 0)
         
         self.cad_cb = QCheckBox("CAD")
         self.cad_cb.stateChanged.connect(self.cad_toggled.emit)
         th_layout.addWidget(self.cad_cb, 0, 1)
         
-        self.btn_load_th = QPushButton("Importer une configuration")
+        self.btn_load_th = QPushButton("Charger")
         self.btn_load_th.clicked.connect(self.load_config_requested.emit)
         th_layout.addWidget(self.btn_load_th, 0, 2)
         
-        self.btn_save_th = QPushButton("Exporter")
+        self.btn_save_th = QPushButton("Sauvegarder")
         self.btn_save_th.clicked.connect(self.save_config_requested.emit)
         th_layout.addWidget(self.btn_save_th, 0, 3)
         
