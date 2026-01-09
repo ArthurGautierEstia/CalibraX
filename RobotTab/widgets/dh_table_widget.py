@@ -11,7 +11,7 @@ class DHTableWidget(QWidget):
     # Signaux
     load_config_requested = pyqtSignal()
     text_changed_requested = pyqtSignal()
-    save_config_requested = pyqtSignal()
+    export_config_requested = pyqtSignal()
     dh_value_changed = pyqtSignal(int, int, str)  # row, col, value
     cad_toggled = pyqtSignal(bool)
     
@@ -43,9 +43,9 @@ class DHTableWidget(QWidget):
         self.btn_load_th.clicked.connect(self.load_config_requested.emit)
         th_layout.addWidget(self.btn_load_th, 0, 2)
         
-        self.btn_save_th = QPushButton("Sauvegarder")
-        self.btn_save_th.clicked.connect(self.save_config_requested.emit)
-        th_layout.addWidget(self.btn_save_th, 0, 3)
+        self.btn_export_th = QPushButton("Exporter")
+        self.btn_export_th.clicked.connect(self.export_config_requested.emit)
+        th_layout.addWidget(self.btn_export_th, 0, 3)
         
         layout.addLayout(th_layout)
         

@@ -37,7 +37,7 @@ class MeasurementWidget(QWidget):
         
         self.label_measure_filename = QLineEdit()
         self.label_measure_filename.setReadOnly(False)
-        self.label_measure_filename.setPlaceholderText("Nom du fichier de mesure")
+        self.label_measure_filename.setPlaceholderText("Fichier de mesure")
         me_layout.addWidget(self.label_measure_filename, 0, 0)
         
         self.btn_import_me = QPushButton("Importer")
@@ -70,18 +70,18 @@ class MeasurementWidget(QWidget):
         tables_display_me = QVBoxLayout()
         choice_table = QGridLayout()
         label_1 = QLabel("Afficher : ")
-        display_mode = QComboBox()
-        display_mode.addItems(["Repères", "Ecarts"])
-        display_mode.currentTextChanged.connect(self.display_mode_changed)
+        self.display_mode = QComboBox()
+        self.display_mode.addItems(["Repères", "Ecarts"])
+        self.display_mode.currentTextChanged.connect(self.display_mode_changed)
         label_2 = QLabel("Rotation : ")
-        rotation_type = QComboBox()
-        rotation_type.addItems(["EulerXYZ", "Fixed EulerXYZ"])
-        rotation_type.currentTextChanged.connect(self.rotation_type_changed)
+        self.rotation_type = QComboBox()
+        self.rotation_type.addItems(["EulerXYZ", "Fixed EulerXYZ"])
+        self.rotation_type.currentTextChanged.connect(self.rotation_type_changed)
 
         choice_table.addWidget(label_1, 0, 0)
-        choice_table.addWidget(display_mode, 0, 1)
+        choice_table.addWidget(self.display_mode, 0, 1)
         choice_table.addWidget(label_2, 0, 2)
-        choice_table.addWidget(rotation_type, 0, 3)
+        choice_table.addWidget(self.rotation_type, 0, 3)
 
         tables_display_me.addLayout(choice_table)
 
@@ -95,10 +95,21 @@ class MeasurementWidget(QWidget):
         layout.addLayout(tables_display_me)
         
         self.setLayout(layout)
+        
+        # Rendre tous les éléments du tableau en read-only
+        self._set_table_read_only()
     
     def _on_item_clicked(self, item, column):
         """Callback interne quand un item est cliqué"""
         self.repere_selected.emit(item.text(0))
+    
+    def _format_value(self, value, decimals=2):
+        """Formate une valeur numérique en évitant l'affichage de -0"""
+        formatted = f"{value:.{decimals}f}"
+        # Remplacer -0 par 0
+        if formatted == f"-0.{'0' * decimals}":
+            return f"0.{'0' * decimals}"
+        return formatted
     
     def populate_tree(self, repere_names):
         """Remplit l'arbre avec les noms de repères"""
@@ -146,19 +157,19 @@ class MeasurementWidget(QWidget):
 
         # --- 3. Afficher dans la table ---
         # Ligne 0 : Translation
-        self.table_me.setItem(0, 0, QTableWidgetItem(f"{X:.2f}"))
-        self.table_me.setItem(0, 1, QTableWidgetItem(f"{Y:.2f}"))
-        self.table_me.setItem(0, 2, QTableWidgetItem(f"{Z:.2f}"))
+        self.table_me.setItem(0, 0, QTableWidgetItem(self._format_value(X, 2)))
+        self.table_me.setItem(0, 1, QTableWidgetItem(self._format_value(Y, 2)))
+        self.table_me.setItem(0, 2, QTableWidgetItem(self._format_value(Z, 2)))
 
         # Ligne 1 : Rotation
-        self.table_me.setItem(1, 0, QTableWidgetItem(f"{RX:.2f}"))
-        self.table_me.setItem(1, 1, QTableWidgetItem(f"{RY:.2f}"))
-        self.table_me.setItem(1, 2, QTableWidgetItem(f"{RZ:.2f}"))
+        self.table_me.setItem(1, 0, QTableWidgetItem(self._format_value(RX, 2)))
+        self.table_me.setItem(1, 1, QTableWidgetItem(self._format_value(RY, 2)))
+        self.table_me.setItem(1, 2, QTableWidgetItem(self._format_value(RZ, 2)))
 
         # --- 4. Afficher la matrice delta_T (optionnel) ---
         for i in range(3):  # lignes
             for j in range(3):  # colonnes
-                self.table_me.setItem(2 + i, j, QTableWidgetItem(f"{delta_T[i, j]:.6f}"))
+                self.table_me.setItem(2 + i, j, QTableWidgetItem(self._format_value(delta_T[i, j], 6)))
 
         self.table_me.blockSignals(False)
     
@@ -178,14 +189,14 @@ class MeasurementWidget(QWidget):
         C = measurement.get("C", 0)  # Rotation autour Z
         
         # Afficher la translation (ligne 0)
-        self.table_me.setItem(0, 0, QTableWidgetItem(f"{X:.2f}"))
-        self.table_me.setItem(0, 1, QTableWidgetItem(f"{Y:.2f}"))
-        self.table_me.setItem(0, 2, QTableWidgetItem(f"{Z:.2f}"))
+        self.table_me.setItem(0, 0, QTableWidgetItem(self._format_value(X, 2)))
+        self.table_me.setItem(0, 1, QTableWidgetItem(self._format_value(Y, 2)))
+        self.table_me.setItem(0, 2, QTableWidgetItem(self._format_value(Z, 2)))
         
         # Afficher la rotation (ligne 1)
-        self.table_me.setItem(1, 0, QTableWidgetItem(f"{A:.2f}"))
-        self.table_me.setItem(1, 1, QTableWidgetItem(f"{B:.2f}"))
-        self.table_me.setItem(1, 2, QTableWidgetItem(f"{C:.2f}"))
+        self.table_me.setItem(1, 0, QTableWidgetItem(self._format_value(A, 2)))
+        self.table_me.setItem(1, 1, QTableWidgetItem(self._format_value(B, 2)))
+        self.table_me.setItem(1, 2, QTableWidgetItem(self._format_value(C, 2)))
         
         # Calculer la matrice de rotation à partir des angles A, B, C (en degrés)
         A_rad = radians(A)
@@ -226,19 +237,19 @@ class MeasurementWidget(QWidget):
         
         # Afficher les composantes (lignes 2, 3, 4)
         # Ligne 2 : X axis
-        self.table_me.setItem(2, 0, QTableWidgetItem(f"{x_axis[0]:.6f}"))
-        self.table_me.setItem(2, 1, QTableWidgetItem(f"{x_axis[1]:.6f}"))
-        self.table_me.setItem(2, 2, QTableWidgetItem(f"{x_axis[2]:.6f}"))
+        self.table_me.setItem(2, 0, QTableWidgetItem(self._format_value(x_axis[0], 6)))
+        self.table_me.setItem(2, 1, QTableWidgetItem(self._format_value(x_axis[1], 6)))
+        self.table_me.setItem(2, 2, QTableWidgetItem(self._format_value(x_axis[2], 6)))
         
         # Ligne 3 : Y axis
-        self.table_me.setItem(3, 0, QTableWidgetItem(f"{y_axis[0]:.6f}"))
-        self.table_me.setItem(3, 1, QTableWidgetItem(f"{y_axis[1]:.6f}"))
-        self.table_me.setItem(3, 2, QTableWidgetItem(f"{y_axis[2]:.6f}"))
+        self.table_me.setItem(3, 0, QTableWidgetItem(self._format_value(y_axis[0], 6)))
+        self.table_me.setItem(3, 1, QTableWidgetItem(self._format_value(y_axis[1], 6)))
+        self.table_me.setItem(3, 2, QTableWidgetItem(self._format_value(y_axis[2], 6)))
         
         # Ligne 4 : Z axis
-        self.table_me.setItem(4, 0, QTableWidgetItem(f"{z_axis[0]:.6f}"))
-        self.table_me.setItem(4, 1, QTableWidgetItem(f"{z_axis[1]:.6f}"))
-        self.table_me.setItem(4, 2, QTableWidgetItem(f"{z_axis[2]:.6f}"))
+        self.table_me.setItem(4, 0, QTableWidgetItem(self._format_value(z_axis[0], 6)))
+        self.table_me.setItem(4, 1, QTableWidgetItem(self._format_value(z_axis[1], 6)))
+        self.table_me.setItem(4, 2, QTableWidgetItem(self._format_value(z_axis[2], 6)))
         
         self.table_me.blockSignals(False)
     
@@ -252,3 +263,11 @@ class MeasurementWidget(QWidget):
         """Retourne le nom du repère actuellement sélectionné"""
         current_item = self.tree.currentItem()
         return current_item.text(0) if current_item else None
+    
+    def _set_table_read_only(self):
+        """Rend toutes les cellules du tableau en read-only"""
+        for row in range(self.table_me.rowCount()):
+            for col in range(self.table_me.columnCount()):
+                item = self.table_me.item(row, col)
+                if item:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)

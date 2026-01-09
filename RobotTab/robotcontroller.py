@@ -47,7 +47,7 @@ class RobotController(QObject):
         # ====================================================================
         self.dh_widget.load_config_requested.connect(self.on_load_configuration)
         self.dh_widget.text_changed_requested.connect(self.on_text_changed)
-        self.dh_widget.save_config_requested.connect(self.on_save_configuration)
+        self.dh_widget.export_config_requested.connect(self.on_export_configuration)
         self.dh_widget.dh_value_changed.connect(self.on_dh_value_changed)
         self.dh_widget.cad_toggled.connect(self.on_cad_toggled)
         
@@ -103,25 +103,28 @@ class RobotController(QObject):
     # ============================================================================
     
     def on_load_configuration(self):
-        """Callback: charger une configuration depuis fichier"""
-        file_name, data = self.file_io.load_json(
+        """Callback: charger une configuration depuis un fichier json"""
+        file_path, data = self.file_io.load_json(
             self.dh_widget,
-            "Charger configuration"
+            "Charger une configuration robot"
         )
         if data:
-            self.robot_model.load_from_dict(data, file_name)
+            if not isinstance(data, dict):
+                self._show_error_popup("Erreur d'importation", "Le fichier de configuration n'est pas au format adapté. Veuillez vérifier le contenu.")
+                return
+            self.robot_model.load_from_dict(data, file_path)
         
     def on_text_changed(self):
         """Callback: le nom du robot a changé"""
         name = self.dh_widget.get_robot_name()
         self.robot_model.set_robot_name(name)
 
-    def on_save_configuration(self):
-        """Callback: sauvegarder la configuration actuelle"""
+    def on_export_configuration(self):
+        """Callback: Exporter la configuration actuelle"""
         data = self.robot_model.to_dict()
         file_name = self.file_io.save_json(
             self.dh_widget,
-            "Sauvegarder configuration",
+            "Exporter/Sauvegarder une configuration robot",
             data
         )
         if file_name:
@@ -212,7 +215,7 @@ class RobotController(QObject):
         """Callback: importer des mesures depuis fichier"""
         file_path, data = self.file_io.load_json(
             self.measurement_widget,
-            "Importer"
+            "Importer un ficher de mesures"
         )
         if data:
             # Si data est une liste de mesures (repères)
@@ -232,17 +235,9 @@ class RobotController(QObject):
                 file_name = file_path.split("/")[-1]
                 file_name = file_name.replace(".json","")
                 self.measurement_widget.label_measure_filename.setText(file_name)
+                
             else:
                 self._show_error_popup("Erreur d'importation", "Le fichier de mesure n'est pas au format adapté. Veuillez vérifier le contenu.")
-
-    
-    def _show_error_popup(self, title, message):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
-        msg.setWindowTitle(title)
-        msg.setText(message)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
 
     def on_set_as_reference(self):
         """Callback: définir le repère courant comme référence"""
@@ -257,16 +252,65 @@ class RobotController(QObject):
     def on_repere_selected(self, repere_name):
         """Callback: un repère a été sélectionné dans le widget"""
         # Chercher la mesure correspondante dans le widget
-        for measurement in self.measurement_widget.measurements:
+        for i, measurement in enumerate(self.measurement_widget.measurements):
             if measurement.get("name") == repere_name:
-                # Afficher les données de la mesure dans la table
-                self.measurement_widget.display_measurement(measurement)
+                # Récupérer le mode d'affichage actuel
+                display_mode = self.measurement_widget.display_mode.currentText()
+                
+                if display_mode == "Repères":
+                    # Afficher les données du repère mesuré
+                    self.measurement_widget.display_measurement(measurement)
+                else:  # display_mode == "Ecarts"
+                    # Afficher les écarts entre le repère mesuré et le repère DH théorique
+                    self._display_measurement_deviations(i, measurement)
                 break
+    
+    def _display_measurement_deviations(self, measurement_index, measurement):
+        """Affiche les écarts entre un repère mesuré et le repère DH théorique correspondant"""
+        try:
+            # Extraire les coordonnées et angles du repère mesuré
+            x = float(measurement.get("X", 0))
+            y = float(measurement.get("Y", 0))
+            z = float(measurement.get("Z", 0))
+            a = float(measurement.get("A", 0))
+            b = float(measurement.get("B", 0))
+            c = float(measurement.get("C", 0))
+            
+            # Créer la matrice homogène du repère mesuré
+            R_measured = euler_to_rotation_matrix(a, b, c, degrees=True)
+            T_measured = np.eye(4)
+            T_measured[:3, :3] = R_measured
+            T_measured[:3, 3] = [x, y, z]
+            
+            # Récupérer les matrices DH théoriques
+            dh_matrices, _, _, _, _ = compute_forward_kinematics(self.robot_model)
+            
+            # S'assurer que l'index est valide
+            if measurement_index >= len(dh_matrices):
+                print(f"Erreur: index de mesure {measurement_index} hors limites")
+                return
+            
+            # Récupérer la matrice DH théorique correspondante
+            T_theoretical = dh_matrices[measurement_index]
+            
+            # Calculer l'écart (delta_T) = T_measured * inv(T_theoretical)
+            T_theoretical_inv = np.linalg.inv(T_theoretical)
+            delta_T = T_measured @ T_theoretical_inv
+            
+            # Afficher les écarts dans la table
+            self.measurement_widget.display_repere_data(delta_T)
+            
+        except (ValueError, TypeError, np.linalg.LinAlgError) as e:
+            print(f"Erreur lors du calcul des écarts: {e}")
     
     def on_display_mode_changed(self, mode):
         """Callback: le mode d'affichage a changé (Repères/Écarts)"""
-        # TODO: Implémenter le changement de mode d'affichage
-        pass
+        # Récupérer le repère actuellement sélectionné dans l'arbre
+        current_item = self.measurement_widget.tree.currentItem()
+        if current_item:
+            repere_name = current_item.text(0)
+            # Réafficher les données avec le nouveau mode
+            self.on_repere_selected(repere_name)
     
     def on_rotation_type_changed(self, rotation_type):
         """Callback: le type de rotation a changé"""
@@ -467,3 +511,50 @@ class RobotController(QObject):
             # Le CAD est déjà chargé, le rendre simplement visible
             self.visualization_widget.set_robot_visibility(True)
             self.cad_visible = True
+
+        """Affiche les repères de mesure dans le viewer 3D avec des couleurs pour chaque axe"""
+        # Couleurs pour les axes des repères mesurés
+        colors = [
+            (139, 0, 0, 1),      # X: Rouge bordeaux
+            (0, 100, 0, 1),    # Y: Vert citron (lime green)
+            (0, 255, 255, 1)     # Z: Bleu cyan
+        ]
+        
+        for measurement in measurements:
+            try:
+                # Extraire les coordonnées et angles
+                x = float(measurement.get("X", 0))
+                y = float(measurement.get("Y", 0))
+                z = float(measurement.get("Z", 0))
+                a = float(measurement.get("A", 0))  # Rotation autour de Z
+                b = float(measurement.get("B", 0))  # Rotation autour de Y
+                c = float(measurement.get("C", 0))  # Rotation autour de X
+                
+                # Créer la matrice homogène 4x4 à partir de la position et rotation ZYX
+                R = euler_to_rotation_matrix(a, b, c, degrees=True)
+                T = np.eye(4)
+                T[:3, :3] = R
+                T[:3, 3] = [x, y, z]
+                
+                # Afficher les trois axes du repère avec des couleurs différentes
+                origine = T[:3, 3]
+                for i in range(3):
+                    # Créer une ligne pour chaque axe (X, Y, Z)
+                    axis_point = origine + R[:, i] * 100
+                    axis_line = np.array([origine, axis_point])
+                    
+                    # Importer gl depuis pyqtgraph
+                    import pyqtgraph.opengl as gl
+                    plt = gl.GLLinePlotItem(pos=axis_line, color=colors[i], width=3, antialias=True)
+                    self.visualization_widget.viewer.addItem(plt)
+                
+            except (ValueError, TypeError) as e:
+                print(f"Erreur lors de l'affichage du repère de mesure: {e}")
+
+    def _show_error_popup(self, title, message):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
