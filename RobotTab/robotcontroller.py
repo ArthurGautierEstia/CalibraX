@@ -244,7 +244,7 @@ class RobotController(QObject):
                 #Afficher le nom du fichier de mesure
                 file_name = file_path.split("/")[-1]
                 file_name = file_name.replace(".json","")
-                self.measurement_widget.label_measure_filename.setText(file_name)
+                self.measurement_widget.lineEdit_measure_filename.setText(file_name)
                 
             else:
                 self._show_error_popup("Erreur d'importation", "Le fichier de mesure n'est pas au format adapté. Veuillez vérifier le contenu.")
@@ -368,7 +368,7 @@ class RobotController(QObject):
     def on_robot_name_changed(self, name):
         """Callback: le nom du robot a changé"""
         self.dh_widget.set_robot_name(name)
-        self.measurement_widget.label_measure_filename.setText(name)
+        self.measurement_widget.set_measure_filename(name)
     
     def on_dh_params_changed(self):
         """Callback: les paramètres DH ont changé"""

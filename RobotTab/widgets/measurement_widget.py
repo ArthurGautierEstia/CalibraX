@@ -36,10 +36,10 @@ class MeasurementWidget(QWidget):
         titre2.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(titre2)
         
-        self.label_measure_filename = QLineEdit()
-        self.label_measure_filename.setReadOnly(False)
-        self.label_measure_filename.setPlaceholderText("Fichier de mesure")
-        me_layout.addWidget(self.label_measure_filename, 0, 0)
+        self.lineEdit_measure_filename = QLineEdit()
+        self.lineEdit_measure_filename.setReadOnly(False)
+        self.lineEdit_measure_filename.setPlaceholderText("Fichier de mesure")
+        me_layout.addWidget(self.lineEdit_measure_filename, 0, 0)
         
         self.btn_import_me = QPushButton("Importer")
         self.btn_import_me.clicked.connect(self.import_measurements_requested.emit)
@@ -256,10 +256,14 @@ class MeasurementWidget(QWidget):
     
     def clear_measurements(self) -> None:
         """Efface les mesures"""
-        self.label_measure_filename.clear()
+        self.lineEdit_measure_filename.clear()
         self.tree.clear()
         self.table_me.clearContents()
-    
+
+    def set_measure_filename(self, filename) -> None:
+        """Défini le l"""
+        self.lineEdit_measure_filename.setText(filename)
+
     def get_current_repere_name(self) -> Optional[str]:
         """Retourne le nom du repère actuellement sélectionné"""
         current_item = self.tree.currentItem()
