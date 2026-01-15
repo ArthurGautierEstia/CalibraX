@@ -1,7 +1,7 @@
-from typing import Dict, List, Tuple, Optional, Any
+from typing import List, Tuple
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QSlider, QDoubleSpinBox, QComboBox
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QSlider, QDoubleSpinBox, QComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -47,7 +47,7 @@ class CartesianControlWidget(QWidget):
         }
     }
     
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         
         # ========================================================================

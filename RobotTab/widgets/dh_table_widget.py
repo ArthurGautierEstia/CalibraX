@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QGridLayout, QHBoxLayout,
+    QWidget, QVBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QCheckBox, QTableWidget,
     QTableWidgetItem, QAbstractItemView
 )
@@ -15,7 +15,7 @@ class DHTableWidget(QWidget):
     dh_value_changed = pyqtSignal(int, int, str)  # row, col, value
     cad_toggled = pyqtSignal(bool)
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.setup_ui()
     
@@ -29,11 +29,11 @@ class DHTableWidget(QWidget):
         titre1.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(titre1)
         
-        self.label_robot_name_th = QLineEdit()
-        self.label_robot_name_th.setReadOnly(False)
-        self.label_robot_name_th.setPlaceholderText("Nom du robot")
-        self.label_robot_name_th.textChanged.connect(self.text_changed_requested.emit)
-        th_layout.addWidget(self.label_robot_name_th, 0, 0)
+        self.lineEdit_robot_name_th = QLineEdit()
+        self.lineEdit_robot_name_th.setReadOnly(False)
+        self.lineEdit_robot_name_th.setPlaceholderText("Nom du robot")
+        self.lineEdit_robot_name_th.textChanged.connect(self.text_changed_requested.emit)
+        th_layout.addWidget(self.lineEdit_robot_name_th, 0, 0)
         
         self.cad_cb = QCheckBox("CAD")
         self.cad_cb.stateChanged.connect(self.cad_toggled.emit)
@@ -71,11 +71,11 @@ class DHTableWidget(QWidget):
     
     def set_robot_name(self, name):
         """Définit le nom du robot"""
-        self.label_robot_name_th.setText(name)
+        self.lineEdit_robot_name_th.setText(name)
     
     def get_robot_name(self):
         """Récupère le nom du robot"""
-        return self.label_robot_name_th.text()
+        return self.lineEdit_robot_name_th.text()
     
     def set_dh_params(self, params):
         """Charge les paramètres DH dans la table"""

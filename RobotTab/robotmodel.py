@@ -1,4 +1,5 @@
 from PyQt5.QtCore import QObject, pyqtSignal
+from typing import List, Tuple
 
 class RobotModel(QObject):
     """Modèle centralisé contenant tous les paramètres et l'état du robot"""
@@ -32,8 +33,8 @@ class RobotModel(QObject):
     measurements_changed = pyqtSignal()
     measurement_points_changed = pyqtSignal()
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent: QObject = None):
+        super().__init__(parent)
         
         # ====================================================================
         # RÉGION: Configuration générale
@@ -45,63 +46,63 @@ class RobotModel(QObject):
         # RÉGION: Paramètres des joints et axes
         # ====================================================================
         # Limites des axes (min, max) pour chaque joint
-        self.axis_limits = [(-180, 180) for _ in range(6)]
+        self.axis_limits: List[Tuple[float, float]] = [(-180, 180) for _ in range(6)]
         
         # Position home du robot
-        self.home_position = [0, -90, 90, 0, 90, 0]
+        self.home_position: List[float] = [0, -90, 90, 0, 90, 0]
         
         # Valeurs actuelles des joints (en degrés)
-        self.joint_values = [0, 0, 0, 0, 0, 0]
+        self.joint_values: List[float] = [0, 0, 0, 0, 0, 0]
         
         # Valeurs réelles des joints (appliquant les multiplicateurs d'inversion)
-        self.reel_joint_values = [0, 0, 0, 0, 0, 0]
+        self.reel_joint_values: List[float] = [0, 0, 0, 0, 0, 0]
         
         # Multiplicateurs d'axes (1 = normal, -1 = inversé)
-        self.axis_reversed = [1, 1, 1, 1, 1, 1]
+        self.axis_reversed: List[int] = [1, 1, 1, 1, 1, 1]
         
         # ====================================================================
         # RÉGION: Paramètres Denavit-Hartenberg
         # ====================================================================
         # 7 lignes : 6 joints + outil (tool frame)
         # Chaque ligne contient [a, alpha, d, theta]
-        self.dh_params = [[0, 0, 0, 0] for _ in range(7)]
+        self.dh_params: List[List[float]] = [[0, 0, 0, 0] for _ in range(7)]
         
         # ====================================================================
         # RÉGION: Corrections 6D
         # ====================================================================
         # 6 lignes pour 6 joints, 6 colonnes pour 6 DDL (X, Y, Z, Rx, Ry, Rz)
-        self.corrections = [[0, 0, 0, 0, 0, 0] for _ in range(6)]
+        self.corrections: List[List[float]] = [[0, 0, 0, 0, 0, 0] for _ in range(6)]
         
         # ====================================================================
         # RÉGION: Résultats cinématique
         # ====================================================================
         # Pose TCP non corrigée [X, Y, Z, Rx, Ry, Rz]
-        self.tcp_pose = [0, 0, 0, 0, 0, 0]
+        self.tcp_pose: List[float] = [0, 0, 0, 0, 0, 0]
         
         # Pose TCP corrigée (appliquant les corrections)
-        self.corrected_tcp_pose = [0, 0, 0, 0, 0, 0]
+        self.corrected_tcp_pose: List[float] = [0, 0, 0, 0, 0, 0]
         
         # Déviation entre TCP et TCP corrigé
-        self.pose_deviation = [0, 0, 0, 0, 0, 0]
+        self.pose_deviation: List[float] = [0, 0, 0, 0, 0, 0]
         
         # ====================================================================
         # RÉGION: Mesures et points de mesure
         # ====================================================================
         # Liste des mesures enregistrées
-        self.measurements = []
+        self.measurements: List[float] = []
         
         # Points de mesure (positions de référence)
-        self.measurement_points = []
+        self.measurement_points: List[List[float]] = []
     
     # ============================================================================
     # RÉGION: Getters - Configuration générale
     # ============================================================================
     
-    def get_robot_name(self):
+    def get_robot_name(self) -> str:
         """Retourne le nom du robot"""
         return self.robot_name
     
-    def get_current_config_file(self):
+    def get_current_config_file(self) -> str:
         """Retourne le chemin du fichier de configuration actuel"""
         return self.current_config_file
     
@@ -109,12 +110,12 @@ class RobotModel(QObject):
     # RÉGION: Setters - Configuration générale
     # ============================================================================
     
-    def set_robot_name(self, name):
+    def set_robot_name(self, name: str):
         """Définit le nom du robot"""
         self.robot_name = name
         self.robot_name_changed.emit(name)
     
-    def set_current_config_file(self, file_path):
+    def set_current_config_file(self, file_path: str):
         """Définit le chemin du fichier de configuration actuel"""
         self.current_config_file = file_path
     
@@ -122,11 +123,9 @@ class RobotModel(QObject):
     # RÉGION: Getters - Joints et axes
     # ============================================================================
     
-    def get_joint_value(self, index):
-        """Retourne la valeur d'un joint spécifique"""
-        if 0 <= index < 6:
-            return self.joint_values[index]
-        return 0
+    def get_joint_value(self, index: int) -> float:
+        """Retourne la valeur d'un joint spécifique ou 0 si l'index est invalide"""
+        return self.joint_values[index] if 0 <= index < 6 else 0
     
     def get_all_joint_values(self):
         """Retourne toutes les valeurs des joints"""
@@ -134,9 +133,7 @@ class RobotModel(QObject):
     
     def get_reel_joint_value(self, index):
         """Retourne la valeur réelle d'un joint (avec inversion appliquée)"""
-        if 0 <= index < 6:
-            return self.reel_joint_values[index]
-        return 0
+        return self.reel_joint_values[index] if 0 <= index < 6 else 0
     
     def get_all_reel_joint_values(self):
         """Retourne toutes les valeurs réelles des joints"""
@@ -146,11 +143,9 @@ class RobotModel(QObject):
         """Retourne les limites de tous les axes"""
         return self.axis_limits.copy()
     
-    def get_axis_limit(self, index):
+    def get_axis_limit(self, index: int):
         """Retourne les limites d'un axe spécifique (min, max)"""
-        if 0 <= index < 6:
-            return self.axis_limits[index]
-        return (-180, 180)
+        return self.axis_limits[index] if 0 <= index < 6 else (-180, 180)
     
     def get_home_position(self):
         """Retourne la position home"""
@@ -160,24 +155,22 @@ class RobotModel(QObject):
         """Retourne les multiplicateurs d'axes"""
         return self.axis_reversed.copy()
     
-    def is_axis_reversed(self, index):
+    def is_axis_reversed(self, index: int) -> bool:
         """Retourne True si l'axe est inversé"""
-        if 0 <= index < 6:
-            return self.axis_reversed[index] == -1
-        return False
+        return self.axis_reversed[index] == -1 if 0 <= index < 6 else False
     
     # ============================================================================
     # RÉGION: Setters - Joints et axes
     # ============================================================================
     
-    def set_joint_value(self, index, value):
+    def set_joint_value(self, index: int, value: float):
         """Modifie la valeur d'un joint spécifique"""
         if 0 <= index < 6:
             self.joint_values[index] = float(value)
             self.reel_joint_values[index] = float(value) * self.axis_reversed[index]
             self.joints_changed.emit()
     
-    def set_all_joint_values(self, values):
+    def set_all_joint_values(self, values: list[float]):
         """Définit toutes les valeurs des joints"""
         if len(values) >= 6:
             self.joint_values = list(values[:6])
@@ -186,24 +179,24 @@ class RobotModel(QObject):
             ]
             self.joints_changed.emit()
     
-    def set_axis_limits(self, limits):
+    def set_axis_limits(self, limits: List[Tuple[float, float]]):
         """Définit les limites de tous les axes"""
         self.axis_limits = limits
         self.limits_changed.emit()
     
-    def set_axis_limit(self, index, min_val, max_val):
+    def set_axis_limit(self, index: int, min_val: float, max_val: float):
         """Définit les limites d'un axe spécifique"""
         if 0 <= index < 6:
             self.axis_limits[index] = (min_val, max_val)
             self.limits_changed.emit()
     
-    def set_home_position(self, home_pos):
+    def set_home_position(self, home_pos: list[float]):
         """Définit la position home"""
         if len(home_pos) >= 6:
             self.home_position = list(home_pos[:6])
             self.home_position_changed.emit()
     
-    def set_axis_reversed(self, axis_reversed):
+    def set_axis_reversed(self, axis_reversed: list[int]):
         """Définit les multiplicateurs d'axes (1 ou -1)"""
         if len(axis_reversed) >= 6:
             self.axis_reversed = list(axis_reversed[:6])
@@ -213,7 +206,7 @@ class RobotModel(QObject):
             ]
             self.axis_reversed_changed.emit()
     
-    def set_axis_reversed_single(self, index, reversed_value):
+    def set_axis_reversed_single(self, index: int, reversed_value: bool):
         """Inverse un axe spécifique"""
         if 0 <= index < 6:
             self.axis_reversed[index] = -1 if reversed_value else 1
@@ -228,13 +221,13 @@ class RobotModel(QObject):
         """Retourne tous les paramètres DH"""
         return [row.copy() for row in self.dh_params]
     
-    def get_dh_param(self, row, col):
+    def get_dh_param(self, row: int, col: int):
         """Retourne un paramètre DH spécifique"""
         if 0 <= row < 7 and 0 <= col < 4:
             return self.dh_params[row][col]
         return 0
     
-    def get_dh_row(self, row):
+    def get_dh_row(self, row: int):
         """Retourne une ligne complète de paramètres DH"""
         if 0 <= row < 7:
             return self.dh_params[row].copy()
@@ -244,7 +237,7 @@ class RobotModel(QObject):
     # RÉGION: Setters - Paramètres DH
     # ============================================================================
     
-    def set_dh_params(self, params):
+    def set_dh_params(self, params: list[list[float]]):
         """Définit tous les paramètres DH"""
         self.dh_params = [list(row) for row in params]
         # Assurer 7 lignes
@@ -253,7 +246,7 @@ class RobotModel(QObject):
         self.dh_params = self.dh_params[:7]
         self.dh_params_changed.emit()
     
-    def set_dh_param(self, row, col, value):
+    def set_dh_param(self, row: int, col: int, value: float):
         """Définit un paramètre DH spécifique"""
         if 0 <= row < 7 and 0 <= col < 4:
             try:
@@ -264,7 +257,7 @@ class RobotModel(QObject):
         else:
             print(f"Erreur: index DH invalide [{row},{col}]")
     
-    def set_dh_row(self, row, values):
+    def set_dh_row(self, row: int, values: list[float]):
         """Définit une ligne complète de paramètres DH"""
         if 0 <= row < 7 and len(values) >= 4:
             try:
@@ -281,29 +274,23 @@ class RobotModel(QObject):
         """Retourne toutes les corrections 6D"""
         return [row.copy() for row in self.corrections]
     
-    def get_correction(self, row, col):
+    def get_correction(self, row: int, col: int):
         """Retourne une correction 6D spécifique"""
-        if 0 <= row < 6 and 0 <= col < 6:
-            return self.corrections[row][col]
-        return 0
+        return self.corrections[row][col] if 0 <= row < 6 and 0 <= col < 6 else 0
     
-    def get_correction_row(self, row):
+    def get_correction_row(self, row: int):
         """Retourne une ligne complète de corrections"""
-        if 0 <= row < 6:
-            return self.corrections[row].copy()
-        return [0, 0, 0, 0, 0, 0]
+        return self.corrections[row].copy() if 0 <= row < 6 else [0, 0, 0, 0, 0, 0]
     
-    def get_correction_joint(self, joint_index):
+    def get_correction_joint(self, joint_index: int):
         """Retourne le vecteur de correction 6D pour un joint"""
-        if 0 <= joint_index < 6:
-            return self.corrections[joint_index].copy()
-        return [0, 0, 0, 0, 0, 0]
+        return self.corrections[joint_index].copy() if 0 <= joint_index < 6 else [0, 0, 0, 0, 0, 0]
     
     # ============================================================================
     # RÉGION: Setters - Corrections
     # ============================================================================
     
-    def set_corrections(self, corrections):
+    def set_corrections(self, corrections: list[list[float]]):
         """Définit toutes les corrections 6D"""
         self.corrections = [list(row) for row in corrections]
         # Assurer 6 lignes x 6 colonnes
@@ -312,7 +299,7 @@ class RobotModel(QObject):
         self.corrections = [row[:6] + [0]*(6-len(row)) for row in self.corrections[:6]]
         self.corrections_changed.emit()
     
-    def set_correction(self, row, col, value):
+    def set_correction(self, row: int, col: int, value: float):
         """Définit une correction 6D spécifique"""
         if 0 <= row < 6 and 0 <= col < 6:
             try:
@@ -323,7 +310,7 @@ class RobotModel(QObject):
         else:
             print(f"Erreur: index de correction invalide [{row},{col}]")
     
-    def set_correction_row(self, row, values):
+    def set_correction_row(self, row: int, values: list[float]):
         """Définit une ligne complète de corrections"""
         if 0 <= row < 6 and len(values) >= 6:
             try:
@@ -360,14 +347,14 @@ class RobotModel(QObject):
     # RÉGION: Setters - Résultats cinématique
     # ============================================================================
     
-    def set_tcp_pose(self, pose):
+    def set_tcp_pose(self, pose: list[float]):
         """Définit la pose TCP non corrigée"""
         if len(pose) >= 6:
             self.tcp_pose = list(pose[:6])
             self._compute_deviation()
             self.tcp_pose_changed.emit()
     
-    def set_corrected_tcp_pose(self, pose):
+    def set_corrected_tcp_pose(self, pose: list[float]):
         """Définit la pose TCP corrigée"""
         if len(pose) >= 6:
             self.corrected_tcp_pose = list(pose[:6])
@@ -389,11 +376,9 @@ class RobotModel(QObject):
         """Retourne la liste des mesures enregistrées"""
         return self.measurements.copy()
     
-    def get_measurement(self, index):
+    def get_measurement(self, index: int):
         """Retourne une mesure spécifique"""
-        if 0 <= index < len(self.measurements):
-            return self.measurements[index]
-        return None
+        return self.measurements[index] if 0 <= index < len(self.measurements) else None
     
     def get_measurement_count(self):
         """Retourne le nombre de mesures enregistrées"""
@@ -405,20 +390,18 @@ class RobotModel(QObject):
     
     def get_measurement_point(self, index):
         """Retourne un point de mesure spécifique"""
-        if 0 <= index < len(self.measurement_points):
-            return self.measurement_points[index]
-        return None
+        return self.measurement_points[index] if 0 <= index < len(self.measurement_points) else  None
     
     # ============================================================================
     # RÉGION: Setters - Mesures
     # ============================================================================
     
-    def add_measurement(self, measurement):
+    def add_measurement(self, measurement: float):
         """Ajoute une nouvelle mesure"""
         self.measurements.append(measurement)
         self.measurements_changed.emit()
     
-    def add_measurement_point(self, point):
+    def add_measurement_point(self, point: list[float]):
         """Ajoute un nouveau point de mesure"""
         self.measurement_points.append(point)
         self.measurement_points_changed.emit()
@@ -433,12 +416,12 @@ class RobotModel(QObject):
         self.measurement_points.clear()
         self.measurement_points_changed.emit()
     
-    def set_measurements(self, measurements):
+    def set_measurements(self, measurements: list[float]):
         """Définit la liste des mesures"""
         self.measurements = list(measurements)
         self.measurements_changed.emit()
     
-    def set_measurement_points(self, points):
+    def set_measurement_points(self, points: list[list[float]]):
         """Définit la liste des points de mesure"""
         self.measurement_points = list(points)
         self.measurement_points_changed.emit()
@@ -459,7 +442,7 @@ class RobotModel(QObject):
             "home_position": self.home_position,
         }
     
-    def load_from_dict(self, data, file_name=None):
+    def load_from_dict(self, data: str, file_name: str=None):
         """Import depuis dictionnaire (pour chargement JSON)"""
         # Nom du robot
         if "name" in data and len(data["name"]) > 0:

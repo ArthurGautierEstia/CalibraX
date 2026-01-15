@@ -14,11 +14,11 @@ class Viewer3DWidget(QWidget):
     axes_toggled = pyqtSignal()
     frame_visibility_toggled = pyqtSignal(int) # Nouveau signal avec l'index du repère
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.show_axes = True
         self.transparency_enabled = False
-        self.robot_links = [] 
+        self.robot_links: list[gl.GLMeshItem] = [] 
         self.setup_ui()
 
     def setup_ui(self):
@@ -57,12 +57,12 @@ class Viewer3DWidget(QWidget):
         self.setLayout(layout)
         self.add_grid()
 
-    def on_frame_clicked(self, item):
+    def on_frame_clicked(self, item: QListWidgetItem):
         """Gère le clic sur un élément de la liste"""
         index = self.frame_list.row(item)
         self.frame_visibility_toggled.emit(index)
 
-    def update_frame_list_ui(self, visibility_list):
+    def update_frame_list_ui(self, visibility_list: list[bool]):
         """Met à jour l'apparence de la liste (Gras = Visible)"""
         count = len(visibility_list)
         
@@ -105,7 +105,7 @@ class Viewer3DWidget(QWidget):
         self.viewer.clear()
         self.add_grid()
 
-    def draw_frame(self, T, longueur=100, color=None):
+    def draw_frame(self, T, longueur=100, color: tuple[int, int, int]=None):
         """Dessine un repère unique"""
         origine = T[:3, 3]
         R = T[:3, :3]
@@ -125,15 +125,14 @@ class Viewer3DWidget(QWidget):
             plt = gl.GLLinePlotItem(pos=axis, color=couleurs[i], width=3, antialias=True)
             self.viewer.addItem(plt)
 
-    def draw_all_frames(self, matrices, visibility_list):
+    def draw_all_frames(self, matrices, visibility_list: list[bool]):
         """Dessine les repères en fonction de leur visibilité individuelle"""
         for i, T in enumerate(matrices):
             # On dessine seulement si l'index est marqué visible dans la liste
             if i < len(visibility_list) and visibility_list[i]:
                 self.draw_frame(T)
-
     
-    def load_robot_mesh(self, stl_path, transform_matrix, color):
+    def load_robot_mesh(self, stl_path: str, transform_matrix, color: tuple[int, int, int]):
         # (Copier le code original ici, pas de changement)
         try:
             stl_mesh = mesh.Mesh.from_file(stl_path)
@@ -191,14 +190,13 @@ class Viewer3DWidget(QWidget):
             self.viewer.removeItem(mesh_item)
         self.robot_links.clear()
 
-    def set_robot_visibility(self, visible):
+    def set_robot_visibility(self, visible: bool):
         for mesh_item in self.robot_links:
             if visible: mesh_item.show()
             else: mesh_item.hide()
 
-    def set_transparency(self, enabled):
+    def set_transparency(self, enabled: bool):
         self.transparency_enabled = enabled
         for mesh_item in self.robot_links:
             if enabled: mesh_item.setGLOptions('translucent')
             else: mesh_item.setGLOptions('opaque')
-

@@ -1,12 +1,12 @@
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
+    QWidget, QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
     QTableWidgetItem, QPushButton, QApplication, QCheckBox
 )
 
 class AxisLimitsDialog(QDialog):
     """Dialog pour configurer les limites des axes et la position home"""
     
-    def __init__(self, parent, current_limits, home_position=None, reversed_axes=None):
+    def __init__(self, parent: QWidget, current_limits: list[tuple[float, float]], home_position=None, reversed_axes=None):
         super().__init__(parent)
         self.setWindowTitle("Paramètrage des axes")
         self.setGeometry(100, 100, 600, 400)
@@ -83,7 +83,7 @@ class AxisLimitsDialog(QDialog):
     
     def get_home_position(self):
         """Retourne la position home configurée"""
-        home_pos = []
+        home_pos: list[int] = []
         for i in range(6):
             home_val = int(self.table_limits.item(i, 2).text())
             home_pos.append(home_val)
@@ -91,8 +91,8 @@ class AxisLimitsDialog(QDialog):
     
     def get_axis_reversed(self):
         """Retourne l'état d'inversion pour chaque axe"""
-        axis_reversed = []
+        axis_reversed: list[int] = []
         for i in range(6):
-            checkbox = self.table_limits.cellWidget(i, 3)
+            checkbox: QCheckBox = self.table_limits.cellWidget(i, 3)
             axis_reversed.append(-1 if checkbox.isChecked() else 1)
         return axis_reversed

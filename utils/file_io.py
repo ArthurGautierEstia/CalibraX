@@ -1,11 +1,12 @@
 import json
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QWidget, QFileDialog
+from typing import Any
 
 class FileIOHandler:
     """Gestion des opérations d'import/export de fichiers"""
     
     @staticmethod
-    def save_json(parent, title, data):
+    def save_json(parent: QWidget, title: str, data: dict[str, Any]):
         """Sauvegarde des données en JSON"""
         file_name, _ = QFileDialog.getSaveFileName(parent, title, "", "JSON Files (*.json)")
         if file_name:
@@ -15,7 +16,7 @@ class FileIOHandler:
         return None
     
     @staticmethod
-    def load_json(parent, title):
+    def load_json(parent: QWidget, title: str):
         """Charge des données depuis un JSON"""
         file_name, _ = QFileDialog.getOpenFileName(parent, title, "", "JSON Files (*.json)")
         if file_name:

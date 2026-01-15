@@ -1,18 +1,22 @@
 import numpy as np
+from PyQt5.QtWidgets import QTableWidget
+
+from RobotTab.robotmodel import RobotModel
 
 # ============================================================================
 # RÉGION: Parsing et utilitaires
 # ============================================================================
 
-def parse_value(expr):
+def parse_value(expr: str):
     """Parse une expression mathématique contenant potentiellement 'pi'"""
+    
     try:
         expr = expr.replace("pi", "np.pi")
         return eval(expr, {"np": np})
     except Exception:
         raise ValueError(f"Expression invalide: {expr}")
 
-def get_cell_value(table, row, col, default=0):
+def get_cell_value(table: QTableWidget, row: int, col: int, default=0):
     """Récupère la valeur d'une cellule de table Qt"""
     item = table.item(row, col)
     if item and item.text().strip() != "":
@@ -23,7 +27,7 @@ def get_cell_value(table, row, col, default=0):
 # RÉGION: Transformations Denavit-Hartenberg
 # ============================================================================
 
-def dh_modified(alpha, d, theta, r):
+def dh_modified(alpha: float, d: float, theta: float, r: float):
     """Calcule la matrice de transformation DH modifiée (4x4)
     
     Args:
@@ -48,7 +52,7 @@ def dh_modified(alpha, d, theta, r):
 # RÉGION: Corrections 6D
 # ============================================================================
 
-def correction_6d(T, tx, ty, tz, rx, ry, rz):
+def correction_6d(T, tx: float, ty: float, tz: float, rx: float, ry: float, rz: float):
     """Applique une correction 6D (translation + rotation ZYX) à une matrice homogène
     
     Args:
@@ -93,7 +97,7 @@ def matrix_to_euler_zyx(T):
     rz = np.degrees(np.arctan2(T[1, 0], T[0, 0]))
     return np.array([rz, ry, rx])
 
-def euler_to_rotation_matrix(A, B, C, degrees=True):
+def euler_to_rotation_matrix(A: float, B: float, C: float, degrees=True):
     """Convertit des angles d'Euler ZYX en matrice de rotation 3x3
     
     Args:
@@ -135,7 +139,7 @@ def rotation_matrix_to_euler_zyx(R):
 # RÉGION: Cinématique directe (MGD)
 # ============================================================================
 
-def compute_forward_kinematics(robot_model):
+def compute_forward_kinematics(robot_model: RobotModel):
     """Calcule le MGD avec la liste complète des matrices de transformation
     
     Args:
@@ -199,7 +203,7 @@ def compute_forward_kinematics(robot_model):
     
     return dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation
 
-def get_tcp_pose(robot_model):
+def get_tcp_pose(robot_model: RobotModel):
     """Retourne la pose TCP standard (sans correction)
     
     Args:
@@ -211,7 +215,7 @@ def get_tcp_pose(robot_model):
     _, _, dh_pose, _, _ = compute_forward_kinematics(robot_model)
     return dh_pose
 
-def get_corrected_tcp_pose(robot_model):
+def get_corrected_tcp_pose(robot_model: RobotModel):
     """Retourne la pose TCP corrigée
     
     Args:
@@ -223,7 +227,7 @@ def get_corrected_tcp_pose(robot_model):
     _, _, _, corrected_pose, _ = compute_forward_kinematics(robot_model)
     return corrected_pose
 
-def get_pose_deviation(robot_model):
+def get_pose_deviation(robot_model: RobotModel):
     """Retourne les écarts entre TCP standard et corrigé
     
     Args:
@@ -235,7 +239,7 @@ def get_pose_deviation(robot_model):
     _, _, _, _, deviation = compute_forward_kinematics(robot_model)
     return deviation
 
-def get_all_matrices(robot_model, corrected=False):
+def get_all_matrices(robot_model: RobotModel, corrected=False):
     """Retourne toutes les matrices de transformation jusqu'au TCP
     
     Args:
@@ -248,7 +252,7 @@ def get_all_matrices(robot_model, corrected=False):
     dh_matrices, corrected_matrices, _, _, _ = compute_forward_kinematics(robot_model)
     return corrected_matrices if corrected else dh_matrices
 
-def get_matrix_at_joint(robot_model, joint_index, corrected=False):
+def get_matrix_at_joint(robot_model: RobotModel, joint_index: int, corrected=False):
     """Retourne la matrice de transformation à un joint donné
     
     Args:
@@ -260,6 +264,4 @@ def get_matrix_at_joint(robot_model, joint_index, corrected=False):
         Matrice homogène 4x4
     """
     matrices = get_all_matrices(robot_model, corrected)
-    if 0 <= joint_index < len(matrices):
-        return matrices[joint_index]
-    return np.eye(4)
+    return matrices[joint_index] if 0 <= joint_index < len(matrices) else np.eye(4)

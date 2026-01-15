@@ -1,8 +1,10 @@
+from typing import List
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
+from robotmodel import RobotModel
 
 class JointControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées articulaires"""
@@ -12,10 +14,10 @@ class JointControlWidget(QWidget):
     home_position_requested = pyqtSignal()
     axis_limits_config_requested = pyqtSignal()
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget=None):
         super().__init__(parent)
-        self.sliders_q = []
-        self.spinboxes_q = []
+        self.sliders_q: List[QSlider] = []
+        self.spinboxes_q: List[QDoubleSpinBox] = []
         self.scale = 100  # Facteur d'échelle pour les sliders (2 décimales)
         self.setup_ui()
         
@@ -78,15 +80,15 @@ class JointControlWidget(QWidget):
         
         self.setLayout(layout)
     
-    def update_spinbox(self,spinbox, value):
+    def update_spinbox(self, spinbox: QDoubleSpinBox, value):
         # Convertit le slider (int) en float avec 2 décimales
         spinbox.setValue(value / self.scale)
 
-    def update_slider(self, slider,value):
+    def update_slider(self, slider: QSlider, value):
         # Convertit le float en int pour le slider
         slider.setValue(int(round(value * self.scale)))
     
-    def set_joint_value(self, index, value):
+    def set_joint_value(self, index: int, value: float):
         """Définit la valeur d'un joint"""
         if 0 <= index < 6:
             self.spinboxes_q[index].blockSignals(True)
@@ -99,12 +101,12 @@ class JointControlWidget(QWidget):
             self.spinboxes_q[index].blockSignals(False)
             self.sliders_q[index].blockSignals(False)
     
-    def set_all_joints(self, values):
+    def set_all_joints(self, values: list[float]):
         """Définit toutes les valeurs de joints"""
         for i, val in enumerate(values[:6]):
             self.set_joint_value(i, val)
     
-    def update_axis_limits(self, limits):
+    def update_axis_limits(self, limits: list[tuple[int, int]]):
         """Met à jour les limites des axes"""
         for i in range(6):
             min_val, max_val = limits[i]
@@ -125,7 +127,7 @@ class JointControlWidget(QWidget):
             elif current_spinbox_value > max_val:
                 self.spinboxes_q[i].setValue(max_val)
     
-    def apply_axis_inversion(self, robot_model, old_reversed, new_reversed):
+    def apply_axis_inversion(self, robot_model: RobotModel, old_reversed: list[bool], new_reversed: list[bool]):
         """Inverse les valeurs des spinboxes quand l'état d'inversion change"""
         for i in range(6):
             # Vérifier si l'état d'inversion a changé pour cet axe

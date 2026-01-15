@@ -26,8 +26,8 @@ class RobotController(QObject):
     
     def __init__(self, robot_model: RobotModel, dh_widget: DHTableWidget, correction_widget: CorrectionTableWidget, 
                  joint_widget: JointControlWidget, result_widget: ResultTableWidget, 
-                 measurement_widget: MeasurementWidget, visualization_widget: Viewer3DWidget) -> None:
-        super().__init__()
+                 measurement_widget: MeasurementWidget, visualization_widget: Viewer3DWidget, parent: QObject = None):
+        super().__init__(parent)
         
         # ====================================================================
         # RÉGION: Injection de dépendances

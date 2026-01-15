@@ -21,7 +21,7 @@ class MeasurementWidget(QWidget):
     rotation_type_changed = pyqtSignal(str)  # rotation_type
     clear_measurements_requested = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
         self.measurements: List[Dict[str, Any]] = []  # Stocker les mesures importées
         self.setup_ui()
@@ -108,9 +108,7 @@ class MeasurementWidget(QWidget):
         """Formate une valeur numérique en évitant l'affichage de -0"""
         formatted = f"{value:.{decimals}f}"
         # Remplacer -0 par 0
-        if formatted == f"-0.{'0' * decimals}":
-            return f"0.{'0' * decimals}"
-        return formatted
+        return f"0.{'0' * decimals}" if formatted == f"-0.{'0' * decimals}" else formatted
     
     def populate_tree(self, repere_names: List[str]) -> None:
         """Remplit l'arbre avec les noms de repères"""

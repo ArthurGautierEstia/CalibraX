@@ -12,8 +12,8 @@ from RobotTab.robotcontroller import RobotController
 class RobotWindow(QWidget):
     """Fenêtre de configuration et contrôle du robot avec son propre MVC"""
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent: QWidget = None):
+        super().__init__(parent)
         
         # ====================================================================
         # RÉGION: Initialisation des widgets
@@ -36,12 +36,12 @@ class RobotWindow(QWidget):
         # ====================================================================
         # RÉGION: Création du modèle
         # ====================================================================
-        self.robot_model: RobotModel = RobotModel()
+        self.robot_model = RobotModel()
         
         # ====================================================================
         # RÉGION: Création du contrôleur
         # ====================================================================
-        self.robot_controller: RobotController = RobotController(
+        self.robot_controller = RobotController(
             self.robot_model,
             self.dh_widget,
             self.correction_widget,

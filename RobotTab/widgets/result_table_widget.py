@@ -1,14 +1,13 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTableWidget, QTableWidgetItem, QPushButton, QAbstractItemView
+    QWidget, QVBoxLayout, QLabel,
+    QTableWidget, QTableWidgetItem, QAbstractItemView
 )
-from PyQt5.QtCore import pyqtSignal
 
 class ResultTableWidget(QWidget):
     """Widget pour afficher les positions cartésiennes (TCP)"""
     
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.setup_ui()
     
@@ -64,7 +63,7 @@ class ResultTableWidget(QWidget):
         
         self.result_table.blockSignals(False)
     
-    def get_value(self, row, col):
+    def get_value(self, row: int, col: int):
         """Récupère la valeur d'une cellule"""
         item = self.result_table.item(row, col)
         if item:
@@ -74,7 +73,7 @@ class ResultTableWidget(QWidget):
                 return 0.0
         return 0.0
     
-    def set_value(self, row, col, value):
+    def set_value(self, row: int, col: int, value: float):
         """Définit la valeur d'une cellule"""
         if row < 3:  # Position
             self.result_table.setItem(row, col, QTableWidgetItem(f"{value:.2f}"))
