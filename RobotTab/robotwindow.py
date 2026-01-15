@@ -29,19 +29,19 @@ class RobotWindow(QWidget):
         # ====================================================================
         # RÉGION: Création du TabWidget pour les contrôles
         # ====================================================================
-        self.control_tabs = QTabWidget()
+        self.control_tabs: QTabWidget = QTabWidget()
         self.control_tabs.addTab(self.joint_widget, "Contrôle articulaire")
         self.control_tabs.addTab(self.cartesian_widget, "Contrôle cartésien")
         
         # ====================================================================
         # RÉGION: Création du modèle
         # ====================================================================
-        self.robot_model = RobotModel()
+        self.robot_model: RobotModel = RobotModel()
         
         # ====================================================================
         # RÉGION: Création du contrôleur
         # ====================================================================
-        self.robot_controller = RobotController(
+        self.robot_controller: RobotController = RobotController(
             self.robot_model,
             self.dh_widget,
             self.correction_widget,
@@ -61,7 +61,7 @@ class RobotWindow(QWidget):
         # ====================================================================
         self.robot_controller.setup_connections()
     
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Configure l'interface utilisateur"""
         # Layout principal
         main_layout = QHBoxLayout(self)
@@ -97,32 +97,32 @@ class RobotWindow(QWidget):
     # RÉGION: Getters
     # ============================================================================
     
-    def get_dh_widget(self):
+    def get_dh_widget(self) -> DHTableWidget:
         return self.dh_widget
     
-    def get_measurement_widget(self):
+    def get_measurement_widget(self) -> MeasurementWidget:
         return self.measurement_widget
     
-    def get_joint_widget(self):
+    def get_joint_widget(self) -> JointControlWidget:
         return self.joint_widget
     
-    def get_cartesian_widget(self):
+    def get_cartesian_widget(self) -> CartesianControlWidget:
         return self.cartesian_widget
     
-    def get_control_tabs(self):
+    def get_control_tabs(self) -> QTabWidget:
         return self.control_tabs
     
-    def get_result_widget(self):
+    def get_result_widget(self) -> ResultTableWidget:
         return self.result_widget
     
-    def get_correction_widget(self):
+    def get_correction_widget(self) -> CorrectionTableWidget:
         return self.correction_widget
     
-    def get_viewer_widget(self):
+    def get_viewer_widget(self) -> Viewer3DWidget:
         return self.viewer_widget
     
-    def get_robot_model(self):
+    def get_robot_model(self) -> RobotModel:
         return self.robot_model
     
-    def get_robot_controller(self):
+    def get_robot_controller(self) -> RobotController:
         return self.robot_controller

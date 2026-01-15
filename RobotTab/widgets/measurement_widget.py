@@ -1,9 +1,10 @@
+from typing import Dict, List, Optional, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox
 )
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QFont
 from math import atan2, sqrt, degrees, sin, cos, radians
 import numpy as np
@@ -20,12 +21,12 @@ class MeasurementWidget(QWidget):
     rotation_type_changed = pyqtSignal(str)  # rotation_type
     clear_measurements_requested = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.measurements = []  # Stocker les mesures importées
+        self.measurements: List[Dict[str, Any]] = []  # Stocker les mesures importées
         self.setup_ui()
     
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         """Initialise l'interface du widget"""
         layout = QVBoxLayout(self)
         
@@ -99,11 +100,11 @@ class MeasurementWidget(QWidget):
         # Rendre tous les éléments du tableau en read-only
         self._set_table_read_only()
     
-    def _on_item_clicked(self, item, column):
+    def _on_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         """Callback interne quand un item est cliqué"""
         self.repere_selected.emit(item.text(0))
     
-    def _format_value(self, value, decimals=2):
+    def _format_value(self, value: float, decimals: int = 2) -> str:
         """Formate une valeur numérique en évitant l'affichage de -0"""
         formatted = f"{value:.{decimals}f}"
         # Remplacer -0 par 0
@@ -111,18 +112,18 @@ class MeasurementWidget(QWidget):
             return f"0.{'0' * decimals}"
         return formatted
     
-    def populate_tree(self, repere_names):
+    def populate_tree(self, repere_names: List[str]) -> None:
         """Remplit l'arbre avec les noms de repères"""
         self.tree.clear()
         for name in repere_names:
             item = QTreeWidgetItem([name])
             self.tree.addTopLevelItem(item)
     
-    def set_measurements_data(self, measurements):
+    def set_measurements_data(self, measurements: List[Dict[str, Any]]) -> None:
         """Stocke les données des mesures"""
         self.measurements = measurements
     
-    def set_reference_bold(self, ref_name):
+    def set_reference_bold(self, ref_name: str) -> None:
         """Met en gras le repère de référence"""
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
@@ -130,7 +131,7 @@ class MeasurementWidget(QWidget):
             font.setBold(item.text(0) == ref_name)
             item.setFont(0, font)
     
-    def display_repere_data(self, delta_T):
+    def display_repere_data(self, delta_T: np.ndarray) -> None:
         """
         Affiche les écarts X, Y, Z, RX, RY, RZ calculés à partir de delta_T dans table_me.
         delta_T : matrice homogène 4x4 (numpy array)
@@ -173,7 +174,7 @@ class MeasurementWidget(QWidget):
 
         self.table_me.blockSignals(False)
     
-    def display_measurement(self, measurement):
+    def display_measurement(self, measurement: Dict[str, float]) -> None:
         """
         Affiche les données d'une mesure (X, Y, Z, A, B, C) dans la table.
         measurement : dictionnaire avec clés 'X', 'Y', 'Z', 'A', 'B', 'C'
@@ -253,18 +254,18 @@ class MeasurementWidget(QWidget):
         
         self.table_me.blockSignals(False)
     
-    def clear_measurements(self):
+    def clear_measurements(self) -> None:
         """Efface les mesures"""
-        self.label_robot_name_me.setText("")
+        self.label_measure_filename.clear()
         self.tree.clear()
         self.table_me.clearContents()
     
-    def get_current_repere_name(self):
+    def get_current_repere_name(self) -> Optional[str]:
         """Retourne le nom du repère actuellement sélectionné"""
         current_item = self.tree.currentItem()
         return current_item.text(0) if current_item else None
     
-    def _set_table_read_only(self):
+    def _set_table_read_only(self) -> None:
         """Rend toutes les cellules du tableau en read-only"""
         for row in range(self.table_me.rowCount()):
             for col in range(self.table_me.columnCount()):

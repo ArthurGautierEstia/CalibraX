@@ -1,8 +1,17 @@
+from typing import List
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QDialog, QMessageBox
 from utils.file_io import FileIOHandler
 from utils.math_utils import *
+import numpy as np
 from RobotTab.dialogs.axis_limits_dialog import AxisLimitsDialog
+from RobotTab.robotmodel import RobotModel
+from RobotTab.widgets.dh_table_widget import DHTableWidget
+from RobotTab.widgets.correction_table_widget import CorrectionTableWidget
+from RobotTab.widgets.joint_control_widget import JointControlWidget
+from RobotTab.widgets.result_table_widget import ResultTableWidget
+from RobotTab.widgets.measurement_widget import MeasurementWidget
+from RobotTab.widgets.viewer_3d_widget import Viewer3DWidget
 
 class RobotController(QObject):
     """Contrôleur centralisé pour la gestion du robot et synchronisation des widgets"""
@@ -15,8 +24,9 @@ class RobotController(QObject):
     configuration_loaded = pyqtSignal(dict)  # Émis quand une config est chargée
     tcp_pose_updated = pyqtSignal(list, list, list)  # tcp, corrected_tcp, deviation
     
-    def __init__(self, robot_model, dh_widget, correction_widget, joint_widget, 
-                 result_widget, measurement_widget, visualization_widget):
+    def __init__(self, robot_model: RobotModel, dh_widget: DHTableWidget, correction_widget: CorrectionTableWidget, 
+                 joint_widget: JointControlWidget, result_widget: ResultTableWidget, 
+                 measurement_widget: MeasurementWidget, visualization_widget: Viewer3DWidget) -> None:
         super().__init__()
         
         # ====================================================================
@@ -34,12 +44,12 @@ class RobotController(QObject):
         # ====================================================================
         # RÉGION: État de la visualisation
         # ====================================================================
-        self.frames_visibility = []
+        self.frames_visibility: List[bool] = []
         self.show_axes = True
         self.cad_visible = False
         self.cad_loaded = False
     
-    def setup_connections(self):
+    def setup_connections(self) -> None:
         """Configure toutes les connexions de signaux"""
         
         # ====================================================================
@@ -358,7 +368,7 @@ class RobotController(QObject):
     def on_robot_name_changed(self, name):
         """Callback: le nom du robot a changé"""
         self.dh_widget.set_robot_name(name)
-        self.measurement_widget.label_robot_name_me.setText(name)
+        self.measurement_widget.label_measure_filename.setText(name)
     
     def on_dh_params_changed(self):
         """Callback: les paramètres DH ont changé"""
@@ -512,6 +522,7 @@ class RobotController(QObject):
             self.visualization_widget.set_robot_visibility(True)
             self.cad_visible = True
 
+    def _display_measurement_frames(self, measurements):
         """Affiche les repères de mesure dans le viewer 3D avec des couleurs pour chaque axe"""
         # Couleurs pour les axes des repères mesurés
         colors = [

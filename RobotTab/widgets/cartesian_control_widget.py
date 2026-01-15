@@ -1,3 +1,4 @@
+from typing import Dict, List, Tuple, Optional, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QComboBox
@@ -46,15 +47,15 @@ class CartesianControlWidget(QWidget):
         }
     }
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         
         # ========================================================================
         # RÉGION: Attributs
         # ========================================================================
-        self.sliders_cart = []
-        self.spinboxes_cart = []
-        self.labels_cart = []
+        self.sliders_cart: List[QSlider] = []
+        self.spinboxes_cart: List[QDoubleSpinBox] = []
+        self.labels_cart: List[QLabel] = []
         self.scale_position = 100  # Facteur d'échelle pour X, Y, Z (2 décimales)
         self.scale_rotation = 100  # Facteur d'échelle pour rotations (2 décimales)
         self.current_convention = "Kuka"
@@ -64,7 +65,7 @@ class CartesianControlWidget(QWidget):
         # ========================================================================
         self.setup_ui()
         
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         """Initialise l'interface du widget"""
         layout = QVBoxLayout(self)
         
@@ -152,15 +153,15 @@ class CartesianControlWidget(QWidget):
     # RÉGION: Méthodes privées
     # ============================================================================
     
-    def _update_spinbox(self, spinbox, value, scale):
+    def _update_spinbox(self, spinbox: QDoubleSpinBox, value: int, scale: int) -> None:
         """Convertit la valeur du slider (int) en float avec 2 décimales"""
         spinbox.setValue(value / scale)
 
-    def _update_slider(self, slider, value, scale):
+    def _update_slider(self, slider: QSlider, value: float, scale: int) -> None:
         """Convertit la valeur float en int pour le slider"""
         slider.setValue(int(round(value * scale)))
     
-    def _on_convention_changed(self, convention_name):
+    def _on_convention_changed(self, convention_name: str) -> None:
         """Gère le changement de convention constructeur"""
         self.current_convention = convention_name
         
@@ -179,7 +180,7 @@ class CartesianControlWidget(QWidget):
     # RÉGION: Méthodes publiques
     # ============================================================================
     
-    def set_cartesian_value(self, index, value):
+    def set_cartesian_value(self, index: int, value: float) -> None:
         """Définit la valeur d'une coordonnée cartésienne"""
         if 0 <= index < 6:
             is_position = index < 3
@@ -196,20 +197,20 @@ class CartesianControlWidget(QWidget):
             self.spinboxes_cart[index].blockSignals(False)
             self.sliders_cart[index].blockSignals(False)
     
-    def set_all_cartesian(self, values):
+    def set_all_cartesian(self, values: List[float]) -> None:
         """Définit toutes les valeurs cartésiennes"""
         for i, val in enumerate(values[:6]):
             self.set_cartesian_value(i, val)
     
-    def get_cartesian_values(self):
+    def get_cartesian_values(self) -> List[float]:
         """Retourne les valeurs actuelles des coordonnées cartésiennes"""
         return [spinbox.value() for spinbox in self.spinboxes_cart]
     
-    def get_current_convention(self):
+    def get_current_convention(self) -> str:
         """Retourne la convention actuellement sélectionnée"""
         return self.current_convention
     
-    def update_axis_limits(self, limits):
+    def update_axis_limits(self, limits: List[Tuple[float, float]]) -> None:
         """Met à jour les limites des axes
         
         Args:

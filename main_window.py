@@ -23,7 +23,7 @@ class MainWindow(QMainWindow):
         # ====================================================================
         self._setup_tabs()
     
-    def _setup_tabs(self):
+    def _setup_tabs(self) -> None:
         """Configure les onglets de la fenêtre principale"""
         # Onglet Robot (configuration et contrôle)
         self.tab_widget.addTab(self.robot_window, "Robot")
@@ -36,6 +36,6 @@ class MainWindow(QMainWindow):
     # RÉGION: Getters pour les fenêtres
     # ============================================================================
     
-    def get_robot_window(self):
+    def get_robot_window(self) -> RobotWindow:
         """Retourne la fenêtre du robot"""
         return self.robot_window
