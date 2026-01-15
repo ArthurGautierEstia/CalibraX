@@ -30,6 +30,7 @@ class RobotWindow(QWidget):
         # RÉGION: Création du TabWidget pour les contrôles
         # ====================================================================
         self.control_tabs: QTabWidget = QTabWidget()
+        self.control_tabs.setStyleSheet("border-radius: 8px;")
         self.control_tabs.addTab(self.joint_widget, "Contrôle articulaire")
         self.control_tabs.addTab(self.cartesian_widget, "Contrôle cartésien")
         

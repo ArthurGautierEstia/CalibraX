@@ -97,6 +97,8 @@ class CartesianControlWidget(QWidget):
         # ========================================================================
         # RÉGION: Sliders et spinboxes pour les 6 coordonnées cartésiennes
         # ========================================================================
+
+        spinbox_width: float = 0
         for i in range(6):
             row_layout = QHBoxLayout()
             
@@ -121,10 +123,13 @@ class CartesianControlWidget(QWidget):
             spinbox = QDoubleSpinBox()
             if is_position:
                 spinbox.setRange(-2000.00, 2000.00)
-                spinbox.setSingleStep(1.00)
+                spinbox.setSingleStep(0.10)
+                if spinbox_width == 0:
+                    spinbox_width = spinbox.sizeHint().width() # lit la taille théorique du premier spinbox de position
             else:
                 spinbox.setRange(-180.00, 180.00)
                 spinbox.setSingleStep(0.10)
+                spinbox.setMinimumWidth(spinbox_width) # Range plus petite -> Spinbox plus petit.. spinbox_width assure la meme taille
             spinbox.setDecimals(2)
 
             # Connexions internes

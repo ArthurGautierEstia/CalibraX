@@ -35,7 +35,7 @@ class JointControlWidget(QWidget):
             row_layout = QHBoxLayout()
             label = QLabel(f"q{i+1} (°)")
             # Facteur d'échelle (pour 2 décimales)
-              # 1 unité slider = 0.01 spinbox
+            # 1 unité slider = 0.01 spinbox
 
             # Slider (int)
             slider = QSlider(Qt.Horizontal)
