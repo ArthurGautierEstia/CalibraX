@@ -17,7 +17,7 @@ from RobotTab.widgets.mgi_solutions_widget import MgiSolutionsWidget
 from RobotTab.widgets.measurement_widget import MeasurementWidget
 from RobotTab.widgets.viewer_3d_widget import Viewer3DWidget
 
-from mgi import MgiResult, MgiResultItem
+from mgi import MgiResult, MgiResultItem, MgiConfigKey
 
 class RobotController(QObject):
     """Contrôleur centralisé pour la gestion du robot et synchronisation des widgets"""
@@ -93,6 +93,8 @@ class RobotController(QObject):
         # RÉGION: Connexions Cartesian Widget -> Contrôleur
         # ====================================================================
         self.cartesian_widget.cartesian_value_changed.connect(self.on_cartesian_value_changed)
+
+        self.mgi_solutions_widget.solution_selected.connect(self._on_mgi_solution_selected)
 
         # ====================================================================
         # RÉGION: Connexions Measurement Widget -> Contrôleur
@@ -249,6 +251,11 @@ class RobotController(QObject):
         best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
         self.mgi_solutions_widget.set_mgi_result(mgi_result, best_solution[0] if best_solution else None)
         return best_solution[1].joints if best_solution else None
+
+    def _on_mgi_solution_selected(self, selectedKey: MgiConfigKey):
+        last_mgi_result = self.robot_model.get_last_mgi_result()
+        self.mgi_solutions_widget.set_selected_key(selectedKey)
+        self.robot_model.set_all_joint_values(last_mgi_result.get_solution(selectedKey).joints)
 
     # ============================================================================
     # RÉGION: Callbacks Result Widget

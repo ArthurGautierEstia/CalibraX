@@ -6,6 +6,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from RobotTab.robotmodel import RobotModel
 
+import math
+from mgi import MgiResult
+
 class JointControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées articulaires"""
     
@@ -14,8 +17,10 @@ class JointControlWidget(QWidget):
     home_position_requested = pyqtSignal()
     axis_limits_config_requested = pyqtSignal()
     
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, robot_model: RobotModel, parent: QWidget = None) -> None:
         super().__init__(parent)
+        self.robot_model = robot_model
+        self.configuration_label = QLabel("Configuration courrante : ")
         self.sliders_q: List[QSlider] = []
         self.spinboxes_q: List[QDoubleSpinBox] = []
         self.scale: int = 100  # Facteur d'échelle pour les sliders (2 décimales)
@@ -30,6 +35,9 @@ class JointControlWidget(QWidget):
         titre3 = QLabel("Coordonnées articulaires")
         titre3.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(titre3)
+
+        # Config
+        layout.addWidget(self.configuration_label)
         
         # Sliders et spinboxes pour les 6 joints
         for i in range(6):
@@ -52,7 +60,6 @@ class JointControlWidget(QWidget):
             slider.valueChanged.connect(lambda  value, s=spinbox : self.update_spinbox(s,value))
             spinbox.valueChanged.connect(lambda value, s=slider: self.update_slider(s,value))
 
-            
             # Signal vers le contrôleur (depuis spinbox pour avoir la vraie valeur float)
             spinbox.valueChanged.connect(lambda value, idx=i: self.joint_value_changed.emit(idx, value))
             
@@ -90,6 +97,9 @@ class JointControlWidget(QWidget):
         slider.setValue(int(round(value * self.scale)))
     
     def set_joint_value(self, index: int, value: float) -> None:
+        self._set_joint_value(index, value, True)
+
+    def _set_joint_value(self, index: int, value: float, updateConfigLabel: bool) -> None:
         """Définit la valeur d'un joint"""
         if 0 <= index < 6:
             self.spinboxes_q[index].blockSignals(True)
@@ -101,12 +111,23 @@ class JointControlWidget(QWidget):
             
             self.spinboxes_q[index].blockSignals(False)
             self.sliders_q[index].blockSignals(False)
-    
+
+            if updateConfigLabel:
+                self.update_config_label()
+
     def set_all_joints(self, values: list[float]) -> None:
         """Définit toutes les valeurs de joints"""
         for i, val in enumerate(values[:6]):
-            self.set_joint_value(i, val)
+            self._set_joint_value(i, val, False)
+        
+        self.update_config_label()
     
+    def update_config_label(self):
+        config_identifier = self.robot_model.get_config_identifier()
+        current_joints_rad = [math.radians(spinboxe.value()) for spinboxe in self.spinboxes_q]
+        current_config = MgiResult.identify_configuration(current_joints_rad, config_identifier)
+        self.configuration_label.setText(f"Configuration courrante : {current_config.name}")
+
     def update_axis_limits(self, limits: list[tuple[int, int]]) -> None:
         """Met à jour les limites des axes"""
         for i in range(6):

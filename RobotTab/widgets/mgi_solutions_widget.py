@@ -70,6 +70,11 @@ class MgiSolutionsWidget(QWidget):
         self._mgi_result = result
         self._selected_key = selected_key
         self._populate_table()
+    
+    def set_selected_key(self, selected_key: MgiConfigKey|None):
+        self._selected_key = selected_key
+        if self._mgi_result:
+            self._populate_table()
 
     # --------------------------------------------------------
     # Solutions tab
@@ -79,10 +84,9 @@ class MgiSolutionsWidget(QWidget):
         layout = QVBoxLayout(self._solutions_tab)
 
         self._table = QTableWidget()
-        self._table.setColumnCount(10)
+        self._table.setColumnCount(9)
         self._table.horizontalHeader().setDefaultSectionSize(110)
         self._table.setHorizontalHeaderLabels([
-            "*",
             "Config",
             "Statut",
             "J1", "J2", "J3", "J4", "J5", "J6",
@@ -106,14 +110,11 @@ class MgiSolutionsWidget(QWidget):
 
             col_index = 0
 
-            # --- Is Selected
-            selected_item = QTableWidgetItem("►" if config_key == self._selected_key else "")
-            selected_item.setForeground(QBrush(QColor("orange")))
-            self._table.setItem(row, col_index, selected_item)
-            col_index += 1
-
             # --- Configuration
-            self._table.setItem(row, col_index, QTableWidgetItem(config_key.name))
+            configuration_item = QTableWidgetItem(config_key.name)
+            configuration_item.setForeground(QBrush(QColor("orange" if config_key == self._selected_key else "white" )))
+            self._table.setItem(row, col_index, configuration_item)
+            
             col_index += 1
 
             # --- Statut
@@ -133,6 +134,9 @@ class MgiSolutionsWidget(QWidget):
             # --- Bouton sélectionner
             btn = QPushButton("Sélectionner")
             btn.setEnabled(item.status == MgiResultStatus.VALID)
+            if not btn.isEnabled():
+                btn.setStyleSheet("color: gray")
+            
             btn.clicked.connect(lambda _, k=config_key: self.solution_selected.emit(k))
             self._table.setCellWidget(row, col_index, btn)
             col_index += 1

@@ -17,11 +17,16 @@ class RobotWindow(QWidget):
         super().__init__(parent)
         
         # ====================================================================
+        # RÉGION: Création du modèle
+        # ====================================================================
+        self.robot_model = RobotModel()
+
+        # ====================================================================
         # RÉGION: Initialisation des widgets
         # ====================================================================
         self.dh_widget = DHTableWidget()
         self.measurement_widget = MeasurementWidget()
-        self.joint_widget = JointControlWidget()
+        self.joint_widget = JointControlWidget(self.robot_model)
         self.joints_result_widget = JointsResultTableWidget()
         self.cartesian_widget = CartesianControlWidget()
         self.mgi_solutions_widget = MgiSolutionsWidget()
@@ -52,12 +57,7 @@ class RobotWindow(QWidget):
         self.control_tabs.setStyleSheet("border-radius: 8px;")
         self.control_tabs.addTab(joint_tab_widget, "Contrôle articulaire")
         self.control_tabs.addTab(cartesian_tab_widget, "Contrôle cartésien")
-        
-        # ====================================================================
-        # RÉGION: Création du modèle
-        # ====================================================================
-        self.robot_model = RobotModel()
-        
+                
         # ====================================================================
         # RÉGION: Création du contrôleur
         # ====================================================================

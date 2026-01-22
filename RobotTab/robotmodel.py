@@ -178,6 +178,9 @@ class RobotModel(QObject):
         joints_rad = [math.radians(q) for q in self.joint_values]
         return mgi_result.get_best_solution_from_current(joints_rad, self.mgi_kuka_config_identifier, True)
 
+    def get_config_identifier(self):
+        return self.mgi_kuka_config_identifier
+
     # ============================================================================
     # RÉGION: Getters - Configuration générale
     # ============================================================================
