@@ -32,7 +32,6 @@ class MGDApplication:
         self.main_window.showMaximized()
         self.main_window.show()
         if len(sys.argv) > 1:
-            print(sys.argv)
             config_file = sys.argv[1]
             if os.path.exists(config_file) and config_file.endswith(".json"):
                 config_file, data = FileIOHandler.load_json(config_file)
