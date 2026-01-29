@@ -56,7 +56,6 @@ class RobotController(QObject):
         self.cartesianControlWindow = cartesianControlWindow
         self.measurement_widget = measurement_widget
         self.visualization_widget = visualization_widget
-        self.file_io = FileIOHandler()
 
         # ====================================================================
         # RÉGION: État de la visualisation
@@ -162,19 +161,24 @@ class RobotController(QObject):
         currentDir = os.getcwd()
         configurationDir = os.path.join(currentDir, 'configurations') 
 
-        file_path, data = self.file_io.load_json(
+        _, data = FileIOHandler.select_and_load_json(
             self.dh_widget,
             "Charger une configuration robot",
             configurationDir if os.path.exists(configurationDir) else currentDir
         )
+        self.load_data_configuration(data)
+    
+    def load_data_configuration(self, data: dict):
+        """Charge une configuration depuis des données dict (utilisé au démarrage)"""
         if data:
             if not isinstance(data, dict):
                 self._show_error_popup("Erreur d'importation", "Le fichier de configuration n'est pas au format adapté. Veuillez vérifier le contenu.")
                 return
-            self.robot_model.load_from_dict(data, file_path)
+            print(data)
+            self.robot_model.load_from_dict(data)
             self.dh_widget.set_cad_visible(True)
             self.visualization_widget.set_transparency(True)
-        
+    
     def on_text_changed(self):
         """Callback: le nom du robot a changé"""
         name = self.dh_widget.get_robot_name()
@@ -183,7 +187,7 @@ class RobotController(QObject):
     def on_export_configuration(self):
         """Callback: Exporter la configuration actuelle"""
         data = self.robot_model.to_dict()
-        file_name = self.file_io.save_json(
+        file_name = FileIOHandler.save_json(
             self.dh_widget,
             "Exporter/Sauvegarder une configuration robot",
             data
@@ -296,7 +300,7 @@ class RobotController(QObject):
     
     def on_import_measurements(self):
         """Callback: importer des mesures depuis fichier"""
-        file_path, data = self.file_io.load_json(
+        file_path, data = FileIOHandler.select_and_load_json(
             self.measurement_widget,
             "Importer un ficher de mesures"
         )
@@ -590,7 +594,7 @@ class RobotController(QObject):
     
     def _load_robot_cad(self):
         """Charge le modèle CAD du robot (une seule fois)"""
-        if not self.robot_model.current_config_file:
+        if not self.robot_model.get_current_config_file():
             print("Aucune configuration chargée, impossible de charger le CAD")
             return
         

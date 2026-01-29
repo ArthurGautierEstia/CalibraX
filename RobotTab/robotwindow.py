@@ -80,6 +80,9 @@ class RobotWindow(QWidget):
     # RÉGION: Getters
     # ============================================================================
     
+    def get_robot_controller(self):
+        return self.robot_controller
+
     def get_dh_widget(self):
         return self.dh_widget
     

@@ -51,6 +51,10 @@ class MainWindow(QMainWindow):
         # Les prochains onglets seront ajoutés ici à l'avenir
         # self.tab_widget.addTab(self.calibration_window, "Calibration")
         # self.tab_widget.addTab(self.analysis_window, "Analyse")
+
+    def get_robot_window(self) -> RobotWindow:
+        """Retourne la fenêtre de configuration du robot"""
+        return self.robot_window
     
     def _setup_connections(self) -> None:
         """Configure les connexions de signaux entre les composants de la fenêtre principale"""

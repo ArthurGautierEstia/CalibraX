@@ -6,6 +6,7 @@
     "configurations": [
         {
             "name": "Debug main.py",
+            //"args": ["B:/Dev/Python/CalibraX/configurations/rocky_robodk.json"],
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
