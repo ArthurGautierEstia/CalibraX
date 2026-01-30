@@ -16,7 +16,7 @@ class CartesianControlWindow(QWidget):
 
         self.robot_model = robot_model
         self.cartesian_widget = CartesianControlWidget()
-        self.mgi_solutions_widget = MgiSolutionsWidget()
+        self.mgi_solutions_widget = MgiSolutionsWidget(robot_model.get_axis_limits())
         self.correction_widget = CorrectionTableWidget()
         self._setup_ui()
 

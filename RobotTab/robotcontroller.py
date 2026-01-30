@@ -232,6 +232,9 @@ class RobotController(QObject):
     def on_joint_value_changed(self, index: int, value: float):
         """Callback: la valeur d'un joint a changé"""
         self.robot_model.set_joint_value(index, value)
+        # declenche la chaine de mise a jour
+        tcp = self.robot_model.get_tcp_pose()
+        self._compute_mgi(tcp) # mise a jour des solutions MGI
     
     def on_home_position_requested(self):
         """Callback: retourner à la position home"""
@@ -473,6 +476,7 @@ class RobotController(QObject):
         """Callback: les limites des axes ont changé"""
         limits = self.robot_model.get_axis_limits()
         self.jointControlWindow.joint_widget.update_axis_limits(limits)
+        self.cartesianControlWindow.mgi_solutions_widget.set_axis_limits(limits)
     
     def on_axis_reversed_changed(self):
         """Callback: l'inversion d'axes a changé"""

@@ -9,8 +9,10 @@ from RobotTab.widgets.mgi_configuration_selector_widget import MgiConfigurationS
 
 from mgi import (
     MgiResult,
+    MgiResultItem,
     MgiConfigKey,
-    MgiResultStatus
+    MgiResultStatus,
+    MgiAxisLimits
 )
 
 # ------------------------------------------------------------
@@ -39,11 +41,12 @@ class MgiSolutionsWidget(QWidget):
 
     solution_selected = pyqtSignal(MgiConfigKey)
 
-    def __init__(self, parent: QWidget=None):
+    def __init__(self, limits: list[tuple[float, float]], parent: QWidget=None):
         super().__init__(parent)
 
         self._mgi_result: MgiResult | None = None
         self._selected_key: MgiConfigKey | None = None
+        self._axis_limits = limits
 
         self._tabs = QTabWidget()
         self._solutions_tab = QWidget()
@@ -65,6 +68,9 @@ class MgiSolutionsWidget(QWidget):
     # --------------------------------------------------------
     # Public API
     # --------------------------------------------------------
+
+    def set_axis_limits(self, limits: list[tuple[float, float]]):
+        self._axis_limits = limits
 
     def set_mgi_result(self, result: MgiResult, selected_key: MgiConfigKey|None):
         self._mgi_result = result
@@ -142,7 +148,7 @@ class MgiSolutionsWidget(QWidget):
 
         self._table.resizeColumnsToContents()
 
-    def _build_status_tooltip(self, item) -> str:
+    def _build_status_tooltip(self, item: MgiResultItem) -> str:
         lines = [f"Statut : {item.status.name}"]
 
         if item.j1Singularity:
@@ -152,9 +158,11 @@ class MgiSolutionsWidget(QWidget):
         if item.j5Singularity:
             lines.append("• Singularité Q5")
 
-        if item.violated_limits:
-            violated = ", ".join(f"J{idx+1}" for idx in item.violated_limits)
-            lines.append(f"• Axes hors limites : {violated}")
+        if item.violated_limits and len(item.violated_limits) > 0:
+            lines.append("Axes hors limites :")
+            for violated_axis in item.violated_limits:
+                min, max = self._axis_limits[violated_axis]
+                lines.append(f"• J{violated_axis+1} ({min}, {max})")
 
         return "\n".join(lines)
 
