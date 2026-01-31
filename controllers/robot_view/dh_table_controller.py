@@ -86,10 +86,6 @@ class DHTableController(QObject):
             self.robot_model.load_from_dict(data, file_path)
             self.configuration_loaded.emit()
 
-        else:
-            show_error_popup("Erreur d'importation", "Pas de donnée.")
-            return
-
     def export_configuration(self):
         """Exporter la configuration actuelle"""
         data = self.robot_model.to_dict()

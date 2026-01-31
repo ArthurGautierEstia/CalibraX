@@ -1,5 +1,6 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem, QAbstractItemView
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem, QAbstractItemView
+from PyQt5.QtCore import Qt
+
 from PyQt5.QtGui import QFont
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtGui
@@ -16,6 +17,7 @@ class Viewer3DWidget(QWidget):
         self.robot_links: list[gl.GLMeshItem] = []
         self.last_dh_matrices = []
         self.last_corrected_matrices = []
+        self.last_invert_table = []
         self.frames_visibility: list[bool] = []
         self.show_axes = True
         self._cad_loaded = False
@@ -159,6 +161,7 @@ class Viewer3DWidget(QWidget):
         if self._cad_loaded:
             return
         
+        QApplication.processEvents()  # Force le traitement des événements pour afficher le curseur
         self.add_robot_links(robot_model.get_current_tcp_corrected_dh_matrices())
         self._cad_loaded = True
 
@@ -202,8 +205,18 @@ class Viewer3DWidget(QWidget):
 
     def update_robot(self, robot_model: RobotModel):
         """Met à jour la visualisation 3D avec repères et visibilité des frames"""
-        self.last_dh_matrices = robot_model.get_current_tcp_dh_matrices()
-        self.last_corrected_matrices = robot_model.get_current_tcp_corrected_dh_matrices()
+
+        #self.last_dh_matrices = robot_model.get_current_tcp_dh_matrices()
+        #self.last_corrected_matrices = robot_model.get_current_tcp_corrected_dh_matrices()
+        
+        # ne pas prendre les matrices courantes mais recalculer à partir des joints actuels (inversé)
+        # compute_fk_joints va renvoyer les valeurs correctes sans inversion
+
+        dh_matrices, corrected_matrices, _, _, _ = robot_model.compute_fk_joints(robot_model.get_joints())
+
+        self.last_dh_matrices = dh_matrices
+        self.last_corrected_matrices = corrected_matrices
+
         self._clear_and_refresh()
 
     def _clear_and_refresh(self):

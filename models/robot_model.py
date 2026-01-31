@@ -27,10 +27,8 @@ class RobotModel(QObject):
     # Corrections
     corrections_changed = pyqtSignal()
     
-    # Résultats (TCP et cinématique)
+    # Résultats
     tcp_pose_changed = pyqtSignal()
-    corrected_tcp_pose_changed = pyqtSignal()
-    pose_deviation_changed = pyqtSignal()
     
     # Mesures
     measurements_changed = pyqtSignal()
@@ -299,6 +297,9 @@ class RobotModel(QObject):
 
         # update MGI for current TCP
         self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose)
+
+        # emit quand tout a été mis à jour
+        self.tcp_pose_changed.emit()
     
     def get_current_tcp_dh_matrices(self):
         return self.current_tcp_dh_matrices
@@ -342,10 +343,6 @@ class RobotModel(QObject):
     def get_joints(self):
         """Retourne toutes les valeurs des joints"""
         return self.joint_values.copy()
-
-    def get_joint_not_inverted(self, index: int) -> float:
-        """Retourne la valeur d'un joint spécifique ou 0 si l'index est invalide"""
-        return self.get_joint(index) * self.axis_reversed[index]
 
     def get_axis_limit(self, index: int):
         """Retourne les limites d'un axe spécifique (min, max)"""
@@ -537,7 +534,7 @@ class RobotModel(QObject):
         """Retourne la pose TCP corrigée"""
         return self.corrected_tcp_pose.copy()
     
-    def get_pose_deviation(self):
+    def get_tcp_deviation(self):
         """Retourne la déviation entre TCP et TCP corrigé"""
         return self.pose_deviation.copy()
     
@@ -556,19 +553,16 @@ class RobotModel(QObject):
     def _set_tcp_pose(self, pose: list[float]):
         """Définit la pose TCP non corrigée"""
         self.tcp_pose = pose
-        self.tcp_pose_changed.emit()
     
     def _set_corrected_tcp_pose(self, pose: list[float], compute_deviation: bool=True):
         """Définit la pose TCP non corrigée"""
         self.corrected_tcp_pose = pose
-        self.corrected_tcp_pose_changed.emit()
         if compute_deviation:
             self._compute_deviation()
 
     def _compute_deviation(self):
         """Calcule la déviation entre TCP et TCP corrigé"""
         self.pose_deviation = [self.corrected_tcp_pose[i] - self.tcp_pose[i] for i in range(6)]
-        self.pose_deviation_changed.emit()
     
     # ============================================================================
     # RÉGION: Getters - Mesures

@@ -38,4 +38,3 @@ class MainController(QObject):
         self.main_window.viewer3d.load_cad(self.robot_model)
         self.main_window.viewer3d.set_transparency(True)
     
-    
