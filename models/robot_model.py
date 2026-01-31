@@ -2,6 +2,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from typing import List, Tuple
 import math
 from mgi import *
+import utils.math_utils as math_utils
 
 class RobotModel(QObject):
     """Modèle centralisé contenant tous les paramètres et l'état du robot"""
@@ -33,7 +34,7 @@ class RobotModel(QObject):
     
     # Mesures
     measurements_changed = pyqtSignal()
-    measurement_points_changed = pyqtSignal()
+    measurements_points_changed = pyqtSignal()
     
     def __init__(self, parent: QObject = None):
         super().__init__(parent)
@@ -68,6 +69,9 @@ class RobotModel(QObject):
         # Chaque ligne contient [a, alpha, d, theta]
         self.dh_params: List[List[float]] = [[0, 0, 0, 0] for _ in range(7)]
         
+        self.current_tcp_dh_matrices: List[np.ndarray] = []
+        self.current_tcp_corrected_dh_matrices: List[np.ndarray] = []
+
         # ====================================================================
         # REGION: MGI
         # ====================================================================
@@ -108,6 +112,9 @@ class RobotModel(QObject):
         # RÉGION: Mesures et points de mesure
         # ====================================================================
         # Liste des mesures enregistrées
+
+        self.measurements_filename: str = ""
+
         self.measurements: List[float] = []
         
         # Points de mesure (positions de référence)
@@ -196,34 +203,109 @@ class RobotModel(QObject):
     # RÉGION: Forward Kinematics
     # ====================================================================
 
-    def compute_fk(self, q1: float, q2: float, q3: float, q4: float, q5: float, q6: float, include_tool: bool=True):
-        return [0, 0, 0, 0, 0, 0]  # TODO : Implémenter la FK
+    def compute_fk(self, q1: float, q2: float, q3: float, q4: float, q5: float, q6: float):
+        """Calcule le MGD avec la liste complète des matrices de transformation
     
+        Args:
+            robot_model: RobotModel instance
+        
+        Returns:
+            Tuple (dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation)
+            - dh_matrices: List de matrices 4x4 (sans correction)
+            - corrected_matrices: List de matrices 4x4 (avec corrections)
+            - dh_pose: Array [x, y, z, rx, ry, rz] sans correction
+            - corrected_pose: Array [x, y, z, rx, ry, rz] avec correction
+            - deviation: Array des écarts
+        """
+        dh_matrices = [np.eye(4)]
+        corrected_matrices = [np.eye(4)]
+        
+        T_dh = np.eye(4)
+        T_corrected = np.eye(4)
+
+        compute_joints = [
+            q1 * self.axis_reversed[0],
+            q2 * self.axis_reversed[1],
+            q3 * self.axis_reversed[2],
+            q4 * self.axis_reversed[3],
+            q5 * self.axis_reversed[4],
+            q6 * self.axis_reversed[5]
+        ]
+        
+        # Calcul itératif des transformations pour 6 joints + outil
+        for i in range(7):
+            # Récupérer les paramètres DH
+            alpha = np.radians(self.get_dh_param(i, 0))
+            d = self.get_dh_param(i, 1)
+            theta_offset = np.radians(self.get_dh_param(i, 2))
+            r = self.get_dh_param(i, 3)
+            
+            # Pour les 6 premiers joints, ajouter la valeur articulaire
+            if i < 6:
+                q_deg = compute_joints[i]
+                q = np.radians(q_deg)
+                theta = theta_offset + q
+                corr = self.get_correction_joint(i)
+            else:
+                # Joint 7 (tool) : pas de variable articulaire
+                theta = theta_offset
+                corr = [0, 0, 0, 0, 0, 0]
+            
+            # Transformation DH standard
+            T_dh = T_dh @ math_utils.dh_modified(alpha, d, theta, r)
+            dh_matrices.append(T_dh.copy())
+            
+            # Transformation avec correction
+            T_corrected = T_corrected @ math_utils.dh_modified(alpha, d, theta, r)
+            T_corrected = math_utils.correction_6d(T_corrected, *corr)
+            corrected_matrices.append(T_corrected.copy())
+        
+        # Extraction position et orientation
+        dh_pos = T_dh[:3, 3]
+        dh_ori = math_utils.matrix_to_euler_zyx(T_dh)
+        dh_pose = np.concatenate([dh_pos, dh_ori])
+        
+        corrected_pos = T_corrected[:3, 3]
+        corrected_ori = math_utils.matrix_to_euler_zyx(T_corrected)
+        corrected_pose = np.concatenate([corrected_pos, corrected_ori])
+        
+        # Calcul de la déviation
+        pos_dev = corrected_pos - dh_pos
+        ori_dev = corrected_ori - dh_ori
+        deviation = np.concatenate([pos_dev, ori_dev])
+        
+        return dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation
+
     def compute_fk_joints(self, joints: list[float]):
         if len(joints) < 6:
             return None
         return self.compute_fk(joints[0], joints[1], joints[2], joints[3], joints[4], joints[5])
 
-    def _compute_fk_corrected(self):
-        return [0, 0, 0, 0, 0, 0]  # TODO : Implémenter la FK avec corrections
-
     def _update_tcp_pose(self):
+        if self._inhibit_compute_fk:
+            return
+        
         # update current axis config
         self._update_current_axis_config()
         # update TCP from FK
-        self._set_tcp_pose(self.compute_fk_joints(self.joint_values_not_inverted()))
+
+        dh_matrices, corrected_matrices, dh_pose, corrected_pose, _ = self.compute_fk_joints(self.joint_values_not_inverted)
+
+        self.current_tcp_dh_matrices = dh_matrices
+        self.current_tcp_corrected_dh_matrices = corrected_matrices
+
+        self._set_tcp_pose(dh_pose)
+        self._set_corrected_tcp_pose(corrected_pose, True)
+
         # update MGI for current TCP
         self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose)
     
-    def _update_corrected_tcp_pose(self):
-        self._set_corrected_tcp_pose(self._compute_fk_corrected(), True)
+    def get_current_tcp_dh_matrices(self):
+        return self.current_tcp_dh_matrices
 
-    def _update_both_tcp_pose(self):
-        if self._inhibit_compute_fk:
-            return
-        self._update_tcp_pose()
-        self._update_corrected_tcp_pose()
-    
+    def get_current_tcp_corrected_dh_matrices(self):
+        return self.current_tcp_corrected_dh_matrices
+
     # ============================================================================
     # RÉGION: Getters - Configuration générale
     # ============================================================================
@@ -294,7 +376,7 @@ class RobotModel(QObject):
         if 0 <= index < 6:
             self._set_joint_idx(index, float(value))
             self.joints_changed.emit()
-            self._update_both_tcp_pose()
+            self._update_tcp_pose()
     
     def set_joints(self, values: list[float]):
         """Définit toutes les valeurs des joints"""
@@ -303,7 +385,7 @@ class RobotModel(QObject):
                 self._set_joint_idx(i, float(values[i]))
 
             self.joints_changed.emit()
-            self._update_both_tcp_pose()
+            self._update_tcp_pose()
     
     def _set_joint_idx(self, index: int, value: float):
         self.joint_values[index] = value
@@ -320,14 +402,14 @@ class RobotModel(QObject):
             self.axis_limits[index] = (min_val, max_val)
             self.MGI_solver.set_axis_limits(RobotModel._mgi_build_axis_limits(self.axis_limits))
             self.limits_changed.emit()
-            self._update_both_tcp_pose()
+            self._update_tcp_pose()
 
     def set_axis_limits(self, limits: List[Tuple[float, float]]):
         """Définit les limites de tous les axes"""
         self.axis_limits = limits
         self.MGI_solver.set_axis_limits(RobotModel._mgi_build_axis_limits(self.axis_limits))
         self.limits_changed.emit()
-        self._update_both_tcp_pose()
+        self._update_tcp_pose()
 
     def set_axis_reversed_single(self, index: int, reversed_value: bool):
         """Inverse un axe spécifique"""
@@ -337,7 +419,7 @@ class RobotModel(QObject):
 
             self.MGI_solver.set_invert_table(RobotModel._mgi_build_invert_table(self.axis_reversed))
             self.axis_reversed_changed.emit()
-            self._update_both_tcp_pose()
+            self._update_tcp_pose()
         
     def set_axis_reversed(self, axis_reversed: list[int]):
         """Définit les multiplicateurs d'axes (1 ou -1)"""
@@ -348,7 +430,7 @@ class RobotModel(QObject):
 
             self.MGI_solver.set_invert_table(RobotModel._mgi_build_invert_table(self.axis_reversed))
             self.axis_reversed_changed.emit()
-            self._update_both_tcp_pose()
+            self._update_tcp_pose()
 
     # ============================================================================
     # RÉGION: Getters - Paramètres DH
@@ -379,7 +461,7 @@ class RobotModel(QObject):
         self.dh_params = self.dh_params[:7]
         self.dh_params_changed.emit()
         self.MGI_solver.set_geometric_params(RobotModel._mgi_build_geometric_params(self.dh_params))
-        self._update_both_tcp_pose()
+        self._update_tcp_pose()
     
     def set_dh_param(self, row: int, col: int, value: float):
         """Définit un paramètre DH spécifique"""
@@ -388,7 +470,7 @@ class RobotModel(QObject):
                 self.dh_params[row][col] = float(value)
                 self.dh_params_changed.emit()
                 self.MGI_solver.set_geometric_params(RobotModel._mgi_build_geometric_params(self.dh_params))
-                self._update_both_tcp_pose()
+                self._update_tcp_pose()
 
             except (ValueError, TypeError):
                 print(f"Erreur: valeur DH invalide [{row},{col}] = {value}")
@@ -402,7 +484,7 @@ class RobotModel(QObject):
                 self.dh_params[row] = [float(v) for v in values[:4]]
                 self.dh_params_changed.emit()
                 self.MGI_solver.set_geometric_params(RobotModel._mgi_build_geometric_params(self.dh_params))
-                self._update_both_tcp_pose()
+                self._update_tcp_pose()
 
             except (ValueError, TypeError):
                 print(f"Erreur: valeurs DH invalides pour la ligne {row}")
@@ -436,10 +518,12 @@ class RobotModel(QObject):
         self.corrections = [row[:6] + [0]*(6-len(row)) for row in self.corrections[:6]]
         self.corrections_changed.emit()
     
-    def _compute_corrections(self):
+    def compute_corrections(self):
         """Calcule les corrections 6D basées sur les mesures"""
         # TODO : Implémenter le calcul des corrections
         self.corrections_changed.emit()
+
+        self._update_corrected_tcp_pose()
 
     # ============================================================================
     # RÉGION: Getters - Résultats cinématique
@@ -514,46 +598,43 @@ class RobotModel(QObject):
     # RÉGION: Setters - Mesures
     # ============================================================================
     
+    def get_measurements_filename(self) -> str:
+        """Retourne le nom du fichier de mesures"""
+        return self.measurements_filename
+
     def add_measurement(self, measurement: float):
         """Ajoute une nouvelle mesure"""
         self.measurements.append(measurement)
         self.measurements_changed.emit()
-        self._compute_corrections()
-        self._update_corrected_tcp_pose()
 
     def add_measurement_point(self, point: list[float]):
         """Ajoute un nouveau point de mesure"""
         self.measurement_points.append(point)
-        self.measurement_points_changed.emit()
-        self._compute_corrections()
-        self._update_corrected_tcp_pose()
+        self.measurements_points_changed.emit()
 
-    def set_measurements(self, measurements: list[float]):
+    def set_measurements(self, filename: str, measurements: list[float]):
         """Définit la liste des mesures"""
+        self.measurements_filename = filename
         self.measurements = list(measurements)
         self.measurements_changed.emit()
-        self._compute_corrections()
-        self._update_corrected_tcp_pose()
     
     def set_measurement_points(self, points: list[list[float]]):
         """Définit la liste des points de mesure"""
         self.measurement_points = list(points)
-        self.measurement_points_changed.emit()
-        self._compute_corrections()
-        self._update_corrected_tcp_pose()
+        self.measurements_points_changed.emit()
     
     def clear_measurements(self):
         """Efface toutes les mesures"""
         self.measurements.clear()
         self.measurements_changed.emit()
-        self._compute_corrections()
+        self.compute_corrections()
         self._update_corrected_tcp_pose()
     
     def clear_measurement_points(self):
         """Efface tous les points de mesure"""
         self.measurement_points.clear()
-        self.measurement_points_changed.emit()
-        self._compute_corrections()
+        self.measurements_points_changed.emit()
+        self.compute_corrections()
         self._update_corrected_tcp_pose()
     
     # ============================================================================
@@ -620,7 +701,7 @@ class RobotModel(QObject):
         self.configuration_changed.emit()
 
         self._inhibit_compute_fk = False
-        self._update_both_tcp_pose()
+        self._update_tcp_pose()
 
     # ============================================================================
     # RÉGION: Autres méthodes

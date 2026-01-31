@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QTabWidget
 
-from RobotTab.widgets.viewer_3d_widget import Viewer3DWidget
+from widgets.viewer_3d_widget import Viewer3DWidget
 from views.robot_view import RobotView
 from views.joint_control_view import JointControlView
 from views.cartesian_control_view import CartesianControlView

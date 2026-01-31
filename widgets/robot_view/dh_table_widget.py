@@ -1,0 +1,94 @@
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QGridLayout,
+    QLabel, QPushButton, QLineEdit, QTableWidget,
+    QTableWidgetItem, QAbstractItemView
+)
+from PyQt5.QtCore import pyqtSignal
+
+class DHTableWidget(QWidget):
+    """Widget pour la configuration du robot (table DH)"""
+    
+    # Signaux
+    load_config_requested = pyqtSignal()
+    text_changed_requested = pyqtSignal()
+    export_config_requested = pyqtSignal()
+    dh_value_changed = pyqtSignal(int, int, str)  # row, col, value
+    
+    def __init__(self, parent: QWidget = None):
+        super().__init__(parent)
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Initialise l'interface du widget"""
+        layout = QVBoxLayout(self)
+        
+        # En-tête
+        th_layout = QGridLayout()
+        titre1 = QLabel("Configuration robot")
+        titre1.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(titre1)
+        
+        self.lineEdit_robot_name_th = QLineEdit()
+        self.lineEdit_robot_name_th.setReadOnly(False)
+        self.lineEdit_robot_name_th.setPlaceholderText("Nom du robot")
+        self.lineEdit_robot_name_th.textChanged.connect(self.text_changed_requested.emit)
+        th_layout.addWidget(self.lineEdit_robot_name_th, 0, 0)
+        
+        self.btn_load_th = QPushButton("Charger")
+        self.btn_load_th.clicked.connect(self.load_config_requested.emit)
+        th_layout.addWidget(self.btn_load_th, 0, 2)
+        
+        self.btn_export_th = QPushButton("Exporter")
+        self.btn_export_th.clicked.connect(self.export_config_requested.emit)
+        th_layout.addWidget(self.btn_export_th, 0, 3)
+        
+        layout.addLayout(th_layout)
+        
+        # Table DH
+        table_dh_titre = QLabel("Table de Denavit-Hartenberg")
+        layout.addWidget(table_dh_titre)
+        
+        self.table_dh = QTableWidget(7, 4)
+        self.table_dh.setHorizontalHeaderLabels(["alpha (°)", "d (mm)", "theta (°)", "r (mm)"])
+        self.table_dh.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_dh.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_dh.horizontalHeader().setDefaultSectionSize(90)
+        self.table_dh.cellChanged.connect(self._on_cell_changed)
+        layout.addWidget(self.table_dh)
+        
+        self.setLayout(layout)
+    
+    def _on_cell_changed(self, row, col):
+        """Callback interne quand une cellule change"""
+        item = self.table_dh.item(row, col)
+        if item:
+            self.dh_value_changed.emit(row, col, item.text())
+    
+    def set_robot_name(self, name):
+        """Définit le nom du robot"""
+        self.lineEdit_robot_name_th.setText(name)
+    
+    def get_robot_name(self):
+        """Récupère le nom du robot"""
+        return self.lineEdit_robot_name_th.text()
+    
+    def set_dh_params(self, params: list[list[float]]):
+        """Charge les paramètres DH dans la table"""
+        self.table_dh.blockSignals(True)  # Éviter les signaux pendant le chargement
+        for i in range(min(7, len(params))):
+            for j in range(4):
+                value = str(params[i][j]) if i < len(params) and j < len(params[i]) else ""
+                self.table_dh.setItem(i, j, QTableWidgetItem(value))
+        self.table_dh.blockSignals(False)
+    
+    def get_dh_params(self):
+        """Récupère les paramètres DH depuis la table"""
+        params = []
+        for i in range(7):
+            row = []
+            for j in range(4):
+                item = self.table_dh.item(i, j)
+                row.append(item.text() if item else "")
+            params.append(row)
+        return params
+
