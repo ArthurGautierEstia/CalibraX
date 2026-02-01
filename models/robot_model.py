@@ -21,7 +21,7 @@ class RobotModel(QObject):
     # Joints et axes
     joints_changed = pyqtSignal()
     axis_reversed_changed = pyqtSignal()
-    limits_changed = pyqtSignal()
+    axis_limits_changed = pyqtSignal()
     
     # Corrections
     corrections_changed = pyqtSignal()
@@ -179,7 +179,7 @@ class RobotModel(QObject):
         return self.current_axis_config
 
     def _update_current_axis_config(self):
-        self.current_axis_config = MgiConfigKey.identify_configuration(self.joint_values_not_inverted, self.mgi_kuka_config_identifier)
+        self.current_axis_config = MgiConfigKey.identify_configuration_deg(self.joint_values_not_inverted, self.mgi_kuka_config_identifier)
 
     # ====================================================================
     # RÉGION: Inverse Kinematics
@@ -313,6 +313,9 @@ class RobotModel(QObject):
     def get_current_tcp_corrected_dh_matrices(self):
         return self.current_tcp_corrected_dh_matrices
 
+    def get_current_tcp_mgi_result(self):
+        return self.current_tcp_mgi_result
+
     # ============================================================================
     # RÉGION: Getters - Configuration générale
     # ============================================================================
@@ -417,14 +420,14 @@ class RobotModel(QObject):
         if 0 <= index < 6:
             self.axis_limits[index] = (min_val, max_val)
             self.MGI_solver.set_axis_limits(RobotModel._mgi_build_axis_limits(self.axis_limits))
-            self.limits_changed.emit()
+            self.axis_limits_changed.emit()
             self._update_tcp_pose()
 
     def set_axis_limits(self, limits: List[Tuple[float, float]]):
         """Définit les limites de tous les axes"""
         self.axis_limits = limits
         self.MGI_solver.set_axis_limits(RobotModel._mgi_build_axis_limits(self.axis_limits))
-        self.limits_changed.emit()
+        self.axis_limits_changed.emit()
         self._update_tcp_pose()
 
     def set_axis_reversed_single(self, index: int, reversed_value: bool):

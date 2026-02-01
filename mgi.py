@@ -47,7 +47,7 @@ class MgiConfigKey(Enum):
         Identifie la configuration à partir des valeurs articulaires.
         
         Args:
-            joints: Liste des 6 angles articulaires [q1, q2, q3, q4, q5, q6]
+            joints: Liste des 6 angles articulaires en radians [q1, q2, q3, q4, q5, q6]
             config_identifier: L'identifieur de configuration du robot
         
         Returns:
@@ -57,6 +57,21 @@ class MgiConfigKey(Enum):
         is_up = config_identifier.is_up(joints[2])
         is_flipped = config_identifier.is_flipped(joints[3])
         return MgiConfigKey.get_mgi_config_key_from(is_front, is_up, is_flipped)
+
+    @staticmethod
+    def identify_configuration_deg(joints: list[float],  config_identifier: ConfigurationIdentifier) -> MgiConfigKey:
+        """
+        Identifie la configuration à partir des valeurs articulaires.
+        
+        Args:
+            joints: Liste des 6 angles articulaires en degrés [q1, q2, q3, q4, q5, q6]
+            config_identifier: L'identifieur de configuration du robot
+        
+        Returns:
+            La clé de configuration correspondante
+        """
+        return MgiConfigKey.identify_configuration([radians(deg) for deg in joints], config_identifier)
+
 
 FRONT_CONFIG_KEYS = [MgiConfigKey.FUN, MgiConfigKey.FUF, MgiConfigKey.FDN, MgiConfigKey.FDF]
 BACK_CONFIG_KEYS = [MgiConfigKey.BUN, MgiConfigKey.BUF, MgiConfigKey.BDN, MgiConfigKey.BDF]
