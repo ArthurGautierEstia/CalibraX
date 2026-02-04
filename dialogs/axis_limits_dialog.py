@@ -85,7 +85,9 @@ class AxisLimitsDialog(QDialog):
         """Retourne la position home configurée"""
         home_pos: list[int] = []
         for i in range(6):
-            home_val = int(self.table_limits.item(i, 2).text())
+            strVal = self.table_limits.item(i, 2).text()
+            fVal = float(strVal)
+            home_val = int(fVal)
             home_pos.append(home_val)
         return home_pos
     
