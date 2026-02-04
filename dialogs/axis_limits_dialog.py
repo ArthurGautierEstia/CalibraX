@@ -30,8 +30,6 @@ class AxisLimitsDialog(QDialog):
         
         # Initialiser la table avec les valeurs actuelles
         for i in range(6):
-            axis_name = f"q{i+1}"
-            
             # Min value
             min_item = QTableWidgetItem(str(self.current_limits[i][0]))
             self.table_limits.setItem(i, 0, min_item)
@@ -72,22 +70,24 @@ class AxisLimitsDialog(QDialog):
         y = (screen_geometry.height() - dialog_height) // 2
         self.move(x, y)
     
+    def _cell_to_float(self, row: int, column: int) -> float:
+        """Retourne l'élément de la cellule spécifiée"""
+        return float(self.table_limits.item(row, column).text())
+
     def get_limits(self):
         """Retourne les nouvelles limites configurées"""
-        limits: list[tuple[int, int]] = []
+        limits: list[tuple[float, float]] = []
         for i in range(6):
-            min_val = int(self.table_limits.item(i, 0).text())
-            max_val = int(self.table_limits.item(i, 1).text())
+            min_val = self._cell_to_float(i, 0)
+            max_val = self._cell_to_float(i, 1)
             limits.append((min_val, max_val))
         return limits
     
     def get_home_position(self):
         """Retourne la position home configurée"""
-        home_pos: list[int] = []
+        home_pos: list[float] = []
         for i in range(6):
-            strVal = self.table_limits.item(i, 2).text()
-            fVal = float(strVal)
-            home_val = int(fVal)
+            home_val = self._cell_to_float(i, 2)
             home_pos.append(home_val)
         return home_pos
     
