@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush
 
 from widgets.cartesian_control_view.mgi_configuration_selector_widget import MgiConfigurationSelectorWidget
+from widgets.cartesian_control_view.mgi_joint_weights_widget import MgiJointWeightsWidget
 
 from mgi import (
     MgiResult,
@@ -40,6 +41,7 @@ class MgiSolutionsWidget(QWidget):
 
     solution_selected = pyqtSignal(MgiConfigKey)
     allowed_configs_changed = pyqtSignal()
+    weights_changed = pyqtSignal(list)
 
     def __init__(self, parent: QWidget=None):
         super().__init__(parent)
@@ -51,16 +53,21 @@ class MgiSolutionsWidget(QWidget):
         self._tabs = QTabWidget()
         self._solutions_tab = QWidget()
         self._filters_tab = QWidget()
+        self._weights_tab = QWidget()
 
         self._allowed_configs = {key: True for key in MgiConfigKey}
+        self._joint_weights = [1.0] * 6
 
         self._config_selector = MgiConfigurationSelectorWidget(self._allowed_configs)
+        self._weights_selector = MgiJointWeightsWidget(self._joint_weights)
 
         self._init_solutions_tab()
         self._init_filters_tab()
+        self._init_weights_tab()
 
         self._tabs.addTab(self._solutions_tab, "Solutions")
         self._tabs.addTab(self._filters_tab, "Configurations acceptées")
+        self._tabs.addTab(self._weights_tab, "Poids des joints")
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._tabs)
@@ -84,6 +91,10 @@ class MgiSolutionsWidget(QWidget):
         self._selected_key = selected_key
         if self._mgi_result:
             self._populate_table()
+    
+    def set_weights(self, weights: list[float]):
+        self._joint_weights = list(weights)
+        self._weights_selector.set_weights(weights)
 
     def get_allowed_configs(self):
         return self._allowed_configs
@@ -188,9 +199,28 @@ class MgiSolutionsWidget(QWidget):
         layout.addWidget(self._config_selector)
         layout.addStretch()
 
+    def _init_weights_tab(self):
+        layout = QVBoxLayout(self._weights_tab)
+
+        self._weights_selector = MgiJointWeightsWidget(self._joint_weights)
+
+        self._weights_selector.weights_changed.connect(
+            self._on_weights_changed
+        )
+
+        layout.addWidget(self._weights_selector)
+        layout.addStretch()
+
     def _on_configurations_changed(self, states: dict):
         """
         Callback lorsque l'utilisateur modifie les configurations autorisées
         """
         self._allowed_configs = {k for k, v in states.items() if v}
         self.allowed_configs_changed.emit()
+
+    def _on_weights_changed(self, weights: list):
+        """
+        Callback lorsque l'utilisateur modifie les poids des joints
+        """
+        self._joint_weights = weights
+        self.weights_changed.emit(weights)

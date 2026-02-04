@@ -222,6 +222,7 @@ class RobotModel(QObject):
     def compute_ik(self, x: float, y: float, z: float, a: float, b: float, c: float):
         self.MGI_solver.set_q1ValueIfSingularityQ1(self.joint_values[0])
         self.MGI_solver.set_q4ValueIfSingularityQ5(self.joint_values[4])
+        self.MGI_solver.set_q6ValueIfSingularityQ5(self.joint_values[5])
         return self.MGI_solver.compute_mgi(x, y, z, a, b, c)
 
     def compute_ik_target(self, target: list[float]):
