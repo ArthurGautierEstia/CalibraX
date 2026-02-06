@@ -19,6 +19,7 @@ class JogController(QObject):
         self.jog_cartesian_widget = self.jog_view.get_jog_cartesian_widget()
         self.jog_angles_visualization_widget = self.jog_view.get_jog_angles_visualization_widget()
         self.jog_tcp_visualization_widget = self.jog_view.get_jog_tcp_visualization_widget()
+        self.jog_matrix_widget = self.jog_view.get_matrix_widget()
         
         # Paramètres de jog
         self.jog_step_joint: float = 1  # Incrément en degrés pour jog articulaire
@@ -160,17 +161,15 @@ class JogController(QObject):
                     pass
                     delta_pos = np.array([0., 0., 0.])
                     delta_pos[axis_index] = delta
-                    tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*current_tcp_pose[3:6])
-                    delta_in_base = tcp_rotation_matrix @ delta_pos
+                    delta_in_base = self.robot_model.get_tcp_rotation_matrix() @ delta_pos
 
                     target[0] += delta_in_base[0]
                     target[1] += delta_in_base[1]
                     target[2] += delta_in_base[2]
 
                 else:
-                    tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*current_tcp_pose[3:6])
                     delta_rotation = math_utils.rot_z(delta) if axis_index == 3 else (math_utils.rot_y(delta) if axis_index == 4 else math_utils.rot_x(delta))
-                    new_tcp_rotation =  tcp_rotation_matrix @ delta_rotation
+                    new_tcp_rotation =  self.robot_model.get_tcp_rotation_matrix() @ delta_rotation
                     newABC = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
 
                     target[3] = newABC[0]
@@ -185,9 +184,8 @@ class JogController(QObject):
                     
                 else:
                     # transform abc
-                    tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*current_tcp_pose[3:6])
                     delta_rotation = math_utils.rot_z(delta) if axis_index == 3 else (math_utils.rot_y(delta) if axis_index == 4 else math_utils.rot_x(delta))
-                    new_tcp_rotation = delta_rotation @ tcp_rotation_matrix
+                    new_tcp_rotation = delta_rotation @ self.robot_model.get_tcp_rotation_matrix()
                     newABC = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
 
                     target[3] = newABC[0]
@@ -223,6 +221,7 @@ class JogController(QObject):
         # Mettre à jour la visualisation du TCP
         tcp_pose = self.robot_model.get_tcp_pose()
         self.jog_tcp_visualization_widget.set_tcp_pose(tcp_pose)
+        self.jog_matrix_widget.set_matrix(self.robot_model.get_tcp_rotation_matrix())
     
     def _update_axis_limits(self) -> None:
         """Met à jour les limites des axes affichées"""

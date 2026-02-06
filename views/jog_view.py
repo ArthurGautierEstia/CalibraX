@@ -1,9 +1,10 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox
 
 from widgets.jog_view.jog_cartestian_control_widget import JogCartesianControlWidget
 from widgets.jog_view.jog_joint_control_widget import JogJointControlWidget
 from widgets.jog_view.jog_angles_visualization_widget import JogAnglesVisualizationWidget
 from widgets.jog_view.jog_tcp_visualization_widget import JogTCPVisualizationWidget
+from widgets.matrix_3x3_widget import Matrix3x3Widget
 
 
 class JogView(QWidget):
@@ -17,6 +18,7 @@ class JogView(QWidget):
         self.jog_joint_control_widget = JogJointControlWidget()
         self.jog_angles_visualization_widget = JogAnglesVisualizationWidget()
         self.jog_tcp_visualization_widget = JogTCPVisualizationWidget()
+        self.matrix_widget = Matrix3x3Widget()
         
         self._setup_ui()
     
@@ -38,9 +40,33 @@ class JogView(QWidget):
         second_floor_layout.addWidget(self.jog_angles_visualization_widget)
         second_floor_layout.addWidget(self.jog_tcp_visualization_widget)
         
+
+        # ====================================================================
+        # 3ÈME ÉTAGE : Visualisation de la matrice
+        # ====================================================================
+        
+        self.matrix_widget.setHorizontalHeaderLabels(["X", "Y", "Z"])
+        self.matrix_widget.setVerticalHeaderLabels(["X", "Y", "Z"])
+        self.matrix_widget.set_editable(False)
+
+        matrixGroup = QGroupBox("Matrice de rotation du TCP")
+        matrixGroup_layout = QHBoxLayout()
+        matrixGroup.setLayout(matrixGroup_layout)
+
+        matrixGroup_layout.addWidget(self.matrix_widget)
+
+        third_floor_widget = QWidget()
+        third_floor_widget_layout = QHBoxLayout()
+        third_floor_widget.setLayout(third_floor_widget_layout)
+        third_floor_widget_layout.addWidget(matrixGroup)
+
+        third_floor_layout = QHBoxLayout()
+        third_floor_layout.addWidget(third_floor_widget)
+
         # Ajouter les deux étages au layout principal
         main_layout.addLayout(first_floor_layout)
         main_layout.addLayout(second_floor_layout)
+        main_layout.addLayout(third_floor_layout)
         main_layout.addStretch()
     
     ####################
@@ -62,3 +88,6 @@ class JogView(QWidget):
     def get_jog_tcp_visualization_widget(self) -> JogTCPVisualizationWidget:
         """Retourne le widget de visualisation du TCP"""
         return self.jog_tcp_visualization_widget
+
+    def get_matrix_widget(self) -> Matrix3x3Widget:
+        return self.matrix_widget

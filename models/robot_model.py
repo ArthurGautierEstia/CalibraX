@@ -111,6 +111,8 @@ class RobotModel(QObject):
         # Déviation entre TCP et TCP corrigé
         self.pose_deviation: List[float] = [0, 0, 0, 0, 0, 0]
         
+        self._tcp_rotation_matrix: list[list[float]] = []
+
         # ====================================================================
         # RÉGION: Corrections 6D
         # ====================================================================
@@ -338,6 +340,8 @@ class RobotModel(QObject):
         self._set_tcp_pose(dh_pose)
         self._set_corrected_tcp_pose(corrected_pose, True)
 
+        self._tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*self.tcp_pose[3:6])
+
         # update MGI for current TCP
         self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose)
 
@@ -352,6 +356,9 @@ class RobotModel(QObject):
 
     def get_current_tcp_mgi_result(self):
         return self.current_tcp_mgi_result
+
+    def get_tcp_rotation_matrix(self):
+        return self._tcp_rotation_matrix
 
     # ============================================================================
     # RÉGION: Tool
