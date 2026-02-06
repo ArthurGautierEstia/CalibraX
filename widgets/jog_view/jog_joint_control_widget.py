@@ -1,9 +1,9 @@
 from typing import List
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QPushButton, QDoubleSpinBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 
 
 class JogJointControlWidget(QWidget):
@@ -39,13 +39,13 @@ class JogJointControlWidget(QWidget):
         row_layout = QHBoxLayout()
         label = QLabel(f"Delta")
         label.setFixedWidth(80)
-        label.setAlignment(Qt.AlignCenter)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.delta_input.setValue(0.0)
         self.delta_input.setRange(0, 10)
         self.delta_input.setDecimals(2)
         self.delta_input.setSingleStep(0.1)
-        self.delta_input.setFixedWidth(86)
+        
         self.delta_input.valueChanged.connect(self.delta_changed.emit)
 
         row_layout.addWidget(label)
@@ -58,7 +58,7 @@ class JogJointControlWidget(QWidget):
             row_layout = QHBoxLayout()
             label = QLabel(f"q{i+1}")
             label.setFixedWidth(80)
-            label.setAlignment(Qt.AlignCenter)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             btn_minus = QPushButton("-")
             btn_minus.setMaximumWidth(50)

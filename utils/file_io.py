@@ -1,5 +1,5 @@
 import json
-from PyQt5.QtWidgets import QWidget, QFileDialog
+from PyQt6.QtWidgets import QWidget, QFileDialog
 from typing import Any
 
 class FileIOHandler:

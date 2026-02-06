@@ -1,5 +1,5 @@
-from PyQt5.QtCore import QObject
-from PyQt5.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import pyqtSignal
 import os
 
 from models.robot_model import RobotModel

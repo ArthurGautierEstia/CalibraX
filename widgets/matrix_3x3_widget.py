@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QVBoxLayout
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QVBoxLayout
+from PyQt6.QtCore import pyqtSignal, Qt
 import numpy as np
 
 
@@ -46,11 +46,11 @@ class Matrix3x3Widget(QWidget):
         for i in range(3):
             for j in range(3):
                 item = QTableWidgetItem(str(round(matrix[i, j], 3)))
-                item.setTextAlignment(Qt.AlignCenter)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(i, j, item)
                 
                 if not self._editable:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         
         self.table.blockSignals(False)
         
@@ -67,9 +67,9 @@ class Matrix3x3Widget(QWidget):
                 item = self.table.item(i, j)
                 if item:
                     if editable:
-                        item.setFlags(item.flags() | Qt.ItemIsEditable)
+                        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                     else:
-                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     
     def _on_item_changed(self, item: QTableWidgetItem):
         """Gestionnaire appelé quand une cellule est modifiée"""

@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 from widgets.correction_table_widget import CorrectionTableWidget

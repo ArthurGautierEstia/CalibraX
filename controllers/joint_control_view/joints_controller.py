@@ -1,5 +1,5 @@
-from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QDialog
+from PyQt6.QtCore import QObject
+from PyQt6.QtWidgets import QDialog
 
 from dialogs.axis_limits_dialog import AxisLimitsDialog
 from models.robot_model import RobotModel
@@ -59,7 +59,7 @@ class JointsController(QObject):
             self.robot_model.get_axis_reversed()
         )
         
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             # Récupérer les données du dialogue
             limits = dialog.get_limits()
             home_pos = dialog.get_home_position()

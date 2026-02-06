@@ -1,9 +1,9 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QTabWidget, QAbstractItemView
 )
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QBrush
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QBrush
 
 from widgets.cartesian_control_view.mgi_configuration_selector_widget import MgiConfigurationSelectorWidget
 from widgets.cartesian_control_view.mgi_joint_weights_widget import MgiJointWeightsWidget
@@ -116,8 +116,8 @@ class MgiSolutionsWidget(QWidget):
             "Action"
         ])
 
-        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
 
         layout.addWidget(self._table)
 
@@ -149,7 +149,7 @@ class MgiSolutionsWidget(QWidget):
             # --- Joints
             for joint in item.joints:
                 joint_item = QTableWidgetItem(f"{joint:.3f}")
-                joint_item.setTextAlignment(Qt.AlignCenter)
+                joint_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._table.setItem(row, col_index, joint_item)
                 col_index += 1
 

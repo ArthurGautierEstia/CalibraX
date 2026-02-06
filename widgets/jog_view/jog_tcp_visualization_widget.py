@@ -1,6 +1,6 @@
 from typing import List
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, 
     QLabel, QDoubleSpinBox
 )
@@ -51,7 +51,7 @@ class JogTCPVisualizationWidget(QWidget):
 
             label = QLabel(label_text)
             label.setFixedWidth(80)
-            label.setAlignment(Qt.AlignCenter)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             hbox.addWidget(label)
 
             spinbox.setDecimals(2)

@@ -1,7 +1,7 @@
 import sys
 import os
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
 
 from models.robot_model import RobotModel
 from controllers.main_controller import MainController
@@ -39,7 +39,7 @@ class MGDApplication:
             if os.path.exists(config_file) and config_file.endswith(".json"):
                 QTimer.singleShot(100, lambda: self.load_data(config_file))
 
-        sys.exit(self.app.exec_())
+        sys.exit(self.app.exec())
 
 if __name__ == "__main__":
     app = MGDApplication()

@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox
 
 from widgets.jog_view.jog_cartestian_control_widget import JogCartesianControlWidget
 from widgets.jog_view.jog_joint_control_widget import JogJointControlWidget

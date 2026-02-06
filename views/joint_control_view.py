@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 from widgets.correction_table_widget import CorrectionTableWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget

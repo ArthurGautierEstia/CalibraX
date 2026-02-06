@@ -1,9 +1,9 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QTableWidget,
     QTableWidgetItem, QAbstractItemView
 )
-from PyQt5.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 
 from widgets.robot_view.tool_widget import ToolWidget
 from mgi import RobotTool
@@ -57,8 +57,8 @@ class DHTableWidget(QWidget):
         
         self.table_dh = QTableWidget(6, 4)
         self.table_dh.setHorizontalHeaderLabels(["alpha (°)", "d (mm)", "theta (°)", "r (mm)"])
-        self.table_dh.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.table_dh.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_dh.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_dh.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh.horizontalHeader().setDefaultSectionSize(90)
         self.table_dh.cellChanged.connect(self._on_cell_changed)
         left_layout.addWidget(self.table_dh)

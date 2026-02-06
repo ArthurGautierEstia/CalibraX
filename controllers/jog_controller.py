@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject, QTimer
+from PyQt6.QtCore import QObject, QTimer
 import numpy as np
 from typing import Tuple, Optional
 

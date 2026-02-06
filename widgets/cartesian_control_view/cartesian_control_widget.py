@@ -1,9 +1,9 @@
 from typing import List, Tuple
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QSlider, QDoubleSpinBox, QComboBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 
 
 class CartesianControlWidget(QWidget):
@@ -74,7 +74,7 @@ class CartesianControlWidget(QWidget):
         # ========================================================================
         # RÉGION: Initialisation UI
         # ========================================================================
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.setup_ui()
         
     def setup_ui(self) -> None:
@@ -125,7 +125,7 @@ class CartesianControlWidget(QWidget):
             min_val, max_val = self._axis_limits[i]
             
             # Slider (0-100 représente min-max)
-            slider = QSlider(Qt.Horizontal)
+            slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
             slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par défaut
             

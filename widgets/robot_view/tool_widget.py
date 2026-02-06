@@ -1,7 +1,7 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QDoubleSpinBox, QHBoxLayout, QGroupBox
 )
-from PyQt5.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 
 from mgi import RobotTool
 
@@ -89,7 +89,7 @@ class ToolWidget(QWidget):
         group_layout.addLayout(rot_layout)
 
         # Bouton pour remettre à zéro
-        from PyQt5.QtWidgets import QPushButton
+        from PyQt6.QtWidgets import QPushButton
         reset_btn = QPushButton("Remettre à zéro")
         reset_btn.clicked.connect(self._reset_to_identity)
         group_layout.addWidget(reset_btn)

@@ -1,7 +1,7 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QCheckBox, QLabel
 )
-from PyQt5.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 
 from mgi import MgiConfigKey
 
@@ -51,7 +51,7 @@ class MgiConfigurationSelectorWidget(QWidget):
     # ---------------------------------------------------------
 
     def _on_checkbox_changed(self, key: MgiConfigKey, state: int):
-        checked = state == 2  # Qt.Checked
+        checked = state == 2  # Qt Checked
         self._config_states[key] = checked
         self.configurations_changed.emit(dict(self._config_states))
 

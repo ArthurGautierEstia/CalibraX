@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QTabWidget
+from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QTabWidget
 
 from widgets.viewer_3d_widget import Viewer3DWidget
 from views.robot_view import RobotView

@@ -1,7 +1,8 @@
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem, QAbstractItemView, QLabel
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem, QAbstractItemView, QLabel
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QBrush, QColor
 
-from PyQt5.QtGui import QFont
+from PyQt6.QtGui import QFont
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtGui
 import numpy as np
@@ -40,8 +41,8 @@ class Viewer3DWidget(QWidget):
         # --- LISTE DES REPÈRES (Overlay en haut à gauche) ---
         self.frame_list = QListWidget(self.viewer) # Parent = viewer pour l'overlay
         self.frame_list.setGeometry(10, 10, 150, 300) # Position et taille
-        self.frame_list.setSelectionMode(QAbstractItemView.NoSelection)
-        self.frame_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.frame_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.frame_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         
         self.frame_list.hide()
 
@@ -55,7 +56,7 @@ class Viewer3DWidget(QWidget):
                 border-radius: 3px;
             }
         """)
-        self.msg_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        self.msg_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         # Position initiale (sera ajustée dans resizeEvent)
         self.msg_label.adjustSize()
         self._position_top_right_label()
@@ -139,7 +140,7 @@ class Viewer3DWidget(QWidget):
             self.frame_list.clear()
             for i in range(count):
                 item = QListWidgetItem(f"Frame {i}")
-                item.setTextAlignment(Qt.AlignLeft)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
                 self.frame_list.addItem(item)
             self.frame_list.show()
 
@@ -156,10 +157,10 @@ class Viewer3DWidget(QWidget):
             # Appliquer le style (GRAS + GRIS CLAIR = Visible)
             if self.frames_visibility[i]:
                 item.setFont(font_bold)
-                item.setForeground(Qt.lightGray)  # Gris clair en gras
+                item.setForeground(Qt.GlobalColor.lightGray)  # Gris clair en gras
             else:
                 item.setFont(font_normal)
-                item.setForeground(Qt.darkGray)  # Gris foncé en normal
+                item.setForeground(Qt.GlobalColor.darkGray)  # Gris foncé en normal
 
     def add_grid(self):
         grid = gl.GLGridItem()

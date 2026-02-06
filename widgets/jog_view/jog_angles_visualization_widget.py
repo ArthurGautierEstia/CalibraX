@@ -1,9 +1,9 @@
 from typing import List
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QSlider, QDoubleSpinBox
 )
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 
 class JogAnglesVisualizationWidget(QWidget):
@@ -36,7 +36,7 @@ class JogAnglesVisualizationWidget(QWidget):
             label = QLabel(f"q{i+1} (°)")
             
             # Slider (0-100 représente min-max) - Désactivé
-            slider = QSlider(Qt.Horizontal)
+            slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
             slider.setValue(int(self._SLIDER_MAX / 2))
             slider.setEnabled(False)  # Désactivé

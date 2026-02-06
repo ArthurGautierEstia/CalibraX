@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject
+from PyQt6.QtCore import QObject
 
 from models.robot_model import RobotModel
 from views.joint_control_view import JointControlView

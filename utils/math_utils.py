@@ -1,5 +1,5 @@
 import numpy as np
-from PyQt5.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTableWidget
 
 # ============================================================================
 # RÉGION: Parsing et utilitaires

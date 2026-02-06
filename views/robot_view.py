@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 from widgets.robot_view.dh_table_widget import DHTableWidget
 from widgets.robot_view.measurement_widget import MeasurementWidget

@@ -1,9 +1,9 @@
 from typing import List
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from mgi import MgiConfigKey
 
 
@@ -30,7 +30,7 @@ class JointsControlWidget(QWidget):
 
         self._SLIDER_MAX: int = 1000
         
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.setup_ui()
         
     def setup_ui(self) -> None:
@@ -52,7 +52,7 @@ class JointsControlWidget(QWidget):
             label = QLabel(f"q{i+1} (°)")
 
             # Slider (0-100 représente min-max)
-            slider = QSlider(Qt.Horizontal)
+            slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
             slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par défaut
 

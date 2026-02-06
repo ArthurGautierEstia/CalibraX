@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel,
     QTableWidget, QTableWidgetItem, QAbstractItemView
 )
@@ -24,12 +24,12 @@ class JointsResultTableWidget(QWidget):
         
         # Table des résultats
         self.result_table = QTableWidget(6, 3)
-        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.result_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.result_table.setHorizontalHeaderLabels(["TCP", "TCP Corr", "Ecarts"])
         self.result_table.setVerticalHeaderLabels(["X (mm)", "Y (mm)", "Z (mm)", "A (°)", "B (°)", "C (°)"])
         self.result_table.horizontalHeader().setDefaultSectionSize(110)
-        self.result_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.result_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.result_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.result_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         
         layout.addWidget(self.result_table)
         self.setLayout(layout)

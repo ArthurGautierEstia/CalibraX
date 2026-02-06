@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QAbstractItemView
 )
@@ -21,11 +21,11 @@ class CorrectionTableWidget(QWidget):
         
         # Table des corrections
         self.table_corr = QTableWidget(6, 6)
-        self.table_corr.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table_corr.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_corr.setHorizontalHeaderLabels(["Tx(mm)", "Ty(mm)", "Tz(mm)", "Rx(°)", "Ry(°)", "Rz(°)"])
         self.table_corr.horizontalHeader().setDefaultSectionSize(80)
-        self.table_corr.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.table_corr.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_corr.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_corr.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         
         layout.addWidget(self.table_corr)
         self.setLayout(layout)

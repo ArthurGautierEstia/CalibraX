@@ -1,11 +1,11 @@
 from typing import Dict, List, Optional, Any
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox
 )
-from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QFont
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QFont
 import math
 import numpy as np
 
@@ -89,8 +89,8 @@ class MeasurementWidget(QWidget):
         self.table_me = QTableWidget(5, 3)
         self.table_me.setHorizontalHeaderLabels(["X", "Y", "Z"])
         self.table_me.setVerticalHeaderLabels(["Translation (mm)", "Rotation (°)", "X axis", "Y axis", "Z axis"])
-        self.table_me.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.table_me.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_me.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_me.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         tables_display_me.addWidget(self.table_me)
         layout.addLayout(tables_display_me)
         
@@ -279,4 +279,4 @@ class MeasurementWidget(QWidget):
             for col in range(self.table_me.columnCount()):
                 item = self.table_me.item(row, col)
                 if item:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
