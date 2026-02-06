@@ -2,6 +2,7 @@ import sys
 import os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QIcon
 
 from models.robot_model import RobotModel
 from controllers.main_controller import MainController
@@ -12,10 +13,17 @@ from utils.file_io import FileIOHandler
 class MGDApplication:
     def __init__(self):
         self.app = QApplication(sys.argv)
+
+        currentDir = os.getcwd()
+        icon_path = os.path.join(currentDir, "appicon.ico")
+
+        self.app.setWindowIcon(QIcon(icon_path))
+
         self.load_theme()
 
         self.robot_model = RobotModel()
         self.main_window = MainWindow()
+
         self.main_controller = MainController(self.robot_model, self.main_window)
 
     def load_theme(self):
