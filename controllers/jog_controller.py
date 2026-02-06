@@ -23,7 +23,7 @@ class JogController(QObject):
         # Paramètres de jog
         self.jog_step_joint: float = 1  # Incrément en degrés pour jog articulaire
         self.jog_step_cartesian: float = 1  # Incrément en mm pour jog cartésien
-        self.jog_timer_interval: int = 500  # Intervalle de mise à jour en ms
+        self.jog_timer_interval: int = 20  # Intervalle de mise à jour en ms
         
         # Référentiel actuel (Base ou Tool)
         self.base_tool_reference = "Base"
@@ -158,8 +158,24 @@ class JogController(QObject):
                 if axis_index < 3:
                     # transform xyz
                     pass
+                    delta_pos = np.array([0., 0., 0.])
+                    delta_pos[axis_index] = delta
+                    tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*current_tcp_pose[3:6])
+                    delta_in_base = tcp_rotation_matrix @ delta_pos
+
+                    target[0] += delta_in_base[0]
+                    target[1] += delta_in_base[1]
+                    target[2] += delta_in_base[2]
+
                 else:
-                    target[axis_index] += delta
+                    tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*current_tcp_pose[3:6])
+                    delta_rotation = math_utils.rot_z(delta) if axis_index == 3 else (math_utils.rot_y(delta) if axis_index == 4 else math_utils.rot_x(delta))
+                    new_tcp_rotation =  tcp_rotation_matrix @ delta_rotation
+                    newABC = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
+
+                    target[3] = newABC[0]
+                    target[4] = newABC[1]
+                    target[5] = newABC[2]
 
             else:  # BASE
                 # Le décalage est déjà en BASE, on l'ajoute simplement
