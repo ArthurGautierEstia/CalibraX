@@ -377,6 +377,9 @@ class RobotModel(QObject):
         T_tool[:3, :3] = R_tool
         T_tool[:3, 3] = [self.tool.x, self.tool.y, self.tool.z]
         self.T_tool = T_tool
+    
+    def get_T_tool(self):
+        return self.T_tool
 
     # ============================================================================
     # RÉGION: Getters - Configuration générale

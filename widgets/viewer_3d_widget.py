@@ -68,10 +68,13 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_transparency = QPushButton("Transparence")
         
         self.btn_toggle_axes = QPushButton("Afficher / Masquer tous les Repères")
+
+        self.btn_toggle_axes_base_tool = QPushButton("Repères Base & Tool")
         
         toggle_layout.addWidget(self.btn_toggle_cad)
         toggle_layout.addWidget(self.btn_toggle_transparency)
         toggle_layout.addWidget(self.btn_toggle_axes)
+        toggle_layout.addWidget(self.btn_toggle_axes_base_tool)
         layout.addLayout(toggle_layout)
         
         self.setLayout(layout)
@@ -81,6 +84,7 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_cad.clicked.connect(self._on_cad_button_clicked)
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
+        self.btn_toggle_axes_base_tool.clicked.connect(self._on_axes_base_tool_button_clicked)
 
     def _position_top_right_label(self):
         """Positionne le label en haut à droite du viewer"""
@@ -117,6 +121,13 @@ class Viewer3DWidget(QWidget):
 
     def _on_axes_button_clicked(self):
         self.show_axes = not self.show_axes
+        self._clear_and_refresh()
+    
+    def _on_axes_base_tool_button_clicked(self):
+        self.show_axes = True
+        size = len(self.frames_visibility)
+        last = size - 1
+        self.frames_visibility = [(i == 0 or i == last) for i in range(size)]
         self._clear_and_refresh()
 
     def update_frame_list_ui(self):

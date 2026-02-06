@@ -5,7 +5,7 @@ from PyQt5.QtCore import QTimer
 
 from models.robot_model import RobotModel
 from controllers.main_controller import MainController
-from views.main_window2 import MainWindow
+from views.main_window import MainWindow
 
 from utils.file_io import FileIOHandler
 

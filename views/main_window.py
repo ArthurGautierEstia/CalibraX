@@ -1,68 +1,75 @@
-from PyQt5.QtWidgets import QMainWindow, QTabWidget, QWidget
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QTabWidget
 
-from RobotTab.cartesiancontrol import CartesianControlWindow
-from RobotTab.robotwindow import RobotWindow
-from RobotTab.jointcontrol import JointControlWindow
-from RobotTab.robotmodel import RobotModel
+from widgets.viewer_3d_widget import Viewer3DWidget
+from views.robot_view import RobotView
+from views.joint_control_view import JointControlView
+from views.cartesian_control_view import CartesianControlView
+from views.jog_view import JogView
 
 class MainWindow(QMainWindow):
-    """Fenêtre principale avec système d'onglets pour les différentes fonctionnalités"""
-    on_tab_changed = pyqtSignal(int)
 
-    def __init__(self, robot_model: RobotModel, parent: QWidget = None):
+    def __init__(self, parent: QWidget=None):
         super().__init__(parent)
-        self.setWindowTitle("MGD Robot Compensator")
-        self.resize(2000, 1100)
-        
-        # ====================================================================
-        # RÉGION: Initialisation du système d'onglets
-        # ====================================================================
-        self.tab_widget = QTabWidget()
-        self.setCentralWidget(self.tab_widget)
-        
-        # Créer les fenêtres pour chaque onglet
-        self.robot_model = robot_model
+        self.setWindowTitle("Calibrax")
 
-        LEFT_STRECTH = 40
-        RIGHT_STRECTH = 100 - LEFT_STRECTH
+        self.tabs = QTabWidget()
 
-        self.joint_control = JointControlWindow(robot_model, LEFT_STRECTH, RIGHT_STRECTH)
-        self.cartesian_control = CartesianControlWindow(robot_model, LEFT_STRECTH, RIGHT_STRECTH)
-        self.robot_window = RobotWindow(robot_model, self, self.joint_control, self.cartesian_control, LEFT_STRECTH, RIGHT_STRECTH)
-        
-        # ====================================================================
-        # RÉGION: Configuration des onglets
-        # ====================================================================
-        self._setup_tabs()
+        self.robot_view = RobotView()
+        self.joint_control_view = JointControlView()
+        self.cartesian_control_view = CartesianControlView()
+        self.jog_view = JogView()
 
-        self._setup_connections()
+        self.viewer3d = Viewer3DWidget()
+
+        self._setup_ui()
     
-    def _setup_tabs(self) -> None:
-        """Configure les onglets de la fenêtre principale"""
-        # Onglet Robot (configuration et contrôle)
-        self.tab_widget.addTab(self.robot_window, "Robot")
-        self.tab_widget.addTab(self.joint_control, "Contrôle articulaire")
-        self.tab_widget.addTab(self.cartesian_control, "Contrôle cartésien")
+    def _setup_ui(self) -> None:
+        """Configure l'interface utilisateur de la fenêtre principale"""
 
-        self.tab_widget.setTabEnabled(1, False)  # Désactive l'onglet de contrôle articulaire
-        self.tab_widget.setTabEnabled(2, False)  # Désactive l'onglet de contrôle cartésien
+        central_widget = QWidget()
+        
+        self.tabs.addTab(self.robot_view, "Robot")
+        self.tabs.addTab(self.joint_control_view, "Contrôle articulaire")
+        self.tabs.addTab(self.cartesian_control_view, "Contrôle cartésien")
+        self.tabs.addTab(self.jog_view, "Jog")
 
-        # Les prochains onglets seront ajoutés ici à l'avenir
-        # self.tab_widget.addTab(self.calibration_window, "Calibration")
-        # self.tab_widget.addTab(self.analysis_window, "Analyse")
+        layout = QHBoxLayout(central_widget)
+        layout.addWidget(self.tabs, 2)
+        layout.addWidget(self.viewer3d, 3)
 
-    def get_robot_window(self) -> RobotWindow:
-        """Retourne la fenêtre de configuration du robot"""
-        return self.robot_window
+        self.setCentralWidget(central_widget)
+
+    ####################
+    # VIEW GETTERS
+    ####################
+
+    def get_robot_view(self) -> RobotView:
+        """Retourne la vue de configuration du robot"""
+        return self.robot_view
     
-    def _setup_connections(self) -> None:
-        """Configure les connexions de signaux entre les composants de la fenêtre principale"""
-        self.tab_widget.currentChanged.connect(self.on_tab_changed.emit)
-        self.robot_model.configuration_changed.connect(self._on_configuration_changed)
+    def get_joint_control_view(self) -> JointControlView:
+        """Retourne la vue de contrôle articulaire"""
+        return self.joint_control_view
     
-    def _on_configuration_changed(self):
-        """Gère les changements de configuration du robot"""
-        # Activer les onglets de contrôle lorsque la configuration change
-        self.tab_widget.setTabEnabled(1, True)  # Active l'onglet de contrôle articulaire
-        self.tab_widget.setTabEnabled(2, True)  # Active l'onglet de contrôle cartésien
+    def get_cartesian_control_view(self) -> CartesianControlView:
+        """Retourne la vue de contrôle cartésien"""
+        return self.cartesian_control_view
+    
+    def get_jog_view(self) -> JogView:
+        """Retourne la vue de jog"""
+        return self.jog_view
+    
+    def get_viewer3d(self) -> Viewer3DWidget:
+        """Retourne la vue du viewer 3D"""
+        return self.viewer3d
+
+    #####################
+    # Functions
+    #####################
+
+    def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
+        """Active ou désactive les onglets de contrôle en fonction de la configuration du robot"""
+        self.tabs.setTabEnabled(1, robot_has_configuration)
+        self.tabs.setTabEnabled(2, robot_has_configuration)
+        self.tabs.setTabEnabled(3, robot_has_configuration)
+    

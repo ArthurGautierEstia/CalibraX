@@ -112,7 +112,7 @@ class MgiSolutionsWidget(QWidget):
         self._table.setHorizontalHeaderLabels([
             "Config",
             "Statut",
-            "J1", "J2", "J3", "J4", "J5", "J6",
+            "q1", "q2", "q3", "q4", "q5", "q6",
             "Action"
         ])
 
@@ -179,7 +179,7 @@ class MgiSolutionsWidget(QWidget):
             lines.append("Axes hors limites :")
             for violated_axis in item.violated_limits:
                 min, max = self._axis_limits[violated_axis]
-                lines.append(f"• J{violated_axis+1} ({min}, {max})")
+                lines.append(f"• J{violated_axis+1}: {item.joints[violated_axis]} ({min}, {max})")
 
         return "\n".join(lines)
 
