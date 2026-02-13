@@ -120,7 +120,7 @@ class TrajectoryGraphPanelWidget(QWidget):
         self.acceleration_plot.setLabel("left", TrajectoryGraphPanelWidget.lblWithUnit(self.ACCELERATION_LBL, acceleration_unit))
 
     def _unit_labels(self) -> tuple[str, str, str]:
-        return "°", "°/s", "°/s²" if self.mode == GraphMode.ARTICULAR else "mm", "mm/s", "mm/s²"
+        return ("°", "°/s", "°/s²") if self.mode == GraphMode.ARTICULAR else ("mm", "mm/s", "mm/s²")
 
     def set_trajectories(
         self,
