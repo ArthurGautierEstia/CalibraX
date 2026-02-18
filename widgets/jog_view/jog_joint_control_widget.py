@@ -1,7 +1,7 @@
 from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QLabel, QPushButton, QDoubleSpinBox
+    QLabel, QPushButton, QDoubleSpinBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -45,6 +45,7 @@ class JogJointControlWidget(QWidget):
         self.delta_input.setRange(0, 10)
         self.delta_input.setDecimals(2)
         self.delta_input.setSingleStep(0.1)
+        self.delta_input.setFixedWidth(101)
         
         self.delta_input.valueChanged.connect(self.delta_changed.emit)
 
@@ -61,14 +62,14 @@ class JogJointControlWidget(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             btn_minus = QPushButton("-")
-            btn_minus.setMaximumWidth(50)
             btn_minus.pressed.connect(lambda idx=i: self.jog_joint_minus_pressed.emit(idx))
             btn_minus.released.connect(lambda idx=i: self.jog_joint_minus_released.emit(idx))
+            btn_minus.setFixedWidth(48)
 
             btn_plus = QPushButton("+")
-            btn_plus.setMaximumWidth(50)
             btn_plus.pressed.connect(lambda idx=i: self.jog_joint_plus_pressed.emit(idx))
             btn_plus.released.connect(lambda idx=i: self.jog_joint_plus_released.emit(idx))
+            btn_plus.setFixedWidth(48)
             
             row_layout.addWidget(label)
             row_layout.addWidget(btn_minus)

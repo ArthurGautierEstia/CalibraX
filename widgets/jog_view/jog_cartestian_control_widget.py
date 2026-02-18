@@ -43,7 +43,7 @@ class JogCartesianControlWidget(QWidget):
         self.base_tool_combobox = QComboBox()
         self.base_tool_combobox.addItem("Base")
         self.base_tool_combobox.addItem("Tool")
-        self.base_tool_combobox.setFixedWidth(86)
+        self.base_tool_combobox.setFixedWidth(101)
         
         self.base_tool_combobox.currentTextChanged.connect(self.jog_base_tool_changed.emit)
         
@@ -63,6 +63,7 @@ class JogCartesianControlWidget(QWidget):
         self.delta_input.setRange(0, 10)
         self.delta_input.setDecimals(2)
         self.delta_input.setSingleStep(0.1)
+        self.delta_input.setFixedWidth(101)
         
         self.delta_input.valueChanged.connect(self.delta_changed.emit)
 
@@ -80,12 +81,12 @@ class JogCartesianControlWidget(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             btn_minus = QPushButton("-")
-            btn_minus.setMaximumWidth(50)
+            btn_minus.setMaximumWidth(48)
             btn_minus.pressed.connect(lambda idx=i: self.jog_cartesian_minus_pressed.emit(idx))
             btn_minus.released.connect(lambda idx=i: self.jog_cartesian_minus_released.emit(idx))
             
             btn_plus = QPushButton("+")
-            btn_plus.setMaximumWidth(50)
+            btn_plus.setMaximumWidth(48)
             btn_plus.pressed.connect(lambda idx=i: self.jog_cartesian_plus_pressed.emit(idx))
             btn_plus.released.connect(lambda idx=i: self.jog_cartesian_plus_released.emit(idx))
             
