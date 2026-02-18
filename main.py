@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QColor, QPalette
 
 from models.robot_model import RobotModel
 from controllers.main_controller import MainController
@@ -13,6 +13,7 @@ from utils.file_io import FileIOHandler
 class MGDApplication:
     def __init__(self):
         self.app = QApplication(sys.argv)
+        self.apply_kuka_accent()
 
         currentDir = os.getcwd()
         icon_path = os.path.join(currentDir, "appicon.ico")
@@ -25,6 +26,18 @@ class MGDApplication:
         self.main_window = MainWindow()
 
         self.main_controller = MainController(self.robot_model, self.main_window)
+
+    def apply_kuka_accent(self):
+        """Force une couleur d'accent orange au lieu de la couleur systeme."""
+        accent = QColor("#FF6F00")
+        palette = self.app.palette()
+        palette.setColor(QPalette.ColorRole.Highlight, accent)
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        palette.setColor(QPalette.ColorRole.Link, accent)
+        palette.setColor(QPalette.ColorRole.LinkVisited, QColor("#D65E00"))
+        if hasattr(QPalette.ColorRole, "Accent"):
+            palette.setColor(QPalette.ColorRole.Accent, accent)
+        self.app.setPalette(palette)
 
     def load_theme(self, file: str = "themes/dark_theme.qss"):
         try:
