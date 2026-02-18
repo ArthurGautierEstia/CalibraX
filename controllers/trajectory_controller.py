@@ -28,13 +28,10 @@ class TrajectoryController(QObject):
         self.config_widget.updateRobotGhostRequested.connect(self._on_update_robot_ghost_requested)
 
     def _on_show_robot_ghost_requested(self) -> None:
-        print("ctrl _on_show_robot_ghost_requested")
         self.viewer3d_controller.show_robot_ghost()
 
     def _on_hide_robot_ghost_requested(self) -> None:
-        print("ctrl _on_hide_robot_ghost_requested")
         self.viewer3d_controller.hide_robot_ghost()
 
     def _on_update_robot_ghost_requested(self, joints: list[float]) -> None:
-        print("ctrl _on_update_robot_ghost_requested")
         self.viewer3d_controller.update_robot_ghost(joints)

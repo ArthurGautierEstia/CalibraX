@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import pyqtSignal, QCoreApplication
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -85,7 +85,12 @@ class TrajectoryConfigWidget(QWidget):
         self.showRobotGhostRequested.emit()
 
         dialog.updateRobotGhostRequested.connect(self.updateRobotGhostRequested.emit)
-        dialog.load_keypoint(TrajectoryKeypoint())
+        dialog.load_keypoint(
+            TrajectoryKeypoint(
+                cartesian_target=list(self.robot_model.get_tcp_pose()),
+                joint_target=list(self.robot_model.get_joints()),
+            )
+        )
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._keypoints.append(dialog.get_keypoint())

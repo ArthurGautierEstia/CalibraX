@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -24,6 +24,8 @@ from PyQt6.QtWidgets import (
 from utils.mgi import MgiConfigKey, MgiResultStatus
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.robot_model import RobotModel
+from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
+from widgets.joint_control_view.joints_control_widget import JointsControlWidget
 
 
 class TrajectoryKeypointDialog(QDialog):
@@ -44,14 +46,16 @@ class TrajectoryKeypointDialog(QDialog):
     def __init__(self, robot_model: RobotModel, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Point clé")
+        self._dialog_min_width = 480
+        self.setMinimumWidth(self._dialog_min_width)
         self.robot_model = robot_model
 
         self.target_type_combo = QComboBox()
         self.use_current_target_btn = QPushButton("Valeurs courantes")
         self.target_stack = QStackedWidget()
 
-        self.cartesian_target_spins: list[QDoubleSpinBox] = []
-        self.joint_target_spins: list[QDoubleSpinBox] = []
+        self.cartesian_target_widget = CartesianControlWidget()
+        self.joint_target_widget = JointsControlWidget()
         self.cartesian_error_label = QLabel("")
 
         self.mode_combo = QComboBox()
@@ -70,12 +74,14 @@ class TrajectoryKeypointDialog(QDialog):
         self.config_checkboxes: list[QCheckBox] = []
         self.config_hint_label = QLabel("En mode articulaire, la configuration est deduite automatiquement depuis J1..J6.")
 
-        tmpLabel = QLabel("XX")
-        self.targetLblMinWidth = tmpLabel.sizeHint().width()
-
         self._setup_ui()
         self._setup_connections()
-        self.load_keypoint(TrajectoryKeypoint())
+        self.load_keypoint(
+            TrajectoryKeypoint(
+                cartesian_target=list(self.robot_model.get_tcp_pose()),
+                joint_target=list(self.robot_model.get_joints()),
+            )
+        )
 
     @staticmethod
     def _make_spin(minimum: float, maximum: float, decimals: int = 3, step: float = 0.1) -> QDoubleSpinBox:
@@ -118,13 +124,13 @@ class TrajectoryKeypointDialog(QDialog):
         cubic_layout = QGridLayout()
         cubic_layout.addWidget(QLabel("Vecteur Out"), 0, 0)
         for i in range(3):
-            spin = self._make_spin(-10000.0, 10000.0, 3, 0.1)
+            spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
             self.cubic_vector_1.append(spin)
             cubic_layout.addWidget(spin, 0, i + 1)
 
         cubic_layout.addWidget(QLabel("Vecteur In"), 1, 0)
         for i in range(3):
-            spin = self._make_spin(-10000.0, 10000.0, 3, 0.1)
+            spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
             self.cubic_vector_2.append(spin)
             cubic_layout.addWidget(spin, 1, i + 1)
         self.cubic_group.setLayout(cubic_layout)
@@ -172,46 +178,30 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _build_cartesian_target_group(self) -> QGroupBox:
         group = QGroupBox("Target cartesienne (X Y Z A B C)")
-        grid = QGridLayout()
-        labels = ["X", "Y", "Z", "A", "B", "C"]
-        for i, label in enumerate(labels):
-            row = 0 if i < 3 else 1
-            col = (i % 3) * 2
-            lbl = QLabel(label)
-            lbl.setFixedWidth(self.targetLblMinWidth)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            
-            grid.addWidget(lbl, row, col)
-            spin = self._make_spin(-10000.0, 10000.0, 3, 0.1)
-            self.cartesian_target_spins.append(spin)
-            grid.addWidget(spin, row, col + 1)
+        layout = QVBoxLayout()
+
+        # Keep historical wide limits from previous dialog spinboxes.
+        layout.addWidget(self.cartesian_target_widget)
 
         self.cartesian_error_label.setStyleSheet("color: #d9534f;")
         self.cartesian_error_label.setWordWrap(True)
         self.cartesian_error_label.setMinimumHeight(self.cartesian_error_label.fontMetrics().lineSpacing() * 2 + 4)
         self.cartesian_error_label.setText("")
-        grid.addWidget(self.cartesian_error_label, 2, 0, 1, 6)
+        layout.addWidget(self.cartesian_error_label)
 
-        group.setLayout(grid)
+        group.setLayout(layout)
         return group
 
     def _build_joint_target_group(self) -> QGroupBox:
         group = QGroupBox("Target articulaire (J1 J2 J3 J4 J5 J6)")
-        grid = QGridLayout()
-        axis_limits = self.robot_model.get_axis_limits()
-        for i in range(6):
-            row = 0 if i < 3 else 1
-            col = (i % 3) * 2
-            lbl = QLabel(f"J{i + 1}")
-            lbl.setFixedWidth(self.targetLblMinWidth)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout = QVBoxLayout()
 
-            grid.addWidget(lbl, row, col)
-            axis_min, axis_max = axis_limits[i]
-            spin = self._make_spin(axis_min, axis_max, 3, 0.1)
-            self.joint_target_spins.append(spin)
-            grid.addWidget(spin, row, col + 1)
-        group.setLayout(grid)
+        self.joint_target_widget.update_axis_limits(self.robot_model.get_axis_limits())
+        self.joint_target_widget.btn_limits.hide()
+        self.joint_target_widget.btn_home_position.hide()
+        layout.addWidget(self.joint_target_widget)
+
+        group.setLayout(layout)
         return group
 
     def _setup_connections(self) -> None:
@@ -221,30 +211,24 @@ class TrajectoryKeypointDialog(QDialog):
         self.favorite_config_combo.currentIndexChanged.connect(self._on_favorite_changed)
         for cb in self.config_checkboxes:
             cb.toggled.connect(self._on_config_checkbox_toggled)
-        for spin in self.joint_target_spins:
-            spin.valueChanged.connect(self._on_joint_target_changed)
-        for spin in self.cartesian_target_spins:
-            spin.valueChanged.connect(self._on_cartesian_target_changed)
+        self.joint_target_widget.joint_value_changed.connect(self._on_joint_target_changed)
+        self.cartesian_target_widget.cartesian_value_changed.connect(self._on_cartesian_target_changed)
 
     def _on_use_current_target_clicked(self) -> None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
-            current_target = list(self.robot_model.get_tcp_pose())
-            for i, spin in enumerate(self.cartesian_target_spins):
-                spin.setValue(current_target[i] if i < len(current_target) else 0.0)
+            self.cartesian_target_widget.set_all_cartesian(list(self.robot_model.get_tcp_pose()))
             self._emit_ghost_update()
             return
 
-        current_joints = list(self.robot_model.get_joints())
-        for i, spin in enumerate(self.joint_target_spins):
-            spin.setValue(current_joints[i] if i < len(current_joints) else 0.0)
+        self.joint_target_widget.set_all_joints(list(self.robot_model.get_joints()))
         self._emit_ghost_update()
 
     def _compute_ghost_joint_values(self) -> list[float]:
         if self._current_target_type() == KeypointTargetType.JOINT:
             self._set_cartesian_error("")
-            return [spin.value() for spin in self.joint_target_spins]
+            return self.joint_target_widget.get_all_joints()
 
-        target = [spin.value() for spin in self.cartesian_target_spins]
+        target = self.cartesian_target_widget.get_cartesian_values()
         mgi_result = self.robot_model.compute_ik_target(target)
         valid_solutions = mgi_result.get_valid_solutions()
         if not valid_solutions:
@@ -269,8 +253,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _emit_ghost_update(self) -> None:
         joints = self._compute_ghost_joint_values()
-        if len(joints) > 0:
-            self.updateRobotGhostRequested.emit(joints)
+        self.updateRobotGhostRequested.emit(joints)
 
     def _set_cartesian_error(self, message: str) -> None:
         self.cartesian_error_label.setText(message)
@@ -310,9 +293,16 @@ class TrajectoryKeypointDialog(QDialog):
             self._linear_speed_mps = self._clamp(current, 0.0, 2.0)
 
     def _try_minimize_window_size(self) -> None:
-        self.setMinimumSize(0, 0)
+        self.setMinimumSize(self._dialog_min_width, 0)
         self.adjustSize()
-        QTimer.singleShot(0, self.adjustSize)
+        if self.width() < self._dialog_min_width:
+            self.resize(self._dialog_min_width, self.height())
+        QTimer.singleShot(0, self._apply_min_width_after_layout)
+
+    def _apply_min_width_after_layout(self) -> None:
+        self.adjustSize()
+        if self.width() < self._dialog_min_width:
+            self.resize(self._dialog_min_width, self.height())
 
     def _on_mode_changed(self, _mode: str) -> None:
         self._store_current_speed()
@@ -327,12 +317,12 @@ class TrajectoryKeypointDialog(QDialog):
         self._try_minimize_window_size()
         self._emit_ghost_update()
 
-    def _on_joint_target_changed(self, _value: float) -> None:
+    def _on_joint_target_changed(self, *_args) -> None:
         if self._current_target_type() == KeypointTargetType.JOINT:
             self._sync_joint_mode_configs()
         self._emit_ghost_update()
 
-    def _on_cartesian_target_changed(self, _value: float) -> None:
+    def _on_cartesian_target_changed(self, *_args) -> None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             self._emit_ghost_update()
 
@@ -367,7 +357,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._emit_ghost_update()
 
     def _sync_joint_mode_configs(self) -> None:
-        joint_target = [spin.value() for spin in self.joint_target_spins]
+        joint_target = self.joint_target_widget.get_all_joints()
         deduced = TrajectoryKeypoint.identify_config_from_joint_target(
             joint_target,
             self.robot_model.get_config_identifier(),
@@ -419,10 +409,8 @@ class TrajectoryKeypointDialog(QDialog):
             self.target_type_combo.setCurrentIndex(target_type_idx)
             self.target_type_combo.blockSignals(False)
 
-        for i, spin in enumerate(self.cartesian_target_spins):
-            spin.setValue(keypoint.cartesian_target[i])
-        for i, spin in enumerate(self.joint_target_spins):
-            spin.setValue(keypoint.joint_target[i])
+        self.cartesian_target_widget.set_all_cartesian(keypoint.cartesian_target)
+        self.joint_target_widget.set_all_joints(keypoint.joint_target)
 
         self._ptp_speed_percent = keypoint.ptp_speed_percent
         self._linear_speed_mps = keypoint.linear_speed_mps
@@ -455,8 +443,8 @@ class TrajectoryKeypointDialog(QDialog):
 
         return TrajectoryKeypoint(
             target_type=target_type,
-            cartesian_target=[spin.value() for spin in self.cartesian_target_spins],
-            joint_target=[spin.value() for spin in self.joint_target_spins],
+            cartesian_target=self.cartesian_target_widget.get_cartesian_values(),
+            joint_target=self.joint_target_widget.get_all_joints(),
             mode=mode,
             cubic_vectors=[
                 [spin.value() for spin in self.cubic_vector_1],
