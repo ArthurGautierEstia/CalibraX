@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import json
+from typing import Any, TYPE_CHECKING
+
+from mgi import MgiConfigKey, RobotTool
+
+if TYPE_CHECKING:
+    from models.robot_model import RobotModel
+
+
+@dataclass
+class RobotConfigurationFile:
+    """Representation d'un fichier de configuration robot."""
+
+    name: str = ""
+    dh: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0] for _ in range(6)])
+    corr: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(6)])
+    q: list[float] = field(default_factory=lambda: [0.0] * 6)
+    axis_limits: list[tuple[float, float]] = field(default_factory=lambda: [(-180.0, 180.0) for _ in range(6)])
+    axis_reversed: list[int] = field(default_factory=lambda: [1] * 6)
+    joint_weights: list[float] = field(default_factory=lambda: [1.0] * 6)
+    allowed_configs: set[MgiConfigKey] = field(default_factory=lambda: set(MgiConfigKey))
+    home_position: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 90.0, 0.0])
+    tool: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+    # Tracks which fields were present when loaded from JSON.
+    present_fields: set[str] = field(default_factory=set, repr=False)
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _parse_matrix(
+        cls,
+        rows: Any,
+        row_count: int,
+        col_count: int,
+        default_value: float = 0.0,
+    ) -> list[list[float]]:
+        matrix: list[list[float]] = []
+        if not isinstance(rows, list):
+            rows = []
+
+        for row in rows[:row_count]:
+            if not isinstance(row, list):
+                row = []
+            parsed_row = [cls._safe_float(v, default_value) for v in row[:col_count]]
+            while len(parsed_row) < col_count:
+                parsed_row.append(default_value)
+            matrix.append(parsed_row)
+
+        while len(matrix) < row_count:
+            matrix.append([default_value] * col_count)
+        return matrix
+
+    @classmethod
+    def _parse_float_list(cls, values: Any, length: int, default_value: float = 0.0) -> list[float]:
+        parsed: list[float] = []
+        if not isinstance(values, list):
+            values = []
+
+        for value in values[:length]:
+            parsed.append(cls._safe_float(value, default_value))
+
+        while len(parsed) < length:
+            parsed.append(default_value)
+        return parsed
+
+    @classmethod
+    def _parse_axis_limits(cls, values: Any) -> list[tuple[float, float]]:
+        limits: list[tuple[float, float]] = []
+        if not isinstance(values, list):
+            values = []
+
+        for item in values[:6]:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                limits.append((cls._safe_float(item[0], -180.0), cls._safe_float(item[1], 180.0)))
+            else:
+                limits.append((-180.0, 180.0))
+
+        while len(limits) < 6:
+            limits.append((-180.0, 180.0))
+        return limits
+
+    @classmethod
+    def _parse_axis_reversed(cls, values: Any) -> list[int]:
+        parsed = cls._parse_float_list(values, 6, 1.0)
+        return [-1 if int(v) == -1 else 1 for v in parsed]
+
+    @staticmethod
+    def _parse_mgi_config_key(raw_value: Any) -> MgiConfigKey | None:
+        if isinstance(raw_value, MgiConfigKey):
+            return raw_value
+
+        if isinstance(raw_value, str):
+            key_name = raw_value.strip().upper()
+            if key_name in MgiConfigKey.__members__:
+                return MgiConfigKey[key_name]
+            try:
+                return MgiConfigKey(int(key_name))
+            except (ValueError, TypeError):
+                return None
+
+        if isinstance(raw_value, (int, float)):
+            try:
+                return MgiConfigKey(int(raw_value))
+            except (ValueError, TypeError):
+                return None
+
+        return None
+
+    @classmethod
+    def _parse_allowed_configs(cls, raw_values: Any) -> set[MgiConfigKey]:
+        parsed: set[MgiConfigKey] = set()
+
+        if isinstance(raw_values, dict):
+            for key, is_allowed in raw_values.items():
+                if is_allowed:
+                    parsed_key = cls._parse_mgi_config_key(key)
+                    if parsed_key is not None:
+                        parsed.add(parsed_key)
+            return parsed
+
+        if isinstance(raw_values, list):
+            for key in raw_values:
+                parsed_key = cls._parse_mgi_config_key(key)
+                if parsed_key is not None:
+                    parsed.add(parsed_key)
+            return parsed
+
+        return set(MgiConfigKey)
+
+    @classmethod
+    def from_robot_model(cls, robot_model: RobotModel) -> RobotConfigurationFile:
+        return cls(
+            name=robot_model.get_robot_name(),
+            dh=[row[:] for row in robot_model.get_dh_params()[:6]],
+            corr=[row[:] for row in robot_model.get_corrections()],
+            q=robot_model.get_joints(),
+            axis_limits=[tuple(v) for v in robot_model.get_axis_limits()],
+            axis_reversed=robot_model.get_axis_reversed(),
+            joint_weights=robot_model.get_joint_weights(),
+            allowed_configs=robot_model.get_allowed_configurations(),
+            home_position=robot_model.get_home_position(),
+            tool=[
+                robot_model.get_tool().x,
+                robot_model.get_tool().y,
+                robot_model.get_tool().z,
+                robot_model.get_tool().a,
+                robot_model.get_tool().b,
+                robot_model.get_tool().c,
+            ],
+            present_fields={
+                "name",
+                "dh",
+                "corr",
+                "q",
+                "axis_limits",
+                "axis_reversed",
+                "joint_weights",
+                "allowed_configs",
+                "home_position",
+                "tool",
+            },
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RobotConfigurationFile:
+        if not isinstance(data, dict):
+            raise TypeError("La configuration robot doit etre un dictionnaire JSON.")
+
+        present_fields = set(data.keys())
+        name_raw = data.get("name", "")
+        if isinstance(name_raw, list) and name_raw:
+            name = str(name_raw[0])
+        elif isinstance(name_raw, str):
+            name = name_raw
+        else:
+            name = ""
+
+        allowed_raw_key = None
+        if "allowed_configs" in data:
+            allowed_raw_key = "allowed_configs"
+        elif "allowed_configurations" in data:
+            allowed_raw_key = "allowed_configurations"
+            present_fields.add("allowed_configs")
+
+        allowed_configs = cls._parse_allowed_configs(data.get(allowed_raw_key)) if allowed_raw_key else set(MgiConfigKey)
+
+        return cls(
+            name=name,
+            dh=cls._parse_matrix(data.get("dh"), 6, 4, 0.0),
+            corr=cls._parse_matrix(data.get("corr"), 6, 6, 0.0),
+            q=cls._parse_float_list(data.get("q"), 6, 0.0),
+            axis_limits=cls._parse_axis_limits(data.get("axis_limits")),
+            axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
+            joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
+            allowed_configs=allowed_configs,
+            home_position=cls._parse_float_list(data.get("home_position"), 6, 0.0),
+            tool=cls._parse_float_list(data.get("tool"), 6, 0.0),
+            present_fields=present_fields,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": [self.name],
+            "dh": [[str(val) for val in row] for row in self.dh[:6]],
+            "corr": [[str(val) for val in row] for row in self.corr[:6]],
+            "q": self.q[:6],
+            "axis_limits": self.axis_limits[:6],
+            "axis_reversed": self.axis_reversed[:6],
+            "joint_weights": self.joint_weights[:6],
+            "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],
+            "home_position": self.home_position[:6],
+            "tool": self.tool[:6],
+        }
+
+    def apply_to_robot_model(self, robot_model: RobotModel) -> None:
+        if "name" in self.present_fields:
+            robot_model.robot_name = self.name
+        if "dh" in self.present_fields:
+            robot_model.set_dh_params(self.dh)
+        if "corr" in self.present_fields:
+            robot_model._set_corrections(self.corr)
+        if "q" in self.present_fields:
+            robot_model.set_joints(self.q)
+        if "axis_reversed" in self.present_fields:
+            robot_model.set_axis_reversed(self.axis_reversed)
+        if "joint_weights" in self.present_fields:
+            robot_model.set_joint_weights(self.joint_weights)
+        if "allowed_configs" in self.present_fields:
+            robot_model.set_allowed_configurations(self.allowed_configs)
+        if "axis_limits" in self.present_fields:
+            robot_model.set_axis_limits(self.axis_limits)
+        if "home_position" in self.present_fields:
+            robot_model.set_home_position(self.home_position)
+        if "tool" in self.present_fields:
+            robot_model.set_tool(RobotTool(*self.tool[:6]))
+
+    def save(self, file_path: str) -> None:
+        with open(file_path, "w") as file:
+            json.dump(self.to_dict(), file, indent=4)
+
+    @classmethod
+    def load(cls, file_path: str) -> RobotConfigurationFile:
+        with open(file_path, "r") as file:
+            data = json.load(file)
+        return cls.from_dict(data)

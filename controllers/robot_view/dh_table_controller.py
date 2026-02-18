@@ -3,6 +3,7 @@ from PyQt6.QtCore import pyqtSignal
 import os
 
 from models.robot_model import RobotModel
+from models.robot_configuration_file import RobotConfigurationFile
 from utils.file_io import FileIOHandler
 from utils.popup import show_error_popup
 from utils.str_utils import str_to_float
@@ -91,7 +92,8 @@ class DHTableController(QObject):
                 show_error_popup("Erreur d'importation", "Le fichier de configuration n'est pas au format adapté. Veuillez vérifier le contenu.")
                 return
             
-            self.robot_model.load_from_dict(data, file_path)
+            config = RobotConfigurationFile.from_dict(data)
+            self.robot_model.load_from_configuration_file(config, file_path)
             self.configuration_loaded.emit()
 
     def export_configuration(self):
@@ -99,10 +101,10 @@ class DHTableController(QObject):
         currentDir = os.getcwd()
         configurationDir = os.path.join(currentDir, 'configurations') 
 
-        data = self.robot_model.to_dict()
+        config = RobotConfigurationFile.from_robot_model(self.robot_model)
         FileIOHandler.save_json(
             self.dh_table_widget,
             "Exporter/Sauvegarder une configuration robot",
-            data,
+            config.to_dict(),
             configurationDir if os.path.exists(configurationDir) else currentDir
         )
