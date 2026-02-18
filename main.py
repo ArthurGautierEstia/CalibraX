@@ -23,7 +23,7 @@ class MGDApplication:
         #self.load_theme("themes/test.qss")
 
         self.robot_model = RobotModel()
-        self.main_window = MainWindow()
+        self.main_window = MainWindow(self.robot_model)
 
         self.main_controller = MainController(self.robot_model, self.main_window)
 

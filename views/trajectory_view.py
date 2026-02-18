@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
+from models.robot_model import RobotModel
 from widgets.trajectory_view.trajectory_config_widget import TrajectoryConfigWidget
 from widgets.trajectory_view.trajectory_actions_widget import TrajectoryActionsWidget
 from widgets.trajectory_view.trajectory_graphs_widget import TrajectoryGraphsWidget
@@ -8,10 +9,10 @@ from widgets.trajectory_view.trajectory_graphs_widget import TrajectoryGraphsWid
 class TrajectoryView(QWidget):
     """Main view for trajectory creation, playback, and graphs."""
 
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, robot_model: RobotModel, parent: QWidget = None) -> None:
         super().__init__(parent)
 
-        self.config_widget = TrajectoryConfigWidget()
+        self.config_widget = TrajectoryConfigWidget(robot_model)
         self.actions_widget = TrajectoryActionsWidget()
         self.graphs_widget = TrajectoryGraphsWidget()
 
