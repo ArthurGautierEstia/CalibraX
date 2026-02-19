@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -52,6 +52,7 @@ class TrajectoryKeypointDialog(QDialog):
 
         self.target_type_combo = QComboBox()
         self.use_current_target_btn = QPushButton("Valeurs courantes")
+        self.use_home_target_btn = QPushButton("Position home")
         self.target_stack = QStackedWidget()
 
         self.cartesian_target_widget = CartesianControlWidget()
@@ -97,7 +98,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         target_mode_group = QGroupBox("Type de target")
         target_mode_layout = QHBoxLayout()
@@ -105,6 +106,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.target_type_combo.addItem("Articulaire (J1 J2 J3 J4 J5 J6)", KeypointTargetType.JOINT.value)
         target_mode_layout.addWidget(self.target_type_combo)
         target_mode_layout.addWidget(self.use_current_target_btn)
+        target_mode_layout.addWidget(self.use_home_target_btn)
         target_mode_group.setLayout(target_mode_layout)
         layout.addWidget(target_mode_group)
 
@@ -199,6 +201,8 @@ class TrajectoryKeypointDialog(QDialog):
         self.joint_target_widget.update_axis_limits(self.robot_model.get_axis_limits())
         self.joint_target_widget.btn_limits.hide()
         self.joint_target_widget.btn_home_position.hide()
+        self.joint_target_widget.btn_position_zero.hide()
+        self.joint_target_widget.btn_position_transport.hide()
         layout.addWidget(self.joint_target_widget)
 
         group.setLayout(layout)
@@ -207,6 +211,7 @@ class TrajectoryKeypointDialog(QDialog):
     def _setup_connections(self) -> None:
         self.target_type_combo.currentIndexChanged.connect(self._on_target_type_changed)
         self.use_current_target_btn.clicked.connect(self._on_use_current_target_clicked)
+        self.use_home_target_btn.clicked.connect(self._on_use_home_target_clicked)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         self.favorite_config_combo.currentIndexChanged.connect(self._on_favorite_changed)
         for cb in self.config_checkboxes:
@@ -221,6 +226,21 @@ class TrajectoryKeypointDialog(QDialog):
             return
 
         self.joint_target_widget.set_all_joints(list(self.robot_model.get_joints()))
+        self._emit_ghost_update()
+
+    def _on_use_home_target_clicked(self) -> None:
+        home_joints = list(self.robot_model.get_home_position())
+        if self._current_target_type() == KeypointTargetType.CARTESIAN:
+            fk_result = self.robot_model.compute_fk_joints(home_joints)
+            if fk_result is not None:
+                _, _, home_pose, _, _ = fk_result
+                self.cartesian_target_widget.set_all_cartesian([float(v) for v in home_pose[:6]])
+            else:
+                self.cartesian_target_widget.set_all_cartesian(list(self.robot_model.get_tcp_pose()))
+            self._emit_ghost_update()
+            return
+
+        self.joint_target_widget.set_all_joints(home_joints)
         self._emit_ghost_update()
 
     def _compute_ghost_joint_values(self) -> list[float]:
@@ -293,16 +313,12 @@ class TrajectoryKeypointDialog(QDialog):
             self._linear_speed_mps = self._clamp(current, 0.0, 2.0)
 
     def _try_minimize_window_size(self) -> None:
-        self.setMinimumSize(self._dialog_min_width, 0)
-        self.adjustSize()
-        if self.width() < self._dialog_min_width:
-            self.resize(self._dialog_min_width, self.height())
-        QTimer.singleShot(0, self._apply_min_width_after_layout)
-
-    def _apply_min_width_after_layout(self) -> None:
-        self.adjustSize()
-        if self.width() < self._dialog_min_width:
-            self.resize(self._dialog_min_width, self.height())
+        # Keep a stable minimum width and let Qt handle height changes.
+        # Forcing adjustSize/resize during combobox switches can trigger
+        # Windows setGeometry warnings when the computed height is constrained.
+        self.setMinimumWidth(self._dialog_min_width)
+        if self.layout() is not None:
+            self.layout().activate()
 
     def _on_mode_changed(self, _mode: str) -> None:
         self._store_current_speed()

@@ -13,6 +13,8 @@ class JointsControlWidget(QWidget):
     # Signaux
     joint_value_changed = pyqtSignal(int, float)  # index, value
     home_position_requested = pyqtSignal()
+    position_zero_requested = pyqtSignal()
+    position_transport_requested = pyqtSignal()
     axis_limits_config_requested = pyqtSignal()
     
     def __init__(self, parent: QWidget = None) -> None:
@@ -82,11 +84,18 @@ class JointsControlWidget(QWidget):
         self.btn_limits = QPushButton("Paramètrage des axes")
         self.btn_limits.clicked.connect(self.axis_limits_config_requested.emit)
         btn_grid.addWidget(self.btn_limits, 0, 0)
+
+        self.btn_position_zero = QPushButton("Position 0")
+        self.btn_position_zero.clicked.connect(self.position_zero_requested.emit)
+        btn_grid.addWidget(self.btn_position_zero, 0, 1)
+
+        self.btn_position_transport = QPushButton("Position transport")
+        self.btn_position_transport.clicked.connect(self.position_transport_requested.emit)
+        btn_grid.addWidget(self.btn_position_transport, 0, 2)
         
         self.btn_home_position = QPushButton("Position home")
         self.btn_home_position.clicked.connect(self.home_position_requested.emit)
-        btn_grid.addWidget(self.btn_home_position, 0, 1)
-        
+        btn_grid.addWidget(self.btn_home_position, 0, 3)
         btn_layout.addLayout(btn_grid)
         layout.addLayout(btn_layout)
         

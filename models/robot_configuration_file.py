@@ -9,6 +9,16 @@ from utils.mgi import MgiConfigKey, RobotTool
 if TYPE_CHECKING:
     from models.robot_model import RobotModel
 
+DEFAULT_AXIS_LIMITS: list[tuple[float, float]] = [
+    (-170.0, 170.0),
+    (-190.0, 45.0),
+    (-120.0, 156.0),
+    (-185.0, 185.0),
+    (-120.0, 120.0),
+    (-350.0, 350.0),
+]
+DEFAULT_AXIS_SPEED_LIMITS: list[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
+
 
 @dataclass
 class RobotConfigurationFile:
@@ -17,8 +27,8 @@ class RobotConfigurationFile:
     name: str = ""
     dh: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0] for _ in range(6)])
     corr: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(6)])
-    q: list[float] = field(default_factory=lambda: [0.0] * 6)
-    axis_limits: list[tuple[float, float]] = field(default_factory=lambda: [(-180.0, 180.0) for _ in range(6)])
+    axis_limits: list[tuple[float, float]] = field(default_factory=lambda: list(DEFAULT_AXIS_LIMITS))
+    axis_speed_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_SPEED_LIMITS))
     axis_reversed: list[int] = field(default_factory=lambda: [1] * 6)
     joint_weights: list[float] = field(default_factory=lambda: [1.0] * 6)
     allowed_configs: set[MgiConfigKey] = field(default_factory=lambda: set(MgiConfigKey))
@@ -78,15 +88,29 @@ class RobotConfigurationFile:
         if not isinstance(values, list):
             values = []
 
-        for item in values[:6]:
+        for i, item in enumerate(values[:6]):
+            default_min, default_max = DEFAULT_AXIS_LIMITS[i]
             if isinstance(item, (list, tuple)) and len(item) >= 2:
-                limits.append((cls._safe_float(item[0], -180.0), cls._safe_float(item[1], 180.0)))
+                limits.append((cls._safe_float(item[0], default_min), cls._safe_float(item[1], default_max)))
             else:
-                limits.append((-180.0, 180.0))
+                limits.append((default_min, default_max))
 
         while len(limits) < 6:
-            limits.append((-180.0, 180.0))
+            limits.append(DEFAULT_AXIS_LIMITS[len(limits)])
         return limits
+
+    @classmethod
+    def _parse_axis_speed_limits(cls, values: Any) -> list[float]:
+        speed_limits: list[float] = []
+        if not isinstance(values, list):
+            values = []
+
+        for i, item in enumerate(values[:6]):
+            speed_limits.append(cls._safe_float(item, DEFAULT_AXIS_SPEED_LIMITS[i]))
+
+        while len(speed_limits) < 6:
+            speed_limits.append(DEFAULT_AXIS_SPEED_LIMITS[len(speed_limits)])
+        return speed_limits
 
     @classmethod
     def _parse_axis_reversed(cls, values: Any) -> list[int]:
@@ -144,6 +168,7 @@ class RobotConfigurationFile:
             corr=[row[:] for row in robot_model.get_corrections()],
             q=robot_model.get_joints(),
             axis_limits=[tuple(v) for v in robot_model.get_axis_limits()],
+            axis_speed_limits=robot_model.get_axis_speed_limits(),
             axis_reversed=robot_model.get_axis_reversed(),
             joint_weights=robot_model.get_joint_weights(),
             allowed_configs=robot_model.get_allowed_configurations(),
@@ -160,8 +185,8 @@ class RobotConfigurationFile:
                 "name",
                 "dh",
                 "corr",
-                "q",
                 "axis_limits",
+                "axis_speed_limits",
                 "axis_reversed",
                 "joint_weights",
                 "allowed_configs",
@@ -197,8 +222,8 @@ class RobotConfigurationFile:
             name=name,
             dh=cls._parse_matrix(data.get("dh"), 6, 4, 0.0),
             corr=cls._parse_matrix(data.get("corr"), 6, 6, 0.0),
-            q=cls._parse_float_list(data.get("q"), 6, 0.0),
             axis_limits=cls._parse_axis_limits(data.get("axis_limits")),
+            axis_speed_limits=cls._parse_axis_speed_limits(data.get("axis_speed_limits")),
             axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
             joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
             allowed_configs=allowed_configs,
@@ -212,8 +237,8 @@ class RobotConfigurationFile:
             "name": [self.name],
             "dh": [[str(val) for val in row] for row in self.dh[:6]],
             "corr": [[str(val) for val in row] for row in self.corr[:6]],
-            "q": self.q[:6],
             "axis_limits": self.axis_limits[:6],
+            "axis_speed_limits": self.axis_speed_limits[:6],
             "axis_reversed": self.axis_reversed[:6],
             "joint_weights": self.joint_weights[:6],
             "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],
@@ -228,8 +253,6 @@ class RobotConfigurationFile:
             robot_model.set_dh_params(self.dh)
         if "corr" in self.present_fields:
             robot_model._set_corrections(self.corr)
-        if "q" in self.present_fields:
-            robot_model.set_joints(self.q)
         if "axis_reversed" in self.present_fields:
             robot_model.set_axis_reversed(self.axis_reversed)
         if "joint_weights" in self.present_fields:
@@ -238,6 +261,8 @@ class RobotConfigurationFile:
             robot_model.set_allowed_configurations(self.allowed_configs)
         if "axis_limits" in self.present_fields:
             robot_model.set_axis_limits(self.axis_limits)
+        if "axis_speed_limits" in self.present_fields:
+            robot_model.set_axis_speed_limits(self.axis_speed_limits)
         if "home_position" in self.present_fields:
             robot_model.set_home_position(self.home_position)
         if "tool" in self.present_fields:

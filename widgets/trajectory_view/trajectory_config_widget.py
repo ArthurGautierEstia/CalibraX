@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QHeaderView
 )
 
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
@@ -56,9 +57,17 @@ class TrajectoryConfigWidget(QWidget):
         layout.addWidget(title)
 
         self.keypoints_table.setHorizontalHeaderLabels([
-            "#", "Cible", "Mode", "Vitesse", "1", "2", "3", "4", "5", "6", "Configs"
+            "#", "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
         ])
-        self.keypoints_table.horizontalHeader().setDefaultSectionSize(90)
+
+        header = self.keypoints_table.horizontalHeader()
+        header.setMinimumSectionSize(60)
+
+        for col in range(0, 10):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
+                
         self.keypoints_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.keypoints_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.keypoints_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)

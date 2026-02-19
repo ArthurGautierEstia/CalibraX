@@ -6,7 +6,20 @@ import utils.math_utils as math_utils
 from models.robot_configuration_file import RobotConfigurationFile
 
 class RobotModel(QObject):
-    """Modèle centralisé contenant tous les paramètres et l'état du robot"""
+    """Modele centralise contenant tous les parametres et l'etat du robot"""
+
+    DEFAULT_AXIS_LIMITS: List[Tuple[float, float]] = [
+        (-170.0, 170.0),
+        (-190.0, 45.0),
+        (-120.0, 156.0),
+        (-185.0, 185.0),
+        (-120.0, 120.0),
+        (-350.0, 350.0),
+    ]
+    DEFAULT_AXIS_SPEED_LIMITS: List[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
+    DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
+    POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
+    POSITION_TRANSPORT: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
     
     # ============================================================================
     # SIGNAUX
@@ -28,6 +41,7 @@ class RobotModel(QObject):
     joints_changed = pyqtSignal()
     axis_reversed_changed = pyqtSignal()
     axis_limits_changed = pyqtSignal()
+    axis_speed_limits_changed = pyqtSignal()
     joint_weights_changed = pyqtSignal()
     
     # Corrections
@@ -54,10 +68,13 @@ class RobotModel(QObject):
         # RÉGION: Paramètres des joints et axes
         # ====================================================================
         # Limites des axes (min, max) pour chaque joint
-        self.axis_limits: List[Tuple[float, float]] = [(-180, 180) for _ in range(6)]
+        self.axis_limits: List[Tuple[float, float]] = list(RobotModel.DEFAULT_AXIS_LIMITS)
+        self.axis_speed_limits: List[float] = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
                
         # Position home du robot
-        self.home_position: List[float] = [0, -90, 90, 0, 90, 0]
+        self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
+        self.position_zero: List[float] = list(RobotModel.POSITION_ZERO)
+        self.position_transport: List[float] = list(RobotModel.POSITION_TRANSPORT)
         
         # Valeurs actuelles des joints (en degrés)
         self.joint_values: List[float] = [0, 0, 0, 0, 0, 0]
@@ -428,8 +445,24 @@ class RobotModel(QObject):
             self.home_position = list(home_pos[:6])
     
     def go_to_home_position(self):
-        """Déplace les joints à la position home"""
+        """Move joints to home position."""
         self.set_joints(self.home_position)
+
+    def get_position_zero(self):
+        """Retourne la position 0 (fixe)"""
+        return self.position_zero.copy()
+
+    def go_to_position_zero(self):
+        """Déplace les joints à la position 0 (fixe)"""
+        self.set_joints(self.position_zero)
+
+    def get_position_transport(self):
+        """Retourne la position transport (fixe)"""
+        return self.position_transport.copy()
+
+    def go_to_position_transport(self):
+        """Déplace les joints à la position transport (fixe)"""
+        self.set_joints(self.position_transport)
 
     # ============================================================================
     # RÉGION: Getters - Joints et axes
@@ -450,6 +483,14 @@ class RobotModel(QObject):
     def get_axis_limits(self):
         """Retourne les limites de tous les axes"""
         return self.axis_limits.copy()
+
+    def get_axis_speed_limit(self, index: int) -> float:
+        """Retourne la limite de vitesse d'un axe spécifique en deg/s"""
+        return self.axis_speed_limits[index] if 0 <= index < 6 else 0.0
+
+    def get_axis_speed_limits(self):
+        """Retourne les limites de vitesse de tous les axes en deg/s"""
+        return self.axis_speed_limits.copy()
 
     def get_axis_reversed_single(self, index: int) -> bool:
         """Retourne True si l'axe est inversé"""
@@ -518,6 +559,18 @@ class RobotModel(QObject):
         self.MGI_solver.set_axis_limits(RobotModel._mgi_build_axis_limits(self.axis_limits))
         self.axis_limits_changed.emit()
         self._update_tcp_pose()
+
+    def set_axis_speed_limit(self, index: int, value: float):
+        """Définit la limite de vitesse d'un axe spécifique en deg/s"""
+        if 0 <= index < 6:
+            self.axis_speed_limits[index] = float(value)
+            self.axis_speed_limits_changed.emit()
+
+    def set_axis_speed_limits(self, limits: list[float]):
+        """Définit les limites de vitesse de tous les axes en deg/s"""
+        if len(limits) >= 6:
+            self.axis_speed_limits = [float(v) for v in limits[:6]]
+            self.axis_speed_limits_changed.emit()
 
     def set_axis_reversed_single(self, index: int, reversed_value: bool):
         """Inverse un axe spécifique"""
@@ -755,6 +808,7 @@ class RobotModel(QObject):
             self.current_config_file = file_name
 
         config.apply_to_robot_model(self)
+        self.go_to_home_position()
         self.has_confifiguration = True
         self.configuration_changed.emit()
 
