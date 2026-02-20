@@ -21,6 +21,19 @@ class TrajectoryBuilderBehavior(Enum):
     STOP_ON_ERROR = "STOP_ON_ERROR"
 
 
+class TrajectorySampleMgiSolution:
+    def __init__(
+        self,
+        status: str = "",
+        joints: list[float] | None = None,
+    ) -> None:
+        self.status = str(status)
+        joints_6 = [] if joints is None else [float(v) for v in joints[:6]]
+        while len(joints_6) < 6:
+            joints_6.append(0.0)
+        self.joints = joints_6
+
+
 class TrajectorySegment:
     def __init__(self, from_keypoint: TrajectoryKeypoint, to_keypoint: TrajectoryKeypoint) -> None:
         self.from_keypoint = from_keypoint
@@ -42,6 +55,7 @@ class TrajectorySample:
         self.articular_acceleration = [0.0] * 6
         self.error_code = TrajectorySampleErrorCode.NONE
         self.error_axis: int | None = None
+        self.mgi_solutions: dict[MgiConfigKey, TrajectorySampleMgiSolution] = {}
 
 
 class JointDynamicStats:
