@@ -21,6 +21,26 @@ def get_cell_value(table: QTableWidget, row: int, col: int, default=0):
         return parse_value(item.text())
     return default
 
+
+def norm3(x: float, y: float, z: float) -> float:
+    """Euclidean norm in 3D."""
+    return float(np.sqrt(x * x + y * y + z * z))
+
+
+def vector_norm3(v: list[float] | tuple[float, float, float]) -> float:
+    """Euclidean norm of [x, y, z]."""
+    if len(v) < 3:
+        return 0.0
+    return norm3(float(v[0]), float(v[1]), float(v[2]))
+
+
+def normalize3(v: list[float] | tuple[float, float, float], epsilon: float = 1e-9) -> list[float]:
+    """Normalize [x, y, z], returning [0,0,0] if norm is too small."""
+    n = vector_norm3(v)
+    if n <= float(epsilon):
+        return [0.0, 0.0, 0.0]
+    return [float(v[0]) / n, float(v[1]) / n, float(v[2]) / n]
+
 # ============================================================================
 # RÉGION: Transformations Denavit-Hartenberg
 # ============================================================================
