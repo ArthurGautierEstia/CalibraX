@@ -69,9 +69,13 @@ class TrajectoryKeypointDialog(QDialog):
         self._last_mode = KeypointMotionMode.PTP
         self._suspend_preview_emission = False
 
-        self.cubic_group = QGroupBox("Vecteurs de la cubique")
+        self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
         self.cubic_vector_1: list[QDoubleSpinBox] = []
         self.cubic_vector_2: list[QDoubleSpinBox] = []
+        self.cubic_hint_label = QLabel(
+            "Ces vecteurs pilotent le segment qui arrive sur ce point : "
+            "debut du segment (au point precedent) et fin du segment (au point courant)."
+        )
 
         self.favorite_config_combo = QComboBox()
         self.config_checkboxes: list[QCheckBox] = []
@@ -126,18 +130,23 @@ class TrajectoryKeypointDialog(QDialog):
         layout.addWidget(motion_group)
 
         cubic_layout = QGridLayout()
-        cubic_layout.addWidget(QLabel("Vecteur Out"), 0, 0)
+        cubic_layout.addWidget(QLabel("Vecteur debut segment"), 0, 0)
         for i in range(3):
             spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
             self.cubic_vector_1.append(spin)
             cubic_layout.addWidget(spin, 0, i + 1)
 
-        cubic_layout.addWidget(QLabel("Vecteur In"), 1, 0)
+        cubic_layout.addWidget(QLabel("Vecteur fin segment"), 1, 0)
         for i in range(3):
             spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
             self.cubic_vector_2.append(spin)
             cubic_layout.addWidget(spin, 1, i + 1)
-        self.cubic_group.setLayout(cubic_layout)
+        cubic_group_layout = QVBoxLayout()
+        cubic_group_layout.addLayout(cubic_layout)
+        self.cubic_hint_label.setWordWrap(True)
+        self.cubic_hint_label.setStyleSheet("color: #b0b0b0;")
+        cubic_group_layout.addWidget(self.cubic_hint_label)
+        self.cubic_group.setLayout(cubic_group_layout)
         layout.addWidget(self.cubic_group)
 
         config_group = QGroupBox("Configurations")

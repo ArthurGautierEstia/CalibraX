@@ -44,6 +44,9 @@ class TrajectoryKeypoint:
             0.0,
         )
 
+        # Segment-in semantics (for the segment that ends at this keypoint):
+        # cubic_vectors[0] = tangent at segment start (previous point side)
+        # cubic_vectors[1] = tangent at segment end (current point side)
         vectors = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]] if cubic_vectors is None else list(cubic_vectors)
         vec1 = vectors[0] if len(vectors) > 0 else []
         vec2 = vectors[1] if len(vectors) > 1 else []

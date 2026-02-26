@@ -460,7 +460,9 @@ class TrajectoryBuilder:
         if force_linear_handles:
             t_out, t_in = self._linear_tangents_from_points(p0, p3)
         else:
-            t_out = [float(v) for v in segment.from_keypoint.cubic_vectors[0][:3]]
+            # Cubic handles are carried by the destination keypoint (segment-in semantics):
+            # [0] = handle at segment start (previous point side), [1] = handle at segment end (current point side).
+            t_out = [float(v) for v in segment.to_keypoint.cubic_vectors[0][:3]]
             t_in = [float(v) for v in segment.to_keypoint.cubic_vectors[1][:3]]
 
         coeffs = Bezier3Coefficients3D(p0, p3, t_out, t_in)

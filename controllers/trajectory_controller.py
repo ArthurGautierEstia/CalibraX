@@ -214,24 +214,32 @@ class TrajectoryController(QObject):
         keypoints = self._displayed_keypoints
         if idx < 0 or idx >= len(keypoints):
             return None, None
-
-        anchor = self._resolve_keypoint_xyz(keypoints[idx])
-        if anchor is None:
+        if keypoints[idx].mode != KeypointMotionMode.CUBIC:
             return None, None
 
-        tangent_out_segment: list[list[float]] | None = None
-        tangent_in_segment: list[list[float]] | None = None
+        end_anchor = self._resolve_keypoint_xyz(keypoints[idx])
+        if end_anchor is None:
+            return None, None
 
-        show_out = keypoints[idx].mode == KeypointMotionMode.CUBIC
-        if idx + 1 < len(keypoints) and keypoints[idx + 1].mode == KeypointMotionMode.CUBIC:
-            show_out = True
-        if show_out:
-            out_vec = [float(v) for v in keypoints[idx].cubic_vectors[0][:3]]
-            tangent_out_segment = [anchor, [anchor[0] + out_vec[0], anchor[1] + out_vec[1], anchor[2] + out_vec[2]]]
+        if idx > 0:
+            start_anchor = self._resolve_keypoint_xyz(keypoints[idx - 1])
+        else:
+            tcp_pose = self.robot_model.get_tcp_pose()
+            start_anchor = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
+        if start_anchor is None:
+            return None, None
 
-        if keypoints[idx].mode == KeypointMotionMode.CUBIC:
-            in_vec = [float(v) for v in keypoints[idx].cubic_vectors[1][:3]]
-            tangent_in_segment = [anchor, [anchor[0] + in_vec[0], anchor[1] + in_vec[1], anchor[2] + in_vec[2]]]
+        start_vec = [float(v) for v in keypoints[idx].cubic_vectors[0][:3]]
+        end_vec = [float(v) for v in keypoints[idx].cubic_vectors[1][:3]]
+
+        tangent_out_segment: list[list[float]] | None = [
+            start_anchor,
+            [start_anchor[0] + start_vec[0], start_anchor[1] + start_vec[1], start_anchor[2] + start_vec[2]],
+        ]
+        tangent_in_segment: list[list[float]] | None = [
+            end_anchor,
+            [end_anchor[0] + end_vec[0], end_anchor[1] + end_vec[1], end_anchor[2] + end_vec[2]],
+        ]
 
         return tangent_out_segment, tangent_in_segment
 
