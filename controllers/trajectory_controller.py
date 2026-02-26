@@ -1,6 +1,7 @@
 from bisect import bisect_left
+import time
 
-from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtCore import QObject, QTimer, Qt
 
 from models.robot_model import RobotModel
 from models.trajectory_result import (
@@ -43,8 +44,11 @@ class TrajectoryController(QObject):
         self._is_keypoint_preview_active = False
         self._selected_keypoint_index: int | None = None
         self._editing_keypoint_index: int | None = None
+        self._playback_wall_start_s: float | None = None
+        self._playback_sim_start_s = 0.0
         self._playback_timer = QTimer(self)
         self._playback_timer.setSingleShot(False)
+        self._playback_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._playback_timer.timeout.connect(self._on_playback_tick)
 
         self._setup_connections()
@@ -284,6 +288,8 @@ class TrajectoryController(QObject):
         self._apply_time_value(time_s, force_real_robot=True)
         if self._is_playing:
             self._playback_index = self._sample_index_at_time(time_s)
+            self._playback_sim_start_s = float(time_s)
+            self._playback_wall_start_s = time.perf_counter()
 
     def _apply_time_value(self, time_s: float, force_real_robot: bool) -> None:
         self._current_time_s = float(time_s)
@@ -329,6 +335,7 @@ class TrajectoryController(QObject):
 
     def _stop_playback(self) -> None:
         self._is_playing = False
+        self._playback_wall_start_s = None
         self._playback_timer.stop()
 
     def _on_play_requested(self) -> None:
@@ -336,6 +343,8 @@ class TrajectoryController(QObject):
             return
         self._is_playing = True
         self._playback_index = self._sample_index_at_time(self._current_time_s)
+        self._playback_sim_start_s = float(self._current_time_s)
+        self._playback_wall_start_s = time.perf_counter()
         timer_interval_ms = max(1, int(round(self.trajectory_builder.sample_dt_s * 1000.0)))
         self._playback_timer.start(timer_interval_ms)
         self._on_playback_tick()
@@ -352,15 +361,27 @@ class TrajectoryController(QObject):
     def _on_playback_tick(self) -> None:
         if not self._is_playing:
             return
-        if self._playback_index >= len(self.current_samples):
+
+        if not self.current_samples:
             self._stop_playback()
-            if self.current_samples:
-                last_time = self.current_samples[-1].time
-                self.actions_widget.set_time_value(last_time)
-                self._apply_time_value(last_time, force_real_robot=True)
             return
 
-        sample = self.current_samples[self._playback_index]
-        self.actions_widget.set_time_value(sample.time)
-        self._apply_time_value(sample.time, force_real_robot=True)
-        self._playback_index += 1
+        wall_start = self._playback_wall_start_s
+        if wall_start is None:
+            self._playback_wall_start_s = time.perf_counter()
+            self._playback_sim_start_s = float(self._current_time_s)
+            wall_start = self._playback_wall_start_s
+
+        elapsed_s = max(0.0, time.perf_counter() - wall_start)
+        target_time_s = self._playback_sim_start_s + elapsed_s
+        end_time_s = self.current_samples[-1].time
+
+        if target_time_s >= end_time_s:
+            self._stop_playback()
+            self.actions_widget.set_time_value(end_time_s)
+            self._apply_time_value(end_time_s, force_real_robot=True)
+            return
+
+        self._playback_index = self._sample_index_at_time(target_time_s)
+        self.actions_widget.set_time_value(target_time_s)
+        self._apply_time_value(target_time_s, force_real_robot=True)

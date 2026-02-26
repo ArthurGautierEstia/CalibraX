@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional
+import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -117,14 +118,9 @@ class TrajectoryConfigWidget(QWidget):
         self.keypoints_changed.emit(self.get_keypoints())
 
     def _preferred_trajectories_dir(self) -> str:
-        candidates = [
-            Path.cwd() / "trajectories",
-            Path(__file__).resolve().parents[2] / "trajectories",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return str(candidate)
-        return ""
+        current_dir = os.getcwd()
+        traj_dir = os.path.join(current_dir, "trajectories")
+        return traj_dir if os.path.exists(traj_dir) else current_dir
 
     def _emit_selection_changed(self) -> None:
         self.keypointSelectionChanged.emit(self._selected_row())
