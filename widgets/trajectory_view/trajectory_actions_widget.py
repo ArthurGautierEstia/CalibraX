@@ -97,3 +97,13 @@ class TrajectoryActionsWidget(QWidget):
         self.time_slider.setValue(self._time_to_slider(time_value))
         self.time_slider.blockSignals(False)
         self.time_label.setText(f"Temps : {time_value:.2f} s")
+
+    def set_editing_locked(self, locked: bool) -> None:
+        enabled = not locked
+        self.btn_compute.setEnabled(enabled)
+        self.btn_play.setEnabled(enabled)
+        self.btn_pause.setEnabled(enabled)
+        self.btn_stop.setEnabled(enabled)
+        self.cb_reverse.setEnabled(enabled)
+        self.cb_loop.setEnabled(enabled)
+        self.time_slider.setEnabled(enabled)

@@ -123,6 +123,66 @@ class TrajectoryKeypoint:
             linear_speed_mps=self.linear_speed_mps,
         )
 
+    def to_dict(self) -> dict:
+        return {
+            "target_type": self.target_type.value,
+            "cartesian_target": [float(v) for v in self.cartesian_target[:6]],
+            "joint_target": [float(v) for v in self.joint_target[:6]],
+            "mode": self.mode.value,
+            "cubic_vectors": [
+                [float(v) for v in self.cubic_vectors[0][:3]],
+                [float(v) for v in self.cubic_vectors[1][:3]],
+            ],
+            "allowed_configs": [cfg.name for cfg in self.allowed_configs],
+            "favorite_config": self.favorite_config.name,
+            "ptp_speed_percent": float(self.ptp_speed_percent),
+            "linear_speed_mps": float(self.linear_speed_mps),
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> TrajectoryKeypoint:
+        raw = data if isinstance(data, dict) else {}
+
+        try:
+            target_type = KeypointTargetType(str(raw.get("target_type", KeypointTargetType.CARTESIAN.value)))
+        except ValueError:
+            target_type = KeypointTargetType.CARTESIAN
+
+        try:
+            mode = KeypointMotionMode(str(raw.get("mode", KeypointMotionMode.PTP.value)))
+        except ValueError:
+            mode = KeypointMotionMode.PTP
+
+        allowed_configs: list[MgiConfigKey] = []
+        for name in raw.get("allowed_configs", []):
+            try:
+                allowed_configs.append(MgiConfigKey[str(name)])
+            except (KeyError, TypeError):
+                continue
+
+        favorite_config = MgiConfigKey.FUN
+        try:
+            favorite_config = MgiConfigKey[str(raw.get("favorite_config", MgiConfigKey.FUN.name))]
+        except (KeyError, TypeError):
+            if allowed_configs:
+                favorite_config = allowed_configs[0]
+
+        cubic_vectors = raw.get("cubic_vectors")
+        if not isinstance(cubic_vectors, list):
+            cubic_vectors = None
+
+        return TrajectoryKeypoint(
+            target_type=target_type,
+            cartesian_target=raw.get("cartesian_target"),
+            joint_target=raw.get("joint_target"),
+            mode=mode,
+            cubic_vectors=cubic_vectors,
+            allowed_configs=allowed_configs if allowed_configs else None,
+            favorite_config=favorite_config,
+            ptp_speed_percent=float(raw.get("ptp_speed_percent", 75.0)),
+            linear_speed_mps=float(raw.get("linear_speed_mps", 0.5)),
+        )
+
     @staticmethod
     def identify_config_from_joint_target(
         joint_target_deg: list[float],

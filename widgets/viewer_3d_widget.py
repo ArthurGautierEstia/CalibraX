@@ -19,8 +19,18 @@ class Viewer3DWidget(QWidget):
         self.robot_ghost_links: list[gl.GLMeshItem] = []
         self._trajectory_path_item: gl.GLLinePlotItem | None = None
         self._trajectory_cursor_item: gl.GLScatterPlotItem | None = None
+        self._trajectory_keypoints_item: gl.GLScatterPlotItem | None = None
+        self._trajectory_keypoint_selected_item: gl.GLScatterPlotItem | None = None
+        self._trajectory_keypoint_editing_item: gl.GLScatterPlotItem | None = None
+        self._trajectory_tangent_out_item: gl.GLLinePlotItem | None = None
+        self._trajectory_tangent_in_item: gl.GLLinePlotItem | None = None
         self._trajectory_path_points: np.ndarray | None = None
         self._trajectory_cursor_point: np.ndarray | None = None
+        self._trajectory_keypoint_points: np.ndarray | None = None
+        self._trajectory_keypoint_selected_index: int | None = None
+        self._trajectory_keypoint_editing_index: int | None = None
+        self._trajectory_tangent_out_segment: np.ndarray | None = None
+        self._trajectory_tangent_in_segment: np.ndarray | None = None
         self.last_dh_matrices = []
         self.last_corrected_matrices = []
         self.last_ghost_corrected_matrices = []
@@ -193,6 +203,11 @@ class Viewer3DWidget(QWidget):
         self.add_grid()
         self._trajectory_path_item = None
         self._trajectory_cursor_item = None
+        self._trajectory_keypoints_item = None
+        self._trajectory_keypoint_selected_item = None
+        self._trajectory_keypoint_editing_item = None
+        self._trajectory_tangent_out_item = None
+        self._trajectory_tangent_in_item = None
 
     def set_trajectory_path(self, points_xyz: list[list[float]]) -> None:
         if len(points_xyz) < 2:
@@ -204,6 +219,44 @@ class Viewer3DWidget(QWidget):
     def clear_trajectory_path(self) -> None:
         self._trajectory_path_points = None
         self._trajectory_cursor_point = None
+        self._render_trajectory_overlay()
+
+    def set_trajectory_keypoints(
+        self,
+        points_xyz: list[list[float]],
+        selected_index: int | None = None,
+        editing_index: int | None = None,
+    ) -> None:
+        if not points_xyz:
+            self._trajectory_keypoint_points = None
+        else:
+            self._trajectory_keypoint_points = np.array([p[:3] for p in points_xyz], dtype=float)
+        self._trajectory_keypoint_selected_index = selected_index
+        self._trajectory_keypoint_editing_index = editing_index
+        self._render_trajectory_overlay()
+
+    def clear_trajectory_keypoints(self) -> None:
+        self._trajectory_keypoint_points = None
+        self._trajectory_keypoint_selected_index = None
+        self._trajectory_keypoint_editing_index = None
+        self._render_trajectory_overlay()
+
+    def set_trajectory_edit_tangents(
+        self,
+        tangent_out_segment: list[list[float]] | None,
+        tangent_in_segment: list[list[float]] | None,
+    ) -> None:
+        self._trajectory_tangent_out_segment = (
+            None if tangent_out_segment is None else np.array([p[:3] for p in tangent_out_segment], dtype=float)
+        )
+        self._trajectory_tangent_in_segment = (
+            None if tangent_in_segment is None else np.array([p[:3] for p in tangent_in_segment], dtype=float)
+        )
+        self._render_trajectory_overlay()
+
+    def clear_trajectory_edit_tangents(self) -> None:
+        self._trajectory_tangent_out_segment = None
+        self._trajectory_tangent_in_segment = None
         self._render_trajectory_overlay()
 
     def set_trajectory_cursor(self, point_xyz: list[float] | None) -> None:
@@ -220,6 +273,21 @@ class Viewer3DWidget(QWidget):
         if self._trajectory_cursor_item is not None:
             self.viewer.removeItem(self._trajectory_cursor_item)
             self._trajectory_cursor_item = None
+        if self._trajectory_keypoints_item is not None:
+            self.viewer.removeItem(self._trajectory_keypoints_item)
+            self._trajectory_keypoints_item = None
+        if self._trajectory_keypoint_selected_item is not None:
+            self.viewer.removeItem(self._trajectory_keypoint_selected_item)
+            self._trajectory_keypoint_selected_item = None
+        if self._trajectory_keypoint_editing_item is not None:
+            self.viewer.removeItem(self._trajectory_keypoint_editing_item)
+            self._trajectory_keypoint_editing_item = None
+        if self._trajectory_tangent_out_item is not None:
+            self.viewer.removeItem(self._trajectory_tangent_out_item)
+            self._trajectory_tangent_out_item = None
+        if self._trajectory_tangent_in_item is not None:
+            self.viewer.removeItem(self._trajectory_tangent_in_item)
+            self._trajectory_tangent_in_item = None
 
         if self._trajectory_path_points is not None and len(self._trajectory_path_points) >= 2:
             self._trajectory_path_item = gl.GLLinePlotItem(
@@ -230,15 +298,61 @@ class Viewer3DWidget(QWidget):
             )
             self.viewer.addItem(self._trajectory_path_item)
 
-        if self._trajectory_cursor_point is not None:
-            cursor_points = np.array([self._trajectory_cursor_point], dtype=float)
-            self._trajectory_cursor_item = gl.GLScatterPlotItem(
-                pos=cursor_points,
-                color=(1.0, 0.2, 0.2, 1.0),
-                size=10,
-                pxMode=True,
+        if self._trajectory_keypoint_points is not None and len(self._trajectory_keypoint_points) > 0:
+            points = self._trajectory_keypoint_points
+            selected_idx = self._trajectory_keypoint_selected_index
+            editing_idx = self._trajectory_keypoint_editing_index
+            mask = np.ones(len(points), dtype=bool)
+            if selected_idx is not None and 0 <= selected_idx < len(points):
+                mask[selected_idx] = False
+            if editing_idx is not None and 0 <= editing_idx < len(points):
+                mask[editing_idx] = False
+
+            base_points = points[mask]
+            if len(base_points) > 0:
+                self._trajectory_keypoints_item = gl.GLScatterPlotItem(
+                    pos=base_points,
+                    color=(0.95, 0.95, 0.95, 0.9),
+                    size=9,
+                    pxMode=True,
+                )
+                self.viewer.addItem(self._trajectory_keypoints_item)
+
+            if selected_idx is not None and 0 <= selected_idx < len(points):
+                self._trajectory_keypoint_selected_item = gl.GLScatterPlotItem(
+                    pos=np.array([points[selected_idx]], dtype=float),
+                    color=(0.1, 0.85, 1.0, 1.0),
+                    size=13,
+                    pxMode=True,
+                )
+                self.viewer.addItem(self._trajectory_keypoint_selected_item)
+
+            if editing_idx is not None and 0 <= editing_idx < len(points):
+                self._trajectory_keypoint_editing_item = gl.GLScatterPlotItem(
+                    pos=np.array([points[editing_idx]], dtype=float),
+                    color=(1.0, 0.35, 0.1, 1.0),
+                    size=15,
+                    pxMode=True,
+                )
+                self.viewer.addItem(self._trajectory_keypoint_editing_item)
+
+        if self._trajectory_tangent_out_segment is not None and len(self._trajectory_tangent_out_segment) >= 2:
+            self._trajectory_tangent_out_item = gl.GLLinePlotItem(
+                pos=self._trajectory_tangent_out_segment,
+                color=(1.0, 0.5, 0.1, 0.95),
+                width=2,
+                antialias=True,
             )
-            self.viewer.addItem(self._trajectory_cursor_item)
+            self.viewer.addItem(self._trajectory_tangent_out_item)
+
+        if self._trajectory_tangent_in_segment is not None and len(self._trajectory_tangent_in_segment) >= 2:
+            self._trajectory_tangent_in_item = gl.GLLinePlotItem(
+                pos=self._trajectory_tangent_in_segment,
+                color=(0.25, 1.0, 0.55, 0.95),
+                width=2,
+                antialias=True,
+            )
+            self.viewer.addItem(self._trajectory_tangent_in_item)
 
     def draw_frame(self, T, longueur=100, color: tuple[int, int, int]=None):
         """Dessine un repère unique"""

@@ -46,3 +46,24 @@ class Viewer3DController(QObject):
 
     def set_trajectory_cursor(self, point_xyz: list[float] | None) -> None:
         self.viewer_3d_widget.set_trajectory_cursor(point_xyz)
+
+    def set_trajectory_keypoints(
+        self,
+        points_xyz: list[list[float]],
+        selected_index: int | None = None,
+        editing_index: int | None = None,
+    ) -> None:
+        self.viewer_3d_widget.set_trajectory_keypoints(points_xyz, selected_index, editing_index)
+
+    def clear_trajectory_keypoints(self) -> None:
+        self.viewer_3d_widget.clear_trajectory_keypoints()
+
+    def set_trajectory_edit_tangents(
+        self,
+        tangent_out_segment: list[list[float]] | None,
+        tangent_in_segment: list[list[float]] | None,
+    ) -> None:
+        self.viewer_3d_widget.set_trajectory_edit_tangents(tangent_out_segment, tangent_in_segment)
+
+    def clear_trajectory_edit_tangents(self) -> None:
+        self.viewer_3d_widget.clear_trajectory_edit_tangents()
