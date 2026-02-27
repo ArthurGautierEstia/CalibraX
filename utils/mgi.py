@@ -1,3 +1,4 @@
+from __future__ import annotations
 from math import radians, degrees, atan2, sin, cos, sqrt, pi
 import numpy as np
 from enum import Enum
