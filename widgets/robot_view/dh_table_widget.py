@@ -15,6 +15,8 @@ class DHTableWidget(QWidget):
     load_config_requested = pyqtSignal()
     text_changed_requested = pyqtSignal()
     export_config_requested = pyqtSignal()
+    axis_config_requested = pyqtSignal()
+    positions_config_requested = pyqtSignal()
     dh_value_changed = pyqtSignal(int, int, str)  # row, col, value
     tool_changed = pyqtSignal(RobotTool)  # tool changed
     
@@ -48,6 +50,14 @@ class DHTableWidget(QWidget):
         self.btn_export_th = QPushButton("Exporter")
         self.btn_export_th.clicked.connect(self.export_config_requested.emit)
         th_layout.addWidget(self.btn_export_th, 0, 3)
+
+        self.btn_axis_config = QPushButton("Parametrage des axes")
+        self.btn_axis_config.clicked.connect(self.axis_config_requested.emit)
+        th_layout.addWidget(self.btn_axis_config, 1, 2)
+
+        self.btn_positions_config = QPushButton("Parametrage des positions")
+        self.btn_positions_config.clicked.connect(self.positions_config_requested.emit)
+        th_layout.addWidget(self.btn_positions_config, 1, 3)
         
         left_layout.addLayout(th_layout)
         

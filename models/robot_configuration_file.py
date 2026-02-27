@@ -18,6 +18,7 @@ DEFAULT_AXIS_LIMITS: list[tuple[float, float]] = [
     (-350.0, 350.0),
 ]
 DEFAULT_AXIS_SPEED_LIMITS: list[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
+DEFAULT_AXIS_JERK_LIMITS: list[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
 
 
 @dataclass
@@ -29,10 +30,13 @@ class RobotConfigurationFile:
     corr: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(6)])
     axis_limits: list[tuple[float, float]] = field(default_factory=lambda: list(DEFAULT_AXIS_LIMITS))
     axis_speed_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_SPEED_LIMITS))
+    axis_jerk_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_JERK_LIMITS))
     axis_reversed: list[int] = field(default_factory=lambda: [1] * 6)
     joint_weights: list[float] = field(default_factory=lambda: [1.0] * 6)
     allowed_configs: set[MgiConfigKey] = field(default_factory=lambda: set(MgiConfigKey))
     home_position: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 90.0, 0.0])
+    position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0])
+    position_transport: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
     tool: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # Tracks which fields were present when loaded from JSON.
@@ -113,6 +117,19 @@ class RobotConfigurationFile:
         return speed_limits
 
     @classmethod
+    def _parse_axis_jerk_limits(cls, values: Any) -> list[float]:
+        jerk_limits: list[float] = []
+        if not isinstance(values, list):
+            values = []
+
+        for i, item in enumerate(values[:6]):
+            jerk_limits.append(cls._safe_float(item, DEFAULT_AXIS_JERK_LIMITS[i]))
+
+        while len(jerk_limits) < 6:
+            jerk_limits.append(DEFAULT_AXIS_JERK_LIMITS[len(jerk_limits)])
+        return jerk_limits
+
+    @classmethod
     def _parse_axis_reversed(cls, values: Any) -> list[int]:
         parsed = cls._parse_float_list(values, 6, 1.0)
         return [-1 if int(v) == -1 else 1 for v in parsed]
@@ -166,13 +183,15 @@ class RobotConfigurationFile:
             name=robot_model.get_robot_name(),
             dh=[row[:] for row in robot_model.get_dh_params()[:6]],
             corr=[row[:] for row in robot_model.get_corrections()],
-            q=robot_model.get_joints(),
             axis_limits=[tuple(v) for v in robot_model.get_axis_limits()],
             axis_speed_limits=robot_model.get_axis_speed_limits(),
+            axis_jerk_limits=robot_model.get_axis_jerk_limits(),
             axis_reversed=robot_model.get_axis_reversed(),
             joint_weights=robot_model.get_joint_weights(),
             allowed_configs=robot_model.get_allowed_configurations(),
             home_position=robot_model.get_home_position(),
+            position_zero=robot_model.get_position_zero(),
+            position_transport=robot_model.get_position_transport(),
             tool=[
                 robot_model.get_tool().x,
                 robot_model.get_tool().y,
@@ -187,10 +206,13 @@ class RobotConfigurationFile:
                 "corr",
                 "axis_limits",
                 "axis_speed_limits",
+                "axis_jerk_limits",
                 "axis_reversed",
                 "joint_weights",
                 "allowed_configs",
                 "home_position",
+                "position_zero",
+                "position_transport",
                 "tool",
             },
         )
@@ -224,10 +246,13 @@ class RobotConfigurationFile:
             corr=cls._parse_matrix(data.get("corr"), 6, 6, 0.0),
             axis_limits=cls._parse_axis_limits(data.get("axis_limits")),
             axis_speed_limits=cls._parse_axis_speed_limits(data.get("axis_speed_limits")),
+            axis_jerk_limits=cls._parse_axis_jerk_limits(data.get("axis_jerk_limits")),
             axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
             joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
             allowed_configs=allowed_configs,
             home_position=cls._parse_float_list(data.get("home_position"), 6, 0.0),
+            position_zero=cls._parse_float_list(data.get("position_zero"), 6, 0.0),
+            position_transport=cls._parse_float_list(data.get("position_transport"), 6, 0.0),
             tool=cls._parse_float_list(data.get("tool"), 6, 0.0),
             present_fields=present_fields,
         )
@@ -239,10 +264,13 @@ class RobotConfigurationFile:
             "corr": [[str(val) for val in row] for row in self.corr[:6]],
             "axis_limits": self.axis_limits[:6],
             "axis_speed_limits": self.axis_speed_limits[:6],
+            "axis_jerk_limits": self.axis_jerk_limits[:6],
             "axis_reversed": self.axis_reversed[:6],
             "joint_weights": self.joint_weights[:6],
             "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],
             "home_position": self.home_position[:6],
+            "position_zero": self.position_zero[:6],
+            "position_transport": self.position_transport[:6],
             "tool": self.tool[:6],
         }
 
@@ -263,8 +291,14 @@ class RobotConfigurationFile:
             robot_model.set_axis_limits(self.axis_limits)
         if "axis_speed_limits" in self.present_fields:
             robot_model.set_axis_speed_limits(self.axis_speed_limits)
+        if "axis_jerk_limits" in self.present_fields:
+            robot_model.set_axis_jerk_limits(self.axis_jerk_limits)
         if "home_position" in self.present_fields:
             robot_model.set_home_position(self.home_position)
+        if "position_zero" in self.present_fields:
+            robot_model.set_position_zero(self.position_zero)
+        if "position_transport" in self.present_fields:
+            robot_model.set_position_transport(self.position_transport)
         if "tool" in self.present_fields:
             robot_model.set_tool(RobotTool(*self.tool[:6]))
 

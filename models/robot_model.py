@@ -17,6 +17,8 @@ class RobotModel(QObject):
         (-350.0, 350.0),
     ]
     DEFAULT_AXIS_SPEED_LIMITS: List[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
+    # Estimated defaults (deg/s^3), can be refined from real traces.
+    DEFAULT_AXIS_JERK_LIMITS: List[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
     POSITION_TRANSPORT: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
@@ -42,6 +44,7 @@ class RobotModel(QObject):
     axis_reversed_changed = pyqtSignal()
     axis_limits_changed = pyqtSignal()
     axis_speed_limits_changed = pyqtSignal()
+    axis_jerk_limits_changed = pyqtSignal()
     joint_weights_changed = pyqtSignal()
     
     # Corrections
@@ -70,6 +73,7 @@ class RobotModel(QObject):
         # Limites des axes (min, max) pour chaque joint
         self.axis_limits: List[Tuple[float, float]] = list(RobotModel.DEFAULT_AXIS_LIMITS)
         self.axis_speed_limits: List[float] = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
+        self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
                
         # Position home du robot
         self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
@@ -452,6 +456,11 @@ class RobotModel(QObject):
         """Retourne la position 0 (fixe)"""
         return self.position_zero.copy()
 
+    def set_position_zero(self, position_zero: list[float]):
+        """Définit la position 0"""
+        if len(position_zero) >= 6:
+            self.position_zero = list(position_zero[:6])
+
     def go_to_position_zero(self):
         """Déplace les joints à la position 0 (fixe)"""
         self.set_joints(self.position_zero)
@@ -459,6 +468,11 @@ class RobotModel(QObject):
     def get_position_transport(self):
         """Retourne la position transport (fixe)"""
         return self.position_transport.copy()
+
+    def set_position_transport(self, position_transport: list[float]):
+        """Définit la position transport"""
+        if len(position_transport) >= 6:
+            self.position_transport = list(position_transport[:6])
 
     def go_to_position_transport(self):
         """Déplace les joints à la position transport (fixe)"""
@@ -491,6 +505,29 @@ class RobotModel(QObject):
     def get_axis_speed_limits(self):
         """Retourne les limites de vitesse de tous les axes en deg/s"""
         return self.axis_speed_limits.copy()
+
+    def get_axis_jerk_limit(self, index: int) -> float:
+        """Retourne la limite de jerk d'un axe spécifique en deg/s^3"""
+        return self.axis_jerk_limits[index] if 0 <= index < 6 else 0.0
+
+    def get_axis_jerk_limits(self):
+        """Retourne les limites de jerk de tous les axes en deg/s^3"""
+        return self.axis_jerk_limits.copy()
+
+    def get_axis_estimated_accel_limit(self, index: int) -> float:
+        """
+        Retourne l'accélération maximale estimée pour un axe (deg/s^2),
+        via alpha_max ~= sqrt(v_max * jerk_max).
+        """
+        if not (0 <= index < 6):
+            return 0.0
+        speed = max(0.0, float(self.axis_speed_limits[index]))
+        jerk = max(0.0, float(self.axis_jerk_limits[index]))
+        return math.sqrt(speed * jerk)
+
+    def get_axis_estimated_accel_limits(self) -> list[float]:
+        """Retourne les accélérations maximales estimées de tous les axes (deg/s^2)."""
+        return [self.get_axis_estimated_accel_limit(i) for i in range(6)]
 
     def get_axis_reversed_single(self, index: int) -> bool:
         """Retourne True si l'axe est inversé"""
@@ -571,6 +608,18 @@ class RobotModel(QObject):
         if len(limits) >= 6:
             self.axis_speed_limits = [float(v) for v in limits[:6]]
             self.axis_speed_limits_changed.emit()
+
+    def set_axis_jerk_limit(self, index: int, value: float):
+        """Définit la limite de jerk d'un axe spécifique en deg/s^3"""
+        if 0 <= index < 6:
+            self.axis_jerk_limits[index] = max(0.0, float(value))
+            self.axis_jerk_limits_changed.emit()
+
+    def set_axis_jerk_limits(self, limits: list[float]):
+        """Définit les limites de jerk de tous les axes en deg/s^3"""
+        if len(limits) >= 6:
+            self.axis_jerk_limits = [max(0.0, float(v)) for v in limits[:6]]
+            self.axis_jerk_limits_changed.emit()
 
     def set_axis_reversed_single(self, index: int, reversed_value: bool):
         """Inverse un axe spécifique"""
