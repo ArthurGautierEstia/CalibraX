@@ -18,7 +18,7 @@ class KeypointMotionMode(Enum):
 
 
 class TrajectoryKeypoint:
-    DEFAULT_CUBIC_AMPLITUDE_PERCENT = 100.0
+    DEFAULT_CUBIC_AMPLITUDE_PERCENT = 30.0
 
     def __init__(
         self,
@@ -224,8 +224,11 @@ class TrajectoryKeypoint:
         if not isinstance(cubic_vectors, list):
             cubic_vectors = None
         cubic_amplitudes_percent = raw.get("cubic_amplitudes_percent")
-        if not isinstance(cubic_amplitudes_percent, list):
-            cubic_amplitudes_percent = None
+        if not isinstance(cubic_amplitudes_percent, list) or len(cubic_amplitudes_percent) < 2:
+            raise ValueError(
+                "Format invalide: 'cubic_amplitudes_percent' doit etre une liste "
+                "de 2 valeurs (nouveau format requis)."
+            )
 
         return TrajectoryKeypoint(
             target_type=target_type,
