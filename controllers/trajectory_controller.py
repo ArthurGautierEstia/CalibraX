@@ -14,6 +14,7 @@ from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, T
 from utils.trajectory_builder import TrajectoryBuilder
 from views.trajectory_view import TrajectoryView
 from controllers.viewer3d_controller import Viewer3DController
+import utils.math_utils as math_utils
 
 
 class TrajectoryController(QObject):
@@ -235,8 +236,12 @@ class TrajectoryController(QObject):
         if start_anchor is None:
             return None, None
 
-        start_vec = [float(v) for v in keypoints[idx].cubic_vectors[0][:3]]
-        end_vec = [float(v) for v in keypoints[idx].cubic_vectors[1][:3]]
+        segment_length_mm = math_utils.norm3(
+            end_anchor[0] - start_anchor[0],
+            end_anchor[1] - start_anchor[1],
+            end_anchor[2] - start_anchor[2],
+        )
+        start_vec, end_vec = keypoints[idx].resolve_cubic_tangent_vectors(segment_length_mm)
 
         tangent_out_segment: list[list[float]] | None = [
             start_anchor,

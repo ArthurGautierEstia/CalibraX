@@ -72,9 +72,12 @@ class TrajectoryKeypointDialog(QDialog):
         self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
         self.cubic_vector_1: list[QDoubleSpinBox] = []
         self.cubic_vector_2: list[QDoubleSpinBox] = []
+        self.cubic_amplitude_1 = QDoubleSpinBox()
+        self.cubic_amplitude_2 = QDoubleSpinBox()
         self.cubic_hint_label = QLabel(
-            "Ces vecteurs pilotent le segment qui arrive sur ce point : "
-            "debut du segment (au point precedent) et fin du segment (au point courant)."
+            "Direction : le triplet X/Y/Z est normalise automatiquement. "
+            "Amplitude : min 0%, pas de maximum. "
+            "100% correspond a la distance entre le point precedent et ce point."
         )
 
         self.favorite_config_combo = QComboBox()
@@ -130,17 +133,27 @@ class TrajectoryKeypointDialog(QDialog):
         layout.addWidget(motion_group)
 
         cubic_layout = QGridLayout()
-        cubic_layout.addWidget(QLabel("Vecteur debut segment"), 0, 0)
+        cubic_layout.addWidget(QLabel("Direction debut segment"), 0, 0)
         for i in range(3):
             spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
             self.cubic_vector_1.append(spin)
             cubic_layout.addWidget(spin, 0, i + 1)
+        cubic_layout.addWidget(QLabel("Amplitude (%)"), 0, 4)
+        self.cubic_amplitude_1.setRange(0.0, 1_000_000.0)
+        self.cubic_amplitude_1.setDecimals(3)
+        self.cubic_amplitude_1.setSingleStep(1.0)
+        cubic_layout.addWidget(self.cubic_amplitude_1, 0, 5)
 
-        cubic_layout.addWidget(QLabel("Vecteur fin segment"), 1, 0)
+        cubic_layout.addWidget(QLabel("Direction fin segment"), 1, 0)
         for i in range(3):
             spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
             self.cubic_vector_2.append(spin)
             cubic_layout.addWidget(spin, 1, i + 1)
+        cubic_layout.addWidget(QLabel("Amplitude (%)"), 1, 4)
+        self.cubic_amplitude_2.setRange(0.0, 1_000_000.0)
+        self.cubic_amplitude_2.setDecimals(3)
+        self.cubic_amplitude_2.setSingleStep(1.0)
+        cubic_layout.addWidget(self.cubic_amplitude_2, 1, 5)
         cubic_group_layout = QVBoxLayout()
         cubic_group_layout.addLayout(cubic_layout)
         self.cubic_hint_label.setWordWrap(True)
@@ -231,6 +244,8 @@ class TrajectoryKeypointDialog(QDialog):
             spin.valueChanged.connect(self._on_cubic_vectors_changed)
         for spin in self.cubic_vector_2:
             spin.valueChanged.connect(self._on_cubic_vectors_changed)
+        self.cubic_amplitude_1.valueChanged.connect(self._on_cubic_vectors_changed)
+        self.cubic_amplitude_2.valueChanged.connect(self._on_cubic_vectors_changed)
         self.joint_target_widget.joint_value_changed.connect(self._on_joint_target_changed)
         self.cartesian_target_widget.cartesian_value_changed.connect(self._on_cartesian_target_changed)
 
@@ -472,6 +487,8 @@ class TrajectoryKeypointDialog(QDialog):
             spin.setValue(keypoint.cubic_vectors[0][i])
         for i, spin in enumerate(self.cubic_vector_2):
             spin.setValue(keypoint.cubic_vectors[1][i])
+        self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_percent[0]))
+        self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_percent[1]))
 
         allowed = set(keypoint.allowed_configs)
         for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
@@ -498,6 +515,10 @@ class TrajectoryKeypointDialog(QDialog):
             cubic_vectors=[
                 [spin.value() for spin in self.cubic_vector_1],
                 [spin.value() for spin in self.cubic_vector_2],
+            ],
+            cubic_amplitudes_percent=[
+                self.cubic_amplitude_1.value(),
+                self.cubic_amplitude_2.value(),
             ],
             allowed_configs=self._selected_allowed_configs(),
             favorite_config=self._current_favorite_config(),

@@ -456,14 +456,14 @@ class TrajectoryBuilder:
 
         p0 = [from_pose[0], from_pose[1], from_pose[2]]
         p3 = [to_pose[0], to_pose[1], to_pose[2]]
+        segment_length_mm = math_utils.norm3(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2])
 
         if force_linear_handles:
             t_out, t_in = self._linear_tangents_from_points(p0, p3)
         else:
             # Cubic handles are carried by the destination keypoint (segment-in semantics):
-            # [0] = handle at segment start (previous point side), [1] = handle at segment end (current point side).
-            t_out = [float(v) for v in segment.to_keypoint.cubic_vectors[0][:3]]
-            t_in = [float(v) for v in segment.to_keypoint.cubic_vectors[1][:3]]
+            # [0] = start-side direction/amplitude, [1] = end-side direction/amplitude.
+            t_out, t_in = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
 
         coeffs = Bezier3Coefficients3D(p0, p3, t_out, t_in)
         arc_length_mm = TrajectoryBuilder._estimate_arc_length(coeffs)
