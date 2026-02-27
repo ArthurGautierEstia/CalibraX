@@ -19,6 +19,8 @@ class RobotModel(QObject):
     DEFAULT_AXIS_SPEED_LIMITS: List[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
     # Estimated defaults (deg/s^3), can be refined from real traces.
     DEFAULT_AXIS_JERK_LIMITS: List[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
+    DEFAULT_ROBOT_CAD_MODELS: List[str] = [f"./robot_stl/rocky{i}.stl" for i in range(7)]
+    DEFAULT_TOOL_CAD_MODEL: str = ""
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
     POSITION_TRANSPORT: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
@@ -38,6 +40,9 @@ class RobotModel(QObject):
 
     # Tool
     tool_changed = pyqtSignal()
+    cad_models_changed = pyqtSignal()
+    robot_cad_models_changed = pyqtSignal()
+    tool_cad_model_changed = pyqtSignal()
 
     # Joints et axes
     joints_changed = pyqtSignal()
@@ -74,6 +79,8 @@ class RobotModel(QObject):
         self.axis_limits: List[Tuple[float, float]] = list(RobotModel.DEFAULT_AXIS_LIMITS)
         self.axis_speed_limits: List[float] = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
         self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
+        self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
+        self.tool_cad_model: str = RobotModel.DEFAULT_TOOL_CAD_MODEL
                
         # Position home du robot
         self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
@@ -409,6 +416,37 @@ class RobotModel(QObject):
     
     def get_T_tool(self):
         return self.T_tool
+
+    def get_robot_cad_models(self) -> list[str]:
+        """Retourne les chemins CAD du robot (base + axes)."""
+        return [str(path) for path in self.robot_cad_models]
+
+    def set_robot_cad_models(self, cad_models: list[str]) -> None:
+        """
+        Définit les chemins CAD du robot (base + axes).
+        Les entrées vides sont conservées pour permettre de masquer certains maillages.
+        """
+        if not isinstance(cad_models, list):
+            return
+        normalized = [str(path) for path in cad_models]
+        if normalized == self.robot_cad_models:
+            return
+        self.robot_cad_models = normalized
+        self.robot_cad_models_changed.emit()
+        self.cad_models_changed.emit()
+
+    def get_tool_cad_model(self) -> str:
+        """Retourne le chemin CAD optionnel de l'outil."""
+        return str(self.tool_cad_model)
+
+    def set_tool_cad_model(self, tool_cad_model: str | None) -> None:
+        """Définit le chemin CAD optionnel de l'outil (chaine vide pour désactiver)."""
+        normalized = "" if tool_cad_model is None else str(tool_cad_model)
+        if normalized == self.tool_cad_model:
+            return
+        self.tool_cad_model = normalized
+        self.tool_cad_model_changed.emit()
+        self.cad_models_changed.emit()
 
     # ============================================================================
     # RÉGION: Getters - Configuration générale

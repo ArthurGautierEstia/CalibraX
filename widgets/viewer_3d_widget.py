@@ -30,6 +30,10 @@ class Viewer3DWidget(QWidget):
         self.last_dh_matrices = []
         self.last_corrected_matrices = []
         self.last_ghost_corrected_matrices = []
+        self._robot_link_matrix_indices: list[int] = []
+        self._robot_ghost_link_matrix_indices: list[int] = []
+        self._robot_link_roles: list[str] = []
+        self._robot_ghost_link_roles: list[str] = []
         self.last_invert_table = []
         self.frames_visibility: list[bool] = []
         self.show_axes = True
@@ -367,18 +371,53 @@ class Viewer3DWidget(QWidget):
     
     def load_cad(self, robot_model: RobotModel):
         self._robot_model = robot_model
-        if self._cad_loaded:
-            return
-        
         self._set_label_msg("CAD loading...")
         QApplication.processEvents()  # Force le traitement des événements pour afficher le curseur
-        self.add_robot_links(robot_model.get_current_tcp_corrected_dh_matrices())
+        matrices = self._resolve_cad_matrices(robot_model)
+        self.last_corrected_matrices = matrices
+        self.add_robot_links(matrices)
+        if self.transparency_enabled:
+            self.set_transparency(True)
         self._clear_label_msg()
         self._cad_loaded = True
+
+    def reload_tool_cad(self, robot_model: RobotModel):
+        self._robot_model = robot_model
+        if not self._cad_loaded:
+            self.load_cad(robot_model)
+            return
+
+        matrices = self._resolve_cad_matrices(robot_model)
+        self.last_corrected_matrices = matrices
+        ghost_matrices = self.last_ghost_corrected_matrices if self.last_ghost_corrected_matrices else matrices
+        tool_cad_model = self._resolve_tool_cad_model()
+
+        self._replace_tool_link(matrices, tool_cad_model, ghost=False)
+        self._replace_tool_link(ghost_matrices, tool_cad_model, ghost=True)
+
+        if self.transparency_enabled:
+            self.set_transparency(True)
+
+    def _resolve_cad_matrices(self, robot_model: RobotModel) -> list[np.ndarray]:
+        matrices = robot_model.get_current_tcp_corrected_dh_matrices()
+        if matrices:
+            return matrices
+
+        if self.last_corrected_matrices:
+            return self.last_corrected_matrices
+
+        fk_result = robot_model.compute_fk_joints(robot_model.get_joints())
+        if fk_result is None:
+            return []
+
+        _, corrected_matrices, _, _, _ = fk_result
+        return corrected_matrices
 
     def load_robot_mesh(self, stl_path: str, transform_matrix, color: tuple[int, int, int]):
         # (Copier le code original ici, pas de changement)
         try:
+            if not stl_path:
+                return None
             mesh_data = self._mesh_data_cache.get(stl_path)
             if mesh_data is None:
                 stl_mesh = mesh.Mesh.from_file(stl_path)
@@ -401,35 +440,132 @@ class Viewer3DWidget(QWidget):
             print(f"Erreur STL {stl_path}: {e}")
             return None
 
-    def add_robot_links(self, matrices):
-        # (Copier le code original ici)
-        self.clear_robot_links()
-        self.clear_robot_ghost_links()
+    def _resolve_robot_cad_models(self) -> list[str]:
+        if self._robot_model is None:
+            return [f"./robot_stl/rocky{i}.stl" for i in range(7)]
+        cad_models = self._robot_model.get_robot_cad_models()
+        if not cad_models:
+            return [f"./robot_stl/rocky{i}.stl" for i in range(7)]
+        return [str(path) for path in cad_models]
+
+    def _resolve_tool_cad_model(self) -> str:
+        if self._robot_model is None:
+            return ""
+        return str(self._robot_model.get_tool_cad_model())
+
+    @staticmethod
+    def _resolve_tool_attachment_matrix_index(matrices) -> int | None:
+        # Le dernier repere correspond au TCP (avec tool). La CAO tool doit
+        # etre attachee au repere de l'axe 6, donc juste avant le TCP.
+        if len(matrices) < 2:
+            return None
+        return len(matrices) - 2
+
+    @staticmethod
+    def _resolve_tool_link_color() -> tuple[float, float, float, float]:
+        return (0.70, 0.70, 0.70, 0.5)
+
+    @staticmethod
+    def _resolve_link_color(matrix_index: int) -> tuple[float, float, float, float]:
         kuka_orange = (1.0, 0.4, 0.0, 0.5)
         kuka_black = (0.1, 0.1, 0.1, 0.5)
         kuka_grey = (0.5, 0.5, 0.5, 0.5)
-        ghost_color = (0.2, 0.75, 1.0, 0.22)
-        for i in range(min(7, len(matrices))):
-            chemin_stl = f"./robot_stl/rocky{i}.stl"
-            T = matrices[i]
-            if i == 0: kuka_color = kuka_black
-            elif i == 6: kuka_color = kuka_grey
-            else: kuka_color = kuka_orange
+        if matrix_index == 0:
+            return kuka_black
+        if matrix_index == 6:
+            return kuka_grey
+        return kuka_orange
 
-            mesh_item = self.load_robot_mesh(chemin_stl, T, kuka_color)
+    def _build_cad_specs(self, matrices) -> list[tuple[int, str, tuple[float, float, float, float], bool]]:
+        specs: list[tuple[int, str, tuple[float, float, float, float], bool]] = []
+        if not matrices:
+            return specs
+
+        robot_cad_models = self._resolve_robot_cad_models()
+        robot_matrix_count = min(7, len(matrices))
+        for matrix_index in range(robot_matrix_count):
+            if matrix_index < len(robot_cad_models):
+                stl_path = robot_cad_models[matrix_index]
+            else:
+                stl_path = f"./robot_stl/rocky{matrix_index}.stl"
+
+            if not stl_path:
+                continue
+            specs.append((matrix_index, stl_path, self._resolve_link_color(matrix_index), False))
+
+        tool_cad_model = self._resolve_tool_cad_model()
+        tool_matrix_index = self._resolve_tool_attachment_matrix_index(matrices)
+        if tool_cad_model and tool_matrix_index is not None:
+            specs.append((tool_matrix_index, tool_cad_model, self._resolve_tool_link_color(), True))
+
+        return specs
+
+    def add_robot_links(self, matrices):
+        self.clear_robot_links()
+        self.clear_robot_ghost_links()
+
+        ghost_color = (0.2, 0.75, 1.0, 0.22)
+        for matrix_index, stl_path, link_color, is_tool in self._build_cad_specs(matrices):
+            T = matrices[matrix_index]
+            mesh_item = self.load_robot_mesh(stl_path, T, link_color)
             if mesh_item:
                 self.robot_links.append(mesh_item)
+                self._robot_link_matrix_indices.append(matrix_index)
+                self._robot_link_roles.append("tool" if is_tool else "robot")
                 self.viewer.addItem(mesh_item)
                 if not self._cad_showed:
                     mesh_item.hide()
 
-            ghost_item = self.load_robot_mesh(chemin_stl, T, ghost_color)
+            ghost_item = self.load_robot_mesh(stl_path, T, ghost_color)
             if ghost_item:
                 ghost_item.setGLOptions('translucent')
                 self.robot_ghost_links.append(ghost_item)
+                self._robot_ghost_link_matrix_indices.append(matrix_index)
+                self._robot_ghost_link_roles.append("tool" if is_tool else "robot")
                 self.viewer.addItem(ghost_item)
                 if not self._ghost_visible:
                     ghost_item.hide()
+
+    def _replace_tool_link(self, matrices, stl_path: str, ghost: bool) -> None:
+        links = self.robot_ghost_links if ghost else self.robot_links
+        indices = self._robot_ghost_link_matrix_indices if ghost else self._robot_link_matrix_indices
+        roles = self._robot_ghost_link_roles if ghost else self._robot_link_roles
+
+        tool_slot = -1
+        for idx, role in enumerate(roles):
+            if role == "tool":
+                tool_slot = idx
+                break
+
+        if tool_slot >= 0:
+            old_item = links.pop(tool_slot)
+            indices.pop(tool_slot)
+            roles.pop(tool_slot)
+            self._safe_remove_viewer_item(old_item)
+
+        matrix_index = self._resolve_tool_attachment_matrix_index(matrices)
+        if not stl_path or matrix_index is None or matrix_index >= len(matrices):
+            return
+
+        color = (0.2, 0.75, 1.0, 0.22) if ghost else self._resolve_tool_link_color()
+        mesh_item = self.load_robot_mesh(stl_path, matrices[matrix_index], color)
+        if mesh_item is None:
+            return
+
+        if ghost:
+            mesh_item.setGLOptions('translucent')
+        elif self.transparency_enabled:
+            mesh_item.setGLOptions('translucent')
+
+        links.append(mesh_item)
+        indices.append(matrix_index)
+        roles.append("tool")
+        self.viewer.addItem(mesh_item)
+
+        if ghost and not self._ghost_visible:
+            mesh_item.hide()
+        if not ghost and not self._cad_showed:
+            mesh_item.hide()
 
     def update_robot(self, robot_model: RobotModel):
         """Met à jour la visualisation 3D avec repères et visibilité des frames"""
@@ -481,9 +617,10 @@ class Viewer3DWidget(QWidget):
         self._render_trajectory_overlay()
 
     def update_robot_poses(self, matrices):
-        for i in range(min(len(self.robot_links), len(matrices))):
-            mesh_item = self.robot_links[i]
-            T = matrices[i]
+        for mesh_item, matrix_index in zip(self.robot_links, self._robot_link_matrix_indices):
+            if matrix_index >= len(matrices):
+                continue
+            T = matrices[matrix_index]
             if mesh_item:
                 mesh_item.resetTransform()
                 qmat = QtGui.QMatrix4x4(
@@ -497,13 +634,28 @@ class Viewer3DWidget(QWidget):
 
     def clear_robot_links(self):
         for mesh_item in self.robot_links:
-            self.viewer.removeItem(mesh_item)
+            self._safe_remove_viewer_item(mesh_item)
         self.robot_links.clear()
+        self._robot_link_matrix_indices.clear()
+        self._robot_link_roles.clear()
 
     def clear_robot_ghost_links(self):
         for mesh_item in self.robot_ghost_links:
-            self.viewer.removeItem(mesh_item)
+            self._safe_remove_viewer_item(mesh_item)
         self.robot_ghost_links.clear()
+        self._robot_ghost_link_matrix_indices.clear()
+        self._robot_ghost_link_roles.clear()
+
+    def _safe_remove_viewer_item(self, item):
+        if item is None:
+            return
+        try:
+            self.viewer.removeItem(item)
+        except ValueError:
+            # L'item n'est déjà plus enregistré dans GLViewWidget.items
+            pass
+        except Exception:
+            pass
 
     def set_robot_visibility(self, visible: bool):
         self._cad_showed = visible
@@ -529,10 +681,8 @@ class Viewer3DWidget(QWidget):
         if not self._cad_loaded:
             matrices = self.last_corrected_matrices
             if not matrices and self._robot_model is not None:
-                fk_result = self._robot_model.compute_fk_joints(self._robot_model.get_joints())
-                if fk_result is not None:
-                    _, matrices, _, _, _ = fk_result
-                    self.last_corrected_matrices = matrices
+                matrices = self._resolve_cad_matrices(self._robot_model)
+                self.last_corrected_matrices = matrices
             if matrices:
                 self.add_robot_links(matrices)
                 self._cad_loaded = True
@@ -569,8 +719,8 @@ class Viewer3DWidget(QWidget):
                 mesh_item.hide()
 
     def _ensure_robot_ghost_links(self, matrices):
-        target_count = min(7, len(matrices))
-        if len(self.robot_links) == target_count and len(self.robot_ghost_links) == target_count:
+        expected_count = len(self._build_cad_specs(matrices))
+        if len(self.robot_links) == expected_count and len(self.robot_ghost_links) == expected_count:
             return
 
         self.add_robot_links(matrices)
@@ -579,9 +729,10 @@ class Viewer3DWidget(QWidget):
     def _update_robot_ghost_poses(self, matrices):
         self._ensure_robot_ghost_links(matrices)
 
-        for i in range(min(len(self.robot_ghost_links), len(matrices))):
-            mesh_item = self.robot_ghost_links[i]
-            T = matrices[i]
+        for mesh_item, matrix_index in zip(self.robot_ghost_links, self._robot_ghost_link_matrix_indices):
+            if matrix_index >= len(matrices):
+                continue
+            T = matrices[matrix_index]
             if mesh_item:
                 mesh_item.resetTransform()
                 qmat = QtGui.QMatrix4x4(

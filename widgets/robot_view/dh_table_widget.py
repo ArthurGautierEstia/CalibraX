@@ -1,124 +1,455 @@
+from __future__ import annotations
+
+import math
+import os
+
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QGridLayout, QHBoxLayout,
-    QLabel, QPushButton, QLineEdit, QTableWidget,
-    QTableWidgetItem, QAbstractItemView
+    QAbstractItemView,
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+    QCheckBox,
 )
-from PyQt6.QtCore import pyqtSignal
 
 from widgets.robot_view.tool_widget import ToolWidget
 from utils.mgi import RobotTool
 
+
 class DHTableWidget(QWidget):
-    """Widget pour la configuration du robot (table DH)"""
-    
-    # Signaux
+    """Widget principal de configuration robot (DH + axes + positions + CAD)."""
+
     load_config_requested = pyqtSignal()
     text_changed_requested = pyqtSignal()
     export_config_requested = pyqtSignal()
-    axis_config_requested = pyqtSignal()
-    positions_config_requested = pyqtSignal()
-    dh_value_changed = pyqtSignal(int, int, str)  # row, col, value
-    tool_changed = pyqtSignal(RobotTool)  # tool changed
-    
-    def __init__(self, parent: QWidget = None):
+
+    dh_value_changed = pyqtSignal(int, int, str)
+    tool_changed = pyqtSignal(RobotTool)
+
+    axis_config_changed = pyqtSignal(list, list, list, list)
+    positions_config_changed = pyqtSignal(list, list, list)
+
+    robot_cad_models_changed = pyqtSignal(list)
+    tool_cad_model_changed = pyqtSignal(str)
+
+    COL_AXIS_MIN = 0
+    COL_AXIS_MAX = 1
+    COL_AXIS_SPEED = 2
+    COL_AXIS_ACCEL_EST = 3
+    COL_AXIS_JERK = 4
+    COL_AXIS_REVERSED = 5
+
+    COL_POS_ZERO = 0
+    COL_POS_TRANSPORT = 1
+    COL_POS_HOME = 2
+
+    ROBOT_CAD_COUNT = 7
+
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        self.axis_reversed_checkboxes: list[QCheckBox] = []
+        self.robot_cad_line_edits: list[QLineEdit] = []
+        self.tool_cad_line_edit: QLineEdit | None = None
         self.setup_ui()
-    
-    def setup_ui(self):
-        """Initialise l'interface du widget"""
+
+    def setup_ui(self) -> None:
         main_layout = QHBoxLayout(self)
-        
-        # Partie gauche : Configuration et table DH
+
         left_layout = QVBoxLayout()
-        
-        # En-tête
-        th_layout = QGridLayout()
-        titre1 = QLabel("Configuration robot")
-        titre1.setStyleSheet("font-size: 14px; font-weight: bold;")
-        left_layout.addWidget(titre1)
-        
-        self.lineEdit_robot_name_th = QLineEdit()
-        self.lineEdit_robot_name_th.setReadOnly(False)
-        self.lineEdit_robot_name_th.setPlaceholderText("Nom du robot")
-        self.lineEdit_robot_name_th.textChanged.connect(self.text_changed_requested.emit)
-        th_layout.addWidget(self.lineEdit_robot_name_th, 0, 0)
-        
-        self.btn_load_th = QPushButton("Charger")
-        self.btn_load_th.clicked.connect(self.load_config_requested.emit)
-        th_layout.addWidget(self.btn_load_th, 0, 2)
-        
-        self.btn_export_th = QPushButton("Exporter")
-        self.btn_export_th.clicked.connect(self.export_config_requested.emit)
-        th_layout.addWidget(self.btn_export_th, 0, 3)
 
-        self.btn_axis_config = QPushButton("Parametrage des axes")
-        self.btn_axis_config.clicked.connect(self.axis_config_requested.emit)
-        th_layout.addWidget(self.btn_axis_config, 1, 2)
+        title = QLabel("Configuration robot")
+        title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        left_layout.addWidget(title)
 
-        self.btn_positions_config = QPushButton("Parametrage des positions")
-        self.btn_positions_config.clicked.connect(self.positions_config_requested.emit)
-        th_layout.addWidget(self.btn_positions_config, 1, 3)
-        
-        left_layout.addLayout(th_layout)
-        
-        # Table DH
-        table_dh_titre = QLabel("Table de Denavit-Hartenberg")
-        left_layout.addWidget(table_dh_titre)
-        
+        header_layout = QGridLayout()
+
+        self.line_edit_robot_name = QLineEdit()
+        self.line_edit_robot_name.setPlaceholderText("Nom du robot")
+        self.line_edit_robot_name.textChanged.connect(self.text_changed_requested.emit)
+        header_layout.addWidget(self.line_edit_robot_name, 0, 0)
+
+        self.btn_load = QPushButton("Charger")
+        self.btn_load.clicked.connect(self.load_config_requested.emit)
+        header_layout.addWidget(self.btn_load, 0, 1)
+
+        self.btn_export = QPushButton("Exporter")
+        self.btn_export.clicked.connect(self.export_config_requested.emit)
+        header_layout.addWidget(self.btn_export, 0, 2)
+
+        left_layout.addLayout(header_layout)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_dh_tab(), "DH Table")
+        self.tabs.addTab(self._build_axis_tab(), "Parametrage des axes")
+        self.tabs.addTab(self._build_positions_tab(), "Parametrage des positions")
+        self.tabs.addTab(self._build_cad_tab(), "CAO")
+        left_layout.addWidget(self.tabs)
+
+        main_layout.addLayout(left_layout, 3)
+
+        self.tool_widget = ToolWidget()
+        self.tool_widget.tool_changed.connect(self.tool_changed.emit)
+        main_layout.addWidget(self.tool_widget, 1)
+
+    def _build_dh_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        title = QLabel("Table de Denavit-Hartenberg")
+        layout.addWidget(title)
+
         self.table_dh = QTableWidget(6, 4)
-        self.table_dh.setHorizontalHeaderLabels(["alpha (°)", "d (mm)", "theta (°)", "r (mm)"])
+        self.table_dh.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh.horizontalHeader().setDefaultSectionSize(90)
-        self.table_dh.cellChanged.connect(self._on_cell_changed)
-        left_layout.addWidget(self.table_dh)
-        
-        main_layout.addLayout(left_layout)
-        
-        # Partie droite : Widget outil
-        self.tool_widget = ToolWidget()
-        self.tool_widget.tool_changed.connect(self.tool_changed.emit)
-        main_layout.addWidget(self.tool_widget)
-    
-    def _on_cell_changed(self, row, col):
-        """Callback interne quand une cellule change"""
-        item = self.table_dh.item(row, col)
-        if item:
-            self.dh_value_changed.emit(row, col, item.text())
-    
-    def set_robot_name(self, name):
-        """Définit le nom du robot"""
-        self.lineEdit_robot_name_th.setText(name)
-    
-    def get_robot_name(self):
-        """Récupère le nom du robot"""
-        return self.lineEdit_robot_name_th.text()
-    
-    def set_dh_params(self, params: list[list[float]]):
-        """Charge les paramètres DH dans la table"""
-        self.table_dh.blockSignals(True)  # Éviter les signaux pendant le chargement
-        for i in range(min(7, len(params))):
-            for j in range(4):
-                value = str(params[i][j]) if i < len(params) and j < len(params[i]) else ""
-                self.table_dh.setItem(i, j, QTableWidgetItem(value))
-        self.table_dh.blockSignals(False)
-    
-    def get_dh_params(self):
-        """Récupère les paramètres DH depuis la table"""
-        params = []
-        for i in range(7):
-            row = []
-            for j in range(4):
-                item = self.table_dh.item(i, j)
-                row.append(item.text() if item else "")
-            params.append(row)
-        return params
-    
-    def set_tool(self, tool: RobotTool):
-        """Définit l'outil dans le widget"""
-        self.tool_widget.set_tool(tool)
-    
-    def get_tool(self) -> RobotTool:
-        """Récupère l'outil depuis le widget"""
-        return self.tool_widget.get_tool()
+        self.table_dh.cellChanged.connect(self._on_dh_cell_changed)
+        layout.addWidget(self.table_dh)
 
+        return tab
+
+    def _build_axis_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.table_axis = QTableWidget(6, 6)
+        self.table_axis.setHorizontalHeaderLabels(
+            [
+                "Min (deg)",
+                "Max (deg)",
+                "Vitesse max (deg/s)",
+                "Accel estimee (deg/s^2)",
+                "Jerk max (deg/s^3)",
+                "Inverse",
+            ]
+        )
+        self.table_axis.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
+        self.table_axis.horizontalHeader().setDefaultSectionSize(135)
+
+        self.axis_reversed_checkboxes.clear()
+        for row in range(6):
+            accel_item = QTableWidgetItem("")
+            accel_item.setFlags(accel_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table_axis.setItem(row, DHTableWidget.COL_AXIS_ACCEL_EST, accel_item)
+
+            checkbox = QCheckBox()
+            checkbox.stateChanged.connect(self._emit_axis_config_changed)
+            self.table_axis.setCellWidget(row, DHTableWidget.COL_AXIS_REVERSED, checkbox)
+            self.axis_reversed_checkboxes.append(checkbox)
+
+        self.table_axis.itemChanged.connect(self._on_axis_item_changed)
+        layout.addWidget(self.table_axis)
+
+        return tab
+
+    def _build_positions_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.table_positions = QTableWidget(6, 3)
+        self.table_positions.setHorizontalHeaderLabels(
+            [
+                "Position 0 (deg)",
+                "Position transport (deg)",
+                "Position home (deg)",
+            ]
+        )
+        self.table_positions.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
+        self.table_positions.horizontalHeader().setDefaultSectionSize(180)
+        self.table_positions.itemChanged.connect(self._on_positions_item_changed)
+        layout.addWidget(self.table_positions)
+
+        return tab
+
+    def _build_cad_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        description = QLabel("Selection des fichiers STL pour chaque lien robot et le tool optionnel.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        grid = QGridLayout()
+        self.robot_cad_line_edits.clear()
+
+        for index in range(DHTableWidget.ROBOT_CAD_COUNT):
+            row = index
+            label = QLabel(f"Lien {index}")
+            path_line = QLineEdit()
+            path_line.setReadOnly(True)
+
+            browse_button = QPushButton("Parcourir")
+            browse_button.clicked.connect(lambda _, i=index: self._on_pick_robot_cad(i))
+
+            clear_button = QPushButton("Vider")
+            clear_button.clicked.connect(lambda _, i=index: self._on_clear_robot_cad(i))
+
+            self.robot_cad_line_edits.append(path_line)
+
+            grid.addWidget(label, row, 0)
+            grid.addWidget(path_line, row, 1)
+            grid.addWidget(browse_button, row, 2)
+            grid.addWidget(clear_button, row, 3)
+
+        tool_row = DHTableWidget.ROBOT_CAD_COUNT
+        tool_label = QLabel("Tool (optionnel)")
+        self.tool_cad_line_edit = QLineEdit()
+        self.tool_cad_line_edit.setReadOnly(True)
+
+        tool_browse_button = QPushButton("Parcourir")
+        tool_browse_button.clicked.connect(self._on_pick_tool_cad)
+
+        tool_clear_button = QPushButton("Vider")
+        tool_clear_button.clicked.connect(self._on_clear_tool_cad)
+
+        grid.addWidget(tool_label, tool_row, 0)
+        grid.addWidget(self.tool_cad_line_edit, tool_row, 1)
+        grid.addWidget(tool_browse_button, tool_row, 2)
+        grid.addWidget(tool_clear_button, tool_row, 3)
+
+        layout.addLayout(grid)
+        layout.addStretch()
+
+        return tab
+
+    def _on_dh_cell_changed(self, row: int, col: int) -> None:
+        item = self.table_dh.item(row, col)
+        if item is not None:
+            self.dh_value_changed.emit(row, col, item.text())
+
+    def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() in (DHTableWidget.COL_AXIS_SPEED, DHTableWidget.COL_AXIS_JERK):
+            self._refresh_estimated_accel_for_row(item.row())
+        self._emit_axis_config_changed()
+
+    def _on_positions_item_changed(self, _item: QTableWidgetItem) -> None:
+        self.positions_config_changed.emit(
+            self.get_home_position(),
+            self.get_position_zero(),
+            self.get_position_transport(),
+        )
+
+    def _on_pick_robot_cad(self, index: int) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selectionner une CAO",
+            self._get_cad_start_directory(),
+            "STL files (*.stl);;All files (*)",
+        )
+        if not file_path:
+            return
+
+        self.robot_cad_line_edits[index].setText(file_path)
+        self.robot_cad_models_changed.emit(self.get_robot_cad_models())
+
+    def _on_clear_robot_cad(self, index: int) -> None:
+        self.robot_cad_line_edits[index].setText("")
+        self.robot_cad_models_changed.emit(self.get_robot_cad_models())
+
+    def _on_pick_tool_cad(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selectionner une CAO de tool",
+            self._get_cad_start_directory(),
+            "STL files (*.stl);;All files (*)",
+        )
+        if not file_path:
+            return
+
+        self.tool_cad_line_edit.setText(file_path)
+        self.tool_cad_model_changed.emit(self.get_tool_cad_model())
+
+    def _on_clear_tool_cad(self) -> None:
+        self.tool_cad_line_edit.setText("")
+        self.tool_cad_model_changed.emit("")
+
+    @staticmethod
+    def _safe_float(value: str, default: float = 0.0) -> float:
+        try:
+            if value is None:
+                return default
+            stripped = str(value).strip()
+            if stripped == "":
+                return default
+            return float(stripped)
+        except (TypeError, ValueError):
+            return default
+
+    def _cell_to_float(self, table: QTableWidget, row: int, column: int, default: float = 0.0) -> float:
+        item = table.item(row, column)
+        return self._safe_float(item.text() if item else "", default)
+
+    def _refresh_estimated_accel_for_row(self, row: int) -> None:
+        speed = max(0.0, self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_SPEED, 0.0))
+        jerk = max(0.0, self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_JERK, 0.0))
+        accel = math.sqrt(speed * jerk)
+
+        accel_item = self.table_axis.item(row, DHTableWidget.COL_AXIS_ACCEL_EST)
+        if accel_item is None:
+            accel_item = QTableWidgetItem("")
+            accel_item.setFlags(accel_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table_axis.setItem(row, DHTableWidget.COL_AXIS_ACCEL_EST, accel_item)
+        accel_item.setText(f"{accel:.3f}")
+
+    def _refresh_estimated_accel_column(self) -> None:
+        self.table_axis.blockSignals(True)
+        try:
+            for row in range(6):
+                self._refresh_estimated_accel_for_row(row)
+        finally:
+            self.table_axis.blockSignals(False)
+
+    @staticmethod
+    def _get_cad_start_directory() -> str:
+        current_dir = os.getcwd()
+        robot_stl_dir = os.path.join(current_dir, "robot_stl")
+        if os.path.isdir(robot_stl_dir):
+            return robot_stl_dir
+        return current_dir
+
+    def _emit_axis_config_changed(self) -> None:
+        self.axis_config_changed.emit(
+            self.get_axis_limits(),
+            self.get_axis_speed_limits(),
+            self.get_axis_jerk_limits(),
+            self.get_axis_reversed(),
+        )
+
+    def set_robot_name(self, name: str) -> None:
+        self.line_edit_robot_name.setText(name)
+
+    def get_robot_name(self) -> str:
+        return self.line_edit_robot_name.text()
+
+    def set_dh_params(self, params: list[list[float]]) -> None:
+        self.table_dh.blockSignals(True)
+        try:
+            for row in range(6):
+                values = params[row] if row < len(params) else []
+                for col in range(4):
+                    value = str(values[col]) if col < len(values) else ""
+                    self.table_dh.setItem(row, col, QTableWidgetItem(value))
+        finally:
+            self.table_dh.blockSignals(False)
+
+    def get_dh_params(self) -> list[list[str]]:
+        params: list[list[str]] = []
+        for row in range(6):
+            row_values: list[str] = []
+            for col in range(4):
+                item = self.table_dh.item(row, col)
+                row_values.append(item.text() if item else "")
+            params.append(row_values)
+        return params
+
+    def set_axis_config(
+        self,
+        axis_limits: list[tuple[float, float]],
+        axis_speed_limits: list[float],
+        axis_jerk_limits: list[float],
+        axis_reversed: list[int],
+    ) -> None:
+        self.table_axis.blockSignals(True)
+        try:
+            for row in range(6):
+                min_val = axis_limits[row][0] if row < len(axis_limits) else -180.0
+                max_val = axis_limits[row][1] if row < len(axis_limits) else 180.0
+                speed = axis_speed_limits[row] if row < len(axis_speed_limits) else 0.0
+                jerk = axis_jerk_limits[row] if row < len(axis_jerk_limits) else 0.0
+                reversed_axis = axis_reversed[row] if row < len(axis_reversed) else 1
+
+                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_MIN, QTableWidgetItem(str(min_val)))
+                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_MAX, QTableWidgetItem(str(max_val)))
+                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_SPEED, QTableWidgetItem(str(speed)))
+                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_JERK, QTableWidgetItem(str(jerk)))
+
+                checkbox = self.axis_reversed_checkboxes[row]
+                checkbox.blockSignals(True)
+                checkbox.setChecked(reversed_axis == -1)
+                checkbox.blockSignals(False)
+
+            self._refresh_estimated_accel_column()
+        finally:
+            self.table_axis.blockSignals(False)
+
+    def get_axis_limits(self) -> list[tuple[float, float]]:
+        limits: list[tuple[float, float]] = []
+        for row in range(6):
+            min_val = self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_MIN, -180.0)
+            max_val = self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_MAX, 180.0)
+            limits.append((min_val, max_val))
+        return limits
+
+    def get_axis_speed_limits(self) -> list[float]:
+        return [self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_SPEED, 0.0) for row in range(6)]
+
+    def get_axis_jerk_limits(self) -> list[float]:
+        return [self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_JERK, 0.0) for row in range(6)]
+
+    def get_axis_reversed(self) -> list[int]:
+        reversed_values: list[int] = []
+        for row in range(6):
+            checkbox = self.axis_reversed_checkboxes[row]
+            reversed_values.append(-1 if checkbox.isChecked() else 1)
+        return reversed_values
+
+    def set_positions_config(
+        self,
+        home_position: list[float],
+        position_zero: list[float],
+        position_transport: list[float],
+    ) -> None:
+        self.table_positions.blockSignals(True)
+        try:
+            for row in range(6):
+                zero_value = position_zero[row] if row < len(position_zero) else 0.0
+                transport_value = position_transport[row] if row < len(position_transport) else 0.0
+                home_value = home_position[row] if row < len(home_position) else 0.0
+
+                self.table_positions.setItem(row, DHTableWidget.COL_POS_ZERO, QTableWidgetItem(str(zero_value)))
+                self.table_positions.setItem(row, DHTableWidget.COL_POS_TRANSPORT, QTableWidgetItem(str(transport_value)))
+                self.table_positions.setItem(row, DHTableWidget.COL_POS_HOME, QTableWidgetItem(str(home_value)))
+        finally:
+            self.table_positions.blockSignals(False)
+
+    def get_position_zero(self) -> list[float]:
+        return [self._cell_to_float(self.table_positions, row, DHTableWidget.COL_POS_ZERO, 0.0) for row in range(6)]
+
+    def get_position_transport(self) -> list[float]:
+        return [self._cell_to_float(self.table_positions, row, DHTableWidget.COL_POS_TRANSPORT, 0.0) for row in range(6)]
+
+    def get_home_position(self) -> list[float]:
+        return [self._cell_to_float(self.table_positions, row, DHTableWidget.COL_POS_HOME, 0.0) for row in range(6)]
+
+    def set_robot_cad_models(self, cad_models: list[str]) -> None:
+        for index in range(DHTableWidget.ROBOT_CAD_COUNT):
+            value = cad_models[index] if index < len(cad_models) else ""
+            self.robot_cad_line_edits[index].setText(str(value))
+
+    def get_robot_cad_models(self) -> list[str]:
+        return [line_edit.text().strip() for line_edit in self.robot_cad_line_edits]
+
+    def set_tool_cad_model(self, tool_cad_model: str | None) -> None:
+        if self.tool_cad_line_edit is None:
+            return
+        self.tool_cad_line_edit.setText("" if tool_cad_model is None else str(tool_cad_model))
+
+    def get_tool_cad_model(self) -> str:
+        if self.tool_cad_line_edit is None:
+            return ""
+        return self.tool_cad_line_edit.text().strip()
+
+    def set_tool(self, tool: RobotTool) -> None:
+        self.tool_widget.set_tool(tool)
+
+    def get_tool(self) -> RobotTool:
+        return self.tool_widget.get_tool()

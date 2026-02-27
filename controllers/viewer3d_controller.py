@@ -15,9 +15,17 @@ class Viewer3DController(QObject):
 
     def _setup_connections(self) -> None:
         self.robot_model.tcp_pose_changed.connect(self._update_tcp_pose)
+        self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
+        self.robot_model.tool_cad_model_changed.connect(self._on_tool_cad_model_changed)
 
     def _update_tcp_pose(self) -> None:
         self.viewer_3d_widget.update_robot(self.robot_model)
+
+    def _on_robot_cad_models_changed(self) -> None:
+        self.viewer_3d_widget.load_cad(self.robot_model)
+
+    def _on_tool_cad_model_changed(self) -> None:
+        self.viewer_3d_widget.reload_tool_cad(self.robot_model)
 
     def show_robot_ghost(self) -> None:
         self._ghost_visible = True

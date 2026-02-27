@@ -18,17 +18,28 @@ class DHTableController(QObject):
         self.robot_model = robot_model
         self.dh_table_widget = dh_table_widget
         self._setup_connections()
+        self._on_robot_configuration_changed()
     
     def _setup_connections(self) -> None:
         # Signals from Robot Model
         self.robot_model.configuration_changed.connect(self._on_robot_configuration_changed)
         self.robot_model.robot_name_changed.connect(self._on_robot_name_changed)
         self.robot_model.dh_params_changed.connect(self._on_robot_dh_table_changed)
+        self.robot_model.axis_limits_changed.connect(self._on_robot_axis_config_changed)
+        self.robot_model.axis_speed_limits_changed.connect(self._on_robot_axis_config_changed)
+        self.robot_model.axis_jerk_limits_changed.connect(self._on_robot_axis_config_changed)
+        self.robot_model.axis_reversed_changed.connect(self._on_robot_axis_config_changed)
+        self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
+        self.robot_model.tool_cad_model_changed.connect(self._on_robot_cad_models_changed)
 
         # Signals from View
         self.dh_table_widget.text_changed_requested.connect(self._on_view_name_changed)
         self.dh_table_widget.dh_value_changed.connect(self._on_view_dh_value_changed)
         self.dh_table_widget.tool_changed.connect(self._on_view_tool_changed)
+        self.dh_table_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
+        self.dh_table_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
+        self.dh_table_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
+        self.dh_table_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
         self.dh_table_widget.load_config_requested.connect(self._on_view_load_config_requested)
         self.dh_table_widget.export_config_requested.connect(self._on_view_export_config_requested)
 
@@ -39,6 +50,9 @@ class DHTableController(QObject):
     def _on_robot_configuration_changed(self) -> None:
         self.update_robot_name_view()
         self.update_dh_table_view()
+        self.update_axis_config_view()
+        self.update_positions_config_view()
+        self.update_cad_view()
         self.update_tool_view()
 
     def _on_robot_name_changed(self) -> None:
@@ -46,6 +60,12 @@ class DHTableController(QObject):
 
     def _on_robot_dh_table_changed(self) -> None:
         self.update_dh_table_view()
+
+    def _on_robot_axis_config_changed(self) -> None:
+        self.update_axis_config_view()
+
+    def _on_robot_cad_models_changed(self) -> None:
+        self.update_cad_view()
 
     def _on_view_name_changed(self) -> None:
         self.robot_model.set_robot_name(self.dh_table_widget.get_robot_name())
@@ -56,6 +76,37 @@ class DHTableController(QObject):
     
     def _on_view_tool_changed(self, tool) -> None:
         self.robot_model.set_tool(tool)
+
+    def _on_view_axis_config_changed(
+        self,
+        axis_limits: list[tuple[float, float]],
+        axis_speed_limits: list[float],
+        axis_jerk_limits: list[float],
+        axis_reversed: list[int],
+    ) -> None:
+        self.robot_model.inhibit_auto_compute_fk_tcp(True)
+        self.robot_model.set_axis_speed_limits(axis_speed_limits)
+        self.robot_model.set_axis_jerk_limits(axis_jerk_limits)
+        self.robot_model.set_axis_limits(axis_limits)
+        self.robot_model.set_axis_reversed(axis_reversed)
+        self.robot_model.inhibit_auto_compute_fk_tcp(False)
+        self.robot_model.compute_fk_tcp()
+
+    def _on_view_positions_config_changed(
+        self,
+        home_position: list[float],
+        position_zero: list[float],
+        position_transport: list[float],
+    ) -> None:
+        self.robot_model.set_position_zero(position_zero)
+        self.robot_model.set_position_transport(position_transport)
+        self.robot_model.set_home_position(home_position)
+
+    def _on_view_robot_cad_models_changed(self, robot_cad_models: list[str]) -> None:
+        self.robot_model.set_robot_cad_models(robot_cad_models)
+
+    def _on_view_tool_cad_model_changed(self, tool_cad_model: str) -> None:
+        self.robot_model.set_tool_cad_model(tool_cad_model)
     
     def _on_view_load_config_requested(self) -> None:
         self.load_configuration()
@@ -72,6 +123,25 @@ class DHTableController(QObject):
     
     def update_dh_table_view(self) -> None:
         self.dh_table_widget.set_dh_params(self.robot_model.get_dh_params())
+
+    def update_axis_config_view(self) -> None:
+        self.dh_table_widget.set_axis_config(
+            self.robot_model.get_axis_limits(),
+            self.robot_model.get_axis_speed_limits(),
+            self.robot_model.get_axis_jerk_limits(),
+            self.robot_model.get_axis_reversed(),
+        )
+
+    def update_positions_config_view(self) -> None:
+        self.dh_table_widget.set_positions_config(
+            self.robot_model.get_home_position(),
+            self.robot_model.get_position_zero(),
+            self.robot_model.get_position_transport(),
+        )
+
+    def update_cad_view(self) -> None:
+        self.dh_table_widget.set_robot_cad_models(self.robot_model.get_robot_cad_models())
+        self.dh_table_widget.set_tool_cad_model(self.robot_model.get_tool_cad_model())
 
     def update_tool_view(self) -> None:
         self.dh_table_widget.set_tool(self.robot_model.get_tool())

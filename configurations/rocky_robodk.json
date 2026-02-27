@@ -182,12 +182,22 @@
         120.0,
         0.0
     ],
+    "robot_cad_models": [
+        "./robot_stl/rocky0.stl",
+        "./robot_stl/rocky1.stl",
+        "./robot_stl/rocky2.stl",
+        "./robot_stl/rocky3.stl",
+        "./robot_stl/rocky4.stl",
+        "./robot_stl/rocky5.stl",
+        "./robot_stl/rocky6.stl"
+    ],
+    "tool_cad_model": "B:/Dev/Python/CalibraX/robot_stl/Torche_Soudure.stl",
     "tool": [
         0.0,
+        -56.9,
+        255.9,
         0.0,
-        100.0,
         0.0,
-        45.0,
-        0.0
+        23.0
     ]
 }
