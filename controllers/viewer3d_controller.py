@@ -50,6 +50,12 @@ class Viewer3DController(QObject):
     def set_trajectory_path(self, points_xyz: list[list[float]]) -> None:
         self.viewer_3d_widget.set_trajectory_path(points_xyz)
 
+    def set_trajectory_path_segments(
+        self,
+        segments: list[tuple[list[list[float]], tuple[float, float, float, float]]],
+    ) -> None:
+        self.viewer_3d_widget.set_trajectory_path_segments(segments)
+
     def clear_trajectory_path(self) -> None:
         self.viewer_3d_widget.clear_trajectory_path()
 

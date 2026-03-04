@@ -15,13 +15,14 @@ class Viewer3DWidget(QWidget):
         super().__init__(parent)
         self.robot_links: list[gl.GLMeshItem] = []
         self.robot_ghost_links: list[gl.GLMeshItem] = []
-        self._trajectory_path_item: gl.GLLinePlotItem | None = None
+        self._trajectory_path_items: list[gl.GLLinePlotItem] = []
         self._trajectory_keypoints_item: gl.GLScatterPlotItem | None = None
         self._trajectory_keypoint_selected_item: gl.GLScatterPlotItem | None = None
         self._trajectory_keypoint_editing_item: gl.GLScatterPlotItem | None = None
         self._trajectory_tangent_out_item: gl.GLLinePlotItem | None = None
         self._trajectory_tangent_in_item: gl.GLLinePlotItem | None = None
         self._trajectory_path_points: np.ndarray | None = None
+        self._trajectory_path_segments: list[tuple[np.ndarray, tuple[float, float, float, float]]] | None = None
         self._trajectory_keypoint_points: np.ndarray | None = None
         self._trajectory_keypoint_selected_index: int | None = None
         self._trajectory_keypoint_editing_index: int | None = None
@@ -201,7 +202,7 @@ class Viewer3DWidget(QWidget):
     def clear_viewer(self):
         self.viewer.clear()
         self.add_grid()
-        self._trajectory_path_item = None
+        self._trajectory_path_items = []
         self._trajectory_keypoints_item = None
         self._trajectory_keypoint_selected_item = None
         self._trajectory_keypoint_editing_item = None
@@ -209,14 +210,29 @@ class Viewer3DWidget(QWidget):
         self._trajectory_tangent_in_item = None
 
     def set_trajectory_path(self, points_xyz: list[list[float]]) -> None:
+        self._trajectory_path_segments = None
         if len(points_xyz) < 2:
             self._trajectory_path_points = None
         else:
             self._trajectory_path_points = np.array(points_xyz, dtype=float)
         self._render_trajectory_overlay()
 
+    def set_trajectory_path_segments(
+        self,
+        segments: list[tuple[list[list[float]], tuple[float, float, float, float]]],
+    ) -> None:
+        parsed_segments: list[tuple[np.ndarray, tuple[float, float, float, float]]] = []
+        for points_xyz, color in segments:
+            if len(points_xyz) < 2:
+                continue
+            parsed_segments.append((np.array(points_xyz, dtype=float), color))
+        self._trajectory_path_segments = parsed_segments if parsed_segments else None
+        self._trajectory_path_points = None
+        self._render_trajectory_overlay()
+
     def clear_trajectory_path(self) -> None:
         self._trajectory_path_points = None
+        self._trajectory_path_segments = None
         self._render_trajectory_overlay()
 
     def set_trajectory_keypoints(
@@ -258,9 +274,9 @@ class Viewer3DWidget(QWidget):
         self._render_trajectory_overlay()
 
     def _render_trajectory_overlay(self) -> None:
-        if self._trajectory_path_item is not None:
-            self.viewer.removeItem(self._trajectory_path_item)
-            self._trajectory_path_item = None
+        for item in self._trajectory_path_items:
+            self.viewer.removeItem(item)
+        self._trajectory_path_items = []
         if self._trajectory_keypoints_item is not None:
             self.viewer.removeItem(self._trajectory_keypoints_item)
             self._trajectory_keypoints_item = None
@@ -277,14 +293,25 @@ class Viewer3DWidget(QWidget):
             self.viewer.removeItem(self._trajectory_tangent_in_item)
             self._trajectory_tangent_in_item = None
 
-        if self._trajectory_path_points is not None and len(self._trajectory_path_points) >= 2:
-            self._trajectory_path_item = gl.GLLinePlotItem(
+        if self._trajectory_path_segments is not None and len(self._trajectory_path_segments) > 0:
+            for points_xyz, color in self._trajectory_path_segments:
+                path_item = gl.GLLinePlotItem(
+                    pos=points_xyz,
+                    color=color,
+                    width=2,
+                    antialias=True,
+                )
+                self._trajectory_path_items.append(path_item)
+                self.viewer.addItem(path_item)
+        elif self._trajectory_path_points is not None and len(self._trajectory_path_points) >= 2:
+            path_item = gl.GLLinePlotItem(
                 pos=self._trajectory_path_points,
                 color=(1.0, 0.84, 0.1, 0.85),
                 width=2,
                 antialias=True,
             )
-            self.viewer.addItem(self._trajectory_path_item)
+            self._trajectory_path_items.append(path_item)
+            self.viewer.addItem(path_item)
 
         if self._trajectory_keypoint_points is not None and len(self._trajectory_keypoint_points) > 0:
             points = self._trajectory_keypoint_points

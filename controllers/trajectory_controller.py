@@ -8,6 +8,7 @@ from models.trajectory_result import (
     TrajectoryComputationStatus,
     TrajectoryResult,
     TrajectorySample,
+    TrajectorySampleErrorCode,
     TrajectorySegment,
 )
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
@@ -18,6 +19,10 @@ import utils.math_utils as math_utils
 
 
 class TrajectoryController(QObject):
+    _PATH_COLOR_LIN_CUBIC = (1.0, 0.84, 0.1, 0.85)
+    _PATH_COLOR_PTP = (0.25, 0.65, 1.0, 0.9)
+    _PATH_COLOR_ERROR = (1.0, 0.2, 0.2, 0.95)
+
     def __init__(
         self,
         robot_model: RobotModel,
@@ -198,8 +203,86 @@ class TrajectoryController(QObject):
                 self.viewer3d_controller.hide_robot_ghost()
             return
 
-        points_xyz = [[sample.pose[0], sample.pose[1], sample.pose[2]] for sample in self.current_samples]
-        self.viewer3d_controller.set_trajectory_path(points_xyz)
+        colored_segments = self._build_colored_3d_trajectory_path_segments()
+        if colored_segments:
+            self.viewer3d_controller.set_trajectory_path_segments(colored_segments)
+        else:
+            self.viewer3d_controller.clear_trajectory_path()
+
+    @staticmethod
+    def _sample_xyz(sample: TrajectorySample) -> list[float]:
+        return [float(sample.pose[0]), float(sample.pose[1]), float(sample.pose[2])]
+
+    def _base_path_color_for_mode(self, mode: KeypointMotionMode) -> tuple[float, float, float, float]:
+        if mode == KeypointMotionMode.PTP:
+            return self._PATH_COLOR_PTP
+        return self._PATH_COLOR_LIN_CUBIC
+
+    def _edge_color_for_samples(
+        self,
+        sample_a: TrajectorySample,
+        sample_b: TrajectorySample,
+        base_color: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        if sample_a.error_code != TrajectorySampleErrorCode.NONE or sample_b.error_code != TrajectorySampleErrorCode.NONE:
+            return self._PATH_COLOR_ERROR
+        return base_color
+
+    @staticmethod
+    def _append_colored_edge(
+        chunks: list[tuple[list[list[float]], tuple[float, float, float, float]]],
+        start_xyz: list[float],
+        end_xyz: list[float],
+        color: tuple[float, float, float, float],
+    ) -> None:
+        if not chunks:
+            chunks.append(([start_xyz, end_xyz], color))
+            return
+
+        last_points, last_color = chunks[-1]
+        if last_color == color and last_points[-1] == start_xyz:
+            last_points.append(end_xyz)
+            return
+
+        chunks.append(([start_xyz, end_xyz], color))
+
+    def _build_colored_3d_trajectory_path_segments(
+        self,
+    ) -> list[tuple[list[list[float]], tuple[float, float, float, float]]]:
+        chunks: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
+        previous_last_sample: TrajectorySample | None = None
+
+        for segment in self.current_trajectory.segments:
+            segment_samples = segment.samples
+            if not segment_samples:
+                continue
+            base_color = self._base_path_color_for_mode(segment.mode)
+
+            if previous_last_sample is not None:
+                start_sample = previous_last_sample
+                end_sample = segment_samples[0]
+                edge_color = self._edge_color_for_samples(start_sample, end_sample, base_color)
+                self._append_colored_edge(
+                    chunks,
+                    self._sample_xyz(start_sample),
+                    self._sample_xyz(end_sample),
+                    edge_color,
+                )
+
+            for sample_index in range(1, len(segment_samples)):
+                start_sample = segment_samples[sample_index - 1]
+                end_sample = segment_samples[sample_index]
+                edge_color = self._edge_color_for_samples(start_sample, end_sample, base_color)
+                self._append_colored_edge(
+                    chunks,
+                    self._sample_xyz(start_sample),
+                    self._sample_xyz(end_sample),
+                    edge_color,
+                )
+
+            previous_last_sample = segment_samples[-1]
+
+        return chunks
 
     def _resolve_keypoint_xyz(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
