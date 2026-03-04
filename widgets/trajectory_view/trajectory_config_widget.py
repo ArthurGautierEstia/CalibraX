@@ -23,6 +23,8 @@ from PyQt6.QtWidgets import (
 )
 
 import utils.math_utils as math_utils
+from utils.trajectory_constants import LINEAR_TANGENT_RATIO
+from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.robot_model import RobotModel
 from models.trajectory_result import TrajectoryResult
@@ -158,30 +160,16 @@ class TrajectoryConfigWidget(QWidget):
     def _emit_trajectory_preview(self, keypoints: list[TrajectoryKeypoint]) -> None:
         self.trajectoryPreviewRequested.emit([keypoint.clone() for keypoint in keypoints])
 
-    def _resolve_keypoint_xyz(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
-        if keypoint.target_type == KeypointTargetType.CARTESIAN:
-            if len(keypoint.cartesian_target) < 3:
-                return None
-            return [float(keypoint.cartesian_target[0]), float(keypoint.cartesian_target[1]), float(keypoint.cartesian_target[2])]
-
-        fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target)
-        if fk_result is None:
-            return None
-        _, _, pose, _, _ = fk_result
-        if len(pose) < 3:
-            return None
-        return [float(pose[0]), float(pose[1]), float(pose[2])]
-
     def _resolve_segment_tangents_for_keypoint(self, keypoints: list[TrajectoryKeypoint], row: int) -> tuple[list[float], list[float]] | None:
         if row < 0 or row >= len(keypoints):
             return None
 
-        end_xyz = self._resolve_keypoint_xyz(keypoints[row])
+        end_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row])
         if end_xyz is None:
             return None
 
         if row > 0:
-            start_xyz = self._resolve_keypoint_xyz(keypoints[row - 1])
+            start_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row - 1])
         else:
             tcp_pose = self.robot_model.get_tcp_pose()
             start_xyz = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
@@ -197,9 +185,9 @@ class TrajectoryConfigWidget(QWidget):
             )
             return current_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
 
-        dx = (end_xyz[0] - start_xyz[0]) * 0.3
-        dy = (end_xyz[1] - start_xyz[1]) * 0.3
-        dz = (end_xyz[2] - start_xyz[2]) * 0.3
+        dx = (end_xyz[0] - start_xyz[0]) * LINEAR_TANGENT_RATIO
+        dy = (end_xyz[1] - start_xyz[1]) * LINEAR_TANGENT_RATIO
+        dz = (end_xyz[2] - start_xyz[2]) * LINEAR_TANGENT_RATIO
         return [dx, dy, dz], [-dx, -dy, -dz]
 
     def _auto_update_adjacent_cubic_tangents(self, keypoints: list[TrajectoryKeypoint], row: int) -> None:

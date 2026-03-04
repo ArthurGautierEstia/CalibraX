@@ -47,9 +47,6 @@ class Viewer3DController(QObject):
 
         self.viewer_3d_widget.update_robot_ghost(self._ghost_joints)
 
-    def set_trajectory_path(self, points_xyz: list[list[float]]) -> None:
-        self.viewer_3d_widget.set_trajectory_path(points_xyz)
-
     def set_trajectory_path_segments(
         self,
         segments: list[tuple[list[list[float]], tuple[float, float, float, float]]],

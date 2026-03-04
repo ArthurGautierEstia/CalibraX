@@ -15,12 +15,14 @@ from models.trajectory_result import (
 from utils.bezier3 import Bezier3Coefficients3D
 import utils.math_utils as math_utils
 from utils.mgi import MGI, MgiConfigKey, MgiResult, MgiResultItem, MgiResultStatus
+from utils.trajectory_constants import LINEAR_TANGENT_RATIO
 
 
 class TrajectoryBuilder:
     DEFAULT_SAMPLE_DT_S = 0.004  # 4 ms
     DEFAULT_ARC_LENGTH_SAMPLES = 200
     MAX_SAMPLES_PER_SEGMENT = 50_000
+    LINEAR_TANGENT_RATIO = LINEAR_TANGENT_RATIO
     _EPS = 1e-9
 
     def __init__(
@@ -136,7 +138,7 @@ class TrajectoryBuilder:
         return [float(v) for v in dh_pose[:6]]
 
     @staticmethod
-    def _linear_tangents_from_points(p0, p3, tangent_ratio: float = 0.3):
+    def _linear_tangents_from_points(p0, p3, tangent_ratio: float = LINEAR_TANGENT_RATIO):
         dx = (p3[0] - p0[0]) * tangent_ratio
         dy = (p3[1] - p0[1]) * tangent_ratio
         dz = (p3[2] - p0[2]) * tangent_ratio
@@ -463,7 +465,11 @@ class TrajectoryBuilder:
         segment_length_mm = math_utils.norm3(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2])
 
         if force_linear_handles:
-            t_out, t_in = self._linear_tangents_from_points(p0, p3, 0.3) # 30% of the segment length as handle length
+            t_out, t_in = self._linear_tangents_from_points(
+                p0,
+                p3,
+                TrajectoryBuilder.LINEAR_TANGENT_RATIO,
+            )
         else:
             # Cubic handles are carried by the destination keypoint (segment-in semantics):
             # [0] = start-side direction/amplitude, [1] = end-side direction/amplitude.

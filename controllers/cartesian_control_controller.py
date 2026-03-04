@@ -15,7 +15,7 @@ class CartesianControlController(QObject):
         self.cartesian_control_view = cartesian_control_view
 
         self.cartesian_widget_controller = CartesianWidgetController(self.robot_model, self.cartesian_control_view.get_cartesian_control_widget())
-        self.mig_solution_controller = MgiSolutionsController(self.robot_model, self.cartesian_control_view.get_mgi_solutions_widget())
+        self.mgi_solutions_controller = MgiSolutionsController(self.robot_model, self.cartesian_control_view.get_mgi_solutions_widget())
         self.correction_table_controller = CorrectionTableController(robot_model, self.cartesian_control_view.get_correction_widget())
 
         self._setup_connections()
@@ -31,5 +31,5 @@ class CartesianControlController(QObject):
         if best_sol:
             self.robot_model.set_joints(best_sol[1].joints)
         else:
-            self.mig_solution_controller.display_mgi_result(mgi_result, None)
+            self.mgi_solutions_controller.display_mgi_result(mgi_result, None)
     

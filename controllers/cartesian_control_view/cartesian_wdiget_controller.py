@@ -25,7 +25,9 @@ class CartesianWidgetController(QObject):
         self.cartesian_control_widget.set_all_cartesian(self.robot_model.get_tcp_pose())
 
     def _on_view_cartesian_value_changed(self, idx: int, value: float):
-        self.new_target = self.robot_model.get_tcp_pose()
+        if idx < 0 or idx >= 6:
+            return
+        self.new_target = list(self.robot_model.get_tcp_pose())
         self.new_target[idx] = value
         self.new_target_computed.emit()
     

@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 import utils.math_utils as math_utils
 from utils.mgi import MgiConfigKey
+from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.trajectory_result import TrajectoryResult
 from models.robot_model import RobotModel
@@ -387,21 +388,6 @@ class TrajectoryKeypointDialog(QDialog):
     def should_auto_update_adjacent_cubic_tangents(self) -> bool:
         return self.cubic_auto_update_adjacent_checkbox.isEnabled() and self.cubic_auto_update_adjacent_checkbox.isChecked()
 
-    def _resolve_keypoint_xyz(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
-        if keypoint.target_type == KeypointTargetType.CARTESIAN:
-            target = keypoint.cartesian_target
-            if len(target) < 3:
-                return None
-            return [float(target[0]), float(target[1]), float(target[2])]
-
-        fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target)
-        if fk_result is None:
-            return None
-        _, _, pose, _, _ = fk_result
-        if len(pose) < 3:
-            return None
-        return [float(pose[0]), float(pose[1]), float(pose[2])]
-
     def _resolve_current_target_xyz(self) -> list[float] | None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             target = self.cartesian_target_widget.get_cartesian_values()
@@ -482,7 +468,7 @@ class TrajectoryKeypointDialog(QDialog):
         if row is None or row < 1 or (row - 1) >= len(self._context_keypoints):
             return None
 
-        previous_point_xyz = self._resolve_keypoint_xyz(self._context_keypoints[row - 1])
+        previous_point_xyz = resolve_keypoint_xyz(self.robot_model, self._context_keypoints[row - 1])
         current_point_xyz = self._resolve_current_target_xyz()
         if previous_point_xyz is None or current_point_xyz is None:
             return None
@@ -507,7 +493,7 @@ class TrajectoryKeypointDialog(QDialog):
             return None
 
         current_point_xyz = self._resolve_current_target_xyz()
-        next_point_xyz = self._resolve_keypoint_xyz(self._context_keypoints[row + 1])
+        next_point_xyz = resolve_keypoint_xyz(self.robot_model, self._context_keypoints[row + 1])
         if current_point_xyz is None or next_point_xyz is None:
             return None
 

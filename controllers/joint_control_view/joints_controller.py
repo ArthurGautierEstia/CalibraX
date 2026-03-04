@@ -10,7 +10,6 @@ class JointsController(QObject):
 
         self.robot_model = robot_model
         self.joint_control_widget = joint_control_widget
-        self._is_view_updating = False
         self._setup_connections()
 
     def _setup_connections(self) -> None:

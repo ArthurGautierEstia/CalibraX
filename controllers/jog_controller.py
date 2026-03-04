@@ -158,7 +158,6 @@ class JogController(QObject):
             if self.base_tool_reference == "Tool":
                 if axis_index < 3:
                     # transform xyz
-                    pass
                     delta_pos = np.array([0., 0., 0.])
                     delta_pos[axis_index] = delta
                     delta_in_base = self.robot_model.get_tcp_rotation_matrix() @ delta_pos

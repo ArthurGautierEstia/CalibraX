@@ -11,8 +11,9 @@ from models.trajectory_result import (
     TrajectorySampleErrorCode,
     TrajectorySegment,
 )
-from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
+from models.trajectory_keypoint import KeypointMotionMode, TrajectoryKeypoint
 from utils.trajectory_builder import TrajectoryBuilder
+from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from views.trajectory_view import TrajectoryView
 from controllers.viewer3d_controller import Viewer3DController
 import utils.math_utils as math_utils
@@ -284,21 +285,6 @@ class TrajectoryController(QObject):
 
         return chunks
 
-    def _resolve_keypoint_xyz(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
-        if keypoint.target_type == KeypointTargetType.CARTESIAN:
-            values = [float(v) for v in keypoint.cartesian_target[:3]]
-            if len(values) < 3:
-                return None
-            return values
-
-        fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target)
-        if fk_result is None:
-            return None
-        _, _, pose, _, _ = fk_result
-        if len(pose) < 3:
-            return None
-        return [float(v) for v in pose[:3]]
-
     def _build_edit_tangent_segments(self) -> tuple[list[list[float]] | None, list[list[float]] | None]:
         if self._editing_keypoint_index is None:
             return None, None
@@ -309,12 +295,12 @@ class TrajectoryController(QObject):
         if keypoints[idx].mode != KeypointMotionMode.CUBIC:
             return None, None
 
-        end_anchor = self._resolve_keypoint_xyz(keypoints[idx])
+        end_anchor = resolve_keypoint_xyz(self.robot_model, keypoints[idx])
         if end_anchor is None:
             return None, None
 
         if idx > 0:
-            start_anchor = self._resolve_keypoint_xyz(keypoints[idx - 1])
+            start_anchor = resolve_keypoint_xyz(self.robot_model, keypoints[idx - 1])
         else:
             tcp_pose = self.robot_model.get_tcp_pose()
             start_anchor = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
@@ -348,7 +334,7 @@ class TrajectoryController(QObject):
         points_xyz: list[list[float]] = []
         index_map: list[int] = []
         for idx, keypoint in enumerate(self._displayed_keypoints):
-            xyz = self._resolve_keypoint_xyz(keypoint)
+            xyz = resolve_keypoint_xyz(self.robot_model, keypoint)
             if xyz is None:
                 continue
             points_xyz.append(xyz)
