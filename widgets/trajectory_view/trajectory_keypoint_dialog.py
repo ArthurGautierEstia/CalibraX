@@ -78,11 +78,16 @@ class TrajectoryKeypointDialog(QDialog):
         self.cubic_amplitude_2 = QDoubleSpinBox()
         self.cubic_auto_start_btn = QPushButton("Auto (segment precedent)")
         self.cubic_auto_end_btn = QPushButton("Auto (segment suivant)")
+        self.cubic_auto_update_adjacent_checkbox = QCheckBox(
+            "Mettre a jour automatiquement les tangentes des segments adjacents"
+        )
+        self.cubic_auto_update_adjacent_checkbox.setChecked(True)
         self.cubic_hint_label = QLabel(
             "Direction : le triplet X/Y/Z est normalise automatiquement. "
             "Amplitude : min 0%, pas de maximum. "
             "100% correspond a la distance entre le point precedent et ce point."
         )
+
         self._context_keypoints: list[TrajectoryKeypoint] = []
         self._context_edited_row_index: int | None = None
         self._context_trajectory_result: TrajectoryResult | None = None
@@ -176,6 +181,11 @@ class TrajectoryKeypointDialog(QDialog):
         cubic_group_layout.addWidget(self.cubic_hint_label)
         self.cubic_group.setLayout(cubic_group_layout)
         layout.addWidget(self.cubic_group)
+
+        self.cubic_auto_update_adjacent_checkbox.setToolTip(
+            "En edition, ajuste automatiquement les tangentes des segments cubiques precedent/suivant."
+        )
+        layout.addWidget(self.cubic_auto_update_adjacent_checkbox)
 
         config_group = QGroupBox("Configurations")
         config_layout = QVBoxLayout()
@@ -367,7 +377,15 @@ class TrajectoryKeypointDialog(QDialog):
         self._context_keypoints = list(keypoints)
         self._context_edited_row_index = edited_row_index if isinstance(edited_row_index, int) else None
         self._context_trajectory_result = trajectory_result
+        is_editing_existing_point = (
+            self._context_edited_row_index is not None
+            and 0 <= self._context_edited_row_index < len(self._context_keypoints)
+        )
+        self.cubic_auto_update_adjacent_checkbox.setEnabled(is_editing_existing_point)
         self._update_auto_tangent_buttons_state()
+
+    def should_auto_update_adjacent_cubic_tangents(self) -> bool:
+        return self.cubic_auto_update_adjacent_checkbox.isEnabled() and self.cubic_auto_update_adjacent_checkbox.isChecked()
 
     def _resolve_keypoint_xyz(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
@@ -548,10 +566,14 @@ class TrajectoryKeypointDialog(QDialog):
             self.layout().activate()
 
     def _on_mode_changed(self, _mode: str) -> None:
+        previous_mode = self._last_mode
         self._store_current_speed()
         self._last_mode = self._current_mode()
         self._update_cubic_visibility()
         self._update_speed_editor()
+        if previous_mode != KeypointMotionMode.CUBIC and self._last_mode == KeypointMotionMode.CUBIC:
+            self._on_auto_start_tangent_clicked()
+            self._on_auto_end_tangent_clicked()
         self._try_minimize_window_size()
         self._emit_ghost_update()
 

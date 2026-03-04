@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QHeaderView
 )
 
+import utils.math_utils as math_utils
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.robot_model import RobotModel
 from models.trajectory_result import TrajectoryResult
@@ -157,16 +158,85 @@ class TrajectoryConfigWidget(QWidget):
     def _emit_trajectory_preview(self, keypoints: list[TrajectoryKeypoint]) -> None:
         self.trajectoryPreviewRequested.emit([keypoint.clone() for keypoint in keypoints])
 
+    def _resolve_keypoint_xyz(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
+        if keypoint.target_type == KeypointTargetType.CARTESIAN:
+            if len(keypoint.cartesian_target) < 3:
+                return None
+            return [float(keypoint.cartesian_target[0]), float(keypoint.cartesian_target[1]), float(keypoint.cartesian_target[2])]
+
+        fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target)
+        if fk_result is None:
+            return None
+        _, _, pose, _, _ = fk_result
+        if len(pose) < 3:
+            return None
+        return [float(pose[0]), float(pose[1]), float(pose[2])]
+
+    def _resolve_segment_tangents_for_keypoint(self, keypoints: list[TrajectoryKeypoint], row: int) -> tuple[list[float], list[float]] | None:
+        if row < 0 or row >= len(keypoints):
+            return None
+
+        end_xyz = self._resolve_keypoint_xyz(keypoints[row])
+        if end_xyz is None:
+            return None
+
+        if row > 0:
+            start_xyz = self._resolve_keypoint_xyz(keypoints[row - 1])
+        else:
+            tcp_pose = self.robot_model.get_tcp_pose()
+            start_xyz = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
+        if start_xyz is None:
+            return None
+
+        current_keypoint = keypoints[row]
+        if current_keypoint.mode == KeypointMotionMode.CUBIC:
+            segment_length_mm = math_utils.norm3(
+                end_xyz[0] - start_xyz[0],
+                end_xyz[1] - start_xyz[1],
+                end_xyz[2] - start_xyz[2],
+            )
+            return current_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+
+        dx = (end_xyz[0] - start_xyz[0]) * 0.3
+        dy = (end_xyz[1] - start_xyz[1]) * 0.3
+        dz = (end_xyz[2] - start_xyz[2]) * 0.3
+        return [dx, dy, dz], [-dx, -dy, -dz]
+
+    def _auto_update_adjacent_cubic_tangents(self, keypoints: list[TrajectoryKeypoint], row: int) -> None:
+        tangents = self._resolve_segment_tangents_for_keypoint(keypoints, row)
+        if tangents is None:
+            return
+
+        start_tangent, end_tangent = tangents
+        previous_row = row - 1
+        if previous_row >= 0:
+            previous_keypoint = keypoints[previous_row]
+            if previous_keypoint.mode == KeypointMotionMode.CUBIC:
+                previous_keypoint.cubic_vectors[1] = math_utils.normalize3(
+                    [-start_tangent[0], -start_tangent[1], -start_tangent[2]]
+                )
+
+        next_row = row + 1
+        if next_row < len(keypoints):
+            next_keypoint = keypoints[next_row]
+            if next_keypoint.mode == KeypointMotionMode.CUBIC:
+                next_keypoint.cubic_vectors[0] = math_utils.normalize3(
+                    [-end_tangent[0], -end_tangent[1], -end_tangent[2]]
+                )
+
     def _on_active_dialog_preview_keypoint_changed(self, preview_keypoint: TrajectoryKeypoint) -> None:
         if self._active_dialog_mode == "add":
             self._emit_trajectory_preview([*self._keypoints, preview_keypoint])
             return
 
         row = self._active_dialog_row
+        dialog = self._active_dialog
         if self._active_dialog_mode != "edit" or row is None or row < 0 or row >= len(self._keypoints):
             return
         preview_keypoints = [keypoint.clone() for keypoint in self._keypoints]
         preview_keypoints[row] = preview_keypoint.clone()
+        if dialog is not None and dialog.should_auto_update_adjacent_cubic_tangents():
+            self._auto_update_adjacent_cubic_tangents(preview_keypoints, row)
         self._emit_trajectory_preview(preview_keypoints)
 
     def _focus_active_dialog(self) -> bool:
@@ -235,6 +305,8 @@ class TrajectoryConfigWidget(QWidget):
                 self.add_requested.emit()
             elif mode == "edit" and row is not None and 0 <= row < len(self._keypoints):
                 self._keypoints[row] = keypoint
+                if dialog.should_auto_update_adjacent_cubic_tangents():
+                    self._auto_update_adjacent_cubic_tangents(self._keypoints, row)
                 new_selection_row = row
                 self.edit_requested.emit()
             self._refresh_table()
