@@ -380,7 +380,6 @@ class TrajectoryBuilder:
             mode=to_keypoint.mode,
             cubic_vectors=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
             allowed_configs=[identified_config],
-            favorite_config=identified_config,
             ptp_speed_percent=to_keypoint.ptp_speed_percent,
             linear_speed_mps=to_keypoint.linear_speed_mps,
         )

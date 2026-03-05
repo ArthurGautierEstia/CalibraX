@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal
@@ -99,7 +100,6 @@ class TrajectoryKeypointDialog(QDialog):
         self._context_edited_row_index: int | None = None
         self._context_trajectory_result: TrajectoryResult | None = None
 
-        self.favorite_config_combo = QComboBox()
         self.config_checkboxes: list[QCheckBox] = []
         self.config_hint_label = QLabel("En mode articulaire, la configuration est deduite automatiquement depuis J1..J6.")
 
@@ -235,13 +235,6 @@ class TrajectoryKeypointDialog(QDialog):
         config_group = QGroupBox("Configurations")
         config_layout = QVBoxLayout()
 
-        favorite_row = QHBoxLayout()
-        favorite_row.addWidget(QLabel("Configuration favorite"))
-        for key in self.CONFIG_ORDER:
-            self.favorite_config_combo.addItem(key.name, key.name)
-        favorite_row.addWidget(self.favorite_config_combo)
-        config_layout.addLayout(favorite_row)
-
         config_grid = QGridLayout()
         for idx, key in enumerate(self.CONFIG_ORDER):
             row = 0 if idx < 4 else 1
@@ -308,7 +301,6 @@ class TrajectoryKeypointDialog(QDialog):
         self.use_home_target_btn.clicked.connect(self._on_use_home_target_clicked)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         self.speed_spin.valueChanged.connect(self._on_speed_changed)
-        self.favorite_config_combo.currentIndexChanged.connect(self._on_favorite_changed)
         for cb in self.config_checkboxes:
             cb.toggled.connect(self._on_config_checkbox_toggled)
         for spin in self.cubic_vector_1:
@@ -354,18 +346,44 @@ class TrajectoryKeypointDialog(QDialog):
             self._set_cartesian_error("Aucune solution valide pour la target cartesienne.")
             return []
 
-        favorite = self._current_favorite_config()
-        favorite_solution = valid_solutions.get(favorite)
-        if favorite_solution is not None and len(favorite_solution.joints) >= 6:
-            self._set_cartesian_error("")
-            return [float(joint) for joint in favorite_solution.joints[:6]]
+        selected_allowed = set(self._selected_allowed_configs())
+        if not selected_allowed:
+            self._set_cartesian_error("Aucune configuration autorisee selectionnee.")
+            return []
 
-        best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
-        if best_solution is not None:
-            _, best_result_item = best_solution
-            if len(best_result_item.joints) >= 6:
-                self._set_cartesian_error("")
-                return [float(joint) for joint in best_result_item.joints[:6]]
+        allowed_valid = {
+            key: solution
+            for key, solution in valid_solutions.items()
+            if key in selected_allowed and len(solution.joints) >= 6
+        }
+        if not allowed_valid:
+            self._set_cartesian_error("Aucune solution valide dans les configurations autorisees.")
+            return []
+
+        reference_joints = [float(v) for v in self.joint_target_widget.get_all_joints()[:6]]
+        while len(reference_joints) < 6:
+            reference_joints.append(0.0)
+        reference_joints_rad = [math.radians(v) for v in reference_joints]
+
+        weights = [float(v) for v in self.robot_model.get_joint_weights()[:6]]
+        while len(weights) < 6:
+            weights.append(1.0)
+
+        best_joints: list[float] | None = None
+        best_distance = float("inf")
+        for solution in allowed_valid.values():
+            solution_joints = [float(v) for v in solution.joints[:6]]
+            while len(solution_joints) < 6:
+                solution_joints.append(0.0)
+            solution_joints_rad = [math.radians(v) for v in solution_joints]
+            distance = sum(weights[i] * (reference_joints_rad[i] - solution_joints_rad[i]) ** 2 for i in range(6))
+            if distance < best_distance:
+                best_distance = distance
+                best_joints = solution_joints
+
+        if best_joints is not None:
+            self._set_cartesian_error("")
+            return best_joints
 
         self._set_cartesian_error("Aucune solution exploitable pour la target cartesienne.")
         return []
@@ -425,9 +443,6 @@ class TrajectoryKeypointDialog(QDialog):
     def _current_mode(self) -> KeypointMotionMode:
         return KeypointMotionMode(self.mode_combo.currentText())
 
-    def _current_favorite_config(self) -> MgiConfigKey:
-        return MgiConfigKey[self.favorite_config_combo.currentData()]
-
     def _checkbox_for_config(self, key: MgiConfigKey) -> QCheckBox:
         idx = self.CONFIG_ORDER.index(key)
         return self.config_checkboxes[idx]
@@ -438,13 +453,6 @@ class TrajectoryKeypointDialog(QDialog):
             if cb.isChecked():
                 selected.append(key)
         return selected
-
-    def _set_favorite_combo(self, key: MgiConfigKey) -> None:
-        idx = self.favorite_config_combo.findData(key.name)
-        if idx >= 0:
-            self.favorite_config_combo.blockSignals(True)
-            self.favorite_config_combo.setCurrentIndex(idx)
-            self.favorite_config_combo.blockSignals(False)
 
     def set_keypoint_context(
         self,
@@ -667,28 +675,13 @@ class TrajectoryKeypointDialog(QDialog):
 
         selected = self._selected_allowed_configs()
         if not selected:
-            favorite = self._current_favorite_config()
-            cb = self._checkbox_for_config(favorite)
+            cb = self._checkbox_for_config(self.CONFIG_ORDER[0])
             cb.blockSignals(True)
             cb.setChecked(True)
             cb.blockSignals(False)
             self._emit_ghost_update()
             return
 
-        favorite = self._current_favorite_config()
-        if favorite not in selected:
-            self._set_favorite_combo(selected[0])
-        self._emit_ghost_update()
-
-    def _on_favorite_changed(self, _idx: int) -> None:
-        if self._current_target_type() != KeypointTargetType.CARTESIAN:
-            return
-        favorite = self._current_favorite_config()
-        cb = self._checkbox_for_config(favorite)
-        if not cb.isChecked():
-            cb.blockSignals(True)
-            cb.setChecked(True)
-            cb.blockSignals(False)
         self._emit_ghost_update()
 
     def _on_speed_changed(self, *_args) -> None:
@@ -703,7 +696,6 @@ class TrajectoryKeypointDialog(QDialog):
             joint_target,
             self.robot_model.get_config_identifier(),
         )
-        self._set_favorite_combo(deduced)
         for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
             cb.blockSignals(True)
             cb.setChecked(key == deduced)
@@ -715,7 +707,6 @@ class TrajectoryKeypointDialog(QDialog):
 
         for cb in self.config_checkboxes:
             cb.setEnabled(not is_joint)
-        self.favorite_config_combo.setEnabled(not is_joint)
         self.config_hint_label.setText(
             "En mode articulaire, la configuration est deduite automatiquement depuis J1..J6."
             if is_joint else ""
@@ -786,7 +777,6 @@ class TrajectoryKeypointDialog(QDialog):
         allowed = set(keypoint.allowed_configs)
         for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
             cb.setChecked(key in allowed)
-        self._set_favorite_combo(keypoint.favorite_config)
 
         self._update_target_editors()
         self._update_cubic_visibility()
@@ -814,7 +804,6 @@ class TrajectoryKeypointDialog(QDialog):
                 self.cubic_amplitude_2.value(),
             ],
             allowed_configs=self._selected_allowed_configs(),
-            favorite_config=self._current_favorite_config(),
             ptp_speed_percent=self._ptp_speed_percent,
             linear_speed_mps=self._linear_speed_mps,
         )

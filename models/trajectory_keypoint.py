@@ -29,7 +29,6 @@ class TrajectoryKeypoint:
         cubic_vectors: list[list[float]] | None = None,
         cubic_amplitudes_percent: list[float] | None = None,
         allowed_configs: list[MgiConfigKey] | None = None,
-        favorite_config: MgiConfigKey = MgiConfigKey.FUN,
         ptp_speed_percent: float = 75.0,
         linear_speed_mps: float = 0.5,
     ) -> None:
@@ -72,7 +71,6 @@ class TrajectoryKeypoint:
 
         configs = list(MgiConfigKey) if allowed_configs is None else list(allowed_configs)
         self.allowed_configs = self._unique_configs(configs)
-        self.favorite_config = favorite_config
 
         self.ptp_speed_percent = self._clamp(float(ptp_speed_percent), 0.0, 100.0)
         self.linear_speed_mps = self._clamp(float(linear_speed_mps), 0.0, 2.0)
@@ -136,17 +134,13 @@ class TrajectoryKeypoint:
     def _normalize_configuration_rules(self) -> None:
         if self.target_type == KeypointTargetType.JOINT:
             if not self.allowed_configs:
-                self.allowed_configs = [self.favorite_config]
-            if self.favorite_config not in self.allowed_configs:
-                self.favorite_config = self.allowed_configs[0]
-            self.allowed_configs = [self.favorite_config]
+                self.allowed_configs = [MgiConfigKey.FUN]
+            else:
+                self.allowed_configs = [self.allowed_configs[0]]
             return
 
         if not self.allowed_configs:
             self.allowed_configs = list(MgiConfigKey)
-
-        if self.favorite_config not in self.allowed_configs:
-            self.favorite_config = self.allowed_configs[0]
 
     @property
     def speed(self) -> float:
@@ -167,7 +161,6 @@ class TrajectoryKeypoint:
             cubic_vectors=[list(self.cubic_vectors[0]), list(self.cubic_vectors[1])],
             cubic_amplitudes_percent=list(self.cubic_amplitudes_percent),
             allowed_configs=list(self.allowed_configs),
-            favorite_config=self.favorite_config,
             ptp_speed_percent=self.ptp_speed_percent,
             linear_speed_mps=self.linear_speed_mps,
         )
@@ -187,7 +180,6 @@ class TrajectoryKeypoint:
                 float(self.cubic_amplitudes_percent[1]),
             ],
             "allowed_configs": [cfg.name for cfg in self.allowed_configs],
-            "favorite_config": self.favorite_config.name,
             "ptp_speed_percent": float(self.ptp_speed_percent),
             "linear_speed_mps": float(self.linear_speed_mps),
         }
@@ -213,13 +205,6 @@ class TrajectoryKeypoint:
             except (KeyError, TypeError):
                 continue
 
-        favorite_config = MgiConfigKey.FUN
-        try:
-            favorite_config = MgiConfigKey[str(raw.get("favorite_config", MgiConfigKey.FUN.name))]
-        except (KeyError, TypeError):
-            if allowed_configs:
-                favorite_config = allowed_configs[0]
-
         cubic_vectors = raw.get("cubic_vectors")
         if not isinstance(cubic_vectors, list):
             cubic_vectors = None
@@ -238,7 +223,6 @@ class TrajectoryKeypoint:
             cubic_vectors=cubic_vectors,
             cubic_amplitudes_percent=cubic_amplitudes_percent,
             allowed_configs=allowed_configs if allowed_configs else None,
-            favorite_config=favorite_config,
             ptp_speed_percent=float(raw.get("ptp_speed_percent", 75.0)),
             linear_speed_mps=float(raw.get("linear_speed_mps", 0.5)),
         )
