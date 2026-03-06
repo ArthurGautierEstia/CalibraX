@@ -59,7 +59,7 @@ class MGDApplication:
         if len(sys.argv) > 1:
             config_file = sys.argv[1]
             if os.path.exists(config_file) and config_file.endswith(".json"):
-                QTimer.singleShot(1000, lambda: self.load_data(config_file))
+                QTimer.singleShot(100, lambda: self.load_data(config_file))
 
         sys.exit(self.app.exec())
 
