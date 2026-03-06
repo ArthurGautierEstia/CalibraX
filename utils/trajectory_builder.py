@@ -87,24 +87,6 @@ class TrajectoryBuilder:
         return joints
 
     @staticmethod
-    def _get_interpolated_time(linear_t: float) -> float:
-        """
-        Description:
-            Smooth time using f(t) = -2 * t^3 + 3 * t^2.
-        Argument:
-            t, in [0;1].
-        Return:
-            smoothed t, in [0;1].
-        """
-        # Clamp
-        if linear_t < 0:
-            linear_t = 0
-        elif linear_t > 1:
-            linear_t = 1
-        t2 = linear_t * linear_t
-        return -2 * t2 * linear_t + 3 * t2
-
-    @staticmethod
     def _shortest_angle_delta_deg(from_deg: float, to_deg: float) -> float:
         delta = (to_deg - from_deg + 180.0) % 360.0 - 180.0
         if delta == -180.0 and (to_deg - from_deg) > 0.0:
@@ -488,12 +470,12 @@ class TrajectoryBuilder:
         for i in range(1, intervals + 1):
             time_s = start_time_s + i * self.sample_dt_s
             linear_t = i / intervals
-            smooth_t = TrajectoryBuilder._get_interpolated_time(linear_t)
-            xyz = coeffs.point(smooth_t)
+            smooth_t3, smooth_t5 = math_utils.pair_cubic_quintic_transition(linear_t)
+            xyz = coeffs.point(smooth_t3)
             orientation_abc = [
-                TrajectoryBuilder._wrap_angle_deg(from_pose[3] + dA * smooth_t),
-                TrajectoryBuilder._wrap_angle_deg(from_pose[4] + dB * smooth_t),
-                TrajectoryBuilder._wrap_angle_deg(from_pose[5] + dC * smooth_t),
+                TrajectoryBuilder._wrap_angle_deg(from_pose[3] + dA * smooth_t5),
+                TrajectoryBuilder._wrap_angle_deg(from_pose[4] + dB * smooth_t5),
+                TrajectoryBuilder._wrap_angle_deg(from_pose[5] + dC * smooth_t5),
             ]
 
             sample = self._build_sample_from_cartesian(

@@ -184,3 +184,78 @@ def rotation_matrix_to_euler_zyx(R):
         C = np.atan2(R[2, 1], R[2, 2])
         A = np.atan2(R[1, 0], R[0, 0])
     return np.degrees([A, B, C])
+
+# ============================================================================
+# RÉGION: Transitions
+# ============================================================================
+
+def cubique_transition(t: float) -> float:
+    """
+    Description:
+        Smooth time using f(t) = -2 * t^3 + 3 * t^2.
+    Argument:
+        t, in [0;1].
+    Return:
+        smoothed t, in [0;1].
+    """
+    # Clamp
+    if t < 0:
+        t = 0
+    elif t > 1:
+        t = 1
+    t2 = t * t
+    return -2 * t2 * t + 3 * t2
+
+def cubic_transition(t: float) -> float:
+    """
+    Description:
+        Smooth time using f(t) = -2t^3 + 3t^2.
+    Argument:
+        t, in [0;1].
+    Return:
+        smoothed t, in [0;1].
+    """
+    # Clamp
+    if t < 0:
+        t = 0
+    elif t > 1:
+        t = 1
+    t2 = t * t
+    return -2 * t2 * t + 3 * t2
+
+def quintic_transition(t: float) -> float:
+    """
+    Description:
+        Smooth time using f(t) = 6t^5 - 15t^4 + 10t^3.
+    Argument:
+        t, in [0;1].
+    Return:
+        smoothed t, in [0;1].
+    """
+    # Clamp
+    if t < 0:
+        t = 0
+    elif t > 1:
+        t = 1
+    t2 = t * t
+    t3 = t2 * t
+    return 6 * t3*t2 - 15 * t2*t2 + 10 * t3
+
+def pair_cubic_quintic_transition(t: float) -> tuple[float, float]:
+    """
+    Description:
+        Smooth time using cubic_transition and quintic_transition.
+    Argument:
+        t, in [0;1].
+    Return:
+        cubic smoothed t in [0;1] and quintic smoothed t in [0;1].
+    """
+    if t < 0:
+        t = 0
+    elif t > 1:
+        t = 1
+    
+    t2 = t * t
+    t3 = t2 * t
+
+    return -2 * t2 * t + 3 * t2, 6 * t3*t2 - 15 * t2*t2 + 10 * t3
