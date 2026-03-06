@@ -230,31 +230,23 @@ class TrajectoryBuilder:
         previous_sample: TrajectorySample | None,
         allowed_configs: set[MgiConfigKey],
     ) -> tuple[MgiConfigKey, MgiResultItem] | None:
-        candidates: list[tuple[MgiConfigKey, MgiResultItem]] = []
-        for config_key, solution in mgi_result.solutions.items():
-            if config_key not in allowed_configs:
-                continue
-            if solution.status != MgiResultStatus.VALID:
-                continue
-            candidates.append((config_key, solution))
-
-        if not candidates:
-            return None
-
         reference_joints_rad = [math.radians(v) for v in self._get_reference_joints_for_ik(previous_sample)]
         joint_weights = self._get_joint_weights()
 
-        best_candidate: tuple[MgiConfigKey, MgiResultItem] | None = None
-        best_distance = float("inf")
-        for config_key, solution in candidates:
-            solution_joints_rad = [math.radians(v) for v in TrajectoryBuilder._normalize_joints_6(solution.joints)]
-            distance = sum(
-                joint_weights[i] * (reference_joints_rad[i] - solution_joints_rad[i]) ** 2 for i in range(6)
-            )
-            if distance < best_distance:
-                best_distance = distance
-                best_candidate = (config_key, solution)
-        return best_candidate
+        temporarily_forbidden: list[MgiResultItem] = []
+        for config_key, solution in mgi_result.solutions.items():
+            if config_key in allowed_configs:
+                continue
+            if solution.status != MgiResultStatus.VALID:
+                continue
+            solution.status = MgiResultStatus.FORBIDDEN_CONFIGURATION
+            temporarily_forbidden.append(solution)
+
+        try:
+            return mgi_result.get_best_solution_from_current(reference_joints_rad, joint_weights)
+        finally:
+            for solution in temporarily_forbidden:
+                solution.status = MgiResultStatus.VALID
 
     @staticmethod
     def _update_joint_stats(segment_result: SegmentResult, sample: TrajectorySample) -> None:
@@ -598,3 +590,4 @@ class TrajectoryBuilder:
 
         self._update_articular_dynamics(sample, previous_sample, dt)
         return sample
+
