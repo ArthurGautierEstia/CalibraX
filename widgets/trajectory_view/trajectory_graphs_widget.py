@@ -1,6 +1,7 @@
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QDialog
 from widgets.trajectory_view.trajectory_graph_panel_widget import TrajectoryGraphPanelWidget, GraphMode
+from widgets.trajectory_view.trajectory_config_timeline_widget import TrajectoryConfigTimelineWidget
 
 
 class TrajectoryGraphsWidget(QWidget):
@@ -11,6 +12,8 @@ class TrajectoryGraphsWidget(QWidget):
 
         self.articular_panel = TrajectoryGraphPanelWidget(GraphMode.ARTICULAR)
         self.cartesian_panel = TrajectoryGraphPanelWidget(GraphMode.CARTESIAN)
+        self.config_timeline = TrajectoryConfigTimelineWidget()
+        self.config_timeline.setMinimumHeight(230)
         self.btn_popout = QPushButton("Détacher les graphes")
 
         self._popout_dialog: Optional[QDialog] = None
@@ -33,6 +36,7 @@ class TrajectoryGraphsWidget(QWidget):
         panels.addWidget(self.articular_panel, 1)
         panels.addWidget(self.cartesian_panel, 1)
         layout.addLayout(panels)
+        layout.addWidget(self.config_timeline)
 
     def _setup_connections(self) -> None:
         self.btn_popout.clicked.connect(self._on_popout_clicked)
@@ -99,3 +103,6 @@ class TrajectoryGraphsWidget(QWidget):
 
     def get_cartesian_panel(self) -> TrajectoryGraphPanelWidget:
         return self.cartesian_panel
+
+    def get_configuration_timeline_widget(self) -> TrajectoryConfigTimelineWidget:
+        return self.config_timeline

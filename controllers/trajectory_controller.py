@@ -204,15 +204,19 @@ class TrajectoryController(QObject):
     def _update_graphs(self) -> None:
         articular_panel = self.graphs_widget.get_articular_panel()
         cartesian_panel = self.graphs_widget.get_cartesian_panel()
+        config_timeline = self.graphs_widget.get_configuration_timeline_widget()
 
         if not self.current_samples:
             empty_series = [[] for _ in range(6)]
             articular_panel.set_trajectories([], empty_series, empty_series, empty_series)
             cartesian_panel.set_trajectories([], empty_series, empty_series, empty_series)
+            config_timeline.set_configuration_data([], [])
             articular_panel.set_key_times([])
             cartesian_panel.set_key_times([])
+            config_timeline.set_key_times([])
             articular_panel.set_time_indicator(None)
             cartesian_panel.set_time_indicator(None)
+            config_timeline.set_time_indicator(None)
             return
 
         times = self.current_sample_times
@@ -226,8 +230,10 @@ class TrajectoryController(QObject):
 
         cartesian_panel.set_trajectories(times, cart_positions, cart_velocities, cart_accelerations)
         articular_panel.set_trajectories(times, art_positions, art_velocities, art_accelerations)
+        config_timeline.set_configuration_data(times, self.current_samples)
         cartesian_panel.set_key_times(key_times)
         articular_panel.set_key_times(key_times)
+        config_timeline.set_key_times(key_times)
 
     def _update_3d_trajectory_path(self) -> None:
         if not self.current_samples:
@@ -444,8 +450,10 @@ class TrajectoryController(QObject):
         self._current_time_s = float(time_s)
         articular_panel = self.graphs_widget.get_articular_panel()
         cartesian_panel = self.graphs_widget.get_cartesian_panel()
+        config_timeline = self.graphs_widget.get_configuration_timeline_widget()
         articular_panel.set_time_indicator(time_s)
         cartesian_panel.set_time_indicator(time_s)
+        config_timeline.set_time_indicator(time_s)
 
         sample = self._sample_at_time(time_s)
         if sample is None:

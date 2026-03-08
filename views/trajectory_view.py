@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
 
 from models.robot_model import RobotModel
 from widgets.trajectory_view.trajectory_config_widget import TrajectoryConfigWidget
@@ -20,10 +20,19 @@ class TrajectoryView(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(self.config_widget)
-        layout.addWidget(self.actions_widget)
-        layout.addWidget(self.graphs_widget)
-        layout.addStretch()
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+
+        content = QWidget(scroll_area)
+        content_layout = QVBoxLayout(content)
+        content_layout.addWidget(self.config_widget)
+        content_layout.addWidget(self.actions_widget)
+        content_layout.addWidget(self.graphs_widget)
+        content_layout.addStretch()
+
+        scroll_area.setWidget(content)
+        layout.addWidget(scroll_area)
 
     def get_config_widget(self) -> TrajectoryConfigWidget:
         return self.config_widget
