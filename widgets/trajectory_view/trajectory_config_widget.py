@@ -46,6 +46,7 @@ class TrajectoryConfigWidget(QWidget):
     showRobotGhostRequested = pyqtSignal()
     hideRobotGhostRequested = pyqtSignal()
     updateRobotGhostRequested = pyqtSignal(object)
+    goToRequested = pyqtSignal(int)
 
     def __init__(self, robot_model: RobotModel, parent: QWidget = None) -> None:
         super().__init__(parent)
@@ -54,6 +55,7 @@ class TrajectoryConfigWidget(QWidget):
         self.keypoints_table = QTableWidget(0, 11)
         self.btn_add = QPushButton("Ajouter")
         self.btn_edit = QPushButton("Editer")
+        self.btn_go_to = QPushButton("Aller a")
         self.btn_delete = QPushButton("Supprimer")
         self.btn_move_up = QPushButton("Monter")
         self.btn_move_down = QPushButton("Descendre")
@@ -101,6 +103,7 @@ class TrajectoryConfigWidget(QWidget):
         btn_row = QHBoxLayout()
         btn_row.addWidget(self.btn_add)
         btn_row.addWidget(self.btn_edit)
+        btn_row.addWidget(self.btn_go_to)
         btn_row.addWidget(self.btn_delete)
         btn_row.addWidget(self.btn_move_up)
         btn_row.addWidget(self.btn_move_down)
@@ -113,6 +116,7 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_add.clicked.connect(self._on_add_clicked)
         self.btn_edit.clicked.connect(self._on_edit_clicked)
         self.btn_delete.clicked.connect(self._on_delete_clicked)
+        self.btn_go_to.clicked.connect(self._on_go_to_clicked)
         self.btn_move_up.clicked.connect(self._on_move_up_clicked)
         self.btn_move_down.clicked.connect(self._on_move_down_clicked)
         self.btn_import.clicked.connect(self._on_import_clicked)
@@ -140,6 +144,7 @@ class TrajectoryConfigWidget(QWidget):
             self.btn_add.setEnabled(False)
             self.btn_edit.setEnabled(False)
             self.btn_delete.setEnabled(False)
+            self.btn_go_to.setEnabled(False)
             self.btn_move_up.setEnabled(False)
             self.btn_move_down.setEnabled(False)
             self.btn_import.setEnabled(False)
@@ -152,6 +157,7 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_add.setEnabled(True)
         self.btn_edit.setEnabled(has_selection)
         self.btn_delete.setEnabled(has_selection)
+        self.btn_go_to.setEnabled(has_selection)
         self.btn_move_up.setEnabled(has_selection and row is not None and row > 0)
         self.btn_move_down.setEnabled(has_selection and row is not None and row < (len(self._keypoints) - 1))
         self.btn_import.setEnabled(True)
@@ -333,6 +339,12 @@ class TrajectoryConfigWidget(QWidget):
         self.delete_requested.emit()
         self._emit_keypoints_changed()
         self._emit_selection_changed()
+
+    def _on_go_to_clicked(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        self.goToRequested.emit(row)
 
     def _move_selected_keypoint(self, offset: int) -> None:
         row = self._selected_row()
