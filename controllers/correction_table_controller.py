@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QObject
 
 from models.robot_model import RobotModel
-from widgets.correction_table_widget import CorrectionTableWidget
+from widgets.calibration_view.correction_table_widget import CorrectionTableWidget
 
 
 class CorrectionTableController(QObject):

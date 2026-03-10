@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject
 
 from models.robot_model import RobotModel
 from controllers.robot_controller import RobotController
+from controllers.calibration_controller import CalibrationController
 from controllers.joint_control_controller import JointControlController
 from controllers.cartesian_control_controller import CartesianControlController
 from controllers.jog_controller import JogController
@@ -19,6 +20,7 @@ class MainController(QObject):
 
         # controllers
         self.robot_controller = RobotController(robot_model, main_window.get_robot_view())
+        self.calibration_controller = CalibrationController(robot_model, main_window.get_calibration_view())    
         self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view())
         self.cartesian_control_controller = CartesianControlController(robot_model, main_window.get_cartesian_control_view())
         self.jog_controller = JogController(robot_model, main_window.get_jog_view())

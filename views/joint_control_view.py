@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
-from widgets.correction_table_widget import CorrectionTableWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
 from widgets.joint_control_view.joints_result_table_widget import JointsResultTableWidget
 
@@ -10,8 +9,6 @@ class JointControlView(QWidget):
         super().__init__(parent)
         self.joints_widget = JointsControlWidget()
         self.joints_result_widget = JointsResultTableWidget()
-        self.correction_widget = CorrectionTableWidget()
-
         self._setup_ui()
     
     def _setup_ui(self) -> None:
@@ -19,7 +16,6 @@ class JointControlView(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.joints_widget)
         layout.addWidget(self.joints_result_widget)
-        layout.addWidget(self.correction_widget)
 
     def get_joints_widget(self) -> JointsControlWidget:
         """Retourne le widget de contrôle des articulations"""
@@ -28,7 +24,3 @@ class JointControlView(QWidget):
     def get_joints_result_widget(self) -> JointsResultTableWidget:
         """Retourne le widget de tableau des résultats des articulations"""
         return self.joints_result_widget
-    
-    def get_correction_widget(self) -> CorrectionTableWidget:
-        """Retourne le widget de tableau des corrections"""
-        return self.correction_widget

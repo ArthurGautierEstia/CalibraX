@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QObject
 
 from models.robot_model import RobotModel
-from widgets.robot_view.measurement_widget import MeasurementWidget
+from widgets.calibration_view.measurement_widget import MeasurementWidget
 
 from utils.file_io import FileIOHandler
 import utils.math_utils as math_utils

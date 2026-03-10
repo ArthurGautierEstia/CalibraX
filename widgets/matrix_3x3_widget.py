@@ -45,7 +45,7 @@ class Matrix3x3Widget(QWidget):
         
         for i in range(3):
             for j in range(3):
-                item = QTableWidgetItem(str(round(matrix[i, j], 3)))
+                item = QTableWidgetItem(f"{matrix[i, j]:.6f}")
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(i, j, item)
                 
@@ -83,5 +83,5 @@ class Matrix3x3Widget(QWidget):
         except ValueError:
             # Si la valeur n'est pas un nombre, restaurer l'ancienne valeur
             self.table.blockSignals(True)
-            item.setText(str(self._matrix[row, col]))
+            item.setText(self._matrix[row, col])
             self.table.blockSignals(False)

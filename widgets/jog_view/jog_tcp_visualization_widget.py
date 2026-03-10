@@ -54,7 +54,7 @@ class JogTCPVisualizationWidget(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             hbox.addWidget(label)
 
-            spinbox.setDecimals(2)
+            spinbox.setDecimals(6)
             if i < 3:
                 spinbox.setRange(-5000, 5000)
             else:

@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QSpli
 from models.robot_model import RobotModel
 from widgets.viewer_3d_widget import Viewer3DWidget
 from views.robot_view import RobotView
+from views.calibration_view import CalibrationView
 from views.joint_control_view import JointControlView
 from views.cartesian_control_view import CartesianControlView
 from views.jog_view import JogView
@@ -18,6 +19,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
 
         self.robot_view = RobotView()
+        self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
         self.cartesian_control_view = CartesianControlView()
         self.jog_view = JogView()
@@ -32,6 +34,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.tabs.addTab(self.robot_view, "Robot")
+        self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.joint_control_view, "Contrôle articulaire")
         self.tabs.addTab(self.cartesian_control_view, "Contrôle cartésien")
         self.tabs.addTab(self.jog_view, "Jog")
@@ -61,6 +64,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue de configuration du robot"""
         return self.robot_view
     
+    def get_calibration_view(self) -> CalibrationView:
+        """Retourne la vue de calibration du robot"""
+        return self.calibration_view
+
     def get_joint_control_view(self) -> JointControlView:
         """Retourne la vue de contrôle articulaire"""
         return self.joint_control_view
