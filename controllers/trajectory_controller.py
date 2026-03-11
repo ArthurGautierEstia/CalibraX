@@ -1,7 +1,11 @@
+import csv
 from bisect import bisect_left
+from pathlib import Path
 import time
+import os
 
 from PyQt6.QtCore import QObject, QTimer, Qt
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.robot_model import RobotModel
 from models.trajectory_result import (
@@ -11,9 +15,10 @@ from models.trajectory_result import (
     TrajectorySampleErrorCode,
     TrajectorySegment,
 )
-from models.trajectory_keypoint import KeypointMotionMode, TrajectoryKeypoint
+from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from utils.trajectory_builder import TrajectoryBuilder
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
+from utils.trajectory_status import build_trajectory_issue_messages
 from views.trajectory_view import TrajectoryView
 from controllers.viewer3d_controller import Viewer3DController
 import utils.math_utils as math_utils
@@ -66,12 +71,14 @@ class TrajectoryController(QObject):
         self.config_widget.hideRobotGhostRequested.connect(self._on_hide_robot_ghost_requested)
         self.config_widget.updateRobotGhostRequested.connect(self._on_update_robot_ghost_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
+        self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.editingSessionStarted.connect(self._on_editing_session_started)
         self.config_widget.editingSessionFinished.connect(self._on_editing_session_finished)
         self.config_widget.trajectoryPreviewRequested.connect(self._on_trajectory_preview_requested)
         self.config_widget.trajectoryPreviewFinished.connect(self._on_trajectory_preview_finished)
         self.config_widget.keypoints_changed.connect(self._on_keypoints_changed)
         self.actions_widget.compute_requested.connect(self._on_compute_requested)
+        self.actions_widget.export_trajectory_requested.connect(self._on_export_trajectory_requested)
         self.actions_widget.home_position_requested.connect(self._on_home_position_requested)
         self.actions_widget.play_requested.connect(self._on_play_requested)
         self.actions_widget.pause_requested.connect(self._on_pause_requested)
@@ -149,6 +156,133 @@ class TrajectoryController(QObject):
         self._stop_playback()
         self.robot_model.go_to_home_position()
 
+    def _on_go_to_requested(self, row: int) -> None:
+        keypoints = self.config_widget.get_keypoints()
+        if row < 0 or row >= len(keypoints):
+            return
+
+        self._stop_playback()
+        keypoint = keypoints[row]
+
+        if keypoint.target_type == KeypointTargetType.JOINT:
+            self.robot_model.set_joints(keypoint.joint_target[:6])
+            return
+
+        mgi_result = self.robot_model.compute_ik_target(keypoint.cartesian_target[:6])
+        best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
+        if best_solution is None:
+            QMessageBox.warning(
+                self.trajectory_view,
+                "Aller a un keypoint",
+                "Aucune solution MGI valide pour cette cible.",
+            )
+            return
+
+        _, solution = best_solution
+        self.robot_model.set_joints(solution.joints[:6])
+
+    @staticmethod
+    def _fmt_csv(value: float) -> str:
+        return f"{float(value):.6f}"
+
+    @staticmethod
+    def _preferred_trajectories_dir() -> str:
+        current_dir = os.getcwd()
+        trajectories_dir = os.path.join(current_dir, "trajectories")
+        return trajectories_dir if os.path.exists(trajectories_dir) else current_dir
+
+    def _on_export_trajectory_requested(self) -> None:
+        if not self.current_samples:
+            QMessageBox.warning(
+                self.trajectory_view,
+                "Export trajectoire",
+                "Aucune trajectoire calculee a exporter.",
+            )
+            return
+
+        start_dir = self._preferred_trajectories_dir()
+        default_path = str(Path(start_dir) / "trajectory_samples.csv") if start_dir else "trajectory_samples.csv"
+        path, _ = QFileDialog.getSaveFileName(
+            self.trajectory_view,
+            "Exporter la trajectoire calculee",
+            default_path,
+            "Fichiers CSV (*.csv);;Tous les fichiers (*.*)",
+        )
+        if not path:
+            return
+
+        header = [
+            "statut",
+            "config",
+            "time",
+            "j1",
+            "j2",
+            "j3",
+            "j4",
+            "j5",
+            "j6",
+            "dj1",
+            "dj2",
+            "dj3",
+            "dj4",
+            "dj5",
+            "dj6",
+            "ddj1",
+            "ddj2",
+            "ddj3",
+            "ddj4",
+            "ddj5",
+            "ddj6",
+            "x",
+            "y",
+            "z",
+            "a",
+            "b",
+            "c",
+            "dx",
+            "dy",
+            "dz",
+            "da",
+            "db",
+            "dc",
+            "ddx",
+            "ddy",
+            "ddz",
+            "dda",
+            "ddb",
+            "ddc",
+        ]
+
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, delimiter=";")
+                writer.writerow(header)
+                for sample in self.current_samples:
+                    status = (
+                        "VALID"
+                        if sample.reachable and sample.error_code == TrajectorySampleErrorCode.NONE
+                        else sample.error_code.name
+                    )
+                    config_name = sample.configuration.name if sample.configuration is not None else ""
+                    row = [
+                        status,
+                        config_name,
+                        self._fmt_csv(sample.time),
+                    ]
+                    row.extend(self._fmt_csv(v) for v in sample.joints[:6])
+                    row.extend(self._fmt_csv(v) for v in sample.articular_velocity[:6])
+                    row.extend(self._fmt_csv(v) for v in sample.articular_acceleration[:6])
+                    row.extend(self._fmt_csv(v) for v in sample.pose[:6])
+                    row.extend(self._fmt_csv(v) for v in sample.cartesian_velocity[:6])
+                    row.extend(self._fmt_csv(v) for v in sample.cartesian_acceleration[:6])
+                    writer.writerow(row)
+        except Exception as exc:
+            QMessageBox.warning(
+                self.trajectory_view,
+                "Export trajectoire",
+                f"Impossible d'exporter la trajectoire.\n{exc}",
+            )
+
     def _recompute_trajectory(self, keypoints_override: list[TrajectoryKeypoint] | None = None) -> None:
         self._stop_playback()
         if keypoints_override is None:
@@ -162,6 +296,7 @@ class TrajectoryController(QObject):
             self.current_samples = []
             self.current_sample_times = []
             self._reset_trajectory_visuals()
+            self._update_trajectory_issue_messages()
             return
 
         current_joints = self.robot_model.get_joints()
@@ -183,6 +318,7 @@ class TrajectoryController(QObject):
         self._update_3d_trajectory_path()
         self._update_3d_keypoint_overlays()
         self._update_timeline()
+        self._update_trajectory_issue_messages()
         self._apply_time_value(0.0, force_real_robot=False)
 
     @staticmethod
@@ -201,15 +337,19 @@ class TrajectoryController(QObject):
     def _update_graphs(self) -> None:
         articular_panel = self.graphs_widget.get_articular_panel()
         cartesian_panel = self.graphs_widget.get_cartesian_panel()
+        config_timeline = self.graphs_widget.get_configuration_timeline_widget()
 
         if not self.current_samples:
             empty_series = [[] for _ in range(6)]
             articular_panel.set_trajectories([], empty_series, empty_series, empty_series)
             cartesian_panel.set_trajectories([], empty_series, empty_series, empty_series)
+            config_timeline.set_configuration_data([], [])
             articular_panel.set_key_times([])
             cartesian_panel.set_key_times([])
+            config_timeline.set_key_times([])
             articular_panel.set_time_indicator(None)
             cartesian_panel.set_time_indicator(None)
+            config_timeline.set_time_indicator(None)
             return
 
         times = self.current_sample_times
@@ -223,8 +363,10 @@ class TrajectoryController(QObject):
 
         cartesian_panel.set_trajectories(times, cart_positions, cart_velocities, cart_accelerations)
         articular_panel.set_trajectories(times, art_positions, art_velocities, art_accelerations)
+        config_timeline.set_configuration_data(times, self.current_samples)
         cartesian_panel.set_key_times(key_times)
         articular_panel.set_key_times(key_times)
+        config_timeline.set_key_times(key_times)
 
     def _update_3d_trajectory_path(self) -> None:
         if not self.current_samples:
@@ -419,11 +561,16 @@ class TrajectoryController(QObject):
         self._current_time_s = 0.0
         self._update_graphs()
         self.actions_widget.set_time_range(0.0, 0.0)
+        self.actions_widget.set_issue_messages([])
         self.viewer3d_controller.clear_trajectory_path()
         self.viewer3d_controller.clear_trajectory_keypoints()
         self.viewer3d_controller.clear_trajectory_edit_tangents()
         if not self._is_keypoint_preview_active:
             self.viewer3d_controller.hide_robot_ghost()
+
+    def _update_trajectory_issue_messages(self) -> None:
+        issues = build_trajectory_issue_messages(self.current_trajectory)
+        self.actions_widget.set_issue_messages(issues)
 
     def _on_time_value_changed(self, time_s: float) -> None:
         self._apply_time_value(time_s, force_real_robot=True)
@@ -436,8 +583,10 @@ class TrajectoryController(QObject):
         self._current_time_s = float(time_s)
         articular_panel = self.graphs_widget.get_articular_panel()
         cartesian_panel = self.graphs_widget.get_cartesian_panel()
+        config_timeline = self.graphs_widget.get_configuration_timeline_widget()
         articular_panel.set_time_indicator(time_s)
         cartesian_panel.set_time_indicator(time_s)
+        config_timeline.set_time_indicator(time_s)
 
         sample = self._sample_at_time(time_s)
         if sample is None:

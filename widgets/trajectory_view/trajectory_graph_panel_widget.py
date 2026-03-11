@@ -1,5 +1,5 @@
 from typing import List, Optional
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QWIDGETSIZE_MAX
 from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 from enum import Enum
@@ -15,6 +15,9 @@ class TrajectoryGraphPanelWidget(QWidget):
     VELOCITY_LBL = "Vitesse"
     ACCELERATION_LBL = "Acceleration"
     TIME_LBL = "Temps"
+    PLOT_MIN_HEIGHT_PX = 150
+    PANEL_MIN_HEIGHT_PX = 520
+    PANEL_IN_PAGE_HEIGHT_PX = 620
 
     AXIS_COLORS = ["#ff3b30", "#34c759", "#007aff", "#ff00ff", "#ffd60a", "#00ffff"]
     AXIS_LABELS = {
@@ -56,6 +59,7 @@ class TrajectoryGraphPanelWidget(QWidget):
         self._setup_ui()
         self._setup_plots()
         self.set_mode(mode)
+        self.set_in_page_mode(True)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -84,9 +88,22 @@ class TrajectoryGraphPanelWidget(QWidget):
         header_layout.addStretch()
         layout.addLayout(header_layout)
 
+        self.position_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
+        self.velocity_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
+        self.acceleration_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
         layout.addWidget(self.position_plot)
         layout.addWidget(self.velocity_plot)
         layout.addWidget(self.acceleration_plot)
+        layout.setStretch(2, 1)
+        layout.setStretch(3, 1)
+        layout.setStretch(4, 1)
+
+    def set_in_page_mode(self, in_page: bool) -> None:
+        self.setMinimumHeight(self.PANEL_MIN_HEIGHT_PX)
+        if in_page:
+            self.setFixedHeight(self.PANEL_IN_PAGE_HEIGHT_PX)
+            return
+        self.setMaximumHeight(QWIDGETSIZE_MAX)
 
     def _setup_plots(self) -> None:
         titles = [self.POSITION_LBL, self.VELOCITY_LBL, self.ACCELERATION_LBL]

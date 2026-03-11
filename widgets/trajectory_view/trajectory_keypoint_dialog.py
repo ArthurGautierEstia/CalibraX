@@ -5,6 +5,7 @@ from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -18,13 +19,21 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QHeaderView,
 )
 
 import utils.math_utils as math_utils
-from utils.mgi import MgiConfigKey
+from utils.mgi import MgiConfigKey, MgiResultStatus
+from utils.trajectory_status import (
+    build_segment_issue_messages,
+    build_trajectory_issue_messages,
+    join_issue_messages,
+)
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.trajectory_result import TrajectoryResult
@@ -68,6 +77,8 @@ class TrajectoryKeypointDialog(QDialog):
         self.cartesian_target_widget = CartesianControlWidget(compact=True)
         self.joint_target_widget = JointsControlWidget(compact=True)
         self.cartesian_error_label = QLabel("")
+        self.cartesian_solutions_table_left = QTableWidget()
+        self.cartesian_solutions_table_right = QTableWidget()
 
         self.mode_combo = QComboBox()
         self.speed_spin = QDoubleSpinBox()
@@ -102,6 +113,8 @@ class TrajectoryKeypointDialog(QDialog):
 
         self.config_checkboxes: list[QCheckBox] = []
         self.config_hint_label = QLabel("En mode articulaire, la configuration est deduite automatiquement depuis J1..J6.")
+        self.current_segment_status_label = QLabel("")
+        self.trajectory_status_label = QLabel("")
 
         self._setup_ui()
         self._setup_connections()
@@ -261,6 +274,16 @@ class TrajectoryKeypointDialog(QDialog):
         layout.addWidget(self.main_tabs)
         layout.addWidget(self.cubic_auto_update_adjacent_checkbox)
 
+        self.current_segment_status_label.setWordWrap(True)
+        self.current_segment_status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
+        self.current_segment_status_label.hide()
+        layout.addWidget(self.current_segment_status_label)
+
+        self.trajectory_status_label.setWordWrap(True)
+        self.trajectory_status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
+        self.trajectory_status_label.hide()
+        layout.addWidget(self.trajectory_status_label)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -273,6 +296,13 @@ class TrajectoryKeypointDialog(QDialog):
         # Keep historical wide limits from previous dialog spinboxes.
         layout.addWidget(self.cartesian_target_widget)
 
+        tables_layout = QHBoxLayout()
+        self._configure_cartesian_solutions_table(self.cartesian_solutions_table_left)
+        self._configure_cartesian_solutions_table(self.cartesian_solutions_table_right)
+        tables_layout.addWidget(self.cartesian_solutions_table_left)
+        tables_layout.addWidget(self.cartesian_solutions_table_right)
+        layout.addLayout(tables_layout)
+
         self.cartesian_error_label.setStyleSheet("color: #d9534f;")
         self.cartesian_error_label.setWordWrap(True)
         self.cartesian_error_label.setMinimumHeight(self.cartesian_error_label.fontMetrics().lineSpacing() * 2 + 4)
@@ -281,6 +311,18 @@ class TrajectoryKeypointDialog(QDialog):
 
         group.setLayout(layout)
         return group
+
+    @staticmethod
+    def _configure_cartesian_solutions_table(table: QTableWidget) -> None:
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Cfg", "Statut", ""])
+        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.setMinimumHeight(145)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
 
     def _build_joint_target_group(self) -> QGroupBox:
         group = QGroupBox("Target articulaire (J1 J2 J3 J4 J5 J6)")
@@ -454,6 +496,107 @@ class TrajectoryKeypointDialog(QDialog):
                 selected.append(key)
         return selected
 
+    @staticmethod
+    def _solution_status_text(status: MgiResultStatus) -> str:
+        return status.name.replace("_", " ").title()
+
+    def _apply_cartesian_solution(self, config_key: MgiConfigKey, joints: list[float]) -> None:
+        _ = config_key
+        self.joint_target_widget.set_all_joints(joints)
+        self._set_cartesian_error("")
+        self._refresh_cartesian_solutions_table()
+        self._emit_ghost_update()
+
+    def _refresh_cartesian_solutions_table(self) -> None:
+        self.cartesian_solutions_table_left.setRowCount(0)
+        self.cartesian_solutions_table_right.setRowCount(0)
+        if self._current_target_type() != KeypointTargetType.CARTESIAN:
+            return
+
+        target = self.cartesian_target_widget.get_cartesian_values()
+        if len(target) < 6:
+            return
+
+        mgi_result = self.robot_model.compute_ik_target(target)
+        allowed_configs = set(self._selected_allowed_configs())
+        if not allowed_configs:
+            allowed_configs = {self.CONFIG_ORDER[0]}
+
+        for config_index, config_key in enumerate(self.CONFIG_ORDER):
+            solution = mgi_result.get_solution(config_key)
+            if solution is None:
+                continue
+
+            target_table = (
+                self.cartesian_solutions_table_left
+                if config_index < 4
+                else self.cartesian_solutions_table_right
+            )
+            row_index = target_table.rowCount()
+            target_table.insertRow(row_index)
+            target_table.setItem(row_index, 0, QTableWidgetItem(config_key.name))
+
+            displayed_status = solution.status
+            if displayed_status == MgiResultStatus.VALID and config_key not in allowed_configs:
+                displayed_status = MgiResultStatus.FORBIDDEN_CONFIGURATION
+
+            status_item = QTableWidgetItem(TrajectoryKeypointDialog._solution_status_text(displayed_status))
+            target_table.setItem(row_index, 1, status_item)
+
+            use_btn = QPushButton("Sélectionner")
+            can_use = displayed_status == MgiResultStatus.VALID and len(solution.joints) >= 6
+            use_btn.setEnabled(can_use)
+            if can_use:
+                joints = [float(v) for v in solution.joints[:6]]
+                use_btn.clicked.connect(
+                    lambda _, cfg=config_key, j=list(joints): self._apply_cartesian_solution(cfg, j)
+                )
+            target_table.setCellWidget(row_index, 2, use_btn)
+
+        self.cartesian_solutions_table_left.resizeRowsToContents()
+        self.cartesian_solutions_table_right.resizeRowsToContents()
+
+    @staticmethod
+    def _set_status_label(label: QLabel, title: str, messages: list[str]) -> None:
+        if not messages:
+            label.setText("")
+            label.hide()
+            return
+        label.setText(f"{title}: {join_issue_messages(messages)}")
+        label.show()
+
+    def _resolve_current_segment_index(self) -> int | None:
+        row = self._context_edited_row_index
+        if row is None or row < 0:
+            return None
+        return row
+
+    def _update_context_status_labels(self) -> None:
+        trajectory = self._context_trajectory_result
+        if trajectory is None:
+            TrajectoryKeypointDialog._set_status_label(self.current_segment_status_label, "Segment courant", [])
+            TrajectoryKeypointDialog._set_status_label(self.trajectory_status_label, "Trajectoire", [])
+            return
+
+        global_messages = build_trajectory_issue_messages(trajectory)
+        TrajectoryKeypointDialog._set_status_label(self.trajectory_status_label, "Trajectoire", global_messages)
+
+        segment_index = self._resolve_current_segment_index()
+        if segment_index is None or segment_index >= len(trajectory.segments):
+            TrajectoryKeypointDialog._set_status_label(self.current_segment_status_label, "Segment courant", [])
+            return
+
+        segment_messages = build_segment_issue_messages(trajectory.segments[segment_index], segment_index)
+        TrajectoryKeypointDialog._set_status_label(
+            self.current_segment_status_label,
+            "Segment courant",
+            segment_messages,
+        )
+
+    def update_trajectory_context(self, trajectory_result: TrajectoryResult | None) -> None:
+        self._context_trajectory_result = trajectory_result
+        self._update_context_status_labels()
+
     def set_keypoint_context(
         self,
         keypoints: list[TrajectoryKeypoint],
@@ -469,6 +612,7 @@ class TrajectoryKeypointDialog(QDialog):
         )
         self.cubic_auto_update_adjacent_checkbox.setEnabled(is_editing_existing_point)
         self._update_auto_tangent_buttons_state()
+        self._update_context_status_labels()
 
     def should_auto_update_adjacent_cubic_tangents(self) -> bool:
         return self.cubic_auto_update_adjacent_checkbox.isEnabled() and self.cubic_auto_update_adjacent_checkbox.isChecked()
@@ -657,6 +801,7 @@ class TrajectoryKeypointDialog(QDialog):
             elif previous_type == KeypointTargetType.JOINT and new_type == KeypointTargetType.CARTESIAN:
                 self._sync_cartesian_target_from_joint_target()
         self._update_target_editors()
+        self._refresh_cartesian_solutions_table()
         self._try_minimize_window_size()
         self._emit_ghost_update()
 
@@ -667,6 +812,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _on_cartesian_target_changed(self, *_args) -> None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
+            self._refresh_cartesian_solutions_table()
             self._emit_ghost_update()
 
     def _on_config_checkbox_toggled(self, _checked: bool) -> None:
@@ -679,9 +825,11 @@ class TrajectoryKeypointDialog(QDialog):
             cb.blockSignals(True)
             cb.setChecked(True)
             cb.blockSignals(False)
+            self._refresh_cartesian_solutions_table()
             self._emit_ghost_update()
             return
 
+        self._refresh_cartesian_solutions_table()
         self._emit_ghost_update()
 
     def _on_speed_changed(self, *_args) -> None:
@@ -715,6 +863,10 @@ class TrajectoryKeypointDialog(QDialog):
         if is_joint:
             self._set_cartesian_error("")
             self._sync_joint_mode_configs()
+            self.cartesian_solutions_table_left.setRowCount(0)
+            self.cartesian_solutions_table_right.setRowCount(0)
+        else:
+            self._refresh_cartesian_solutions_table()
         self._last_target_type = KeypointTargetType.JOINT if is_joint else KeypointTargetType.CARTESIAN
 
     def _update_cubic_visibility(self) -> None:
@@ -781,9 +933,11 @@ class TrajectoryKeypointDialog(QDialog):
         self._update_target_editors()
         self._update_cubic_visibility()
         self._update_speed_editor()
+        self._refresh_cartesian_solutions_table()
         self._try_minimize_window_size()
         self._suspend_preview_emission = False
         self._emit_ghost_update()
+        self._update_context_status_labels()
 
     def get_keypoint(self) -> TrajectoryKeypoint:
         self._store_current_speed()
