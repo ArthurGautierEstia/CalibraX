@@ -3,7 +3,7 @@ from models.robot_model import RobotModel
 from views.robot_view import RobotView
 from views.calibration_view import CalibrationView
 from controllers.robot_view.dh_table_controller import DHTableController
-from controllers.calibration_view.measurement_controller import MeasurementController
+from controllers.robot_view.measurement_controller import MeasurementController
 
 
 class RobotController(QObject):

@@ -2,7 +2,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from models.robot_model import RobotModel
 from views.robot_view import RobotView
 from views.calibration_view import CalibrationView
-from controllers.calibration_view.measurement_controller import MeasurementController
+from controllers.robot_view.measurement_controller import MeasurementController
 from controllers.correction_table_controller import CorrectionTableController
 
 
