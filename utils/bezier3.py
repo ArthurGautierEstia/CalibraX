@@ -62,7 +62,7 @@ class Bezier3Coefficients:
 
 class Bezier3Coefficients3D:
     """
-    Cubic Bezier polynomial coefficients for x(t), y(t), z(t).
+    Cubic Bezier polynomial coefficients for x(t), y(t), z(t)..
     Inputs:
       - p0: segment start point
       - p3: segment end point
