@@ -75,7 +75,7 @@ class JogController(QObject):
 
     def _on_jog_joint_pressed(self, joint_index: int, direction: int) -> None:
         """Appelé quand un bouton de jog articulaire est enfoncé (pressed)"""
-        if not self.robot_model.has_confifiguration:
+        if not self.robot_model.has_configuration:
             return
         
         # Arrêter tout jog en cours
@@ -95,7 +95,7 @@ class JogController(QObject):
     
     def _on_jog_cartesian_pressed(self, axis_index: int, direction: int) -> None:
         """Appelé quand un bouton de jog cartésien est enfoncé (pressed)"""
-        if not self.robot_model.has_confifiguration:
+        if not self.robot_model.has_configuration:
             return
         
         # Arrêter tout jog en cours
@@ -210,7 +210,7 @@ class JogController(QObject):
     
     def _update_display_from_model(self) -> None:
         """Met à jour l'affichage depuis les données du modèle"""
-        if not self.robot_model.has_confifiguration:
+        if not self.robot_model.has_configuration:
             return
         
         # Mettre à jour la visualisation des angles

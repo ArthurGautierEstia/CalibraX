@@ -71,7 +71,7 @@ class RobotModel(QObject):
         # RÉGION: Configuration générale
         # ====================================================================
         self.robot_name = ""
-        self.has_confifiguration = False
+        self.has_configuration = False
         self.current_config_file = None
 
         # ====================================================================
@@ -196,7 +196,7 @@ class RobotModel(QObject):
         # dh_table[i] = [a_i, alpha_i, d_i, theta_i]
 
         # Base  Axe 1
-        r1 = dh_table[0][3]   # d1
+        r1 = dh_table[0][3]   # a1
 
         # Axe 2
         d2 = dh_table[1][1]   # d2
@@ -472,9 +472,9 @@ class RobotModel(QObject):
         """Retourne le nom du robot"""
         return self.robot_name
     
-    def get_has_confifiguration(self) -> bool:
+    def get_has_configuration(self) -> bool:
         """Retourne True si le robot a une configuration chargée"""
-        return self.has_confifiguration
+        return self.has_configuration
 
     def get_current_config_file(self) -> str:
         """Retourne le chemin du fichier de configuration actuel"""
@@ -912,7 +912,7 @@ class RobotModel(QObject):
 
         config.apply_to_robot_model(self)
         self.go_to_home_position()
-        self.has_confifiguration = True
+        self.has_configuration = True
         self.configuration_changed.emit()
 
         self._inhibit_compute_fk = False
