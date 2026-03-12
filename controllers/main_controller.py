@@ -38,7 +38,7 @@ class MainController(QObject):
         self.robot_controller.configuration_loaded.connect(self._on_config_loaded)
 
     def _on_robot_model_config_changed(self) -> None:
-        self.main_window.update_enabled_tabs(self.robot_model.get_has_confifiguration())
+        self.main_window.update_enabled_tabs(self.robot_model.get_has_configuration())
     
     def _on_config_loaded(self) -> None:
         self.main_window.viewer3d.load_cad(self.robot_model)

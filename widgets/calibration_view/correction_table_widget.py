@@ -21,7 +21,7 @@ class CorrectionTableWidget(QWidget):
         
         # Table des corrections
         self.table_corr = QTableWidget(6, 6)
-        self.table_corr.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_corr.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
         self.table_corr.setHorizontalHeaderLabels(["Tx(mm)", "Ty(mm)", "Tz(mm)", "Rx(°)", "Ry(°)", "Rz(°)"])
         self.table_corr.horizontalHeader().setDefaultSectionSize(80)
         self.table_corr.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)

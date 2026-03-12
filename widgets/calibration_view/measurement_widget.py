@@ -1,13 +1,50 @@
 from typing import Dict, List, Optional, Any
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QGridLayout, QLabel,
+    QLayout, QWidget, QVBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
-    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox, QHBoxLayout, QCheckBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont
 import math
 import numpy as np
+
+
+class DHCellWidget(QWidget):
+    """Widget personnalisé pour une cellule DH : checkbox + valeur en disposition horizontale"""
+    
+    def __init__(self, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(4)
+        
+        # Checkbox
+        self.checkbox = QCheckBox()
+        layout.addWidget(self.checkbox)
+        
+        # Label pour la valeur
+        self.label = QLabel("")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.label)
+        
+        self.setLayout(layout)
+    
+    def set_value(self, value: str) -> None:
+        """Définit la valeur affichée"""
+        self.label.setText(value)
+    
+    def get_value(self) -> str:
+        """Récupère la valeur affichée"""
+        return self.label.text()
+    
+    def set_checked(self, checked: bool) -> None:
+        """Définit l'état du checkbox"""
+        self.checkbox.setChecked(checked)
+    
+    def is_checked(self) -> bool:
+        """Récupère l'état du checkbox"""
+        return self.checkbox.isChecked()
 
 class MeasurementWidget(QWidget):
     """Widget pour l'importation et la gestion des mesures"""
@@ -15,7 +52,7 @@ class MeasurementWidget(QWidget):
     # Signaux
     import_measurements_requested = pyqtSignal()
     clear_measurements_requested = pyqtSignal()
-    calculate_corrections_requested = pyqtSignal()
+    apply_parameters_requested = pyqtSignal()
     set_as_reference_requested = pyqtSignal()
     repere_selected = pyqtSignal(str)  # nom du repère
     display_mode_changed = pyqtSignal(str)  # display_mode
@@ -28,76 +65,112 @@ class MeasurementWidget(QWidget):
     
     def setup_ui(self) -> None:
         """Initialise l'interface du widget"""
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
         
-        # En-tête
-        me_layout = QGridLayout()
-        titre2 = QLabel("Mesures robot")
-        titre2.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(titre2)
+        # Titre
+        titre = QLabel("Mesures robot")
+        titre.setStyleSheet("font-size: 14px; font-weight: bold;")
+        main_layout.addWidget(titre)
+        
+        # === HAUT : Nom du fichier + Sélecteurs ===
+        top_layout = QGridLayout()
         
         self.lineEdit_measure_filename = QLineEdit()
         self.lineEdit_measure_filename.setReadOnly(False)
         self.lineEdit_measure_filename.setPlaceholderText("Fichier de mesure")
-        me_layout.addWidget(self.lineEdit_measure_filename, 0, 0)
+        top_layout.addWidget(self.lineEdit_measure_filename, 0, 0)
         
-        self.btn_import_me = QPushButton("Importer")
-        self.btn_import_me.clicked.connect(self.import_measurements_requested.emit)
-        me_layout.addWidget(self.btn_import_me, 0, 1)
+        label_1 = QLabel("Afficher : ")
+        label_1.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        self.display_mode = QComboBox()
+        self.display_mode.addItems(["Repères", "Ecarts"])
+        self.display_mode.currentTextChanged.connect(self.display_mode_changed)
+        top_layout.addWidget(label_1, 0, 1)
+        top_layout.addWidget(self.display_mode, 0, 2)
+        
+        label_2 = QLabel("Convention d'angles : ")
+        label_2.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        self.rotation_type = QComboBox()
+        self.rotation_type.addItems(["Euler XYZ", "Fixed XYZ", "Euler ZYX", "Fixed ZYX"])
+        self.rotation_type.currentTextChanged.connect(self.rotation_type_changed)
+        top_layout.addWidget(label_2, 0, 3)
+        top_layout.addWidget(self.rotation_type, 0, 4)
+
+        top_layout.setColumnStretch(0, 2)
+        top_layout.setColumnStretch(1, 1)
+        top_layout.setColumnStretch(2, 1)
+        top_layout.setColumnStretch(3, 1)
+        top_layout.setColumnStretch(4, 1)
+
+        main_layout.addLayout(top_layout)
+        
+        # === MILIEU : Arbre des repères + Table des mesures ===
+        middle_layout = QHBoxLayout()
         
         # Arbre des repères
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Repères"])
         self.tree.itemClicked.connect(self._on_item_clicked)
-        me_layout.addWidget(self.tree, 1, 0)
+        middle_layout.addWidget(self.tree, 1)
+        middle_layout.setStretch(0, 1)  # Arbre prend 1 part
         
-        # Boutons d'action
-        tables_btn_layout = QVBoxLayout()
-        self.btn_set_as_ref = QPushButton("Définir en Référence")
-        self.btn_set_as_ref.clicked.connect(self.set_as_reference_requested.emit)
-        self.btn_calculate_corr = QPushButton("Calculer les corrections")
-        self.btn_calculate_corr.clicked.connect(self.calculate_corrections_requested.emit)
-        self.btn_clear = QPushButton("Effacer")
-        self.btn_clear.clicked.connect(self.clear_measurements)
-        tables_btn_layout.addWidget(self.btn_set_as_ref)
-        tables_btn_layout.addWidget(self.btn_calculate_corr)
-        tables_btn_layout.addWidget(self.btn_clear) 
-        tables_btn_layout.addStretch()
-        me_layout.addLayout(tables_btn_layout, 1, 1)
-        
-        layout.addLayout(me_layout)
-
-        tables_display_me = QVBoxLayout()
-        choice_table = QGridLayout()
-        label_1 = QLabel("Afficher : ")
-        self.display_mode = QComboBox()
-        self.display_mode.addItems(["Repères", "Ecarts"])
-        self.display_mode.currentTextChanged.connect(self.display_mode_changed)
-        label_2 = QLabel("Rotation : ")
-        self.rotation_type = QComboBox()
-        self.rotation_type.addItems(["EulerXYZ", "Fixed EulerXYZ"])
-        self.rotation_type.currentTextChanged.connect(self.rotation_type_changed)
-
-        choice_table.addWidget(label_1, 0, 0)
-        choice_table.addWidget(self.display_mode, 0, 1)
-        choice_table.addWidget(label_2, 0, 2)
-        choice_table.addWidget(self.rotation_type, 0, 3)
-
-        tables_display_me.addLayout(choice_table)
-
-        # Table des mesures
+        # Table des mesures (du repère sélectionné)
         self.table_me = QTableWidget(5, 3)
         self.table_me.setHorizontalHeaderLabels(["X", "Y", "Z"])
         self.table_me.setVerticalHeaderLabels(["Translation (mm)", "Rotation (°)", "X axis", "Y axis", "Z axis"])
         self.table_me.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_me.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        tables_display_me.addWidget(self.table_me)
-        layout.addLayout(tables_display_me)
+        middle_layout.addWidget(self.table_me, 1)
+        middle_layout.setStretch(1, 2)  # Table prend 2 parts
         
-        self.setLayout(layout)
+        main_layout.addLayout(middle_layout)
+
+        # === BAS : Boutons alignés horizontalement ===
+        buttons_layout = QHBoxLayout()
         
-        # Rendre tous les éléments du tableau en read-only
-        self._set_table_read_only()
+        self.btn_import_me = QPushButton("Importer")
+        self.btn_import_me.clicked.connect(self.import_measurements_requested.emit)
+        buttons_layout.addWidget(self.btn_import_me)
+        
+        self.btn_set_as_ref = QPushButton("Définir en Référence")
+        self.btn_set_as_ref.clicked.connect(self.set_as_reference_requested.emit)
+        buttons_layout.addWidget(self.btn_set_as_ref)
+
+        self.btn_clear = QPushButton("Effacer")
+        self.btn_clear.clicked.connect(self.clear_measurements)
+        buttons_layout.addWidget(self.btn_clear)
+
+        main_layout.addLayout(buttons_layout)
+        
+        # === Table DH Mesuré (combinée avec checkboxes) ===
+        dh_title = QLabel("Table DH Mesurée")
+        dh_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        main_layout.addWidget(dh_title)
+        
+        # Table DH Mesuré unique avec checkboxes intégrés
+        self.table_dh_measured = QTableWidget(6, 4)
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
+        self.table_dh_measured.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_dh_measured.horizontalHeader().setDefaultSectionSize(120)
+        
+        # Initialiser les cellules avec DHCellWidget
+        self._initialize_dh_cells()
+        
+        main_layout.addWidget(self.table_dh_measured)
+        
+        self.setLayout(main_layout)
+
+        # === BAS : Boutons alignés horizontalement ===
+        buttons2_layout = QHBoxLayout()
+        self.btn_calculate = QPushButton(" Appliquer les paramètres ")
+        self.btn_calculate.clicked.connect(self.apply_parameters_requested.emit)
+        buttons2_layout.addStretch(2)
+        buttons2_layout.addWidget(self.btn_calculate, 1)
+
+        main_layout.addLayout(buttons2_layout)
+
     
     def _on_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         """Callback interne quand un item est cliqué"""
@@ -263,6 +336,7 @@ class MeasurementWidget(QWidget):
         self.lineEdit_measure_filename.clear()
         self.tree.clear()
         self.table_me.clearContents()
+        self.table_dh_measured.clearContents()
 
     def set_measure_filename(self, filename) -> None:
         """Défini le l"""
@@ -273,10 +347,87 @@ class MeasurementWidget(QWidget):
         current_item = self.tree.currentItem()
         return current_item.text(0) if current_item else None
     
+    def display_dh_measured(self, dh_matrix: np.ndarray) -> None:
+        """
+        Affiche une matrice 4x4 homogène dans la table DH mesurée.
+        Affiche uniquement les 3x4 premiers éléments (position et orientation).
+        dh_matrix : matrice homogène 4x4 (numpy array)
+        """
+        self.table_dh_measured.blockSignals(True)
+        
+        # La table a 6 lignes et 4 colonnes
+        # Pour une seule matrice, on l'affiche sur les 3 premières lignes de la matrice de rotation
+        for i in range(3):
+            for j in range(4):
+                cell_widget = self.table_dh_measured.cellWidget(i, j)
+                if isinstance(cell_widget, DHCellWidget):
+                    cell_widget.set_value(self._format_value(dh_matrix[i, j], 4))
+        
+        # Vider le reste
+        for i in range(3, 6):
+            for j in range(4):
+                cell_widget = self.table_dh_measured.cellWidget(i, j)
+                if isinstance(cell_widget, DHCellWidget):
+                    cell_widget.set_value("")
+        
+        self.table_dh_measured.blockSignals(False)
+    
     def _set_table_read_only(self) -> None:
-        """Rend toutes les cellules du tableau en read-only"""
+        """Rend toutes les cellules des tableaux en read-only"""
+        # Table des mesures
         for row in range(self.table_me.rowCount()):
             for col in range(self.table_me.columnCount()):
                 item = self.table_me.item(row, col)
                 if item:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        
+        # Table DH Mesurée
+        for row in range(self.table_dh_measured.rowCount()):
+            for col in range(self.table_dh_measured.columnCount()):
+                item = self.table_dh_measured.item(row, col)
+                if item:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    
+    def _initialize_dh_cells(self) -> None:
+        """Initialise la table avec des DHCellWidget pour chaque cellule"""
+        for row in range(self.table_dh_measured.rowCount()):
+            for col in range(self.table_dh_measured.columnCount()):
+                cell_widget = DHCellWidget()
+                self.table_dh_measured.setCellWidget(row, col, cell_widget)
+    
+    def get_dh_checkboxes_state(self) -> Dict[str, bool]:
+        """
+        Récupère l'état des checkboxes pour les paramètres DH.
+        Retourne un dictionnaire avec les clés au format: 'd1', 'd2', 'alpha1', etc.
+        """
+        states = {}
+        col_names = ['alpha', 'd', 'theta', 'r']
+        
+        for row in range(self.table_dh_measured.rowCount()):
+            joint_num = row + 1  # q1 à q6
+            for col in range(self.table_dh_measured.columnCount()):
+                param_name = f"{col_names[col]}{joint_num}"
+                
+                # Récupérer le widget DHCellWidget
+                cell_widget = self.table_dh_measured.cellWidget(row, col)
+                if isinstance(cell_widget, DHCellWidget):
+                    states[param_name] = cell_widget.is_checked()
+        
+        return states
+    
+    def set_dh_checkboxes_state(self, states: Dict[str, bool]) -> None:
+        """
+        Définit l'état des checkboxes pour les paramètres DH.
+        states : dictionnaire avec les clés au format: 'd1', 'd2', 'alpha1', etc.
+        """
+        col_names = ['alpha', 'd', 'theta', 'r']
+        
+        for row in range(self.table_dh_measured.rowCount()):
+            joint_num = row + 1  # q1 à q6
+            for col in range(self.table_dh_measured.columnCount()):
+                param_name = f"{col_names[col]}{joint_num}"
+                
+                # Récupérer le widget DHCellWidget
+                cell_widget = self.table_dh_measured.cellWidget(row, col)
+                if isinstance(cell_widget, DHCellWidget) and param_name in states:
+                    cell_widget.set_checked(states[param_name])
