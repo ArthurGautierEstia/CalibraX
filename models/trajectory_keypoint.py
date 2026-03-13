@@ -18,7 +18,7 @@ class KeypointMotionMode(Enum):
 
 
 class TrajectoryKeypoint:
-    DEFAULT_CUBIC_AMPLITUDE_PERCENT = 30.0
+    DEFAULT_CUBIC_AMPLITUDE_MM = 30.0
 
     def __init__(
         self,
@@ -27,7 +27,7 @@ class TrajectoryKeypoint:
         joint_target: list[float] | None = None,
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
         cubic_vectors: list[list[float]] | None = None,
-        cubic_amplitudes_percent: list[float] | None = None,
+        cubic_amplitudes_mm: list[float] | None = None,
         allowed_configs: list[MgiConfigKey] | None = None,
         ptp_speed_percent: float = 75.0,
         linear_speed_mps: float = 0.5,
@@ -57,14 +57,14 @@ class TrajectoryKeypoint:
             self._normalize_direction_vector(self._normalize_float_list(list(vec2), 3, 0.0)),
         ]
         amplitudes = (
-            [self.DEFAULT_CUBIC_AMPLITUDE_PERCENT, self.DEFAULT_CUBIC_AMPLITUDE_PERCENT]
-            if cubic_amplitudes_percent is None
-            else list(cubic_amplitudes_percent)
+            [self.DEFAULT_CUBIC_AMPLITUDE_MM, self.DEFAULT_CUBIC_AMPLITUDE_MM]
+            if cubic_amplitudes_mm is None
+            else list(cubic_amplitudes_mm)
         )
-        amp1 = amplitudes[0] if len(amplitudes) > 0 else self.DEFAULT_CUBIC_AMPLITUDE_PERCENT
-        amp2 = amplitudes[1] if len(amplitudes) > 1 else self.DEFAULT_CUBIC_AMPLITUDE_PERCENT
-        amp_values = self._normalize_float_list([amp1, amp2], 2, self.DEFAULT_CUBIC_AMPLITUDE_PERCENT)
-        self.cubic_amplitudes_percent = [
+        amp1 = amplitudes[0] if len(amplitudes) > 0 else self.DEFAULT_CUBIC_AMPLITUDE_MM
+        amp2 = amplitudes[1] if len(amplitudes) > 1 else self.DEFAULT_CUBIC_AMPLITUDE_MM
+        amp_values = self._normalize_float_list([amp1, amp2], 2, self.DEFAULT_CUBIC_AMPLITUDE_MM)
+        self.cubic_amplitudes_mm = [
             self._clamp_min(amp_values[0], 0.0),
             self._clamp_min(amp_values[1], 0.0),
         ]
@@ -116,12 +116,11 @@ class TrajectoryKeypoint:
         return [x / norm, y / norm, z / norm]
 
     def resolve_cubic_tangent_vectors(self, segment_length_mm: float) -> tuple[list[float], list[float]]:
-        distance = max(0.0, float(segment_length_mm))
+        _ = segment_length_mm
         tangents: list[list[float]] = []
         for idx in range(2):
             direction = self.cubic_vectors[idx]
-            amplitude_percent = self._clamp_min(float(self.cubic_amplitudes_percent[idx]), 0.0)
-            amplitude_mm = distance * (amplitude_percent / 100.0)
+            amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[idx]), 0.0)
             tangents.append(
                 [
                     float(direction[0]) * amplitude_mm,
@@ -159,7 +158,7 @@ class TrajectoryKeypoint:
             joint_target=list(self.joint_target),
             mode=self.mode,
             cubic_vectors=[list(self.cubic_vectors[0]), list(self.cubic_vectors[1])],
-            cubic_amplitudes_percent=list(self.cubic_amplitudes_percent),
+            cubic_amplitudes_mm=list(self.cubic_amplitudes_mm),
             allowed_configs=list(self.allowed_configs),
             ptp_speed_percent=self.ptp_speed_percent,
             linear_speed_mps=self.linear_speed_mps,
@@ -175,9 +174,9 @@ class TrajectoryKeypoint:
                 [float(v) for v in self.cubic_vectors[0][:3]],
                 [float(v) for v in self.cubic_vectors[1][:3]],
             ],
-            "cubic_amplitudes_percent": [
-                float(self.cubic_amplitudes_percent[0]),
-                float(self.cubic_amplitudes_percent[1]),
+            "cubic_amplitudes_mm": [
+                float(self.cubic_amplitudes_mm[0]),
+                float(self.cubic_amplitudes_mm[1]),
             ],
             "allowed_configs": [cfg.name for cfg in self.allowed_configs],
             "ptp_speed_percent": float(self.ptp_speed_percent),
@@ -208,11 +207,11 @@ class TrajectoryKeypoint:
         cubic_vectors = raw.get("cubic_vectors")
         if not isinstance(cubic_vectors, list):
             cubic_vectors = None
-        cubic_amplitudes_percent = raw.get("cubic_amplitudes_percent")
-        if not isinstance(cubic_amplitudes_percent, list) or len(cubic_amplitudes_percent) < 2:
+        cubic_amplitudes_mm = raw.get("cubic_amplitudes_mm")
+        if not isinstance(cubic_amplitudes_mm, list) or len(cubic_amplitudes_mm) < 2:
             raise ValueError(
-                "Format invalide: 'cubic_amplitudes_percent' doit etre une liste "
-                "de 2 valeurs (nouveau format requis)."
+                "Format invalide: 'cubic_amplitudes_mm' doit etre une liste "
+                "de 2 valeurs."
             )
 
         return TrajectoryKeypoint(
@@ -221,7 +220,7 @@ class TrajectoryKeypoint:
             joint_target=raw.get("joint_target"),
             mode=mode,
             cubic_vectors=cubic_vectors,
-            cubic_amplitudes_percent=cubic_amplitudes_percent,
+            cubic_amplitudes_mm=cubic_amplitudes_mm,
             allowed_configs=allowed_configs if allowed_configs else None,
             ptp_speed_percent=float(raw.get("ptp_speed_percent", 75.0)),
             linear_speed_mps=float(raw.get("linear_speed_mps", 0.5)),

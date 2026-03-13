@@ -237,6 +237,7 @@ class TrajectoryConfigWidget(QWidget):
                 previous_keypoint.cubic_vectors[1] = math_utils.normalize3(
                     [-start_tangent[0], -start_tangent[1], -start_tangent[2]]
                 )
+                previous_keypoint.cubic_amplitudes_mm[1] = math_utils.vector_norm3(start_tangent)
 
         next_row = row + 1
         if next_row < len(keypoints):
@@ -245,6 +246,7 @@ class TrajectoryConfigWidget(QWidget):
                 next_keypoint.cubic_vectors[0] = math_utils.normalize3(
                     [-end_tangent[0], -end_tangent[1], -end_tangent[2]]
                 )
+                next_keypoint.cubic_amplitudes_mm[0] = math_utils.vector_norm3(end_tangent)
 
     def _on_active_dialog_preview_keypoint_changed(self, preview_keypoint: TrajectoryKeypoint) -> None:
         if self._active_dialog_mode == "add":

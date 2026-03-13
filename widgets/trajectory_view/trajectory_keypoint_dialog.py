@@ -103,8 +103,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.cubic_auto_update_adjacent_checkbox.setChecked(True)
         self.cubic_hint_label = QLabel(
             "Direction : le triplet X/Y/Z est normalise automatiquement. "
-            "Amplitude : min 0%, pas de maximum. "
-            "100% correspond a la distance entre le point precedent et ce point."
+            "Amplitude : longueur reelle de tangente en mm (min 0, pas de maximum)."
         )
 
         self._context_keypoints: list[TrajectoryKeypoint] = []
@@ -184,7 +183,7 @@ class TrajectoryKeypointDialog(QDialog):
             self.cubic_vector_1.append(spin)
             start_layout.addWidget(spin, 0, i + 1)
 
-        start_amp_label = QLabel("Amplitude (%)")
+        start_amp_label = QLabel("Amplitude (mm)")
         start_amp_label.setMinimumWidth(cubic_label_width)
         start_layout.addWidget(start_amp_label, 1, 0)
         self.cubic_amplitude_1.setRange(0.0, 1_000_000.0)
@@ -213,7 +212,7 @@ class TrajectoryKeypointDialog(QDialog):
             self.cubic_vector_2.append(spin)
             end_layout.addWidget(spin, 0, i + 1)
 
-        end_amp_label = QLabel("Amplitude (%)")
+        end_amp_label = QLabel("Amplitude (mm)")
         end_amp_label.setMinimumWidth(cubic_label_width)
         end_layout.addWidget(end_amp_label, 1, 0)
         self.cubic_amplitude_2.setRange(0.0, 1_000_000.0)
@@ -689,6 +688,20 @@ class TrajectoryKeypointDialog(QDialog):
         if emit_preview:
             self._emit_live_preview()
 
+    def _set_cubic_start_amplitude_mm(self, amplitude_mm: float, emit_preview: bool = True) -> None:
+        self.cubic_amplitude_1.blockSignals(True)
+        self.cubic_amplitude_1.setValue(max(0.0, float(amplitude_mm)))
+        self.cubic_amplitude_1.blockSignals(False)
+        if emit_preview:
+            self._emit_live_preview()
+
+    def _set_cubic_end_amplitude_mm(self, amplitude_mm: float, emit_preview: bool = True) -> None:
+        self.cubic_amplitude_2.blockSignals(True)
+        self.cubic_amplitude_2.setValue(max(0.0, float(amplitude_mm)))
+        self.cubic_amplitude_2.blockSignals(False)
+        if emit_preview:
+            self._emit_live_preview()
+
     def _compute_end_tangent_from_first_tangent_look_at(
         self,
         start_direction_xyz: list[float],
@@ -741,28 +754,34 @@ class TrajectoryKeypointDialog(QDialog):
         direction = self._get_previous_segment_end_tangent_for_auto()
         if direction is None:
             return
+        start_amplitude_mm = math_utils.vector_norm3(direction)
         start_direction = [-float(d) for d in direction[:3]]
         self._apply_cubic_start_tangent_direction(start_direction, emit_preview=False)
+        self._set_cubic_start_amplitude_mm(start_amplitude_mm, emit_preview=False)
 
         current_end_direction = [float(spin.value()) for spin in self.cubic_vector_2]
         if math_utils.is_near_zero_vector_xyz(current_end_direction):
             end_direction = self._compute_end_tangent_from_first_tangent_look_at(start_direction)
             if end_direction is not None:
                 self._apply_cubic_end_tangent_direction(end_direction, emit_preview=False)
+                self._set_cubic_end_amplitude_mm(math_utils.vector_norm3(end_direction), emit_preview=False)
         self._emit_live_preview()
 
     def _on_auto_end_tangent_clicked(self) -> None:
         direction = self._get_next_segment_start_tangent_for_auto()
         if direction is None:
             return
+        end_amplitude_mm = math_utils.vector_norm3(direction)
         end_direction = [-float(d) for d in direction[:3]]
         self._apply_cubic_end_tangent_direction(end_direction, emit_preview=False)
+        self._set_cubic_end_amplitude_mm(end_amplitude_mm, emit_preview=False)
 
         current_start_direction = [float(spin.value()) for spin in self.cubic_vector_1]
         if math_utils.is_near_zero_vector_xyz(current_start_direction):
             start_direction = self._compute_start_tangent_from_end_tangent_look_at(end_direction)
             if start_direction is not None:
                 self._apply_cubic_start_tangent_direction(start_direction, emit_preview=False)
+                self._set_cubic_start_amplitude_mm(math_utils.vector_norm3(start_direction), emit_preview=False)
         self._emit_live_preview()
 
     def _store_current_speed(self) -> None:
@@ -923,8 +942,8 @@ class TrajectoryKeypointDialog(QDialog):
             spin.setValue(keypoint.cubic_vectors[0][i])
         for i, spin in enumerate(self.cubic_vector_2):
             spin.setValue(keypoint.cubic_vectors[1][i])
-        self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_percent[0]))
-        self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_percent[1]))
+        self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_mm[0]))
+        self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_mm[1]))
 
         allowed = set(keypoint.allowed_configs)
         for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
@@ -953,7 +972,7 @@ class TrajectoryKeypointDialog(QDialog):
                 [spin.value() for spin in self.cubic_vector_1],
                 [spin.value() for spin in self.cubic_vector_2],
             ],
-            cubic_amplitudes_percent=[
+            cubic_amplitudes_mm=[
                 self.cubic_amplitude_1.value(),
                 self.cubic_amplitude_2.value(),
             ],
