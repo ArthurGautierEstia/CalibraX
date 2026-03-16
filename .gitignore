@@ -4,3 +4,5 @@ __pycache__/
 trajectories/
 .vscode/
 configurations/
+.claude/
+CLAUDE.md
