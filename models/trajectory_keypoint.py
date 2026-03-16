@@ -17,6 +17,12 @@ class KeypointMotionMode(Enum):
     CUBIC = "CUBIC"
 
 
+class ConfigurationPolicy(Enum):
+    AUTO = "AUTO"
+    CURRENT_BRANCH = "CURRENT_BRANCH"
+    FORCED = "FORCED"
+
+
 class TrajectoryKeypoint:
     DEFAULT_CUBIC_AMPLITUDE_MM = 30.0
 
@@ -28,7 +34,8 @@ class TrajectoryKeypoint:
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
         cubic_vectors: list[list[float]] | None = None,
         cubic_amplitudes_mm: list[float] | None = None,
-        allowed_configs: list[MgiConfigKey] | None = None,
+        configuration_policy: ConfigurationPolicy = ConfigurationPolicy.AUTO,
+        forced_config: MgiConfigKey | None = None,
         ptp_speed_percent: float = 75.0,
         linear_speed_mps: float = 0.5,
     ) -> None:
@@ -69,8 +76,8 @@ class TrajectoryKeypoint:
             self._clamp_min(amp_values[1], 0.0),
         ]
 
-        configs = list(MgiConfigKey) if allowed_configs is None else list(allowed_configs)
-        self.allowed_configs = self._unique_configs(configs)
+        self.configuration_policy = configuration_policy
+        self.forced_config = forced_config if forced_config in MgiConfigKey else None
 
         self.ptp_speed_percent = self._clamp(float(ptp_speed_percent), 0.0, 100.0)
         self.linear_speed_mps = self._clamp(float(linear_speed_mps), 0.0, 2.0)
@@ -131,15 +138,12 @@ class TrajectoryKeypoint:
         return tangents[0], tangents[1]
 
     def _normalize_configuration_rules(self) -> None:
-        if self.target_type == KeypointTargetType.JOINT:
-            if not self.allowed_configs:
-                self.allowed_configs = [MgiConfigKey.FUN]
-            else:
-                self.allowed_configs = [self.allowed_configs[0]]
-            return
-
-        if not self.allowed_configs:
-            self.allowed_configs = list(MgiConfigKey)
+        if self.configuration_policy not in ConfigurationPolicy:
+            self.configuration_policy = ConfigurationPolicy.AUTO
+        if self.configuration_policy == ConfigurationPolicy.FORCED and self.forced_config is None:
+            self.forced_config = MgiConfigKey.FUN
+        if self.configuration_policy != ConfigurationPolicy.FORCED:
+            self.forced_config = None
 
     @property
     def speed(self) -> float:
@@ -159,7 +163,8 @@ class TrajectoryKeypoint:
             mode=self.mode,
             cubic_vectors=[list(self.cubic_vectors[0]), list(self.cubic_vectors[1])],
             cubic_amplitudes_mm=list(self.cubic_amplitudes_mm),
-            allowed_configs=list(self.allowed_configs),
+            configuration_policy=self.configuration_policy,
+            forced_config=self.forced_config,
             ptp_speed_percent=self.ptp_speed_percent,
             linear_speed_mps=self.linear_speed_mps,
         )
@@ -178,7 +183,8 @@ class TrajectoryKeypoint:
                 float(self.cubic_amplitudes_mm[0]),
                 float(self.cubic_amplitudes_mm[1]),
             ],
-            "allowed_configs": [cfg.name for cfg in self.allowed_configs],
+            "configuration_policy": self.configuration_policy.value,
+            "forced_config": self.forced_config.name if self.forced_config is not None else None,
             "ptp_speed_percent": float(self.ptp_speed_percent),
             "linear_speed_mps": float(self.linear_speed_mps),
         }
@@ -197,12 +203,20 @@ class TrajectoryKeypoint:
         except ValueError:
             mode = KeypointMotionMode.PTP
 
-        allowed_configs: list[MgiConfigKey] = []
-        for name in raw.get("allowed_configs", []):
+        try:
+            configuration_policy = ConfigurationPolicy(
+                str(raw.get("configuration_policy", ConfigurationPolicy.AUTO.value))
+            )
+        except ValueError:
+            configuration_policy = ConfigurationPolicy.AUTO
+
+        forced_config: MgiConfigKey | None = None
+        forced_raw = raw.get("forced_config")
+        if isinstance(forced_raw, str):
             try:
-                allowed_configs.append(MgiConfigKey[str(name)])
-            except (KeyError, TypeError):
-                continue
+                forced_config = MgiConfigKey[forced_raw]
+            except KeyError:
+                forced_config = None
 
         cubic_vectors = raw.get("cubic_vectors")
         if not isinstance(cubic_vectors, list):
@@ -221,7 +235,8 @@ class TrajectoryKeypoint:
             mode=mode,
             cubic_vectors=cubic_vectors,
             cubic_amplitudes_mm=cubic_amplitudes_mm,
-            allowed_configs=allowed_configs if allowed_configs else None,
+            configuration_policy=configuration_policy,
+            forced_config=forced_config,
             ptp_speed_percent=float(raw.get("ptp_speed_percent", 75.0)),
             linear_speed_mps=float(raw.get("linear_speed_mps", 0.5)),
         )

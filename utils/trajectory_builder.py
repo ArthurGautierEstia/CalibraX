@@ -1,7 +1,12 @@
 import math
 
 from models.robot_model import RobotModel
-from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
+from models.trajectory_keypoint import (
+    ConfigurationPolicy,
+    KeypointMotionMode,
+    KeypointTargetType,
+    TrajectoryKeypoint,
+)
 from models.trajectory_result import (
     SegmentResult,
     TrajectoryBuilderBehavior,
@@ -126,41 +131,102 @@ class TrajectoryBuilder:
             return None
         return [float(v) for v in dh_pose[:6]]
 
-    def _resolve_keypoint_joints(self, keypoint: TrajectoryKeypoint, reference_sample: TrajectorySample | None, allowed_configs: set[MgiConfigKey]) -> list[float] | None:
+    def _resolve_reference_config(self, reference_sample: TrajectorySample | None) -> MgiConfigKey:
+        config_identifier = self.robot_model.get_config_identifier()
+        reference_joints = self._get_reference_joints_for_ik(reference_sample)
+        return MgiConfigKey.identify_configuration_deg(reference_joints, config_identifier)
+
+    def _resolve_allowed_configs_for_keypoint(
+        self,
+        keypoint: TrajectoryKeypoint,
+        reference_sample: TrajectorySample | None,
+    ) -> set[MgiConfigKey]:
+        robot_allowed = self._get_robot_allowed_configs()
+        if not robot_allowed:
+            return set()
+
+        # Joint targets already define their branch through the provided joint values.
         if keypoint.target_type == KeypointTargetType.JOINT:
-            return TrajectoryBuilder._normalize_joints_6(keypoint.joint_target)
+            config_identifier = self.robot_model.get_config_identifier()
+            joint_config = MgiConfigKey.identify_configuration_deg(
+                TrajectoryBuilder._normalize_joints_6(keypoint.joint_target),
+                config_identifier,
+            )
+            return ({joint_config} & robot_allowed)
+
+        if keypoint.configuration_policy == ConfigurationPolicy.AUTO:
+            return set(robot_allowed)
+
+        if keypoint.configuration_policy == ConfigurationPolicy.CURRENT_BRANCH:
+            current_branch = self._resolve_reference_config(reference_sample)
+            return ({current_branch} & robot_allowed)
+
+        if keypoint.configuration_policy == ConfigurationPolicy.FORCED and keypoint.forced_config is not None:
+            return ({keypoint.forced_config} & robot_allowed)
+
+        return set()
+
+    def _resolve_keypoint_joints(
+        self,
+        keypoint: TrajectoryKeypoint,
+        reference_sample: TrajectorySample | None,
+        allowed_configs: set[MgiConfigKey],
+    ) -> tuple[list[float] | None, TrajectorySampleErrorCode]:
+        if keypoint.target_type == KeypointTargetType.JOINT:
+            joints = TrajectoryBuilder._normalize_joints_6(keypoint.joint_target)
+            config_identifier = self.robot_model.get_config_identifier()
+            joint_config = MgiConfigKey.identify_configuration_deg(joints, config_identifier)
+            if joint_config not in allowed_configs:
+                return None, TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION
+            return joints, TrajectorySampleErrorCode.NONE
+
         pose = self._resolve_keypoint_pose(keypoint)
         if pose is None:
-            return None
+            return None, TrajectorySampleErrorCode.POINT_UNREACHABLE
+
         mgi_result = self._compute_mgi_for_pose(pose, reference_sample)
         selected_solution = self._select_best_solution(mgi_result, reference_sample, allowed_configs)
         if selected_solution is None:
-            return None
+            return None, TrajectoryBuilder._resolve_error_for_missing_selected_solution(mgi_result, allowed_configs)
+
         _, solution = selected_solution
-        return TrajectoryBuilder._normalize_joints_6(solution.joints)
+        return TrajectoryBuilder._normalize_joints_6(solution.joints), TrajectorySampleErrorCode.NONE
 
     def _resolve_PTP_segment_endpoints(self,
                                        segment: TrajectorySegment,
                                        previous_sample: TrajectorySample | None,
                                        from_allowed_configs: set[MgiConfigKey],
-                                       to_allowed_configs: set[MgiConfigKey],
                                        config_identifier: ConfigurationIdentifier):
-        from_joints = self._resolve_keypoint_joints(segment.from_keypoint, previous_sample, from_allowed_configs)
+        from_joints, from_error = self._resolve_keypoint_joints(
+            segment.from_keypoint,
+            previous_sample,
+            from_allowed_configs,
+        )
         if from_joints is None:
-            return None, None
+            return None, None, from_error
 
         to_reference_sample = TrajectorySample()
         to_reference_sample.reachable = True
         to_reference_sample.joints = TrajectoryBuilder._normalize_joints_6(from_joints)
-        to_joints = self._resolve_keypoint_joints(segment.to_keypoint, to_reference_sample, to_allowed_configs)
+        to_allowed_configs = self._resolve_allowed_configs_for_keypoint(
+            segment.to_keypoint,
+            to_reference_sample,
+        )
+        if not to_allowed_configs:
+            return None, None, TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION
+        to_joints, to_error = self._resolve_keypoint_joints(
+            segment.to_keypoint,
+            to_reference_sample,
+            to_allowed_configs,
+        )
         if to_joints is None:
-            return None, None
+            return None, None, to_error
 
         from_config = MgiConfigKey.identify_configuration_deg(from_joints, config_identifier)
         to_config = MgiConfigKey.identify_configuration_deg(to_joints, config_identifier)
         if from_config not in from_allowed_configs or to_config not in to_allowed_configs:
-            return None, None
-        return from_joints, to_joints
+            return None, None, TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION
+        return from_joints, to_joints, TrajectorySampleErrorCode.NONE
 
     def _compute_PTP_shortest_path(self, from_joints: list[float], to_joints: list[float]) -> list[float]:
         axis_limits = self.robot_model.get_axis_limits()
@@ -283,20 +349,8 @@ class TrajectoryBuilder:
         jerk_limits = TrajectoryBuilder._normalize_positive_limits(self.robot_model.get_axis_jerk_limits())
         return speed_limits, accel_limits, jerk_limits
 
-    def _resolve_effective_allowed_configs(self, segment: TrajectorySegment) -> set[MgiConfigKey]:
-        from_allowed = set(segment.from_keypoint.allowed_configs)
-        to_allowed = set(segment.to_keypoint.allowed_configs)
-        robot_allowed = self._get_robot_allowed_configs()
-        return robot_allowed & from_allowed & to_allowed
-
-    def _resolve_ptp_allowed_configs(
-        self,
-        segment: TrajectorySegment,
-    ) -> tuple[set[MgiConfigKey], set[MgiConfigKey], set[MgiConfigKey]]:
-        robot_allowed = self._get_robot_allowed_configs()
-        from_allowed = robot_allowed & set(segment.from_keypoint.allowed_configs)
-        to_allowed = robot_allowed & set(segment.to_keypoint.allowed_configs)
-        return from_allowed, to_allowed, (from_allowed | to_allowed)
+    def _resolve_effective_sample_allowed_configs(self) -> set[MgiConfigKey]:
+        return set(self._get_robot_allowed_configs())
 
     def _get_reference_joints_for_ik(self, previous_sample: TrajectorySample | None) -> list[float]:
         if previous_sample is not None and previous_sample.reachable:
@@ -535,7 +589,8 @@ class TrajectoryBuilder:
             joint_target=joints_6,
             mode=to_keypoint.mode,
             cubic_vectors=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
-            allowed_configs=[identified_config],
+            configuration_policy=ConfigurationPolicy.FORCED,
+            forced_config=identified_config,
             ptp_speed_percent=to_keypoint.ptp_speed_percent,
             linear_speed_mps=to_keypoint.linear_speed_mps,
         )
@@ -564,26 +619,24 @@ class TrajectoryBuilder:
         result.status = TrajectoryComputationStatus.SUCCESS
         result.mode = segment.to_keypoint.mode
 
-        # 1) Resolve allowed configurations for PTP endpoints independently.
-        #    This keeps PTP simple and allows start/end in different configs.
-        from_allowed_configs, to_allowed_configs, sample_allowed_configs = self._resolve_ptp_allowed_configs(segment)
-        if not from_allowed_configs or not to_allowed_configs:
-            result.status = TrajectoryComputationStatus.NO_COMMON_ALLOWED_CONFIGURATION
+        # 1) Resolve endpoint policy for start keypoint (strict, no fallback).
+        from_allowed_configs = self._resolve_allowed_configs_for_keypoint(segment.from_keypoint, previous_sample)
+        if not from_allowed_configs:
+            result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
             result.last_time = float(start_time_s)
             return result
 
         # 2) Resolve segment endpoints in joint space.
         config_identifier = self.robot_model.get_config_identifier()
 
-        from_joints, to_joints = self._resolve_PTP_segment_endpoints(
+        from_joints, to_joints, endpoint_error = self._resolve_PTP_segment_endpoints(
             segment,
             previous_sample,
             from_allowed_configs,
-            to_allowed_configs,
             config_identifier,
         )
         if from_joints is None or to_joints is None:
-            result.status = TrajectoryComputationStatus.POINT_UNREACHABLE
+            result.status = TrajectoryBuilder._status_from_sample_error(endpoint_error)
             result.last_time = float(start_time_s)
             return result
 
@@ -616,7 +669,7 @@ class TrajectoryBuilder:
             intervals,
             from_joints,
             joint_deltas_deg,
-            sample_allowed_configs,
+            self._resolve_effective_sample_allowed_configs(),
             config_identifier,
             result,
         )
@@ -663,10 +716,23 @@ class TrajectoryBuilder:
             result.status = TrajectoryComputationStatus.POINT_UNREACHABLE
             return result
 
-        effective_allowed_configs = self._resolve_effective_allowed_configs(segment)
+        from_allowed_configs = self._resolve_allowed_configs_for_keypoint(segment.from_keypoint, previous_segment_last_sample)
+        if not from_allowed_configs:
+            result = TrajectoryBuilder._new_empty_segment(start_time_s, segment.to_keypoint.mode)
+            result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
+            return result
+
+        if previous_segment_last_sample is not None and previous_segment_last_sample.reachable:
+            from_config = previous_segment_last_sample.configuration
+            if from_config is not None and from_config not in from_allowed_configs:
+                result = TrajectoryBuilder._new_empty_segment(start_time_s, segment.to_keypoint.mode)
+                result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
+                return result
+
+        effective_allowed_configs = self._resolve_effective_sample_allowed_configs()
         if not effective_allowed_configs:
             result = TrajectoryBuilder._new_empty_segment(start_time_s, segment.to_keypoint.mode)
-            result.status = TrajectoryComputationStatus.NO_COMMON_ALLOWED_CONFIGURATION
+            result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
             return result
 
         p0 = [from_pose[0], from_pose[1], from_pose[2]]
@@ -704,6 +770,7 @@ class TrajectoryBuilder:
         dC = TrajectoryBuilder._shortest_angle_delta_deg(from_pose[5], to_pose[5])
 
         previous_sample = previous_segment_last_sample
+        to_allowed_configs: set[MgiConfigKey] | None = None
         for i in range(1, intervals + 1):
             time_s = start_time_s + i * self.sample_dt_s
             linear_t = i / intervals
@@ -717,12 +784,17 @@ class TrajectoryBuilder:
                 TrajectoryBuilder._wrap_angle_deg(from_pose[5] + dC * smooth_t5),
             ]
 
+            sample_allowed_configs = effective_allowed_configs
+            if i == intervals:
+                to_allowed_configs = self._resolve_allowed_configs_for_keypoint(segment.to_keypoint, previous_sample)
+                sample_allowed_configs = to_allowed_configs
+
             sample = self._build_sample_from_cartesian(
                 time_s,
                 xyz,
                 orientation_abc,
                 previous_sample,
-                effective_allowed_configs,
+                sample_allowed_configs,
                 speed_limits_deg_s,
                 accel_limits_deg_s2,
                 jerk_limits_deg_s3,
@@ -734,6 +806,9 @@ class TrajectoryBuilder:
 
             if self._should_stop_on_error(result.status):
                 break
+
+        if to_allowed_configs is not None and not to_allowed_configs and result.status == TrajectoryComputationStatus.SUCCESS:
+            result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
 
         generated_intervals = len(result.samples)
         result.duration = generated_intervals * self.sample_dt_s

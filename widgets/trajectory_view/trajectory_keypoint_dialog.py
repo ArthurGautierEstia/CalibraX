@@ -35,7 +35,12 @@ from utils.trajectory_status import (
     join_issue_messages,
 )
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
-from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
+from models.trajectory_keypoint import (
+    ConfigurationPolicy,
+    KeypointMotionMode,
+    KeypointTargetType,
+    TrajectoryKeypoint,
+)
 from models.trajectory_result import TrajectoryResult
 from models.robot_model import RobotModel
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
@@ -110,7 +115,8 @@ class TrajectoryKeypointDialog(QDialog):
         self._context_edited_row_index: int | None = None
         self._context_trajectory_result: TrajectoryResult | None = None
 
-        self.config_checkboxes: list[QCheckBox] = []
+        self.config_policy_combo = QComboBox()
+        self.forced_config_combo = QComboBox()
         self.config_hint_label = QLabel("En mode articulaire, la configuration est deduite automatiquement depuis J1..J6.")
         self.current_segment_status_label = QLabel("")
         self.trajectory_status_label = QLabel("")
@@ -248,13 +254,16 @@ class TrajectoryKeypointDialog(QDialog):
         config_layout = QVBoxLayout()
 
         config_grid = QGridLayout()
-        for idx, key in enumerate(self.CONFIG_ORDER):
-            row = 0 if idx < 4 else 1
-            col = idx % 4
-            cb = QCheckBox(key.name)
-            cb.setChecked(True)
-            self.config_checkboxes.append(cb)
-            config_grid.addWidget(cb, row, col)
+        config_grid.addWidget(QLabel("Politique"), 0, 0)
+        self.config_policy_combo.addItem("Auto", ConfigurationPolicy.AUTO.value)
+        self.config_policy_combo.addItem("Current branch", ConfigurationPolicy.CURRENT_BRANCH.value)
+        self.config_policy_combo.addItem("Forced", ConfigurationPolicy.FORCED.value)
+        config_grid.addWidget(self.config_policy_combo, 0, 1)
+
+        config_grid.addWidget(QLabel("Config forcee"), 1, 0)
+        for key in self.CONFIG_ORDER:
+            self.forced_config_combo.addItem(key.name, key.name)
+        config_grid.addWidget(self.forced_config_combo, 1, 1)
         config_layout.addLayout(config_grid)
 
         self.config_hint_label.setWordWrap(True)
@@ -342,8 +351,8 @@ class TrajectoryKeypointDialog(QDialog):
         self.use_home_target_btn.clicked.connect(self._on_use_home_target_clicked)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         self.speed_spin.valueChanged.connect(self._on_speed_changed)
-        for cb in self.config_checkboxes:
-            cb.toggled.connect(self._on_config_checkbox_toggled)
+        self.config_policy_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
+        self.forced_config_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
         for spin in self.cubic_vector_1:
             spin.valueChanged.connect(self._on_cubic_vectors_changed)
         for spin in self.cubic_vector_2:
@@ -387,9 +396,9 @@ class TrajectoryKeypointDialog(QDialog):
             self._set_cartesian_error("Aucune solution valide pour la target cartesienne.")
             return []
 
-        selected_allowed = set(self._selected_allowed_configs())
+        selected_allowed = self._resolve_allowed_configs_for_preview()
         if not selected_allowed:
-            self._set_cartesian_error("Aucune configuration autorisee selectionnee.")
+            self._set_cartesian_error("Aucune configuration autorisee avec la politique selectionnee.")
             return []
 
         allowed_valid = {
@@ -484,16 +493,51 @@ class TrajectoryKeypointDialog(QDialog):
     def _current_mode(self) -> KeypointMotionMode:
         return KeypointMotionMode(self.mode_combo.currentText())
 
-    def _checkbox_for_config(self, key: MgiConfigKey) -> QCheckBox:
-        idx = self.CONFIG_ORDER.index(key)
-        return self.config_checkboxes[idx]
+    def _current_configuration_policy(self) -> ConfigurationPolicy:
+        raw = str(self.config_policy_combo.currentData())
+        try:
+            return ConfigurationPolicy(raw)
+        except ValueError:
+            return ConfigurationPolicy.AUTO
 
-    def _selected_allowed_configs(self) -> list[MgiConfigKey]:
-        selected: list[MgiConfigKey] = []
-        for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
-            if cb.isChecked():
-                selected.append(key)
-        return selected
+    def _selected_forced_config(self) -> MgiConfigKey | None:
+        raw = self.forced_config_combo.currentData()
+        if not isinstance(raw, str):
+            return None
+        try:
+            return MgiConfigKey[raw]
+        except KeyError:
+            return None
+
+    def _resolve_allowed_configs_for_preview(self) -> set[MgiConfigKey]:
+        robot_allowed = set(self.robot_model.get_allowed_configurations())
+        if not robot_allowed:
+            return set()
+
+        if self._current_target_type() == KeypointTargetType.JOINT:
+            joint_target = self.joint_target_widget.get_all_joints()
+            deduced = TrajectoryKeypoint.identify_config_from_joint_target(
+                joint_target,
+                self.robot_model.get_config_identifier(),
+            )
+            return ({deduced} & robot_allowed)
+
+        policy = self._current_configuration_policy()
+        if policy == ConfigurationPolicy.AUTO:
+            return robot_allowed
+
+        if policy == ConfigurationPolicy.CURRENT_BRANCH:
+            reference_joints = [float(v) for v in self.joint_target_widget.get_all_joints()[:6]]
+            while len(reference_joints) < 6:
+                reference_joints.append(0.0)
+            config_identifier = self.robot_model.get_config_identifier()
+            current_branch = MgiConfigKey.identify_configuration_deg(reference_joints, config_identifier)
+            return ({current_branch} & robot_allowed)
+
+        forced = self._selected_forced_config()
+        if forced is None:
+            return set()
+        return ({forced} & robot_allowed)
 
     @staticmethod
     def _solution_status_text(status: MgiResultStatus) -> str:
@@ -517,9 +561,7 @@ class TrajectoryKeypointDialog(QDialog):
             return
 
         mgi_result = self.robot_model.compute_ik_target(target)
-        allowed_configs = set(self._selected_allowed_configs())
-        if not allowed_configs:
-            allowed_configs = {self.CONFIG_ORDER[0]}
+        allowed_configs = self._resolve_allowed_configs_for_preview()
 
         for config_index, config_key in enumerate(self.CONFIG_ORDER):
             solution = mgi_result.get_solution(config_key)
@@ -826,7 +868,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _on_joint_target_changed(self, *_args) -> None:
         if self._current_target_type() == KeypointTargetType.JOINT:
-            self._sync_joint_mode_configs()
+            self._sync_joint_mode_policy()
         self._emit_ghost_update()
 
     def _on_cartesian_target_changed(self, *_args) -> None:
@@ -834,18 +876,9 @@ class TrajectoryKeypointDialog(QDialog):
             self._refresh_cartesian_solutions_table()
             self._emit_ghost_update()
 
-    def _on_config_checkbox_toggled(self, _checked: bool) -> None:
+    def _on_configuration_policy_changed(self, _idx: int) -> None:
+        self._update_config_policy_editor_state()
         if self._current_target_type() != KeypointTargetType.CARTESIAN:
-            return
-
-        selected = self._selected_allowed_configs()
-        if not selected:
-            cb = self._checkbox_for_config(self.CONFIG_ORDER[0])
-            cb.blockSignals(True)
-            cb.setChecked(True)
-            cb.blockSignals(False)
-            self._refresh_cartesian_solutions_table()
-            self._emit_ghost_update()
             return
 
         self._refresh_cartesian_solutions_table()
@@ -857,31 +890,44 @@ class TrajectoryKeypointDialog(QDialog):
     def _on_cubic_vectors_changed(self, *_args) -> None:
         self._emit_live_preview()
 
-    def _sync_joint_mode_configs(self) -> None:
+    def _sync_joint_mode_policy(self) -> None:
         joint_target = self.joint_target_widget.get_all_joints()
         deduced = TrajectoryKeypoint.identify_config_from_joint_target(
             joint_target,
             self.robot_model.get_config_identifier(),
         )
-        for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
-            cb.blockSignals(True)
-            cb.setChecked(key == deduced)
-            cb.blockSignals(False)
+        forced_idx = self.forced_config_combo.findData(deduced.name)
+        if forced_idx >= 0:
+            self.forced_config_combo.blockSignals(True)
+            self.forced_config_combo.setCurrentIndex(forced_idx)
+            self.forced_config_combo.blockSignals(False)
+        policy_idx = self.config_policy_combo.findData(ConfigurationPolicy.FORCED.value)
+        if policy_idx >= 0:
+            self.config_policy_combo.blockSignals(True)
+            self.config_policy_combo.setCurrentIndex(policy_idx)
+            self.config_policy_combo.blockSignals(False)
+
+    def _update_config_policy_editor_state(self) -> None:
+        is_joint = self._current_target_type() == KeypointTargetType.JOINT
+        policy = self._current_configuration_policy()
+
+        self.config_policy_combo.setEnabled(not is_joint)
+        self.forced_config_combo.setEnabled((not is_joint) and policy == ConfigurationPolicy.FORCED)
 
     def _update_target_editors(self) -> None:
         is_joint = self._current_target_type() == KeypointTargetType.JOINT
         self.target_stack.setCurrentIndex(1 if is_joint else 0)
 
-        for cb in self.config_checkboxes:
-            cb.setEnabled(not is_joint)
         self.config_hint_label.setText(
             "En mode articulaire, la configuration est deduite automatiquement depuis J1..J6."
-            if is_joint else ""
+            if is_joint
+            else "Auto: pas de contrainte locale. Current branch: branche issue du sample precedent. Forced: configuration explicite."
         )
+        self._update_config_policy_editor_state()
 
         if is_joint:
             self._set_cartesian_error("")
-            self._sync_joint_mode_configs()
+            self._sync_joint_mode_policy()
             self.cartesian_solutions_table_left.setRowCount(0)
             self.cartesian_solutions_table_right.setRowCount(0)
         else:
@@ -945,9 +991,18 @@ class TrajectoryKeypointDialog(QDialog):
         self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_mm[0]))
         self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_mm[1]))
 
-        allowed = set(keypoint.allowed_configs)
-        for key, cb in zip(self.CONFIG_ORDER, self.config_checkboxes):
-            cb.setChecked(key in allowed)
+        policy_idx = self.config_policy_combo.findData(keypoint.configuration_policy.value)
+        if policy_idx >= 0:
+            self.config_policy_combo.blockSignals(True)
+            self.config_policy_combo.setCurrentIndex(policy_idx)
+            self.config_policy_combo.blockSignals(False)
+
+        forced_name = keypoint.forced_config.name if keypoint.forced_config is not None else MgiConfigKey.FUN.name
+        forced_idx = self.forced_config_combo.findData(forced_name)
+        if forced_idx >= 0:
+            self.forced_config_combo.blockSignals(True)
+            self.forced_config_combo.setCurrentIndex(forced_idx)
+            self.forced_config_combo.blockSignals(False)
 
         self._update_target_editors()
         self._update_cubic_visibility()
@@ -962,6 +1017,18 @@ class TrajectoryKeypointDialog(QDialog):
         self._store_current_speed()
         target_type = self._current_target_type()
         mode = self._current_mode()
+        configuration_policy = self._current_configuration_policy()
+        forced_config = self._selected_forced_config()
+
+        if target_type == KeypointTargetType.JOINT:
+            deduced = TrajectoryKeypoint.identify_config_from_joint_target(
+                self.joint_target_widget.get_all_joints(),
+                self.robot_model.get_config_identifier(),
+            )
+            configuration_policy = ConfigurationPolicy.FORCED
+            forced_config = deduced
+        elif configuration_policy != ConfigurationPolicy.FORCED:
+            forced_config = None
 
         return TrajectoryKeypoint(
             target_type=target_type,
@@ -976,7 +1043,8 @@ class TrajectoryKeypointDialog(QDialog):
                 self.cubic_amplitude_1.value(),
                 self.cubic_amplitude_2.value(),
             ],
-            allowed_configs=self._selected_allowed_configs(),
+            configuration_policy=configuration_policy,
+            forced_config=forced_config,
             ptp_speed_percent=self._ptp_speed_percent,
             linear_speed_mps=self._linear_speed_mps,
         )

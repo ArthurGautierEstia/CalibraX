@@ -26,7 +26,12 @@ from PyQt6.QtWidgets import (
 import utils.math_utils as math_utils
 from utils.trajectory_constants import LINEAR_TANGENT_RATIO
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
-from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
+from models.trajectory_keypoint import (
+    ConfigurationPolicy,
+    KeypointMotionMode,
+    KeypointTargetType,
+    TrajectoryKeypoint,
+)
 from models.robot_model import RobotModel
 from models.trajectory_result import TrajectoryResult
 from widgets.trajectory_view.trajectory_keypoint_dialog import TrajectoryKeypointDialog
@@ -479,12 +484,26 @@ class TrajectoryConfigWidget(QWidget):
             return f"{keypoint.speed:.1f} %"
         return f"{keypoint.speed:.3f} m/s"
 
+    @staticmethod
+    def _configuration_text(keypoint: TrajectoryKeypoint) -> str:
+        if keypoint.target_type == KeypointTargetType.JOINT:
+            forced = keypoint.forced_config.name if keypoint.forced_config is not None else "?"
+            return f"JOINT({forced})"
+        if keypoint.configuration_policy == ConfigurationPolicy.AUTO:
+            return "AUTO"
+        if keypoint.configuration_policy == ConfigurationPolicy.CURRENT_BRANCH:
+            return "CURRENT_BRANCH"
+        if keypoint.configuration_policy == ConfigurationPolicy.FORCED:
+            forced = keypoint.forced_config.name if keypoint.forced_config is not None else "?"
+            return f"FORCED({forced})"
+        return "AUTO"
+
     def _refresh_table(self) -> None:
         self.keypoints_table.setRowCount(0)
         for idx, keypoint in enumerate(self._keypoints):
             self.keypoints_table.insertRow(idx)
             target_values = self._keypoint_target_values(keypoint)
-            configs_txt = ", ".join(cfg.name for cfg in keypoint.allowed_configs)
+            configs_txt = self._configuration_text(keypoint)
 
             values = [
                 str(idx + 1),
