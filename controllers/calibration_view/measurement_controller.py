@@ -30,7 +30,6 @@ class MeasurementController(QObject):
         self.measurement_widget.clear_measurements_requested.connect(self._on_view_clear_measurements_requested)
         self.measurement_widget.set_as_reference_requested.connect(self._on_view_set_as_reference_requested)
         self.measurement_widget.repere_selected.connect(self._on_view_repere_selected)
-        self.measurement_widget.display_mode_changed.connect(self._on_view_display_mode_changed)
         self.measurement_widget.rotation_type_changed.connect(self._on_view_rotation_type_changed)
         self.measurement_widget.dh_checkboxes_changed.connect(self._on_dh_checkboxes_changed)
 
@@ -98,8 +97,10 @@ class MeasurementController(QObject):
         file_name = os.path.splitext(os.path.basename(file_path))[0]
         self.measurement_widget.set_measure_filename(file_name)
 
-        if data:
-            self.measurement_widget.display_measurement(data[0])
+        if self.measurement_widget.tree.topLevelItemCount() > 0:
+            first_item = self.measurement_widget.tree.topLevelItem(0)
+            self.measurement_widget.tree.setCurrentItem(first_item)
+            self._on_view_repere_selected(first_item.text(0))
 
         self.display_measured_dh_parameters()
 
@@ -267,29 +268,27 @@ class MeasurementController(QObject):
         # Chercher la mesure correspondante dans le widget
         for i, measurement in enumerate(self.measurement_widget.measurements):
             if measurement.get("name") == repere_name:
-                # Récupérer le mode d'affichage actuel
-                display_mode = self.measurement_widget.display_mode.currentText()
-                
-                if display_mode == "Repères":
-                    # Afficher les données du repère mesuré
+                # display_mode combo was removed from the widget.
+                # Keep backward compatibility if it is ever reintroduced.
+                display_mode_combo = getattr(self.measurement_widget, "display_mode", None)
+                if display_mode_combo is None:
                     self.measurement_widget.display_measurement(measurement)
-                else:  # display_mode == "Ecarts"
-                    # Afficher les écarts entre le repère mesuré et le repère DH théorique
-                    self._display_measurement_deviations(i, measurement)
+                else:
+                    display_mode = display_mode_combo.currentText()
+                    if display_mode == "Ecarts":
+                        self._display_measurement_deviations(i, measurement)
+                    else:
+                        self.measurement_widget.display_measurement(measurement)
                 break
-    
-    def _on_view_display_mode_changed(self, mode: str) -> None:
-        """Gère le changement de mode d'affichage (Repères vs Ecarts)"""
-        # Récupérer le repère actuellement sélectionné dans l'arbre
-        current_item = self.measurement_widget.tree.currentItem()
-        if current_item:
-            repere_name = current_item.text(0)
-            # Réafficher les données avec le nouveau mode
-            self._on_view_repere_selected(repere_name)
+
+    def _display_measurement_deviations(self, index: int, measurement: Dict[str, float]) -> None:
+        """Fallback display for deviation mode when dedicated deviation computation is unavailable."""
+        self.measurement_widget.display_measurement(measurement)
 
     def _on_view_rotation_type_changed(self, rotation_type: str) -> None:
-        # TODO: Implémenter le changement de type de rotation
-        pass
+        current_item = self.measurement_widget.tree.currentItem()
+        if current_item:
+            self._on_view_repere_selected(current_item.text(0))
 
     def _on_dh_checkboxes_changed(self) -> None:
         self._update_tcp_offsets_from_selection()

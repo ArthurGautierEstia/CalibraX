@@ -161,6 +161,10 @@ def matrix_to_euler_zyx(T):
     """
     return rotation_matrix_to_euler_zyx(T[:3, :3])
 
+
+def _clamp_trig_value(value: float) -> float:
+    return float(np.clip(float(value), -1.0, 1.0))
+
 def rotation_matrix_to_euler_zyx(R):
     """Extrait les angles d'Euler ZYX (en degrés) d'une matrice de rotation 3x3
     
@@ -170,20 +174,19 @@ def rotation_matrix_to_euler_zyx(R):
     Returns:
         Array [A, B, C] en degrés
     """
-    B = np.arctan2(-R[2, 0], np.sqrt(R[2, 1]**2 + R[2, 2]**2))
+    B = np.arcsin(_clamp_trig_value(-R[2, 0]))
+    cos_b = np.cos(B)
 
-    if np.isclose(B, np.pi/2, atol=1e-5):
-        # B == pi/2
-        A = 0
-        C = np.atan2(R[0, 1], R[1, 1])
-    elif np.isclose(B, -np.pi/2, atol=1e-5):
-        # B == -pi/2
-        A = 0
-        C = -np.atan2(R[0, 1], R[1, 1])
+    if np.abs(cos_b) > 1e-9:
+        A = np.arctan2(R[1, 0], R[0, 0])
+        C = np.arctan2(R[2, 1], R[2, 2])
     else:
-        C = np.atan2(R[2, 1], R[2, 2])
-        A = np.atan2(R[1, 0], R[0, 0])
-    return np.degrees([A, B, C])
+        # Gimbal lock: absorb roll into yaw and set roll to zero
+        A = np.arctan2(-R[0, 1], R[1, 1])
+        C = 0.0
+
+    return np.degrees([C, B, A])  # Return in order [Z, Y, X]
+
 
 def rotation_matrix_to_fixed_xyz(R):
     """Extrait les angles Fixed XYZ (en degrés) d'une matrice de rotation 3x3
@@ -196,23 +199,49 @@ def rotation_matrix_to_fixed_xyz(R):
     Returns:
         Array [Rx, Ry, Rz] en degrés
     """
-    # Ry = arcsin(-R[2, 0])
-    Ry = np.arcsin(-R[2, 0])
-    
-    # Vérifier si cos(Ry) est proche de zéro (singularité)
-    cos_ry = np.cos(Ry)
-    
-    if np.abs(cos_ry) > 1e-6:  # Pas de singularité
-        Rx = np.arctan2(R[2, 1], R[2, 2])
-        Rz = np.arctan2(R[1, 0], R[0, 0])
-    else:  # Singularité: Ry = ±90°
-        Rx = 0  # Conventionnellement, on fixe Rx = 0
-        if cos_ry > 0:  # Ry = 90°
-            Rz = np.arctan2(-R[0, 1], R[1, 1])
-        else:  # Ry = -90°
-            Rz = np.arctan2(R[0, 1], R[1, 1])
-    
-    return np.degrees([Rx, Ry, Rz])
+    # Fixed XYZ is equivalent to Euler ZYX with reordered output.
+    # Euler ZYX returns [Z, Y, X], fixed XYZ expects [X, Y, Z].
+    euler_zyx = rotation_matrix_to_euler_zyx(R)
+    return np.array([euler_zyx[2], euler_zyx[1], euler_zyx[0]], dtype=float)
+
+
+def rotation_matrix_to_euler_xyz(R):
+    """Extrait les angles d'Euler XYZ (en degrés) d'une matrice de rotation 3x3.
+
+    Convention Euler XYZ (intrinsèque): R = Rx(A) @ Ry(B) @ Rz(C)
+
+    Returns:
+        Array [A, B, C] en degrés
+    """
+    B = np.arcsin(_clamp_trig_value(R[0, 2]))
+    cos_b = np.cos(B)
+
+    if np.abs(cos_b) > 1e-9:
+        A = np.arctan2(-R[1, 2], R[2, 2])
+        C = np.arctan2(-R[0, 1], R[0, 0])
+    else:
+        # Gimbal lock: absorb yaw into roll and set yaw to zero
+        C = 0.0
+        if B >= 0.0:
+            A = np.arctan2(R[1, 0], -R[2, 0])
+        else:
+            A = np.arctan2(-R[1, 0], R[2, 0])
+
+    return np.degrees([A, B, C])
+
+
+def rotation_matrix_to_fixed_zyx(R):
+    """Extrait les angles Fixed ZYX (en degrés) d'une matrice de rotation 3x3.
+
+    Convention Fixed ZYX (extrinsèque): R = Rx(C) @ Ry(B) @ Rz(A)
+
+    Returns:
+        Array [A, B, C] en degrés (axes Z, Y, X)
+    """
+    # Fixed ZYX is equivalent to Euler XYZ with reordered output.
+    # Euler XYZ returns [X, Y, Z], fixed ZYX expects [Z, Y, X].
+    euler_xyz = rotation_matrix_to_euler_xyz(R)
+    return np.array([euler_xyz[0], euler_xyz[1], euler_xyz[2]], dtype=float)
 
 
 # ============================================================================

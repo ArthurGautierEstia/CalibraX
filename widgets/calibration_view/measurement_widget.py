@@ -78,7 +78,6 @@ class MeasurementWidget(QWidget):
     clear_measurements_requested = pyqtSignal()
     set_as_reference_requested = pyqtSignal()
     repere_selected = pyqtSignal(str)
-    display_mode_changed = pyqtSignal(str)
     rotation_type_changed = pyqtSignal(str)
     dh_checkboxes_changed = pyqtSignal()
 
@@ -101,14 +100,6 @@ class MeasurementWidget(QWidget):
         self.lineEdit_measure_filename.setReadOnly(False)
         self.lineEdit_measure_filename.setPlaceholderText("Fichier de mesure")
         top_layout.addWidget(self.lineEdit_measure_filename, 0, 0)
-
-        label_1 = QLabel("Afficher : ")
-        label_1.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-        self.display_mode = QComboBox()
-        self.display_mode.addItems(["Repères", "Ecarts"])
-        self.display_mode.currentTextChanged.connect(self.display_mode_changed)
-        top_layout.addWidget(label_1, 0, 1)
-        top_layout.addWidget(self.display_mode, 0, 2)
 
         label_2 = QLabel("Convention d'angles : ")
         label_2.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
@@ -197,11 +188,11 @@ class MeasurementWidget(QWidget):
         self.setLayout(main_layout)
 
         buttons2_layout = QHBoxLayout()
-        self.btn_check_all = QPushButton("Tout activer")
+        self.btn_check_all = QPushButton("Tout séléctionner")
         self.btn_check_all.clicked.connect(self.check_all_dh_checkboxes)
         buttons2_layout.addWidget(self.btn_check_all)
 
-        self.btn_uncheck_all = QPushButton("Tout désactiver")
+        self.btn_uncheck_all = QPushButton("Tout désélectionner")
         self.btn_uncheck_all.clicked.connect(self.uncheck_all_dh_checkboxes)
         buttons2_layout.addWidget(self.btn_uncheck_all)
 
@@ -230,6 +221,17 @@ class MeasurementWidget(QWidget):
         item = QTableWidgetItem(value)
         item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
         return item
+
+    def _rotation_matrix_to_display_angles(self, R: np.ndarray) -> np.ndarray:
+        rotation_type = self.rotation_type.currentText()
+
+        if rotation_type == "XYZ Fixed Angles":
+            return np.asarray(math_utils.rotation_matrix_to_fixed_xyz(R), dtype=float)
+        if rotation_type == "XYZ Euler Angles":
+            return np.asarray(math_utils.rotation_matrix_to_euler_xyz(R), dtype=float)
+        if rotation_type == "ZYX Fixed Angles":
+            return np.asarray(math_utils.rotation_matrix_to_fixed_zyx(R), dtype=float)
+        return np.asarray(math_utils.rotation_matrix_to_euler_zyx(R), dtype=float)
 
     def _format_value(self, value: float, decimals: int = 4) -> str:
         formatted = f"{value:.{decimals}f}"
@@ -262,15 +264,9 @@ class MeasurementWidget(QWidget):
         Y = delta_T[1, 3]
         Z = delta_T[2, 3]
 
-        r11, _, _ = delta_T[0, 0], delta_T[0, 1], delta_T[0, 2]
-        r21, _, _ = delta_T[1, 0], delta_T[1, 1], delta_T[1, 2]
-        r31, r32, r33 = delta_T[2, 0], delta_T[2, 1], delta_T[2, 2]
-
-        ry = math.atan2(-r31, math.sqrt(r11**2 + r21**2))
-        rx = math.atan2(r32, r33)
-        rz = math.atan2(r21, r11)
-
-        RX, RY, RZ = math.degrees(rx), math.degrees(ry), math.degrees(rz)
+        R = delta_T[:3, :3]
+        angles = self._rotation_matrix_to_display_angles(R)
+        RX, RY, RZ = float(angles[0]), float(angles[1]), float(angles[2])
 
         self.table_me.setItem(0, 0, self._make_centered_item(self._format_value(X, 4)))
         self.table_me.setItem(0, 1, self._make_centered_item(self._format_value(Y, 4)))
@@ -299,10 +295,6 @@ class MeasurementWidget(QWidget):
             Y = float(T[1, 3])
             Z = float(T[2, 3])
             R = T[:3, :3]
-            angles = math_utils.rotation_matrix_to_fixed_xyz(R)
-            A = float(angles[0])
-            B = float(angles[1])
-            C = float(angles[2])
         else:
             X = measurement.get("X", 0)
             Y = measurement.get("Y", 0)
@@ -344,6 +336,11 @@ class MeasurementWidget(QWidget):
                 ])
 
                 R = Rz @ Ry @ Rx
+
+        angles = self._rotation_matrix_to_display_angles(R)
+        A = float(angles[0])
+        B = float(angles[1])
+        C = float(angles[2])
 
         self.table_me.setItem(0, 0, self._make_centered_item(self._format_value(X, 4)))
         self.table_me.setItem(0, 1, self._make_centered_item(self._format_value(Y, 4)))
