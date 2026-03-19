@@ -73,6 +73,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.target_type_combo = QComboBox()
         self.use_current_target_btn = QPushButton("Valeurs courantes")
         self.use_home_target_btn = QPushButton("Position home")
+        self.use_initial_target_btn = QPushButton("Position initiale")
         self.target_stack = QStackedWidget()
         self.main_tabs = QTabWidget()
         self.target_tab = QWidget()
@@ -114,6 +115,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._context_keypoints: list[TrajectoryKeypoint] = []
         self._context_edited_row_index: int | None = None
         self._context_trajectory_result: TrajectoryResult | None = None
+        self._initial_keypoint: TrajectoryKeypoint | None = None
 
         self.config_policy_combo = QComboBox()
         self.forced_config_combo = QComboBox()
@@ -169,6 +171,7 @@ class TrajectoryKeypointDialog(QDialog):
         target_actions_layout = QHBoxLayout()
         target_actions_layout.addWidget(self.use_current_target_btn)
         target_actions_layout.addWidget(self.use_home_target_btn)
+        target_actions_layout.addWidget(self.use_initial_target_btn)
         target_actions_layout.addStretch()
         target_tab_layout.addLayout(target_actions_layout)
         target_tab_layout.addWidget(self.target_stack)
@@ -349,6 +352,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.target_type_combo.currentIndexChanged.connect(self._on_target_type_changed)
         self.use_current_target_btn.clicked.connect(self._on_use_current_target_clicked)
         self.use_home_target_btn.clicked.connect(self._on_use_home_target_clicked)
+        self.use_initial_target_btn.clicked.connect(self._on_use_initial_target_clicked)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         self.speed_spin.valueChanged.connect(self._on_speed_changed)
         self.config_policy_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
@@ -386,6 +390,18 @@ class TrajectoryKeypointDialog(QDialog):
             return
 
         self.joint_target_widget.set_all_joints(home_joints)
+        self._emit_ghost_update()
+
+    def _on_use_initial_target_clicked(self) -> None:
+        if self._initial_keypoint is None:
+            return
+
+        if self._current_target_type() == KeypointTargetType.CARTESIAN:
+            self.cartesian_target_widget.set_all_cartesian(list(self._initial_keypoint.cartesian_target))
+            self._emit_ghost_update()
+            return
+
+        self.joint_target_widget.set_all_joints(list(self._initial_keypoint.joint_target))
         self._emit_ghost_update()
 
     def _compute_joint_values_from_cartesian_target(self) -> list[float]:
@@ -976,6 +992,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def load_keypoint(self, keypoint: TrajectoryKeypoint) -> None:
         self._suspend_preview_emission = True
+        self._initial_keypoint = keypoint.clone()
         target_type_idx = self.target_type_combo.findData(keypoint.target_type.value)
         if target_type_idx >= 0:
             self.target_type_combo.blockSignals(True)
