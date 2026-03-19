@@ -1,4 +1,6 @@
 import math
+import bisect
+from dataclasses import dataclass
 
 from models.robot_model import RobotModel
 from models.trajectory_keypoint import (
@@ -23,6 +25,20 @@ from utils.mgi import MGI, MgiConfigKey, MgiResult, MgiResultItem, MgiResultStat
 from utils.trajectory_constants import LINEAR_TANGENT_RATIO
 
 
+@dataclass
+class _BezierSegmentDescriptor:
+    segment: TrajectorySegment
+    from_pose: list[float]
+    to_pose: list[float]
+    coeffs: Bezier3Coefficients3D
+    t_out: list[float]
+    t_in: list[float]
+    arc_length_mm: float
+    speed_mmps: float
+    arc_lut_t: list[float]
+    arc_lut_s: list[float]
+
+
 class TrajectoryBuilder:
     DEFAULT_SAMPLE_DT_S = 0.004  # 4 ms
     DEFAULT_ARC_LENGTH_SAMPLES = 200
@@ -36,6 +52,8 @@ class TrajectoryBuilder:
     CONFIG_JUMP_SPEED_FACTOR = 8.0
     CONFIG_JUMP_MIN_DELTA_DEG = 45.0
     CONFIG_JUMP_MIN_SPEED_DEG_S = 2_000.0
+    SUPER_CHAIN_COLLINEAR_ANGLE_TOL_DEG = 0.2
+    SUPER_CHAIN_MIN_VECTOR_NORM = 1e-6
 
     def __init__(
         self,
@@ -326,6 +344,187 @@ class TrajectoryBuilder:
         # intervals = T/dT
         intervals = int(math.ceil(theoretical_duration_s / sample_dt_s))
         return min(max(1, intervals), TrajectoryBuilder.MAX_SAMPLES_PER_SEGMENT)
+
+    @staticmethod
+    def _is_lin_or_cubic_mode(mode: KeypointMotionMode) -> bool:
+        return mode in (KeypointMotionMode.LINEAR, KeypointMotionMode.CUBIC)
+
+    @staticmethod
+    def _build_arc_length_lut(
+        coeffs: Bezier3Coefficients3D,
+        samples_count: int = DEFAULT_ARC_LENGTH_SAMPLES,
+    ) -> tuple[list[float], list[float]]:
+        if samples_count < 2:
+            samples_count = 2
+        t_values = [0.0]
+        s_values = [0.0]
+        prev = coeffs.point(0.0)
+        cumulative = 0.0
+        for i in range(1, samples_count + 1):
+            t = i / samples_count
+            p = coeffs.point(t)
+            cumulative += math_utils.norm3(p[0] - prev[0], p[1] - prev[1], p[2] - prev[2])
+            t_values.append(float(t))
+            s_values.append(float(cumulative))
+            prev = p
+        return t_values, s_values
+
+    @staticmethod
+    def _distance_to_bezier_parameter(
+        arc_lut_t: list[float],
+        arc_lut_s: list[float],
+        target_distance_mm: float,
+    ) -> float:
+        if not arc_lut_t or not arc_lut_s or len(arc_lut_t) != len(arc_lut_s):
+            return 0.0
+        if target_distance_mm <= 0.0:
+            return 0.0
+        total_length = float(arc_lut_s[-1])
+        if total_length <= TrajectoryBuilder._EPS:
+            return 0.0
+        if target_distance_mm >= total_length:
+            return 1.0
+
+        idx = bisect.bisect_left(arc_lut_s, float(target_distance_mm))
+        if idx <= 0:
+            return float(arc_lut_t[0])
+        if idx >= len(arc_lut_s):
+            return float(arc_lut_t[-1])
+
+        s0 = float(arc_lut_s[idx - 1])
+        s1 = float(arc_lut_s[idx])
+        t0 = float(arc_lut_t[idx - 1])
+        t1 = float(arc_lut_t[idx])
+        ds = s1 - s0
+        if abs(ds) <= TrajectoryBuilder._EPS:
+            return t0
+        alpha = (float(target_distance_mm) - s0) / ds
+        return t0 + (t1 - t0) * alpha
+
+    @staticmethod
+    def _harmonic_weighted_speed_mmps(descriptors: list[_BezierSegmentDescriptor]) -> float:
+        total_distance = 0.0
+        weighted_time = 0.0
+        for descriptor in descriptors:
+            distance = max(0.0, float(descriptor.arc_length_mm))
+            if distance <= TrajectoryBuilder._EPS:
+                continue
+            speed = float(descriptor.speed_mmps)
+            if speed <= TrajectoryBuilder._EPS:
+                return 0.0
+            total_distance += distance
+            weighted_time += distance / speed
+        if total_distance <= TrajectoryBuilder._EPS or weighted_time <= TrajectoryBuilder._EPS:
+            return 0.0
+        return total_distance / weighted_time
+
+    @staticmethod
+    def _are_vectors_collinear_opposite(
+        a: list[float],
+        b: list[float],
+        angle_tol_deg: float,
+    ) -> bool:
+        norm_a = math_utils.vector_norm3(a)
+        norm_b = math_utils.vector_norm3(b)
+        if norm_a <= TrajectoryBuilder.SUPER_CHAIN_MIN_VECTOR_NORM:
+            return False
+        if norm_b <= TrajectoryBuilder.SUPER_CHAIN_MIN_VECTOR_NORM:
+            return False
+        na = [float(a[0]) / norm_a, float(a[1]) / norm_a, float(a[2]) / norm_a]
+        nb = [float(b[0]) / norm_b, float(b[1]) / norm_b, float(b[2]) / norm_b]
+        dot = max(-1.0, min(1.0, na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2]))
+        cos_tol = math.cos(math.radians(max(0.0, float(angle_tol_deg))))
+        return dot <= -cos_tol
+
+    def _build_bezier_segment_descriptor(self, segment: TrajectorySegment) -> _BezierSegmentDescriptor | None:
+        if not TrajectoryBuilder._is_lin_or_cubic_mode(segment.to_keypoint.mode):
+            return None
+
+        from_pose = self._resolve_keypoint_pose(segment.from_keypoint)
+        to_pose = self._resolve_keypoint_pose(segment.to_keypoint)
+        if from_pose is None or to_pose is None:
+            return None
+
+        p0 = [float(from_pose[0]), float(from_pose[1]), float(from_pose[2])]
+        p3 = [float(to_pose[0]), float(to_pose[1]), float(to_pose[2])]
+        segment_length_mm = math_utils.norm3(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2])
+
+        if segment.to_keypoint.mode == KeypointMotionMode.LINEAR:
+            t_out, t_in = self._linear_tangents_from_points(p0, p3, TrajectoryBuilder.LINEAR_TANGENT_RATIO)
+        else:
+            t_out, t_in = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+
+        coeffs = Bezier3Coefficients3D(p0, p3, t_out, t_in)
+        arc_lut_t, arc_lut_s = TrajectoryBuilder._build_arc_length_lut(coeffs)
+        arc_length_mm = float(arc_lut_s[-1]) if arc_lut_s else 0.0
+        speed_mmps = TrajectoryBuilder.linear_speed_mps_to_mmps(segment.to_keypoint.linear_speed_mps)
+
+        return _BezierSegmentDescriptor(
+            segment=segment,
+            from_pose=from_pose,
+            to_pose=to_pose,
+            coeffs=coeffs,
+            t_out=[float(v) for v in t_out[:3]],
+            t_in=[float(v) for v in t_in[:3]],
+            arc_length_mm=arc_length_mm,
+            speed_mmps=float(speed_mmps),
+            arc_lut_t=arc_lut_t,
+            arc_lut_s=arc_lut_s,
+        )
+
+    def _can_chain_bezier_descriptors(
+        self,
+        previous_descriptor: _BezierSegmentDescriptor,
+        next_descriptor: _BezierSegmentDescriptor,
+    ) -> bool:
+        if previous_descriptor.arc_length_mm <= self._EPS or next_descriptor.arc_length_mm <= self._EPS:
+            return False
+
+        continuity_gap = math_utils.norm3(
+            next_descriptor.from_pose[0] - previous_descriptor.to_pose[0],
+            next_descriptor.from_pose[1] - previous_descriptor.to_pose[1],
+            next_descriptor.from_pose[2] - previous_descriptor.to_pose[2],
+        )
+        if continuity_gap > 1e-3:
+            return False
+
+        return TrajectoryBuilder._are_vectors_collinear_opposite(
+            previous_descriptor.t_in,
+            next_descriptor.t_out,
+            TrajectoryBuilder.SUPER_CHAIN_COLLINEAR_ANGLE_TOL_DEG,
+        )
+
+    def _collect_bezier_chain_descriptors(
+        self,
+        segments: list[TrajectorySegment],
+        start_index: int,
+    ) -> list[_BezierSegmentDescriptor]:
+        if start_index < 0 or start_index >= len(segments):
+            return []
+
+        first_segment = segments[start_index]
+        if not TrajectoryBuilder._is_lin_or_cubic_mode(first_segment.to_keypoint.mode):
+            return []
+
+        first_descriptor = self._build_bezier_segment_descriptor(first_segment)
+        if first_descriptor is None:
+            return []
+        descriptors = [first_descriptor]
+
+        idx = start_index + 1
+        while idx < len(segments):
+            candidate_segment = segments[idx]
+            if not TrajectoryBuilder._is_lin_or_cubic_mode(candidate_segment.to_keypoint.mode):
+                break
+            candidate_descriptor = self._build_bezier_segment_descriptor(candidate_segment)
+            if candidate_descriptor is None:
+                break
+            if not self._can_chain_bezier_descriptors(descriptors[-1], candidate_descriptor):
+                break
+            descriptors.append(candidate_descriptor)
+            idx += 1
+
+        return descriptors
 
     def _get_working_mgi_solver(self) -> MGI:
         if self._working_mgi_solver is None:
@@ -633,15 +832,46 @@ class TrajectoryBuilder:
             previous_sample = TrajectoryBuilder._extract_previous_sample(first_result)
             start_time_s = first_result.last_time
 
-            for idx, segment in enumerate(segments, start=1):
+            segment_idx = 0
+            while segment_idx < len(segments):
+                segment = segments[segment_idx]
+                if TrajectoryBuilder._is_lin_or_cubic_mode(segment.to_keypoint.mode):
+                    chain_descriptors = self._collect_bezier_chain_descriptors(segments, segment_idx)
+                    if len(chain_descriptors) >= 2:
+                        chain_results = self._generate_bezier_super_segments(
+                            chain_descriptors,
+                            previous_sample,
+                            start_time_s,
+                        )
+                        if chain_results:
+                            for local_offset, chain_result in enumerate(chain_results):
+                                trajectory.segments.append(chain_result)
+                                TrajectoryBuilder._accumulate_status(
+                                    trajectory,
+                                    chain_result,
+                                    segment_index=1 + segment_idx + local_offset,
+                                )
+                                if self._should_stop_on_error(chain_result.status):
+                                    return trajectory
+
+                            previous_sample = TrajectoryBuilder._extract_previous_sample(chain_results[-1])
+                            start_time_s = chain_results[-1].last_time
+                            segment_idx += len(chain_results)
+                            continue
+
                 segment_result = self.compute_segment(segment, previous_sample, start_time_s)
                 trajectory.segments.append(segment_result)
-                TrajectoryBuilder._accumulate_status(trajectory, segment_result, segment_index=idx)
+                TrajectoryBuilder._accumulate_status(
+                    trajectory,
+                    segment_result,
+                    segment_index=1 + segment_idx,
+                )
                 if self._should_stop_on_error(segment_result.status):
                     break
 
                 previous_sample = TrajectoryBuilder._extract_previous_sample(segment_result)
                 start_time_s = segment_result.last_time
+                segment_idx += 1
             return trajectory
         finally:
             self._working_mgi_solver = None
@@ -888,6 +1118,247 @@ class TrajectoryBuilder:
         result.duration = generated_intervals * self.sample_dt_s
         result.last_time = start_time_s + result.duration
         return result
+
+    def _build_super_chain_step_assignment(
+        self,
+        descriptors: list[_BezierSegmentDescriptor],
+        intervals: int,
+        total_length_mm: float,
+    ) -> tuple[list[float], list[int], list[float], list[int], list[int], list[int]]:
+        cumulative_lengths = [0.0]
+        for descriptor in descriptors:
+            cumulative_lengths.append(cumulative_lengths[-1] + max(0.0, float(descriptor.arc_length_mm)))
+
+        n_segments = len(descriptors)
+        segment_by_step = [0] * intervals
+        distance_by_step = [0.0] * intervals
+        first_step_by_segment = [0] * n_segments
+        last_step_by_segment = [0] * n_segments
+        counts_by_segment = [0] * n_segments
+
+        active_segment_idx = 0
+        for step in range(1, intervals + 1):
+            linear_u = step / intervals
+            smooth_u = math_utils.cubic_transition(linear_u) if self.smooth_time_enabled else linear_u
+            distance_mm = float(smooth_u) * total_length_mm
+
+            while (
+                active_segment_idx < (n_segments - 1)
+                and distance_mm > (cumulative_lengths[active_segment_idx + 1] - self._EPS)
+            ):
+                active_segment_idx += 1
+
+            segment_by_step[step - 1] = active_segment_idx
+            distance_by_step[step - 1] = distance_mm
+            counts_by_segment[active_segment_idx] += 1
+            if first_step_by_segment[active_segment_idx] == 0:
+                first_step_by_segment[active_segment_idx] = step
+            last_step_by_segment[active_segment_idx] = step
+
+        return (
+            cumulative_lengths,
+            segment_by_step,
+            distance_by_step,
+            first_step_by_segment,
+            last_step_by_segment,
+            counts_by_segment,
+        )
+
+    def _resolve_super_chain_intervals_and_assignment(
+        self,
+        descriptors: list[_BezierSegmentDescriptor],
+        total_length_mm: float,
+        speed_mmps: float,
+    ) -> tuple[int, list[float], list[int], list[float], list[int], list[int], list[int]]:
+        max_intervals = max(1, TrajectoryBuilder.MAX_SAMPLES_PER_SEGMENT * max(1, len(descriptors)))
+        if total_length_mm <= self._EPS or speed_mmps <= self._EPS:
+            intervals = 1
+        else:
+            theoretical_duration_s = total_length_mm / speed_mmps
+            intervals = int(math.ceil(theoretical_duration_s / self.sample_dt_s))
+            intervals = min(max(1, intervals), max_intervals)
+
+        while True:
+            (
+                cumulative_lengths,
+                segment_by_step,
+                distance_by_step,
+                first_step_by_segment,
+                last_step_by_segment,
+                counts_by_segment,
+            ) = self._build_super_chain_step_assignment(
+                descriptors,
+                intervals,
+                total_length_mm,
+            )
+            if all(count > 0 for count in counts_by_segment):
+                return (
+                    intervals,
+                    cumulative_lengths,
+                    segment_by_step,
+                    distance_by_step,
+                    first_step_by_segment,
+                    last_step_by_segment,
+                    counts_by_segment,
+                )
+            if intervals >= max_intervals:
+                return (
+                    intervals,
+                    cumulative_lengths,
+                    segment_by_step,
+                    distance_by_step,
+                    first_step_by_segment,
+                    last_step_by_segment,
+                    counts_by_segment,
+                )
+
+            missing_count = sum(1 for count in counts_by_segment if count <= 0)
+            intervals = min(max_intervals, intervals + missing_count)
+
+    def _generate_bezier_super_segments(
+        self,
+        descriptors: list[_BezierSegmentDescriptor],
+        previous_segment_last_sample: TrajectorySample | None,
+        start_time_s: float,
+    ) -> list[SegmentResult]:
+        if len(descriptors) < 2:
+            return []
+
+        first_segment = descriptors[0].segment
+        from_allowed_configs = self._resolve_allowed_configs_for_keypoint(
+            first_segment.from_keypoint,
+            previous_segment_last_sample,
+        )
+        if not from_allowed_configs:
+            return []
+        if previous_segment_last_sample is not None and previous_segment_last_sample.reachable:
+            from_config = previous_segment_last_sample.configuration
+            if from_config is not None and from_config not in from_allowed_configs:
+                return []
+
+        effective_allowed_configs = self._resolve_effective_sample_allowed_configs()
+        if not effective_allowed_configs:
+            return []
+
+        total_length_mm = sum(max(0.0, float(descriptor.arc_length_mm)) for descriptor in descriptors)
+        if total_length_mm <= self._EPS:
+            return []
+        group_speed_mmps = TrajectoryBuilder._harmonic_weighted_speed_mmps(descriptors)
+        (
+            intervals,
+            cumulative_lengths,
+            segment_by_step,
+            distance_by_step,
+            _first_step_by_segment,
+            last_step_by_segment,
+            _counts_by_segment,
+        ) = self._resolve_super_chain_intervals_and_assignment(
+            descriptors,
+            total_length_mm,
+            group_speed_mmps,
+        )
+
+        results: list[SegmentResult] = []
+        for descriptor in descriptors:
+            segment_result = SegmentResult()
+            segment_result.status = TrajectoryComputationStatus.SUCCESS
+            segment_result.mode = descriptor.segment.to_keypoint.mode
+            segment_result.out_direction = list(descriptor.t_out)
+            segment_result.in_direction = list(descriptor.t_in)
+            segment_result.last_time = float(start_time_s)
+            results.append(segment_result)
+
+        speed_limits_deg_s, accel_limits_deg_s2, jerk_limits_deg_s3 = self._get_axis_dynamic_limits()
+        orientation_deltas = [
+            [
+                TrajectoryBuilder._shortest_angle_delta_deg(descriptor.from_pose[3], descriptor.to_pose[3]),
+                TrajectoryBuilder._shortest_angle_delta_deg(descriptor.from_pose[4], descriptor.to_pose[4]),
+                TrajectoryBuilder._shortest_angle_delta_deg(descriptor.from_pose[5], descriptor.to_pose[5]),
+            ]
+            for descriptor in descriptors
+        ]
+        to_allowed_configs_by_segment: list[set[MgiConfigKey] | None] = [None] * len(descriptors)
+
+        previous_sample = previous_segment_last_sample
+        stop_segment_idx: int | None = None
+
+        for step in range(1, intervals + 1):
+            segment_idx = int(segment_by_step[step - 1])
+            descriptor = descriptors[segment_idx]
+            segment_result = results[segment_idx]
+
+            time_s = start_time_s + step * self.sample_dt_s
+            local_distance_mm = distance_by_step[step - 1] - cumulative_lengths[segment_idx]
+            local_distance_mm = max(0.0, min(float(descriptor.arc_length_mm), float(local_distance_mm)))
+            local_t = TrajectoryBuilder._distance_to_bezier_parameter(
+                descriptor.arc_lut_t,
+                descriptor.arc_lut_s,
+                local_distance_mm,
+            )
+
+            xyz = descriptor.coeffs.point(local_t)
+            smooth_t5 = math_utils.quintic_transition(local_t)
+            dA, dB, dC = orientation_deltas[segment_idx]
+            orientation_abc = [
+                TrajectoryBuilder._wrap_angle_deg(descriptor.from_pose[3] + dA * smooth_t5),
+                TrajectoryBuilder._wrap_angle_deg(descriptor.from_pose[4] + dB * smooth_t5),
+                TrajectoryBuilder._wrap_angle_deg(descriptor.from_pose[5] + dC * smooth_t5),
+            ]
+
+            sample_allowed_configs = effective_allowed_configs
+            if step == last_step_by_segment[segment_idx]:
+                to_allowed_configs = self._resolve_allowed_configs_for_keypoint(
+                    descriptor.segment.to_keypoint,
+                    previous_sample,
+                )
+                to_allowed_configs_by_segment[segment_idx] = to_allowed_configs
+                sample_allowed_configs = to_allowed_configs
+
+            sample = self._build_sample_from_cartesian(
+                time_s,
+                xyz,
+                orientation_abc,
+                previous_sample,
+                sample_allowed_configs,
+                speed_limits_deg_s,
+                accel_limits_deg_s2,
+                jerk_limits_deg_s3,
+            )
+            segment_result.samples.append(sample)
+            TrajectoryBuilder._update_joint_stats(segment_result, sample)
+            self._register_sample_error(segment_result, sample, sample_index=len(segment_result.samples) - 1)
+            previous_sample = sample
+
+            if self._should_stop_on_error(segment_result.status):
+                stop_segment_idx = segment_idx
+                break
+
+        if stop_segment_idx is not None:
+            results = results[: stop_segment_idx + 1]
+
+        rolling_time = float(start_time_s)
+        for segment_idx, segment_result in enumerate(results):
+            to_allowed_configs = (
+                to_allowed_configs_by_segment[segment_idx]
+                if segment_idx < len(to_allowed_configs_by_segment)
+                else None
+            )
+            if (
+                to_allowed_configs is not None
+                and not to_allowed_configs
+                and segment_result.status == TrajectoryComputationStatus.SUCCESS
+            ):
+                segment_result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
+
+            generated_intervals = len(segment_result.samples)
+            segment_result.duration = generated_intervals * self.sample_dt_s
+            if generated_intervals > 0:
+                segment_result.last_time = float(segment_result.samples[-1].time)
+                rolling_time = segment_result.last_time
+            else:
+                segment_result.last_time = rolling_time
+
+        return results
 
     def _build_sample_from_cartesian(
         self,
