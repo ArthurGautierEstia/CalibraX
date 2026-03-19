@@ -24,7 +24,6 @@ from PyQt6.QtWidgets import (
 )
 
 import utils.math_utils as math_utils
-from utils.trajectory_constants import LINEAR_TANGENT_RATIO
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from models.trajectory_keypoint import (
     ConfigurationPolicy,
@@ -229,10 +228,7 @@ class TrajectoryConfigWidget(QWidget):
             )
             return current_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
 
-        dx = (end_xyz[0] - start_xyz[0]) * LINEAR_TANGENT_RATIO
-        dy = (end_xyz[1] - start_xyz[1]) * LINEAR_TANGENT_RATIO
-        dz = (end_xyz[2] - start_xyz[2]) * LINEAR_TANGENT_RATIO
-        return [dx, dy, dz], [-dx, -dy, -dz]
+        return current_keypoint.resolve_linear_tangent_vectors(start_xyz, end_xyz)
 
     def _auto_update_adjacent_cubic_tangents(self, keypoints: list[TrajectoryKeypoint], row: int) -> None:
         tangents = self._resolve_segment_tangents_for_keypoint(keypoints, row)

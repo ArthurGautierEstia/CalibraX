@@ -97,10 +97,14 @@ class TrajectoryKeypointDialog(QDialog):
         self._suspend_preview_emission = False
 
         self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
+        self.linear_group = QGroupBox("Tangentes du segment lineaire (entrant)")
         self.cubic_vector_1: list[QDoubleSpinBox] = []
         self.cubic_vector_2: list[QDoubleSpinBox] = []
         self.cubic_amplitude_1 = QDoubleSpinBox()
         self.cubic_amplitude_2 = QDoubleSpinBox()
+        self.linear_tangent_ratio_1 = QDoubleSpinBox()
+        self.linear_tangent_ratio_2 = QDoubleSpinBox()
+        self.linear_tangent_link_checkbox = QCheckBox("Lier debut/fin")
         self.cubic_auto_start_btn = QPushButton("Auto (segment precedent)")
         self.cubic_auto_end_btn = QPushButton("Auto (segment suivant)")
         self.cubic_auto_update_adjacent_checkbox = QCheckBox(
@@ -178,6 +182,29 @@ class TrajectoryKeypointDialog(QDialog):
 
         cubic_tab_layout = QVBoxLayout(self.cubic_tab)
 
+        linear_layout = QGridLayout()
+        linear_label_width = 140
+
+        linear_start_amp_label = QLabel("Amplitude debut (%)")
+        linear_start_amp_label.setMinimumWidth(linear_label_width)
+        linear_layout.addWidget(linear_start_amp_label, 0, 0)
+        self.linear_tangent_ratio_1.setRange(0.0, 1000.0)
+        self.linear_tangent_ratio_1.setDecimals(3)
+        self.linear_tangent_ratio_1.setSingleStep(1.0)
+        linear_layout.addWidget(self.linear_tangent_ratio_1, 0, 1)
+
+        linear_end_amp_label = QLabel("Amplitude fin (%)")
+        linear_end_amp_label.setMinimumWidth(linear_label_width)
+        linear_layout.addWidget(linear_end_amp_label, 1, 0)
+        self.linear_tangent_ratio_2.setRange(0.0, 1000.0)
+        self.linear_tangent_ratio_2.setDecimals(3)
+        self.linear_tangent_ratio_2.setSingleStep(1.0)
+        linear_layout.addWidget(self.linear_tangent_ratio_2, 1, 1)
+
+        linear_layout.addWidget(self.linear_tangent_link_checkbox, 2, 1)
+        linear_layout.setColumnStretch(3, 1)
+        self.linear_group.setLayout(linear_layout)
+
         cubic_layout = QVBoxLayout()
 
         cubic_label_width = 120
@@ -250,6 +277,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.cubic_auto_update_adjacent_checkbox.setToolTip(
             "En edition, ajuste automatiquement les tangentes des segments cubiques precedent/suivant."
         )
+        cubic_tab_layout.addWidget(self.linear_group)
         cubic_tab_layout.addWidget(self.cubic_group)
         cubic_tab_layout.addStretch()
 
@@ -363,6 +391,9 @@ class TrajectoryKeypointDialog(QDialog):
             spin.valueChanged.connect(self._on_cubic_vectors_changed)
         self.cubic_amplitude_1.valueChanged.connect(self._on_cubic_vectors_changed)
         self.cubic_amplitude_2.valueChanged.connect(self._on_cubic_vectors_changed)
+        self.linear_tangent_ratio_1.valueChanged.connect(self._on_linear_tangent_start_ratio_changed)
+        self.linear_tangent_ratio_2.valueChanged.connect(self._on_linear_tangent_end_ratio_changed)
+        self.linear_tangent_link_checkbox.toggled.connect(self._on_linear_tangent_link_toggled)
         self.cubic_auto_start_btn.clicked.connect(self._on_auto_start_tangent_clicked)
         self.cubic_auto_end_btn.clicked.connect(self._on_auto_end_tangent_clicked)
         self.joint_target_widget.joint_value_changed.connect(self._on_joint_target_changed)
@@ -769,6 +800,51 @@ class TrajectoryKeypointDialog(QDialog):
         if emit_preview:
             self._emit_live_preview()
 
+    @staticmethod
+    def _ratio_to_percent(ratio: float) -> float:
+        return max(0.0, float(ratio) * 100.0)
+
+    @staticmethod
+    def _percent_to_ratio(percent: float) -> float:
+        return max(0.0, float(percent) / 100.0)
+
+    def _set_linear_tangent_ratios(
+        self,
+        start_ratio: float,
+        end_ratio: float,
+        emit_preview: bool = True,
+    ) -> None:
+        self.linear_tangent_ratio_1.blockSignals(True)
+        self.linear_tangent_ratio_1.setValue(self._ratio_to_percent(start_ratio))
+        self.linear_tangent_ratio_1.blockSignals(False)
+
+        self.linear_tangent_ratio_2.blockSignals(True)
+        self.linear_tangent_ratio_2.setValue(self._ratio_to_percent(end_ratio))
+        self.linear_tangent_ratio_2.blockSignals(False)
+
+        if emit_preview:
+            self._emit_live_preview()
+
+    def _sync_linked_linear_ratio_from_start(self) -> None:
+        if not self.linear_tangent_link_checkbox.isChecked():
+            return
+        target_value = float(self.linear_tangent_ratio_1.value())
+        if abs(float(self.linear_tangent_ratio_2.value()) - target_value) <= 1e-12:
+            return
+        self.linear_tangent_ratio_2.blockSignals(True)
+        self.linear_tangent_ratio_2.setValue(target_value)
+        self.linear_tangent_ratio_2.blockSignals(False)
+
+    def _sync_linked_linear_ratio_from_end(self) -> None:
+        if not self.linear_tangent_link_checkbox.isChecked():
+            return
+        target_value = float(self.linear_tangent_ratio_2.value())
+        if abs(float(self.linear_tangent_ratio_1.value()) - target_value) <= 1e-12:
+            return
+        self.linear_tangent_ratio_1.blockSignals(True)
+        self.linear_tangent_ratio_1.setValue(target_value)
+        self.linear_tangent_ratio_1.blockSignals(False)
+
     def _compute_end_tangent_from_first_tangent_look_at(
         self,
         start_direction_xyz: list[float],
@@ -915,6 +991,19 @@ class TrajectoryKeypointDialog(QDialog):
     def _on_cubic_vectors_changed(self, *_args) -> None:
         self._emit_live_preview()
 
+    def _on_linear_tangent_start_ratio_changed(self, *_args) -> None:
+        self._sync_linked_linear_ratio_from_start()
+        self._emit_live_preview()
+
+    def _on_linear_tangent_end_ratio_changed(self, *_args) -> None:
+        self._sync_linked_linear_ratio_from_end()
+        self._emit_live_preview()
+
+    def _on_linear_tangent_link_toggled(self, linked: bool) -> None:
+        if linked:
+            self._sync_linked_linear_ratio_from_start()
+        self._emit_live_preview()
+
     def _sync_joint_mode_policy(self) -> None:
         joint_target = self.joint_target_widget.get_all_joints()
         deduced = TrajectoryKeypoint.identify_config_from_joint_target(
@@ -960,16 +1049,22 @@ class TrajectoryKeypointDialog(QDialog):
         self._last_target_type = KeypointTargetType.JOINT if is_joint else KeypointTargetType.CARTESIAN
 
     def _update_cubic_visibility(self) -> None:
-        is_cubic = self._current_mode() == KeypointMotionMode.CUBIC
+        mode = self._current_mode()
+        is_cubic = mode == KeypointMotionMode.CUBIC
+        is_linear = mode == KeypointMotionMode.LINEAR
+        show_interp_tab = is_cubic or is_linear
         cubic_tab_index = self.main_tabs.indexOf(self.cubic_tab)
         if cubic_tab_index >= 0:
-            self.main_tabs.setTabEnabled(cubic_tab_index, is_cubic)
+            self.main_tabs.setTabEnabled(cubic_tab_index, show_interp_tab)
             if hasattr(self.main_tabs, "setTabVisible"):
-                self.main_tabs.setTabVisible(cubic_tab_index, is_cubic)
-            if is_cubic:
+                self.main_tabs.setTabVisible(cubic_tab_index, show_interp_tab)
+            if show_interp_tab:
                 self.main_tabs.setCurrentWidget(self.cubic_tab)
             elif self.main_tabs.currentIndex() == cubic_tab_index:
                 self.main_tabs.setCurrentWidget(self.target_tab)
+        self.cubic_group.setVisible(is_cubic)
+        self.linear_group.setVisible(is_linear)
+        self.cubic_auto_update_adjacent_checkbox.setVisible(is_cubic)
         self._update_auto_tangent_buttons_state()
 
     def _update_speed_editor(self) -> None:
@@ -1016,6 +1111,14 @@ class TrajectoryKeypointDialog(QDialog):
             spin.setValue(keypoint.cubic_vectors[1][i])
         self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_mm[0]))
         self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_mm[1]))
+        self._set_linear_tangent_ratios(
+            float(keypoint.linear_tangent_ratios[0]),
+            float(keypoint.linear_tangent_ratios[1]),
+            emit_preview=False,
+        )
+        self.linear_tangent_link_checkbox.blockSignals(True)
+        self.linear_tangent_link_checkbox.setChecked(bool(keypoint.linear_tangent_ratios_linked))
+        self.linear_tangent_link_checkbox.blockSignals(False)
 
         policy_idx = self.config_policy_combo.findData(keypoint.configuration_policy.value)
         if policy_idx >= 0:
@@ -1069,6 +1172,11 @@ class TrajectoryKeypointDialog(QDialog):
                 self.cubic_amplitude_1.value(),
                 self.cubic_amplitude_2.value(),
             ],
+            linear_tangent_ratios=[
+                self._percent_to_ratio(self.linear_tangent_ratio_1.value()),
+                self._percent_to_ratio(self.linear_tangent_ratio_2.value()),
+            ],
+            linear_tangent_ratios_linked=self.linear_tangent_link_checkbox.isChecked(),
             configuration_policy=configuration_policy,
             forced_config=forced_config,
             ptp_speed_percent=self._ptp_speed_percent,

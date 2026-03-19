@@ -25,6 +25,7 @@ class ConfigurationPolicy(Enum):
 
 class TrajectoryKeypoint:
     DEFAULT_CUBIC_AMPLITUDE_MM = 30.0
+    DEFAULT_LINEAR_TANGENT_RATIO = 0.3
 
     def __init__(
         self,
@@ -34,6 +35,8 @@ class TrajectoryKeypoint:
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
         cubic_vectors: list[list[float]] | None = None,
         cubic_amplitudes_mm: list[float] | None = None,
+        linear_tangent_ratios: list[float] | None = None,
+        linear_tangent_ratios_linked: bool = True,
         configuration_policy: ConfigurationPolicy = ConfigurationPolicy.AUTO,
         forced_config: MgiConfigKey | None = None,
         ptp_speed_percent: float = 75.0,
@@ -75,6 +78,19 @@ class TrajectoryKeypoint:
             self._clamp_min(amp_values[0], 0.0),
             self._clamp_min(amp_values[1], 0.0),
         ]
+        linear_ratios = (
+            [self.DEFAULT_LINEAR_TANGENT_RATIO, self.DEFAULT_LINEAR_TANGENT_RATIO]
+            if linear_tangent_ratios is None
+            else list(linear_tangent_ratios)
+        )
+        ratio1 = linear_ratios[0] if len(linear_ratios) > 0 else self.DEFAULT_LINEAR_TANGENT_RATIO
+        ratio2 = linear_ratios[1] if len(linear_ratios) > 1 else self.DEFAULT_LINEAR_TANGENT_RATIO
+        ratio_values = self._normalize_float_list([ratio1, ratio2], 2, self.DEFAULT_LINEAR_TANGENT_RATIO)
+        self.linear_tangent_ratios = [
+            self._clamp_min(ratio_values[0], 0.0),
+            self._clamp_min(ratio_values[1], 0.0),
+        ]
+        self.linear_tangent_ratios_linked = bool(linear_tangent_ratios_linked)
 
         self.configuration_policy = configuration_policy
         self.forced_config = forced_config if forced_config in MgiConfigKey else None
@@ -137,6 +153,24 @@ class TrajectoryKeypoint:
             )
         return tangents[0], tangents[1]
 
+    def resolve_linear_tangent_vectors(
+        self,
+        start_xyz: list[float],
+        end_xyz: list[float],
+    ) -> tuple[list[float], list[float]]:
+        if len(start_xyz) < 3 or len(end_xyz) < 3:
+            return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+
+        dx = float(end_xyz[0]) - float(start_xyz[0])
+        dy = float(end_xyz[1]) - float(start_xyz[1])
+        dz = float(end_xyz[2]) - float(start_xyz[2])
+        start_ratio = self._clamp_min(float(self.linear_tangent_ratios[0]), 0.0)
+        end_ratio = self._clamp_min(float(self.linear_tangent_ratios[1]), 0.0)
+        return (
+            [dx * start_ratio, dy * start_ratio, dz * start_ratio],
+            [-dx * end_ratio, -dy * end_ratio, -dz * end_ratio],
+        )
+
     def _normalize_configuration_rules(self) -> None:
         if self.configuration_policy not in ConfigurationPolicy:
             self.configuration_policy = ConfigurationPolicy.AUTO
@@ -163,6 +197,8 @@ class TrajectoryKeypoint:
             mode=self.mode,
             cubic_vectors=[list(self.cubic_vectors[0]), list(self.cubic_vectors[1])],
             cubic_amplitudes_mm=list(self.cubic_amplitudes_mm),
+            linear_tangent_ratios=list(self.linear_tangent_ratios),
+            linear_tangent_ratios_linked=self.linear_tangent_ratios_linked,
             configuration_policy=self.configuration_policy,
             forced_config=self.forced_config,
             ptp_speed_percent=self.ptp_speed_percent,
@@ -183,6 +219,11 @@ class TrajectoryKeypoint:
                 float(self.cubic_amplitudes_mm[0]),
                 float(self.cubic_amplitudes_mm[1]),
             ],
+            "linear_tangent_ratios": [
+                float(self.linear_tangent_ratios[0]),
+                float(self.linear_tangent_ratios[1]),
+            ],
+            "linear_tangent_ratios_linked": bool(self.linear_tangent_ratios_linked),
             "configuration_policy": self.configuration_policy.value,
             "forced_config": self.forced_config.name if self.forced_config is not None else None,
             "ptp_speed_percent": float(self.ptp_speed_percent),
@@ -227,6 +268,17 @@ class TrajectoryKeypoint:
                 "Format invalide: 'cubic_amplitudes_mm' doit etre une liste "
                 "de 2 valeurs."
             )
+        linear_tangent_ratios = raw.get("linear_tangent_ratios")
+        if not isinstance(linear_tangent_ratios, list) or len(linear_tangent_ratios) < 2:
+            raise ValueError(
+                "Format invalide: 'linear_tangent_ratios' doit etre une liste "
+                "de 2 valeurs."
+            )
+        linear_tangent_ratios_linked = raw.get("linear_tangent_ratios_linked")
+        if not isinstance(linear_tangent_ratios_linked, bool):
+            raise ValueError(
+                "Format invalide: 'linear_tangent_ratios_linked' doit etre un booleen."
+            )
 
         return TrajectoryKeypoint(
             target_type=target_type,
@@ -235,6 +287,8 @@ class TrajectoryKeypoint:
             mode=mode,
             cubic_vectors=cubic_vectors,
             cubic_amplitudes_mm=cubic_amplitudes_mm,
+            linear_tangent_ratios=linear_tangent_ratios,
+            linear_tangent_ratios_linked=linear_tangent_ratios_linked,
             configuration_policy=configuration_policy,
             forced_config=forced_config,
             ptp_speed_percent=float(raw.get("ptp_speed_percent", 75.0)),
