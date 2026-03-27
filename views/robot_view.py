@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
-from widgets.robot_view.dh_table_widget import DHTableWidget
+from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 
 class RobotView(QWidget):
 
@@ -10,7 +10,7 @@ class RobotView(QWidget):
         # ====================================================================
         # RÉGION: Initialisation des widgets
         # ====================================================================
-        self.dh_widget = DHTableWidget()
+        self.configuration_widget = RobotConfigurationWidget()
 
         self._setup_ui()
     
@@ -18,7 +18,7 @@ class RobotView(QWidget):
         """Configure l'interface utilisateur pour la vue du robot"""
         layout = QVBoxLayout(self)
         layout.setSpacing(5)
-        layout.addWidget(self.dh_widget)
+        layout.addWidget(self.configuration_widget)
     
-    def get_dh_widget(self) -> DHTableWidget:
-        return self.dh_widget
+    def get_configuration_widget(self) -> RobotConfigurationWidget:
+        return self.configuration_widget

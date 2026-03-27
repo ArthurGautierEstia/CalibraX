@@ -25,7 +25,7 @@ from widgets.robot_view.tool_widget import ToolWidget
 from utils.mgi import RobotTool
 
 
-class DHTableWidget(QWidget):
+class RobotConfigurationWidget(QWidget):
     """Widget principal de configuration robot (DH + axes + positions + CAD)."""
 
     load_config_requested = pyqtSignal()
@@ -145,11 +145,11 @@ class DHTableWidget(QWidget):
         for row in range(6):
             accel_item = QTableWidgetItem("")
             accel_item.setFlags(accel_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table_axis.setItem(row, DHTableWidget.COL_AXIS_ACCEL_EST, accel_item)
+            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL_EST, accel_item)
 
             checkbox = QCheckBox()
             checkbox.stateChanged.connect(self._emit_axis_config_changed)
-            self.table_axis.setCellWidget(row, DHTableWidget.COL_AXIS_REVERSED, checkbox)
+            self.table_axis.setCellWidget(row, RobotConfigurationWidget.COL_AXIS_REVERSED, checkbox)
             self.axis_reversed_checkboxes.append(checkbox)
 
         self.table_axis.itemChanged.connect(self._on_axis_item_changed)
@@ -202,7 +202,7 @@ class DHTableWidget(QWidget):
         grid = QGridLayout()
         self.robot_cad_line_edits.clear()
 
-        for index in range(DHTableWidget.ROBOT_CAD_COUNT):
+        for index in range(RobotConfigurationWidget.ROBOT_CAD_COUNT):
             row = index
             label = QLabel(f"Lien {index}")
             path_line = QLineEdit()
@@ -221,7 +221,7 @@ class DHTableWidget(QWidget):
             grid.addWidget(browse_button, row, 2)
             grid.addWidget(clear_button, row, 3)
 
-        tool_row = DHTableWidget.ROBOT_CAD_COUNT
+        tool_row = RobotConfigurationWidget.ROBOT_CAD_COUNT
         tool_label = QLabel("Tool (optionnel)")
         self.tool_cad_line_edit = QLineEdit()
         self.tool_cad_line_edit.setReadOnly(True)
@@ -259,7 +259,7 @@ class DHTableWidget(QWidget):
             self.dh_value_changed.emit(row, col, item.text())
 
     def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
-        if item.column() in (DHTableWidget.COL_AXIS_SPEED, DHTableWidget.COL_AXIS_JERK):
+        if item.column() in (RobotConfigurationWidget.COL_AXIS_SPEED, RobotConfigurationWidget.COL_AXIS_JERK):
             self._refresh_estimated_accel_for_row(item.row())
         self._emit_axis_config_changed()
 
@@ -321,15 +321,15 @@ class DHTableWidget(QWidget):
         return self._safe_float(item.text() if item else "", default)
 
     def _refresh_estimated_accel_for_row(self, row: int) -> None:
-        speed = max(0.0, self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_SPEED, 0.0))
-        jerk = max(0.0, self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_JERK, 0.0))
+        speed = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0))
+        jerk = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, 0.0))
         accel = math.sqrt(speed * jerk)
 
-        accel_item = self.table_axis.item(row, DHTableWidget.COL_AXIS_ACCEL_EST)
+        accel_item = self.table_axis.item(row, RobotConfigurationWidget.COL_AXIS_ACCEL_EST)
         if accel_item is None:
             accel_item = QTableWidgetItem("")
             accel_item.setFlags(accel_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table_axis.setItem(row, DHTableWidget.COL_AXIS_ACCEL_EST, accel_item)
+            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL_EST, accel_item)
         accel_item.setText(f"{accel:.3f}")
 
     def _refresh_estimated_accel_column(self) -> None:
@@ -399,10 +399,10 @@ class DHTableWidget(QWidget):
                 jerk = axis_jerk_limits[row] if row < len(axis_jerk_limits) else 0.0
                 reversed_axis = axis_reversed[row] if row < len(axis_reversed) else 1
 
-                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_MIN, QTableWidgetItem(str(min_val)))
-                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_MAX, QTableWidgetItem(str(max_val)))
-                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_SPEED, QTableWidgetItem(str(speed)))
-                self.table_axis.setItem(row, DHTableWidget.COL_AXIS_JERK, QTableWidgetItem(str(jerk)))
+                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_MIN, QTableWidgetItem(str(min_val)))
+                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_MAX, QTableWidgetItem(str(max_val)))
+                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_SPEED, QTableWidgetItem(str(speed)))
+                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_JERK, QTableWidgetItem(str(jerk)))
 
                 checkbox = self.axis_reversed_checkboxes[row]
                 checkbox.blockSignals(True)
@@ -416,16 +416,16 @@ class DHTableWidget(QWidget):
     def get_axis_limits(self) -> list[tuple[float, float]]:
         limits: list[tuple[float, float]] = []
         for row in range(6):
-            min_val = self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_MIN, -180.0)
-            max_val = self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_MAX, 180.0)
+            min_val = self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MIN, -180.0)
+            max_val = self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MAX, 180.0)
             limits.append((min_val, max_val))
         return limits
 
     def get_axis_speed_limits(self) -> list[float]:
-        return [self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_SPEED, 0.0) for row in range(6)]
+        return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0) for row in range(6)]
 
     def get_axis_jerk_limits(self) -> list[float]:
-        return [self._cell_to_float(self.table_axis, row, DHTableWidget.COL_AXIS_JERK, 0.0) for row in range(6)]
+        return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, 0.0) for row in range(6)]
 
     def get_axis_reversed(self) -> list[int]:
         reversed_values: list[int] = []
@@ -447,23 +447,23 @@ class DHTableWidget(QWidget):
                 transport_value = position_transport[row] if row < len(position_transport) else 0.0
                 home_value = home_position[row] if row < len(home_position) else 0.0
 
-                self.table_positions.setItem(row, DHTableWidget.COL_POS_ZERO, QTableWidgetItem(str(zero_value)))
-                self.table_positions.setItem(row, DHTableWidget.COL_POS_TRANSPORT, QTableWidgetItem(str(transport_value)))
-                self.table_positions.setItem(row, DHTableWidget.COL_POS_HOME, QTableWidgetItem(str(home_value)))
+                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_ZERO, QTableWidgetItem(str(zero_value)))
+                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_TRANSPORT, QTableWidgetItem(str(transport_value)))
+                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_HOME, QTableWidgetItem(str(home_value)))
         finally:
             self.table_positions.blockSignals(False)
 
     def get_position_zero(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, DHTableWidget.COL_POS_ZERO, 0.0) for row in range(6)]
+        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_ZERO, 0.0) for row in range(6)]
 
     def get_position_transport(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, DHTableWidget.COL_POS_TRANSPORT, 0.0) for row in range(6)]
+        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_TRANSPORT, 0.0) for row in range(6)]
 
     def get_home_position(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, DHTableWidget.COL_POS_HOME, 0.0) for row in range(6)]
+        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_HOME, 0.0) for row in range(6)]
 
     def set_robot_cad_models(self, cad_models: list[str]) -> None:
-        for index in range(DHTableWidget.ROBOT_CAD_COUNT):
+        for index in range(RobotConfigurationWidget.ROBOT_CAD_COUNT):
             value = cad_models[index] if index < len(cad_models) else ""
             self.robot_cad_line_edits[index].setText(str(value))
 

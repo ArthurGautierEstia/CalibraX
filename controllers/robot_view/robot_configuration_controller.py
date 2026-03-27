@@ -7,16 +7,16 @@ from models.robot_configuration_file import RobotConfigurationFile
 from utils.file_io import FileIOHandler
 from utils.popup import show_error_popup
 from utils.str_utils import str_to_float
-from widgets.robot_view.dh_table_widget import DHTableWidget
+from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 
-class DHTableController(QObject):
+class RobotConfigurationController(QObject):
 
     configuration_loaded = pyqtSignal()
 
-    def __init__(self, robot_model: RobotModel, dh_table_widget: DHTableWidget, parent: QObject = None):
+    def __init__(self, robot_model: RobotModel, robot_configuration_widget: RobotConfigurationWidget, parent: QObject = None):
         super().__init__(parent)
         self.robot_model = robot_model
-        self.dh_table_widget = dh_table_widget
+        self.robot_configuration_widget = robot_configuration_widget
         self._setup_connections()
         self._on_robot_configuration_changed()
     
@@ -34,19 +34,19 @@ class DHTableController(QObject):
         self.robot_model.tool_cad_offset_rz_changed.connect(self._on_robot_cad_models_changed)
 
         # Signals from View
-        self.dh_table_widget.text_changed_requested.connect(self._on_view_name_changed)
-        self.dh_table_widget.dh_value_changed.connect(self._on_view_dh_value_changed)
-        self.dh_table_widget.tool_changed.connect(self._on_view_tool_changed)
-        self.dh_table_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
-        self.dh_table_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
-        self.dh_table_widget.position_zero_requested.connect(self._on_view_position_zero_requested)
-        self.dh_table_widget.position_transport_requested.connect(self._on_view_position_transport_requested)
-        self.dh_table_widget.home_position_requested.connect(self._on_view_home_position_requested)
-        self.dh_table_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
-        self.dh_table_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
-        self.dh_table_widget.tool_cad_offset_rz_changed.connect(self._on_view_tool_cad_offset_rz_changed)
-        self.dh_table_widget.load_config_requested.connect(self._on_view_load_config_requested)
-        self.dh_table_widget.export_config_requested.connect(self._on_view_export_config_requested)
+        self.robot_configuration_widget.text_changed_requested.connect(self._on_view_name_changed)
+        self.robot_configuration_widget.dh_value_changed.connect(self._on_view_dh_value_changed)
+        self.robot_configuration_widget.tool_changed.connect(self._on_view_tool_changed)
+        self.robot_configuration_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
+        self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
+        self.robot_configuration_widget.position_zero_requested.connect(self._on_view_position_zero_requested)
+        self.robot_configuration_widget.position_transport_requested.connect(self._on_view_position_transport_requested)
+        self.robot_configuration_widget.home_position_requested.connect(self._on_view_home_position_requested)
+        self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
+        self.robot_configuration_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
+        self.robot_configuration_widget.tool_cad_offset_rz_changed.connect(self._on_view_tool_cad_offset_rz_changed)
+        self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
+        self.robot_configuration_widget.export_config_requested.connect(self._on_view_export_config_requested)
 
     # ======
     # Connection callbacks
@@ -73,7 +73,7 @@ class DHTableController(QObject):
         self.update_cad_view()
 
     def _on_view_name_changed(self) -> None:
-        self.robot_model.set_robot_name(self.dh_table_widget.get_robot_name())
+        self.robot_model.set_robot_name(self.robot_configuration_widget.get_robot_name())
 
     def _on_view_dh_value_changed(self, row: int, col: int, value: str) -> None:
         fval = str_to_float(value)
@@ -109,9 +109,9 @@ class DHTableController(QObject):
 
     def _sync_positions_from_view(self) -> None:
         self._on_view_positions_config_changed(
-            self.dh_table_widget.get_home_position(),
-            self.dh_table_widget.get_position_zero(),
-            self.dh_table_widget.get_position_transport(),
+            self.robot_configuration_widget.get_home_position(),
+            self.robot_configuration_widget.get_position_zero(),
+            self.robot_configuration_widget.get_position_transport(),
         )
 
     def _on_view_position_zero_requested(self) -> None:
@@ -146,13 +146,13 @@ class DHTableController(QObject):
     # ======
 
     def update_robot_name_view(self) -> None:
-        self.dh_table_widget.set_robot_name(self.robot_model.get_robot_name())
+        self.robot_configuration_widget.set_robot_name(self.robot_model.get_robot_name())
     
     def update_dh_table_view(self) -> None:
-        self.dh_table_widget.set_dh_params(self.robot_model.get_dh_params())
+        self.robot_configuration_widget.set_dh_params(self.robot_model.get_dh_params())
 
     def update_axis_config_view(self) -> None:
-        self.dh_table_widget.set_axis_config(
+        self.robot_configuration_widget.set_axis_config(
             self.robot_model.get_axis_limits(),
             self.robot_model.get_axis_speed_limits(),
             self.robot_model.get_axis_jerk_limits(),
@@ -160,19 +160,19 @@ class DHTableController(QObject):
         )
 
     def update_positions_config_view(self) -> None:
-        self.dh_table_widget.set_positions_config(
+        self.robot_configuration_widget.set_positions_config(
             self.robot_model.get_home_position(),
             self.robot_model.get_position_zero(),
             self.robot_model.get_position_transport(),
         )
 
     def update_cad_view(self) -> None:
-        self.dh_table_widget.set_robot_cad_models(self.robot_model.get_robot_cad_models())
-        self.dh_table_widget.set_tool_cad_model(self.robot_model.get_tool_cad_model())
-        self.dh_table_widget.set_tool_cad_offset_rz(self.robot_model.get_tool_cad_offset_rz())
+        self.robot_configuration_widget.set_robot_cad_models(self.robot_model.get_robot_cad_models())
+        self.robot_configuration_widget.set_tool_cad_model(self.robot_model.get_tool_cad_model())
+        self.robot_configuration_widget.set_tool_cad_offset_rz(self.robot_model.get_tool_cad_offset_rz())
 
     def update_tool_view(self) -> None:
-        self.dh_table_widget.set_tool(self.robot_model.get_tool())
+        self.robot_configuration_widget.set_tool(self.robot_model.get_tool())
 
     def load_configuration(self):
         """Charger une configuration depuis un fichier json"""
@@ -180,7 +180,7 @@ class DHTableController(QObject):
         configurationDir = os.path.join(currentDir, 'configurations') 
 
         file_path, data = FileIOHandler.select_and_load_json(
-            self.dh_table_widget,
+            self.robot_configuration_widget,
             "Charger une configuration robot",
             configurationDir if os.path.exists(configurationDir) else currentDir
         )
@@ -201,7 +201,7 @@ class DHTableController(QObject):
 
         config = RobotConfigurationFile.from_robot_model(self.robot_model)
         FileIOHandler.save_json(
-            self.dh_table_widget,
+            self.robot_configuration_widget,
             "Exporter/Sauvegarder une configuration robot",
             config.to_dict(),
             configurationDir if os.path.exists(configurationDir) else currentDir
