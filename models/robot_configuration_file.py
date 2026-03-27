@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, TYPE_CHECKING
 
-from utils.mgi import MgiConfigKey, RobotTool
+from utils.mgi import MgiConfigKey
 
 if TYPE_CHECKING:
     from models.robot_model import RobotModel
@@ -20,8 +20,8 @@ DEFAULT_AXIS_LIMITS: list[tuple[float, float]] = [
 DEFAULT_AXIS_SPEED_LIMITS: list[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
 DEFAULT_AXIS_JERK_LIMITS: list[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
 DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./robot_stl/rocky{i}.stl" for i in range(7)]
-DEFAULT_TOOL_CAD_MODEL: str = ""
-DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
+DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./configurations/tools"
+DEFAULT_SELECTED_TOOL_PROFILE: str = ""
 
 
 @dataclass
@@ -41,9 +41,8 @@ class RobotConfigurationFile:
     position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0])
     position_transport: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
-    tool_cad_model: str = DEFAULT_TOOL_CAD_MODEL
-    tool_cad_offset_rz: float = DEFAULT_TOOL_CAD_OFFSET_RZ
-    tool: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    tool_profiles_directory: str = DEFAULT_TOOL_PROFILES_DIRECTORY
+    selected_tool_profile: str = DEFAULT_SELECTED_TOOL_PROFILE
 
     # Tracks which fields were present when loaded from JSON.
     present_fields: set[str] = field(default_factory=set, repr=False)
@@ -206,16 +205,8 @@ class RobotConfigurationFile:
             position_zero=robot_model.get_position_zero(),
             position_transport=robot_model.get_position_transport(),
             robot_cad_models=robot_model.get_robot_cad_models(),
-            tool_cad_model=robot_model.get_tool_cad_model(),
-            tool_cad_offset_rz=robot_model.get_tool_cad_offset_rz(),
-            tool=[
-                robot_model.get_tool().x,
-                robot_model.get_tool().y,
-                robot_model.get_tool().z,
-                robot_model.get_tool().a,
-                robot_model.get_tool().b,
-                robot_model.get_tool().c,
-            ],
+            tool_profiles_directory=robot_model.get_tool_profiles_directory(),
+            selected_tool_profile=robot_model.get_selected_tool_profile(),
             present_fields={
                 "name",
                 "dh",
@@ -230,9 +221,8 @@ class RobotConfigurationFile:
                 "position_zero",
                 "position_transport",
                 "robot_cad_models",
-                "tool_cad_model",
-                "tool_cad_offset_rz",
-                "tool",
+                "tool_profiles_directory",
+                "selected_tool_profile",
             },
         )
 
@@ -259,14 +249,12 @@ class RobotConfigurationFile:
 
         if "robot_cad_models" not in data and "robot_cad_files" in data:
             present_fields.add("robot_cad_models")
-        if "tool_cad_model" not in data and "tool_cad_file" in data:
-            present_fields.add("tool_cad_model")
-        if "tool_cad_offset_rz" not in data and "tool_cad_rot_z" in data:
-            present_fields.add("tool_cad_offset_rz")
+        present_fields.add("tool_profiles_directory")
+        present_fields.add("selected_tool_profile")
 
         allowed_configs = cls._parse_allowed_configs(data.get(allowed_raw_key)) if allowed_raw_key else set(MgiConfigKey)
-        tool_cad_value = data.get("tool_cad_model", data.get("tool_cad_file", DEFAULT_TOOL_CAD_MODEL))
-        tool_cad_offset_value = data.get("tool_cad_offset_rz", data.get("tool_cad_rot_z", DEFAULT_TOOL_CAD_OFFSET_RZ))
+        tool_profiles_directory = data.get("tool_profiles_directory", DEFAULT_TOOL_PROFILES_DIRECTORY)
+        selected_tool_profile = data.get("selected_tool_profile", DEFAULT_SELECTED_TOOL_PROFILE)
 
         return cls(
             name=name,
@@ -285,9 +273,8 @@ class RobotConfigurationFile:
                 data.get("robot_cad_models", data.get("robot_cad_files")),
                 DEFAULT_ROBOT_CAD_MODELS,
             ),
-            tool_cad_model="" if tool_cad_value is None else str(tool_cad_value),
-            tool_cad_offset_rz=cls._safe_float(tool_cad_offset_value, DEFAULT_TOOL_CAD_OFFSET_RZ),
-            tool=cls._parse_float_list(data.get("tool"), 6, 0.0),
+            tool_profiles_directory="" if tool_profiles_directory is None else str(tool_profiles_directory),
+            selected_tool_profile="" if selected_tool_profile is None else str(selected_tool_profile),
             present_fields=present_fields,
         )
 
@@ -306,9 +293,8 @@ class RobotConfigurationFile:
             "position_zero": self.position_zero[:6],
             "position_transport": self.position_transport[:6],
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
-            "tool_cad_model": str(self.tool_cad_model),
-            "tool_cad_offset_rz": float(self.tool_cad_offset_rz),
-            "tool": self.tool[:6],
+            "tool_profiles_directory": str(self.tool_profiles_directory),
+            "selected_tool_profile": str(self.selected_tool_profile),
         }
 
     def apply_to_robot_model(self, robot_model: RobotModel) -> None:
@@ -338,12 +324,10 @@ class RobotConfigurationFile:
             robot_model.set_position_transport(self.position_transport)
         if "robot_cad_models" in self.present_fields:
             robot_model.set_robot_cad_models(self.robot_cad_models)
-        if "tool_cad_model" in self.present_fields:
-            robot_model.set_tool_cad_model(self.tool_cad_model)
-        if "tool_cad_offset_rz" in self.present_fields:
-            robot_model.set_tool_cad_offset_rz(self.tool_cad_offset_rz)
-        if "tool" in self.present_fields:
-            robot_model.set_tool(RobotTool(*self.tool[:6]))
+        if "tool_profiles_directory" in self.present_fields:
+            robot_model.set_tool_profiles_directory(self.tool_profiles_directory)
+        if "selected_tool_profile" in self.present_fields:
+            robot_model.set_selected_tool_profile(self.selected_tool_profile)
 
     def save(self, file_path: str) -> None:
         with open(file_path, "w") as file:

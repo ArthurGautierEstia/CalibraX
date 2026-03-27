@@ -1,0 +1,13 @@
+{
+    "name": "Torche Soudure",
+    "tool": {
+        "x": 56.9,
+        "y": 0.0,
+        "z": 255.9,
+        "a": 0.0,
+        "b": 23.0,
+        "c": 0.0
+    },
+    "tool_cad_model": "./robot_stl/Tool/Torche_Soudure.stl",
+    "tool_cad_offset_rz": 90.0
+}

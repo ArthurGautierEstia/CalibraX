@@ -32,6 +32,7 @@ class RobotConfigurationController(QObject):
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
         self.robot_model.tool_cad_model_changed.connect(self._on_robot_cad_models_changed)
         self.robot_model.tool_cad_offset_rz_changed.connect(self._on_robot_cad_models_changed)
+        self.robot_model.tool_profiles_directory_changed.connect(self._on_robot_tool_profiles_directory_changed)
 
         # Signals from View
         self.robot_configuration_widget.text_changed_requested.connect(self._on_view_name_changed)
@@ -45,6 +46,8 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
         self.robot_configuration_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
         self.robot_configuration_widget.tool_cad_offset_rz_changed.connect(self._on_view_tool_cad_offset_rz_changed)
+        self.robot_configuration_widget.tool_profiles_directory_changed.connect(self._on_view_tool_profiles_directory_changed)
+        self.robot_configuration_widget.selected_tool_profile_changed.connect(self._on_view_selected_tool_profile_changed)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
         self.robot_configuration_widget.export_config_requested.connect(self._on_view_export_config_requested)
 
@@ -71,6 +74,9 @@ class RobotConfigurationController(QObject):
 
     def _on_robot_cad_models_changed(self) -> None:
         self.update_cad_view()
+
+    def _on_robot_tool_profiles_directory_changed(self) -> None:
+        self.update_tool_view()
 
     def _on_view_name_changed(self) -> None:
         self.robot_model.set_robot_name(self.robot_configuration_widget.get_robot_name())
@@ -134,6 +140,12 @@ class RobotConfigurationController(QObject):
 
     def _on_view_tool_cad_offset_rz_changed(self, offset_deg: float) -> None:
         self.robot_model.set_tool_cad_offset_rz(offset_deg)
+
+    def _on_view_tool_profiles_directory_changed(self, directory: str) -> None:
+        self.robot_model.set_tool_profiles_directory(directory)
+
+    def _on_view_selected_tool_profile_changed(self, profile_path: str) -> None:
+        self.robot_model.set_selected_tool_profile(profile_path)
     
     def _on_view_load_config_requested(self) -> None:
         self.load_configuration()
@@ -172,6 +184,8 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.set_tool_cad_offset_rz(self.robot_model.get_tool_cad_offset_rz())
 
     def update_tool_view(self) -> None:
+        self.robot_configuration_widget.set_tool_profiles_directory(self.robot_model.get_tool_profiles_directory())
+        self.robot_configuration_widget.set_selected_tool_profile(self.robot_model.get_selected_tool_profile())
         self.robot_configuration_widget.set_tool(self.robot_model.get_tool())
 
     def load_configuration(self):

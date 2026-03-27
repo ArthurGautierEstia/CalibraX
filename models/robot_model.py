@@ -22,6 +22,8 @@ class RobotModel(QObject):
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [f"./robot_stl/rocky{i}.stl" for i in range(7)]
     DEFAULT_TOOL_CAD_MODEL: str = ""
     DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
+    DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./configurations/tools"
+    DEFAULT_SELECTED_TOOL_PROFILE: str = ""
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
     POSITION_TRANSPORT: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
@@ -45,6 +47,8 @@ class RobotModel(QObject):
     robot_cad_models_changed = pyqtSignal()
     tool_cad_model_changed = pyqtSignal()
     tool_cad_offset_rz_changed = pyqtSignal()
+    tool_profiles_directory_changed = pyqtSignal()
+    selected_tool_profile_changed = pyqtSignal()
 
     # Joints et axes
     joints_changed = pyqtSignal()
@@ -84,6 +88,8 @@ class RobotModel(QObject):
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
         self.tool_cad_model: str = RobotModel.DEFAULT_TOOL_CAD_MODEL
         self.tool_cad_offset_rz: float = RobotModel.DEFAULT_TOOL_CAD_OFFSET_RZ
+        self.tool_profiles_directory: str = RobotModel.DEFAULT_TOOL_PROFILES_DIRECTORY
+        self.selected_tool_profile: str = RobotModel.DEFAULT_SELECTED_TOOL_PROFILE
                
         # Position home du robot
         self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
@@ -483,6 +489,32 @@ class RobotModel(QObject):
         self.tool_cad_offset_rz = normalized
         self.tool_cad_offset_rz_changed.emit()
         self.cad_models_changed.emit()
+
+    def get_tool_profiles_directory(self) -> str:
+        """Retourne le dossier des profils tool."""
+        return str(self.tool_profiles_directory)
+
+    def set_tool_profiles_directory(self, directory: str | None) -> None:
+        """Definit le dossier des profils tool."""
+        normalized = "" if directory is None else str(directory).strip()
+        if normalized == "":
+            normalized = RobotModel.DEFAULT_TOOL_PROFILES_DIRECTORY
+        if normalized == self.tool_profiles_directory:
+            return
+        self.tool_profiles_directory = normalized
+        self.tool_profiles_directory_changed.emit()
+
+    def get_selected_tool_profile(self) -> str:
+        """Retourne le profil tool selectionne (fichier JSON) ou chaine vide."""
+        return str(self.selected_tool_profile)
+
+    def set_selected_tool_profile(self, profile_path: str | None) -> None:
+        """Definit le profil tool selectionne (fichier JSON) ou chaine vide."""
+        normalized = "" if profile_path is None else str(profile_path).strip()
+        if normalized == self.selected_tool_profile:
+            return
+        self.selected_tool_profile = normalized
+        self.selected_tool_profile_changed.emit()
 
     # ============================================================================
     # RÉGION: Getters - Configuration générale

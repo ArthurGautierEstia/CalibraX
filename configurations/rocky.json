@@ -191,14 +191,16 @@
         "./robot_stl/Rocky/rocky5.stl",
         "./robot_stl/Rocky/rocky6.stl"
     ],
-    "tool_cad_model": "",
-    "tool_cad_offset_rz": 0.0,
+    "tool_cad_model": "./robot_stl/Tool/Torche_Soudure.stl",
+    "tool_cad_offset_rz": 90.0,
+    "tool_profiles_directory": "./configurations/tools",
+    "selected_tool_profile": "./configurations/tools/Torche_Soudure.json",
     "tool": [
+        56.9,
         0.0,
+        255.9,
         0.0,
-        0.0,
-        0.0,
-        0.0,
+        23.0,
         0.0
     ]
 }
