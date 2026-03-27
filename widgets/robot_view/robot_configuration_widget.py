@@ -9,8 +9,10 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QDoubleSpinBox,
     QTableWidget,
@@ -199,6 +201,13 @@ class RobotConfigurationWidget(QWidget):
         description.setWordWrap(True)
         layout.addWidget(description)
 
+        multi_select_layout = QHBoxLayout()
+        multi_select_layout.addStretch()
+        multi_select_button = QPushButton("Parcourir plusieurs CAO robot")
+        multi_select_button.clicked.connect(self._on_pick_multiple_robot_cad)
+        multi_select_layout.addWidget(multi_select_button)
+        layout.addLayout(multi_select_layout)
+
         grid = QGridLayout()
         self.robot_cad_line_edits.clear()
 
@@ -280,7 +289,52 @@ class RobotConfigurationWidget(QWidget):
         if not file_path:
             return
 
-        self.robot_cad_line_edits[index].setText(file_path)
+        self.robot_cad_line_edits[index].setText(self._normalize_cad_path(file_path))
+        self.robot_cad_models_changed.emit(self.get_robot_cad_models())
+
+    def _on_pick_multiple_robot_cad(self) -> None:
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Selectionner plusieurs CAO robot",
+            self._get_cad_start_directory(),
+            "STL files (*.stl);;All files (*)",
+        )
+        if not file_paths:
+            return
+
+        cad_paths = [self._normalize_cad_path(path) for path in file_paths]
+        max_count = RobotConfigurationWidget.ROBOT_CAD_COUNT
+        if len(cad_paths) > max_count:
+            cad_paths = cad_paths[:max_count]
+            QMessageBox.information(
+                self,
+                "Selection limitee",
+                f"Seulement {max_count} fichiers sont utilises (indices 0 a {max_count - 1}).",
+            )
+
+        start_index = 0
+        if len(cad_paths) < max_count:
+            max_start = max_count - len(cad_paths)
+            start_index, ok = QInputDialog.getInt(
+                self,
+                "Index de depart",
+                (
+                    f"{len(cad_paths)} fichiers selectionnes.\n"
+                    f"Choisissez l'index de depart pour l'affectation ({0} a {max_start})."
+                ),
+                0,
+                0,
+                max_start,
+                1,
+            )
+            if not ok:
+                return
+
+        for offset, cad_path in enumerate(cad_paths):
+            target_index = start_index + offset
+            if 0 <= target_index < max_count:
+                self.robot_cad_line_edits[target_index].setText(cad_path)
+
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
 
     def _on_clear_robot_cad(self, index: int) -> None:
@@ -297,7 +351,7 @@ class RobotConfigurationWidget(QWidget):
         if not file_path:
             return
 
-        self.tool_cad_line_edit.setText(file_path)
+        self.tool_cad_line_edit.setText(self._normalize_cad_path(file_path))
         self.tool_cad_model_changed.emit(self.get_tool_cad_model())
 
     def _on_clear_tool_cad(self) -> None:
@@ -347,6 +401,29 @@ class RobotConfigurationWidget(QWidget):
         if os.path.isdir(robot_stl_dir):
             return robot_stl_dir
         return current_dir
+
+    @staticmethod
+    def _normalize_cad_path(file_path: str) -> str:
+        absolute_path = os.path.abspath(file_path)
+        project_root = os.path.abspath(os.getcwd())
+
+        try:
+            common_path = os.path.commonpath([project_root, absolute_path])
+        except ValueError:
+            return absolute_path
+
+        if common_path != project_root:
+            return absolute_path
+
+        try:
+            relative_path = os.path.relpath(absolute_path, project_root)
+        except ValueError:
+            return absolute_path
+
+        relative_path = relative_path.replace("\\", "/")
+        if relative_path == ".":
+            return relative_path
+        return f"./{relative_path}" if not relative_path.startswith(".") else relative_path
 
     def _emit_axis_config_changed(self) -> None:
         self.axis_config_changed.emit(
