@@ -34,7 +34,7 @@ class ToolWidget(QWidget):
 
         # Groupe pour l'outil
         group = QGroupBox("Configuration de l'outil")
-        group_layout = QVBoxLayout(group)
+        group_layout = QHBoxLayout(group)
 
         # Description
         description = QLabel("Paramètres de transformation de l'outil\n"
