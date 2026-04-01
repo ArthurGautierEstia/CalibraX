@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QDoubleSpinBox,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -115,6 +116,7 @@ class RobotConfigurationWidget(QWidget):
         main_layout.addWidget(self._build_tool_section(), 2)
 
         self.tool_widget = ToolWidget()
+        self.tool_widget.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.tool_widget.tool_changed.connect(self._on_tool_changed)
         self.tool_widget_container_layout.addWidget(self.tool_widget)
         self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)

@@ -18,7 +18,6 @@ class RobotConfigurationController(QObject):
         self.robot_model = robot_model
         self.robot_configuration_widget = robot_configuration_widget
         self._setup_connections()
-        self._on_robot_configuration_changed()
     
     def _setup_connections(self) -> None:
         # Signals from Robot Model
