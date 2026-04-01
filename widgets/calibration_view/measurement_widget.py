@@ -167,9 +167,9 @@ class MeasurementWidget(QWidget):
         self.table_dh_measured.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(120)
 
-        self.table_tcp_offsets = QTableWidget(2, 3)
-        self.table_tcp_offsets.setHorizontalHeaderLabels(["X (mm)", "Y (mm)", "Z (mm)"])
-        self.table_tcp_offsets.setVerticalHeaderLabels(["TCP", "Offsets"])
+        self.table_tcp_offsets = QTableWidget(3, 2)
+        self.table_tcp_offsets.setHorizontalHeaderLabels(["TCP", "Offsets"])
+        self.table_tcp_offsets.setVerticalHeaderLabels(["X", "Y", "Z"])
         self.table_tcp_offsets.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_tcp_offsets.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_tcp_offsets.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -482,12 +482,12 @@ class MeasurementWidget(QWidget):
         self.table_tcp_offsets.blockSignals(False)
 
     def set_tcp_offsets_values(self, tcp_xyz: List[float], offsets_xyz: List[float]) -> None:
-        values = [tcp_xyz, offsets_xyz]
+        columns = [tcp_xyz, offsets_xyz]
         self.table_tcp_offsets.blockSignals(True)
-        for row in range(2):
-            row_values = values[row] if row < len(values) else [0.0, 0.0, 0.0]
-            for col in range(3):
-                value = float(row_values[col]) if col < len(row_values) else 0.0
+        for col in range(2):
+            col_values = columns[col] if col < len(columns) else [0.0, 0.0, 0.0]
+            for row in range(3):
+                value = float(col_values[row]) if row < len(col_values) else 0.0
                 self.table_tcp_offsets.setItem(row, col, self._make_centered_item(self._format_value(value, 4)))
         self.table_tcp_offsets.blockSignals(False)
 

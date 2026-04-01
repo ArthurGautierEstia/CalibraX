@@ -1,0 +1,13 @@
+{
+    "name": "Aucun outil",
+    "tool": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "a": 0.0,
+        "b": 0.0,
+        "c": 0.0
+    },
+    "tool_cad_model": "",
+    "tool_cad_offset_rz": 0.0
+}

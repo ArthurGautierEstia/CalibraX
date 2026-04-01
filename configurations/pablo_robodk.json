@@ -1,0 +1,204 @@
+{
+    "name": [
+        "KR240 R2900 ultra"
+    ],
+    "dh": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "675.0"
+        ],
+        [
+            "-90.0",
+            "350.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "1350.0",
+            "-90.0",
+            "0.0"
+        ],
+        [
+            "-90.0",
+            "-41.0",
+            "0.0",
+            "1200.0"
+        ],
+        [
+            "90.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "-90.0",
+            "0.0",
+            "180.0",
+            "240.0"
+        ]
+    ],
+    "corr": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ]
+    ],
+    "axis_limits": [
+        [
+            -185.0,
+            185.0
+        ],
+        [
+            -140.0,
+            -5.0
+        ],
+        [
+            -120.0,
+            155.0
+        ],
+        [
+            -350.0,
+            350.0
+        ],
+        [
+            -122.5,
+            122.5
+        ],
+        [
+            -350.0,
+            350.0
+        ]
+    ],
+    "axis_speed_limits": [
+        105.0,
+        101.0,
+        107.0,
+        136.0,
+        129.0,
+        206.0
+    ],
+    "axis_jerk_limits": [
+        6000.0,
+        5000.0,
+        5000.0,
+        7500.0,
+        6500.0,
+        9000.0
+    ],
+    "axis_reversed": [
+        -1,
+        1,
+        1,
+        -1,
+        1,
+        -1
+    ],
+    "joint_weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+    ],
+    "allowed_configs": [
+        "FUN",
+        "FUF",
+        "FDN",
+        "FDF",
+        "BUN",
+        "BUF",
+        "BDN",
+        "BDF"
+    ],
+    "home_position": [
+        0.0,
+        -90.0,
+        90.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "position_zero": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "position_transport": [
+        0.0,
+        -105.0,
+        156.0,
+        0.0,
+        120.0,
+        0.0
+    ],
+    "robot_cad_models": [
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo0.stl",
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo1.stl",
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo2.stl",
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo3.stl",
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo4.stl",
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo5.stl",
+        "C:/Users/anselme.angot/Repository_Arthur/CalibraX/robot_stl/Pablo/pablo6.stl"
+    ],
+    "tool_cad_model": "",
+    "tool_cad_offset_rz": 0.0,
+    "tool": [
+        0.0,
+        0.0,
+        100.0,
+        0.0,
+        45.0,
+        0.0
+    ]
+}
