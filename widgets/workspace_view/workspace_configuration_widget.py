@@ -61,8 +61,8 @@ class WorkspaceConfigurationWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.scene_name_line_edit: QLineEdit | None = None
-        self.workspace_file_line_edit: QLineEdit | None = None
-        self.workspace_dir_line_edit: QLineEdit | None = None
+        self._workspace_directory: str = ""
+        self._workspace_file_path: str = ""
 
         self.table_elements: QTableWidget | None = None
         self.table_tcp_zones: QTableWidget | None = None
@@ -101,15 +101,6 @@ class WorkspaceConfigurationWidget(QWidget):
         load_btn.clicked.connect(self.workspace_load_requested.emit)
         layout.addWidget(load_btn, 0, 3)
 
-        layout.addWidget(QLabel("Dossier"), 1, 0)
-        self.workspace_dir_line_edit = QLineEdit()
-        self.workspace_dir_line_edit.setReadOnly(True)
-        layout.addWidget(self.workspace_dir_line_edit, 1, 1, 1, 3)
-
-        layout.addWidget(QLabel("Fichier"), 2, 0)
-        self.workspace_file_line_edit = QLineEdit()
-        self.workspace_file_line_edit.setReadOnly(True)
-        layout.addWidget(self.workspace_file_line_edit, 2, 1, 1, 3)
 
         return group
 
@@ -431,9 +422,8 @@ class WorkspaceConfigurationWidget(QWidget):
         return self._safe_float(item.text() if item else "", default)
 
     def set_workspace_directory(self, directory: str) -> None:
-        if self.workspace_dir_line_edit is None:
-            return
-        self.workspace_dir_line_edit.setText(directory)
+        self._workspace_directory = str(directory or "").strip()
+        self._refresh_scene_name_tooltip()
 
     def set_workspace_scene_name(self, scene_name: str) -> None:
         if self.scene_name_line_edit is None:
@@ -448,9 +438,14 @@ class WorkspaceConfigurationWidget(QWidget):
         return self.scene_name_line_edit.text().strip()
 
     def set_workspace_file_path(self, file_path: str) -> None:
-        if self.workspace_file_line_edit is None:
+        self._workspace_file_path = str(file_path or "").strip()
+        self._refresh_scene_name_tooltip()
+
+    def _refresh_scene_name_tooltip(self) -> None:
+        if self.scene_name_line_edit is None:
             return
-        self.workspace_file_line_edit.setText(file_path)
+        tooltip_path = self._workspace_file_path if self._workspace_file_path else self._workspace_directory
+        self.scene_name_line_edit.setToolTip(tooltip_path)
 
     def set_workspace_cad_elements(self, values: list[dict[str, Any]]) -> None:
         if self.table_elements is None:
@@ -620,3 +615,4 @@ class WorkspaceConfigurationWidget(QWidget):
         if os.path.isdir(robot_stl_dir):
             return robot_stl_dir
         return current_dir
+
