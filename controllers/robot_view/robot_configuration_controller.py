@@ -10,6 +10,7 @@ from utils.str_utils import str_to_float
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 
 class RobotConfigurationController(QObject):
+    DEFAULT_ROBOT_CONFIG_DIRECTORY = os.path.join(".", "configurations", "robots")
 
     configuration_loaded = pyqtSignal()
 
@@ -162,13 +163,12 @@ class RobotConfigurationController(QObject):
 
     def load_configuration(self):
         """Charger une configuration depuis un fichier json"""
-        currentDir = os.getcwd()
-        configurationDir = os.path.join(currentDir, 'configurations') 
+        configuration_dir = self._robot_configuration_directory()
 
         file_path, data = FileIOHandler.select_and_load_json(
             self.robot_configuration_widget,
             "Charger une configuration robot",
-            configurationDir if os.path.exists(configurationDir) else currentDir
+            configuration_dir,
         )
 
         if data:
@@ -180,15 +180,14 @@ class RobotConfigurationController(QObject):
 
     def export_configuration(self):
         """Exporter la configuration actuelle"""
-        currentDir = os.getcwd()
-        configurationDir = os.path.join(currentDir, 'configurations') 
+        configuration_dir = self._robot_configuration_directory()
 
         config = RobotConfigurationFile.from_robot_model(self.robot_model)
         FileIOHandler.save_json(
             self.robot_configuration_widget,
             "Exporter/Sauvegarder une configuration robot",
             config.to_dict(),
-            configurationDir if os.path.exists(configurationDir) else currentDir
+            configuration_dir,
         )
 
     def load_configuration_from_path(self, file_path: str, show_errors: bool = True) -> bool:
@@ -205,3 +204,12 @@ class RobotConfigurationController(QObject):
         self.robot_model.load_from_configuration_file(config, file_path)
         self.configuration_loaded.emit()
         return True
+
+    @staticmethod
+    def _robot_configuration_directory() -> str:
+        root_dir = os.getcwd()
+        configuration_dir = os.path.abspath(
+            os.path.join(root_dir, RobotConfigurationController.DEFAULT_ROBOT_CONFIG_DIRECTORY)
+        )
+        os.makedirs(configuration_dir, exist_ok=True)
+        return configuration_dir

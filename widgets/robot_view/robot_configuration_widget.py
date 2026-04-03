@@ -732,6 +732,14 @@ class RobotConfigurationWidget(QWidget):
             QMessageBox.information(self, "Nom manquant", "Saisissez un nom de tool avant d'enregistrer.")
             return
 
+        if self._has_forbidden_filename_chars(raw_name):
+            QMessageBox.warning(
+                self,
+                "Nom invalide",
+                "Le nom du tool contient des caracteres interdits pour un nom de fichier.",
+            )
+            return
+
         safe_name = self._sanitize_tool_file_name(raw_name)
         if not safe_name:
             QMessageBox.warning(self, "Nom invalide", "Le nom du tool ne peut pas etre utilise comme nom de fichier.")
@@ -856,6 +864,7 @@ class RobotConfigurationWidget(QWidget):
     def _get_tools_start_directory() -> str:
         current_dir = os.getcwd()
         tools_dir = os.path.join(current_dir, "configurations", "tools")
+        os.makedirs(tools_dir, exist_ok=True)
         if os.path.isdir(tools_dir):
             return tools_dir
         tools_dir = os.path.join(current_dir, "tools")
@@ -869,6 +878,11 @@ class RobotConfigurationWidget(QWidget):
         safe = name.replace(" ", "_")
         safe = "".join("_" if char in forbidden else char for char in safe).strip().strip(".")
         return safe
+
+    @staticmethod
+    def _has_forbidden_filename_chars(name: str) -> bool:
+        forbidden = '<>:"/\\|?*'
+        return any(char in forbidden for char in str(name))
 
     @staticmethod
     def _resolve_filesystem_path(path: str) -> str:
@@ -1237,6 +1251,9 @@ class RobotConfigurationWidget(QWidget):
         if not normalized:
             normalized = self._default_tools_directory()
         normalized = self._normalize_project_path(normalized)
+        resolved_directory = self._resolve_filesystem_path(normalized)
+        if resolved_directory:
+            os.makedirs(resolved_directory, exist_ok=True)
         self.tool_profiles_dir_line_edit.setText(normalized)
         self._refresh_tool_profiles()
         if emit_change:
