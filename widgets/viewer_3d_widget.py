@@ -878,29 +878,18 @@ class Viewer3DWidget(QWidget):
             offset_axis = str(collider.get("offset_axis", "")).strip().lower()
             offset_value = float(collider.get("offset_value", 0.0))
 
-            orientation = np.eye(4, dtype=float)
-            if direction_axis == "x":
-                orientation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-            elif direction_axis == "y":
-                orientation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
+            orientation = self._primitive_extrusion_orientation(direction_axis, signed_height >= 0.0)
 
-            center_local = np.array([0.0, 0.0, 0.0], dtype=float)
+            local_offset = np.array([0.0, 0.0, 0.0], dtype=float)
             if offset_axis == "x":
-                center_local[0] += offset_value
+                local_offset[0] += offset_value
             elif offset_axis == "y":
-                center_local[1] += offset_value
+                local_offset[1] += offset_value
             elif offset_axis == "z":
-                center_local[2] += offset_value
-
-            if direction_axis == "x":
-                center_local[0] += signed_height * 0.5
-            elif direction_axis == "y":
-                center_local[1] += signed_height * 0.5
-            else:
-                center_local[2] += signed_height * 0.5
+                local_offset[2] += offset_value
 
             translation = np.eye(4, dtype=float)
-            translation[:3, 3] = center_local
+            translation[:3, 3] = local_offset
             transform = base_transform @ translation @ orientation
             item = self._build_primitive_item(
                 {
@@ -936,7 +925,6 @@ class Viewer3DWidget(QWidget):
                 collider,
                 (0.85, 0.35, 1.0, 0.24),
                 base_transform=flange_transform,
-                anchor_to_positive_z=True,
             )
             if item is None:
                 continue
@@ -1007,7 +995,6 @@ class Viewer3DWidget(QWidget):
         color: tuple[float, float, float, float],
         base_transform: np.ndarray | None = None,
         skip_pose: bool = False,
-        anchor_to_positive_z: bool = False,
     ) -> gl.GLMeshItem | None:
         shape = str(primitive.get("shape", "box")).strip().lower()
         mesh_data = self._build_primitive_mesh_data(
@@ -1025,12 +1012,6 @@ class Viewer3DWidget(QWidget):
         if not skip_pose:
             pose_transform = self._pose_to_matrix(primitive.get("pose", [0.0] * 6))
             transform = transform @ pose_transform
-            if anchor_to_positive_z:
-                anchor_offset = self._tool_collider_local_anchor_offset(primitive, shape)
-                if np.linalg.norm(anchor_offset) > 1e-12:
-                    anchor_transform = np.eye(4, dtype=float)
-                    anchor_transform[:3, 3] = anchor_offset
-                    transform = transform @ anchor_transform
 
         item = gl.GLMeshItem(meshdata=mesh_data, smooth=True, color=color, shader='shaded')
         item.setTransform(
@@ -1045,15 +1026,20 @@ class Viewer3DWidget(QWidget):
         return item
 
     @staticmethod
-    def _tool_collider_local_anchor_offset(primitive: dict, shape: str) -> np.ndarray:
-        normalized_shape = shape if shape in {"box", "cylinder", "sphere"} else "box"
-        if normalized_shape == "box":
-            distance = max(0.0, float(primitive.get("size_z", 100.0))) * 0.5
-        elif normalized_shape == "cylinder":
-            distance = max(0.0, float(primitive.get("height", 100.0))) * 0.5
-        else:
-            distance = max(0.0, float(primitive.get("radius", 50.0)))
-        return np.array([0.0, 0.0, distance], dtype=float)
+    def _primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
+        rotation = np.eye(4, dtype=float)
+        normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
+        if normalized_axis == "x":
+            rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
+        elif normalized_axis == "y":
+            rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
+
+        if positive_direction:
+            return rotation
+
+        flip = np.eye(4, dtype=float)
+        flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
+        return rotation @ flip
 
     def _build_primitive_mesh_data(
         self,
@@ -1074,17 +1060,17 @@ class Viewer3DWidget(QWidget):
             if mesh_data is not None:
                 return mesh_data
 
-            hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
+            hx, hy = sx * 0.5, sy * 0.5
             vertices = np.array(
                 [
-                    [-hx, -hy, -hz],
-                    [hx, -hy, -hz],
-                    [hx, hy, -hz],
-                    [-hx, hy, -hz],
-                    [-hx, -hy, hz],
-                    [hx, -hy, hz],
-                    [hx, hy, hz],
-                    [-hx, hy, hz],
+                    [-hx, -hy, 0.0],
+                    [hx, -hy, 0.0],
+                    [hx, hy, 0.0],
+                    [-hx, hy, 0.0],
+                    [-hx, -hy, sz],
+                    [hx, -hy, sz],
+                    [hx, hy, sz],
+                    [-hx, hy, sz],
                 ],
                 dtype=float,
             )
@@ -1112,19 +1098,18 @@ class Viewer3DWidget(QWidget):
             if mesh_data is not None:
                 return mesh_data
 
-            half_h = h * 0.5
             vertices: list[list[float]] = []
             for idx in range(segments):
                 angle = 2.0 * np.pi * float(idx) / float(segments)
                 x = r * np.cos(angle)
                 y = r * np.sin(angle)
-                vertices.append([x, y, -half_h])  # bottom ring
-                vertices.append([x, y, half_h])   # top ring
+                vertices.append([x, y, 0.0])  # bottom ring
+                vertices.append([x, y, h])    # top ring
 
             top_center_idx = len(vertices)
-            vertices.append([0.0, 0.0, half_h])
+            vertices.append([0.0, 0.0, h])
             bottom_center_idx = len(vertices)
-            vertices.append([0.0, 0.0, -half_h])
+            vertices.append([0.0, 0.0, 0.0])
 
             faces: list[list[int]] = []
             for idx in range(segments):
