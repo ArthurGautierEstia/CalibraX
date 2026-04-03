@@ -1,5 +1,5 @@
 import os
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem, QAbstractItemView, QLabel
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidgetItem
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QFont
 import pyqtgraph.opengl as gl
@@ -13,6 +13,7 @@ from models.collider_models import parse_axis_colliders, parse_primitive_collide
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
+from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 
 class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
@@ -85,24 +86,8 @@ class Viewer3DWidget(QWidget):
         layout.addWidget(self.viewer)
 
         # --- LISTE DES REPERES (Overlay en haut a droite) ---
-        self.frame_list = QListWidget(self.viewer) # Parent = viewer pour l'overlay
-        self.frame_list.setGeometry(10, 10, 150, 300) # Position et taille
-        self.frame_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.frame_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.frame_list.setStyleSheet("""
-            QListWidget {
-                background-color: rgba(25, 25, 28, 130);
-                color: lightgray;
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 6px;
-                outline: 0;
-            }
-            QListWidget::item {
-                padding: 6px 8px;
-            }
-        """)
-        
-        self.frame_list.hide()
+        self.frame_overlay = FrameVisibilityOverlayWidget(self.viewer)
+        self.frame_list = self.frame_overlay.list_widget
 
         # --- LABEL EN HAUT A GAUCHE ---
         self.msg_label = QLabel("", self.viewer)  # Parent = viewer pour l'overlay
@@ -150,7 +135,8 @@ class Viewer3DWidget(QWidget):
         self.setLayout(layout)
         self.add_grid()
 
-        self.frame_list.itemClicked.connect(self.on_frame_clicked)
+        self.frame_overlay.frame_clicked.connect(self.on_frame_clicked)
+        self.frame_overlay.geometry_changed.connect(self._position_overlays)
         self.btn_toggle_cad.clicked.connect(self._on_cad_button_clicked)
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
@@ -163,8 +149,8 @@ class Viewer3DWidget(QWidget):
     def _position_overlays(self):
         """Positionne la liste en haut a droite et le label en haut a gauche"""
         margin = 10
-        frame_list_x = max(margin, self.viewer.width() - self.frame_list.width() - margin)
-        self.frame_list.move(frame_list_x, margin)
+        frame_overlay_x = max(margin, self.viewer.width() - self.frame_overlay.width() - margin)
+        self.frame_overlay.move(frame_overlay_x, margin)
         self.msg_label.move(margin, margin)
 
     def resizeEvent(self, event):
@@ -230,9 +216,10 @@ class Viewer3DWidget(QWidget):
     def _emit_display_state_changed(self) -> None:
         self.display_state_changed.emit(self.get_display_state())
 
-    def on_frame_clicked(self, item: QListWidgetItem):
+    def on_frame_clicked(self, index: int):
         """Gère le clic sur un élément de la liste"""
-        index = self.frame_list.row(item)
+        if index < 0 or index >= len(self.frames_visibility):
+            return
         self.frames_visibility[index] = not self.frames_visibility[index]
         self._clear_and_refresh()
         self._emit_display_state_changed()
@@ -301,6 +288,8 @@ class Viewer3DWidget(QWidget):
             else:
                 item.setFont(font_normal)
                 item.setForeground(Qt.GlobalColor.darkGray)  # Gris foncé en normal
+
+        self.frame_overlay.set_frames_visibility(self.frames_visibility)
 
     def add_grid(self):
         grid = gl.GLGridItem()
