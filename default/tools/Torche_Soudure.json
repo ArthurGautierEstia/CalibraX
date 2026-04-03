@@ -1,0 +1,70 @@
+{
+    "name": "Torche_Soudure",
+    "tool": {
+        "x": 56.9,
+        "y": 0.0,
+        "z": 255.9,
+        "a": 0.0,
+        "b": 23.0,
+        "c": 0.0
+    },
+    "tool_cad_model": "./default/tools_stl/Torche_Soudure.stl",
+    "tool_cad_offset_rz": 90.0,
+    "tool_colliders": [
+        {
+            "name": "Tool collider 1",
+            "enabled": true,
+            "shape": "cylinder",
+            "pose": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size_x": 100.0,
+            "size_y": 100.0,
+            "size_z": 100.0,
+            "radius": 40.0,
+            "height": 50.0
+        },
+        {
+            "name": "Tool collider 2",
+            "enabled": true,
+            "shape": "cylinder",
+            "pose": [
+                0.0,
+                0.0,
+                50.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size_x": 100.0,
+            "size_y": 100.0,
+            "size_z": 100.0,
+            "radius": 25.0,
+            "height": 80.0
+        },
+        {
+            "name": "Tool collider 3",
+            "enabled": true,
+            "shape": "cylinder",
+            "pose": [
+                0.0,
+                0.0,
+                120.0,
+                0.0,
+                23.0,
+                0.0
+            ],
+            "size_x": 100.0,
+            "size_y": 100.0,
+            "size_z": 100.0,
+            "radius": 20.0,
+            "height": 140.0
+        }
+    ],
+    "retractable_z_mm": 0.0
+}

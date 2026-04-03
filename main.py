@@ -35,7 +35,7 @@ def parse_startup_options(argv: list[str]) -> dict[str, str]:
     }
 
 
-class MGDApplication:
+class CalibraxApplication:
     def __init__(self, startup_options: dict[str, str]):
         self.app = QApplication(sys.argv)
         self.apply_kuka_accent()
@@ -70,13 +70,6 @@ class MGDApplication:
             palette.setColor(QPalette.ColorRole.Accent, accent)
         self.app.setPalette(palette)
 
-    def load_theme(self, file: str = "themes/dark_theme.qss"):
-        try:
-            with open(file, "r", encoding="utf-8") as f:
-                self.app.setStyleSheet(f.read())
-        except FileNotFoundError:
-            print(f"Fichier {file} non trouvé, thème par défaut utilisé")
-
     def run(self):
         self.main_window.showMaximized()
         QTimer.singleShot(0, self.main_controller.bootstrap_startup)
@@ -85,5 +78,5 @@ class MGDApplication:
 
 if __name__ == "__main__":
     startup_options = parse_startup_options(sys.argv[1:])
-    app = MGDApplication(startup_options)
+    app = CalibraxApplication(startup_options)
     app.run()

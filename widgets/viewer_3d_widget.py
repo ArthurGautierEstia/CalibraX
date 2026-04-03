@@ -520,6 +520,7 @@ class Viewer3DWidget(QWidget):
             if self.transparency_enabled:
                 self.set_transparency(True, emit_signal=False)
             self._cad_loaded = True
+            self._clear_and_refresh()
         finally:
             self.end_loading_feedback()
 
@@ -542,6 +543,7 @@ class Viewer3DWidget(QWidget):
 
             if self.transparency_enabled:
                 self.set_transparency(True, emit_signal=False)
+            self._clear_and_refresh()
         finally:
             self.end_loading_feedback()
 
@@ -600,10 +602,10 @@ class Viewer3DWidget(QWidget):
 
     def _resolve_robot_cad_models(self) -> list[str]:
         if self._robot_model is None:
-            return [f"./robot_stl/rocky{i}.stl" for i in range(7)]
+            return [f"./default/robot_stl/rocky{i}.stl" for i in range(7)]
         cad_models = self._robot_model.get_robot_cad_models()
         if not cad_models:
-            return [f"./robot_stl/rocky{i}.stl" for i in range(7)]
+            return [f"./default/robot_stl/rocky{i}.stl" for i in range(7)]
         return [str(path) for path in cad_models]
 
     def _resolve_tool_cad_model(self) -> str:
@@ -668,7 +670,7 @@ class Viewer3DWidget(QWidget):
             if matrix_index < len(robot_cad_models):
                 stl_path = robot_cad_models[matrix_index]
             else:
-                stl_path = f"./robot_stl/rocky{matrix_index}.stl"
+                stl_path = f"./default/robot_stl/rocky{matrix_index}.stl"
 
             if not stl_path:
                 continue
@@ -758,17 +760,18 @@ class Viewer3DWidget(QWidget):
         self._robot_model = robot_model
         self._tool_model = tool_model
 
-        #self.last_dh_matrices = robot_model.get_current_tcp_dh_matrices()
-        #self.last_corrected_matrices = robot_model.get_current_tcp_corrected_dh_matrices()
-        
-        # ne pas prendre les matrices courantes mais recalculer à partir des joints actuels (inversé)
-        # compute_fk_joints va renvoyer les valeurs correctes sans inversion
+        dh_matrices = robot_model.get_current_tcp_dh_matrices()
+        corrected_matrices = robot_model.get_current_tcp_corrected_dh_matrices()
 
-        active_tool = tool_model.get_tool() if tool_model is not None else None
-        dh_matrices, corrected_matrices, _, _, _ = robot_model.compute_fk_joints(
-            robot_model.get_joints(),
-            tool=active_tool,
-        )
+        if not dh_matrices or not corrected_matrices:
+            active_tool = tool_model.get_tool() if tool_model is not None else None
+            fk_result = robot_model.compute_fk_joints(
+                robot_model.get_joints(),
+                tool=active_tool,
+            )
+            if fk_result is None:
+                return
+            dh_matrices, corrected_matrices, _, _, _ = fk_result
 
         self.last_dh_matrices = dh_matrices
         self.last_corrected_matrices = corrected_matrices

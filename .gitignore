@@ -6,3 +6,5 @@ trajectories/
 #configurations/
 .claude/
 CLAUDE.md
+
+app_session.json

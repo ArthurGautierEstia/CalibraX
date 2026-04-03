@@ -21,7 +21,7 @@ DEFAULT_AXIS_LIMITS: list[tuple[float, float]] = [
 DEFAULT_AXIS_SPEED_LIMITS: list[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
 DEFAULT_AXIS_JERK_LIMITS: list[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
 DEFAULT_AXIS_COLLIDERS: list[dict[str, Any]] = default_axis_colliders(6)
-DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./robot_stl/rocky{i}.stl" for i in range(7)]
+DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./default/robot_stl/rocky{i}.stl" for i in range(7)]
 @dataclass
 class RobotConfigurationFile:
     """Representation d'un fichier de configuration robot."""

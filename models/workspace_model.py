@@ -9,7 +9,7 @@ from models.workspace_file import parse_workspace_cad_elements
 
 
 class WorkspaceModel(QObject):
-    DEFAULT_WORKSPACE_DIRECTORY: str = "./Workspace"
+    DEFAULT_WORKSPACE_DIRECTORY: str = "./workspaces"
     DEFAULT_WORKSPACE_SCENE_NAME: str = "scene"
 
     workspace_changed = pyqtSignal()

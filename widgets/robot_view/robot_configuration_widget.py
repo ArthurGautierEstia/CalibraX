@@ -356,7 +356,7 @@ class RobotConfigurationWidget(QWidget):
         self.tool_profiles_dir_line_edit.setReadOnly(True)
         profiles_grid.addWidget(self.tool_profiles_dir_line_edit, 0, 1)
 
-        pick_tools_dir_btn = QPushButton("Selectionner dossier")
+        pick_tools_dir_btn = QPushButton("Sélectionner dossier")
         pick_tools_dir_btn.clicked.connect(self._on_pick_tool_profiles_directory)
         profiles_grid.addWidget(pick_tools_dir_btn, 0, 2)
 
@@ -556,7 +556,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_robot_cad(self, index: int) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selectionner une CAO",
+            "Sélectionner une CAO",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -569,7 +569,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_multiple_robot_cad(self) -> None:
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Selectionner plusieurs CAO robot",
+            "Sélectionner plusieurs CAO robot",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -618,7 +618,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_tool_cad(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selectionner une CAO de tool",
+            "Sélectionner une CAO de tool",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -640,7 +640,7 @@ class RobotConfigurationWidget(QWidget):
         start_directory = self._resolve_filesystem_path(current_directory) if current_directory else self._get_tools_start_directory()
         selected_dir = QFileDialog.getExistingDirectory(
             self,
-            "Selectionner le dossier des tools",
+            "Sélectionner le dossier des tools",
             start_directory,
         )
         if not selected_dir:
@@ -847,7 +847,7 @@ class RobotConfigurationWidget(QWidget):
     @staticmethod
     def _get_cad_start_directory() -> str:
         current_dir = os.getcwd()
-        robot_stl_dir = os.path.join(current_dir, "robot_stl")
+        robot_stl_dir = os.path.join(current_dir, "default", "robot_stl")
         if os.path.isdir(robot_stl_dir):
             return robot_stl_dir
         return current_dir
