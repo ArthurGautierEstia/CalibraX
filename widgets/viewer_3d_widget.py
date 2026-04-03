@@ -541,6 +541,32 @@ class Viewer3DWidget(QWidget):
             if i < len(self.workspace_frames_visibility) and self.workspace_frames_visibility[i]:
                 self.draw_frame(transform)
 
+    @staticmethod
+    def _normalize_visibility_list(
+        values: list[bool],
+        count: int,
+        default_value: bool = True,
+    ) -> list[bool]:
+        normalized = [bool(v) for v in values[:count]]
+        if len(normalized) < count:
+            normalized.extend([bool(default_value)] * (count - len(normalized)))
+        return normalized
+
+    def _normalize_workspace_frames_visibility(self) -> None:
+        target_count = len(self._workspace_frame_matrices)
+        current_values = [bool(v) for v in self.workspace_frames_visibility]
+
+        if len(current_values) == target_count:
+            self.workspace_frames_visibility = current_values
+            return
+
+        # Compatibilite avec les anciennes sessions qui ne stockaient pas le frame World.
+        if target_count > 0 and len(current_values) == (target_count - 1):
+            self.workspace_frames_visibility = [True, *current_values]
+            return
+
+        self.workspace_frames_visibility = self._normalize_visibility_list(current_values, target_count)
+
     def load_cad(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
         self._robot_model = robot_model
         self._tool_model = tool_model
@@ -861,10 +887,8 @@ class Viewer3DWidget(QWidget):
 
     def _render_workspace_models(self) -> None:
         self._workspace_element_items.clear()
-        self._workspace_frame_matrices = []
-        self._workspace_frame_labels = []
-        if not self._workspace_elements:
-            return
+        self._workspace_frame_matrices = [np.eye(4, dtype=float)]
+        self._workspace_frame_labels = ["World"]
 
         for element_index, element in enumerate(self._workspace_elements):
             stl_path = str(element.get("cad_model", "")).strip()
@@ -1021,8 +1045,7 @@ class Viewer3DWidget(QWidget):
                     mesh_item.hide()
 
         self._render_workspace_models()
-        if len(self.workspace_frames_visibility) != len(self._workspace_frame_matrices):
-            self.workspace_frames_visibility = [True] * len(self._workspace_frame_matrices)
+        self._normalize_workspace_frames_visibility()
         if self.show_axes:
             self.draw_workspace_frames()
         self._render_workspace_zones()
