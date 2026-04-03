@@ -443,7 +443,7 @@ class RobotModel(QObject):
         self._update_tcp_pose(tool=tool)
 
     def _update_tcp_pose(self, tool: RobotTool | None = None):
-        if self._inhibit_compute_fk or self._user_inhibit_compute_fk:
+        if self._inhibit_compute_fk or self._user_inhibit_compute_fk or not self.has_configuration:
             return
         
         # update current axis config
