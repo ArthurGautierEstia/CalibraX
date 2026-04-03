@@ -8,6 +8,7 @@ from PyQt6.QtCore import QObject, QTimer, Qt
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from models.trajectory_result import (
     TrajectoryComputationStatus,
     TrajectoryResult,
@@ -32,6 +33,7 @@ class TrajectoryController(QObject):
     def __init__(
         self,
         robot_model: RobotModel,
+        tool_model: ToolModel,
         trajectory_view: TrajectoryView,
         viewer3d_controller: Viewer3DController,
         parent: QObject = None,
@@ -39,6 +41,7 @@ class TrajectoryController(QObject):
         super().__init__(parent)
 
         self.robot_model = robot_model
+        self.tool_model = tool_model
         self.trajectory_view = trajectory_view
         self.viewer3d_controller = viewer3d_controller
         self.config_widget = self.trajectory_view.get_config_widget()
@@ -47,6 +50,7 @@ class TrajectoryController(QObject):
 
         self.trajectory_builder = TrajectoryBuilder(
             self.robot_model,
+            self.tool_model,
             smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
         )
         self.current_trajectory = TrajectoryResult()
@@ -114,7 +118,7 @@ class TrajectoryController(QObject):
             return
 
         if corrected_matrices is None:
-            fk_result = self.robot_model.compute_fk_joints(joints)
+            fk_result = self.robot_model.compute_fk_joints(joints, tool=self.tool_model.get_tool())
             if fk_result is None:
                 self.viewer3d_controller.hide_robot_ghost()
                 return
@@ -178,7 +182,7 @@ class TrajectoryController(QObject):
             self.robot_model.set_joints(keypoint.joint_target[:6])
             return
 
-        mgi_result = self.robot_model.compute_ik_target(keypoint.cartesian_target[:6])
+        mgi_result = self.robot_model.compute_ik_target(keypoint.cartesian_target[:6], tool=self.tool_model.get_tool())
         best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
         if best_solution is None:
             QMessageBox.warning(
@@ -486,14 +490,18 @@ class TrajectoryController(QObject):
         count = min(len(self.current_trajectory.segments), len(keypoints))
         for segment_index in range(count):
             segment_result = self.current_trajectory.segments[segment_index]
-            end_anchor = resolve_keypoint_xyz(self.robot_model, keypoints[segment_index])
+            end_anchor = resolve_keypoint_xyz(self.robot_model, keypoints[segment_index], tool=self.tool_model.get_tool())
             if end_anchor is None:
                 continue
 
             if segment_index == 0:
                 start_anchor = first_start_anchor
             else:
-                start_anchor = resolve_keypoint_xyz(self.robot_model, keypoints[segment_index - 1])
+                start_anchor = resolve_keypoint_xyz(
+                    self.robot_model,
+                    keypoints[segment_index - 1],
+                    tool=self.tool_model.get_tool(),
+                )
                 if start_anchor is None:
                     continue
 
@@ -538,7 +546,7 @@ class TrajectoryController(QObject):
         points_xyz: list[list[float]] = []
         index_map: list[int] = []
         for idx, keypoint in enumerate(self._displayed_keypoints):
-            xyz = resolve_keypoint_xyz(self.robot_model, keypoint)
+            xyz = resolve_keypoint_xyz(self.robot_model, keypoint, tool=self.tool_model.get_tool())
             if xyz is None:
                 continue
             points_xyz.append(xyz)

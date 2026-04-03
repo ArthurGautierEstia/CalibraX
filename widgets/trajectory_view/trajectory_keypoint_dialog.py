@@ -43,6 +43,7 @@ from models.trajectory_keypoint import (
 )
 from models.trajectory_result import TrajectoryResult
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
 
@@ -63,12 +64,13 @@ class TrajectoryKeypointDialog(QDialog):
         MgiConfigKey.BDF,
     ]
 
-    def __init__(self, robot_model: RobotModel, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, robot_model: RobotModel, tool_model: ToolModel, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Point clé")
         self._dialog_min_width = 620
         self.setMinimumWidth(self._dialog_min_width)
         self.robot_model = robot_model
+        self.tool_model = tool_model
 
         self.target_type_combo = QComboBox()
         self.use_current_target_btn = QPushButton("Valeurs courantes")
@@ -411,7 +413,7 @@ class TrajectoryKeypointDialog(QDialog):
     def _on_use_home_target_clicked(self) -> None:
         home_joints = list(self.robot_model.get_home_position())
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
-            fk_result = self.robot_model.compute_fk_joints(home_joints)
+            fk_result = self.robot_model.compute_fk_joints(home_joints, tool=self.tool_model.get_tool())
             if fk_result is not None:
                 _, _, home_pose, _, _ = fk_result
                 self.cartesian_target_widget.set_all_cartesian([float(v) for v in home_pose[:6]])
@@ -437,7 +439,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _compute_joint_values_from_cartesian_target(self) -> list[float]:
         target = self.cartesian_target_widget.get_cartesian_values()
-        mgi_result = self.robot_model.compute_ik_target(target)
+        mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
         has_valid_raw = bool(mgi_result.get_valid_solutions())
         has_valid_expanded = bool(mgi_result.get_valid_solutions_expanded())
         if not has_valid_raw and not has_valid_expanded:
@@ -479,7 +481,10 @@ class TrajectoryKeypointDialog(QDialog):
             self.joint_target_widget.set_all_joints(joints)
 
     def _sync_cartesian_target_from_joint_target(self) -> None:
-        fk_result = self.robot_model.compute_fk_joints(self.joint_target_widget.get_all_joints())
+        fk_result = self.robot_model.compute_fk_joints(
+            self.joint_target_widget.get_all_joints(),
+            tool=self.tool_model.get_tool(),
+        )
         if fk_result is None:
             return
         _, _, pose, _, _ = fk_result
@@ -509,7 +514,7 @@ class TrajectoryKeypointDialog(QDialog):
         if len(joints) < 6:
             return payload
 
-        fk_result = self.robot_model.compute_fk_joints(joints)
+        fk_result = self.robot_model.compute_fk_joints(joints, tool=self.tool_model.get_tool())
         if fk_result is None:
             return payload
         _, corrected_matrices, pose, _, _ = fk_result
@@ -595,7 +600,7 @@ class TrajectoryKeypointDialog(QDialog):
         if len(target) < 6:
             return
 
-        mgi_result = self.robot_model.compute_ik_target(target)
+        mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
         allowed_configs = self._resolve_allowed_configs_for_preview()
         reference_joints = [float(v) for v in self.joint_target_widget.get_all_joints()[:6]]
         while len(reference_joints) < 6:
@@ -721,7 +726,10 @@ class TrajectoryKeypointDialog(QDialog):
                 return None
             return [float(target[0]), float(target[1]), float(target[2])]
 
-        fk_result = self.robot_model.compute_fk_joints(self.joint_target_widget.get_all_joints())
+        fk_result = self.robot_model.compute_fk_joints(
+            self.joint_target_widget.get_all_joints(),
+            tool=self.tool_model.get_tool(),
+        )
         if fk_result is None:
             return None
         _, _, pose, _, _ = fk_result
@@ -853,7 +861,11 @@ class TrajectoryKeypointDialog(QDialog):
         if row is None or row < 1 or (row - 1) >= len(self._context_keypoints):
             return None
 
-        previous_point_xyz = resolve_keypoint_xyz(self.robot_model, self._context_keypoints[row - 1])
+        previous_point_xyz = resolve_keypoint_xyz(
+            self.robot_model,
+            self._context_keypoints[row - 1],
+            tool=self.tool_model.get_tool(),
+        )
         current_point_xyz = self._resolve_current_target_xyz()
         if previous_point_xyz is None or current_point_xyz is None:
             return None
@@ -878,7 +890,11 @@ class TrajectoryKeypointDialog(QDialog):
             return None
 
         current_point_xyz = self._resolve_current_target_xyz()
-        next_point_xyz = resolve_keypoint_xyz(self.robot_model, self._context_keypoints[row + 1])
+        next_point_xyz = resolve_keypoint_xyz(
+            self.robot_model,
+            self._context_keypoints[row + 1],
+            tool=self.tool_model.get_tool(),
+        )
         if current_point_xyz is None or next_point_xyz is None:
             return None
 

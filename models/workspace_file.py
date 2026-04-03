@@ -7,7 +7,7 @@ from typing import Any, TYPE_CHECKING
 from models.collider_models import parse_primitive_colliders, primitive_collider_to_dict
 
 if TYPE_CHECKING:
-    from models.robot_model import RobotModel
+    from models.workspace_model import WorkspaceModel
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -62,12 +62,15 @@ class WorkspaceFile:
     collision_zones: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
-    def from_robot_model(cls, robot_model: RobotModel) -> "WorkspaceFile":
+    def from_workspace_model(cls, workspace_model: "WorkspaceModel") -> "WorkspaceFile":
         return cls(
-            scene_name=robot_model.get_workspace_scene_name(),
-            cad_elements=[normalize_workspace_cad_element(v) for v in robot_model.get_workspace_cad_elements()],
-            tcp_zones=parse_primitive_colliders(robot_model.get_workspace_tcp_zones(), default_shape="box"),
-            collision_zones=parse_primitive_colliders(robot_model.get_workspace_collision_zones(), default_shape="box"),
+            scene_name=workspace_model.get_workspace_scene_name(),
+            cad_elements=[normalize_workspace_cad_element(v) for v in workspace_model.get_workspace_cad_elements()],
+            tcp_zones=parse_primitive_colliders(workspace_model.get_workspace_tcp_zones(), default_shape="box"),
+            collision_zones=parse_primitive_colliders(
+                workspace_model.get_workspace_collision_zones(),
+                default_shape="box",
+            ),
         )
 
     @classmethod
@@ -97,8 +100,8 @@ class WorkspaceFile:
             "collision_zones": [primitive_collider_to_dict(v) for v in self.collision_zones],
         }
 
-    def apply_to_robot_model(self, robot_model: RobotModel, file_path: str | None = None) -> None:
-        robot_model.set_workspace_data(
+    def apply_to_workspace_model(self, workspace_model: "WorkspaceModel", file_path: str | None = None) -> None:
+        workspace_model.set_workspace_data(
             scene_name=self.scene_name,
             cad_elements=self.cad_elements,
             tcp_zones=self.tcp_zones,

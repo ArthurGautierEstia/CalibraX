@@ -3,16 +3,18 @@ import numpy as np
 from typing import Tuple, Optional
 
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from views.jog_view import JogView
 import utils.math_utils as math_utils
 
 class JogController(QObject):
     """Contrôleur pour la vue Jog - gère les interactions de jog articulaire et cartésien avec jog continu"""
     
-    def __init__(self, robot_model: RobotModel, jog_view: JogView, parent: QObject = None):
+    def __init__(self, robot_model: RobotModel, tool_model: ToolModel, jog_view: JogView, parent: QObject = None):
         super().__init__(parent)
         
         self.robot_model = robot_model
+        self.tool_model = tool_model
         self.jog_view = jog_view
 
         self.jog_joint_widget = self.jog_view.get_jog_joint_widget()
@@ -192,7 +194,7 @@ class JogController(QObject):
                     target[5] = newABC[2]
 
             # Appeler le MGI sur la nouvelle pose cible
-            mgi_result = self.robot_model.compute_ik_target(target)
+            mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
             
             # Si des solutions existent, appliquer la meilleure
             if mgi_result:

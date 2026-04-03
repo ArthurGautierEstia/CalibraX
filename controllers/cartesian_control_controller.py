@@ -1,16 +1,24 @@
 from PyQt6.QtCore import QObject
 
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from views.cartesian_control_view import CartesianControlView
 from controllers.cartesian_control_view.cartesian_wdiget_controller import CartesianWidgetController
 from controllers.cartesian_control_view.mgi_solutions_controller import MgiSolutionsController
 
 
 class CartesianControlController(QObject):
-    def __init__(self, robot_model: RobotModel, cartesian_control_view: CartesianControlView, parent: QObject = None):
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        cartesian_control_view: CartesianControlView,
+        parent: QObject = None,
+    ):
         super().__init__(parent)
 
         self.robot_model = robot_model
+        self.tool_model = tool_model
         self.cartesian_control_view = cartesian_control_view
 
         self.cartesian_widget_controller = CartesianWidgetController(self.robot_model, self.cartesian_control_view.get_cartesian_control_widget())
@@ -39,7 +47,7 @@ class CartesianControlController(QObject):
         target = self.cartesian_widget_controller.get_new_target()
 
         # --- Étape 1 : MGI analytique (rapide, donne l'estimation initiale) ---
-        mgi_result = self.robot_model.compute_ik_target(target)
+        mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
         best_sol = self.robot_model.get_best_mgi_solution(mgi_result)
 
         if not best_sol:
@@ -57,7 +65,10 @@ class CartesianControlController(QObject):
             # q_initial = solution analytique pour la configuration sélectionnée.
             params = mgi_widget.get_jacobien_params()
             jacobien_result = self.robot_model.compute_ik_optimise(
-                target, sol_analytique.joints, params
+                target,
+                sol_analytique.joints,
+                params,
+                tool=self.tool_model.get_tool(),
             )
             # Conserver les joints analytiques pour comparaison dans l'UI
             jacobien_result.joints_analytiques = list(sol_analytique.joints)

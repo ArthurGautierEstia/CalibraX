@@ -7,7 +7,6 @@ from models.collider_models import (
     axis_colliders_to_dict,
     default_axis_colliders,
     parse_axis_colliders,
-    parse_primitive_colliders,
 )
 from models.robot_configuration_file import RobotConfigurationFile
 
@@ -27,14 +26,6 @@ class RobotModel(QObject):
     DEFAULT_AXIS_JERK_LIMITS: List[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
     DEFAULT_AXIS_COLLIDERS: List[dict[str, Any]] = default_axis_colliders(6)
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [f"./robot_stl/rocky{i}.stl" for i in range(7)]
-    DEFAULT_TOOL_CAD_MODEL: str = ""
-    DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
-    DEFAULT_TOOL_COLLIDERS: List[dict[str, Any]] = []
-    DEFAULT_TOOL_RETRACTABLE_Z_MM: float = 0.0
-    DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./configurations/tools"
-    DEFAULT_SELECTED_TOOL_PROFILE: str = ""
-    DEFAULT_WORKSPACE_DIRECTORY: str = "./Workspace"
-    DEFAULT_WORKSPACE_SCENE_NAME: str = "scene"
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
     POSITION_TRANSPORT: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
@@ -52,18 +43,9 @@ class RobotModel(QObject):
 
     allowed_config_changed = pyqtSignal()
 
-    # Tool
-    tool_changed = pyqtSignal()
     cad_models_changed = pyqtSignal()
     robot_cad_models_changed = pyqtSignal()
-    tool_cad_model_changed = pyqtSignal()
-    tool_cad_offset_rz_changed = pyqtSignal()
     axis_colliders_changed = pyqtSignal()
-    tool_profiles_directory_changed = pyqtSignal()
-    selected_tool_profile_changed = pyqtSignal()
-    tool_colliders_changed = pyqtSignal()
-    tool_retractable_z_changed = pyqtSignal()
-    workspace_changed = pyqtSignal()
 
     # Joints et axes
     joints_changed = pyqtSignal()
@@ -101,21 +83,7 @@ class RobotModel(QObject):
         self.axis_speed_limits: List[float] = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
         self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
-        self.tool_cad_model: str = RobotModel.DEFAULT_TOOL_CAD_MODEL
-        self.tool_cad_offset_rz: float = RobotModel.DEFAULT_TOOL_CAD_OFFSET_RZ
         self.axis_colliders: List[dict[str, Any]] = axis_colliders_to_dict(RobotModel.DEFAULT_AXIS_COLLIDERS, 6)
-        self.tool_colliders: List[dict[str, Any]] = parse_primitive_colliders(
-            RobotModel.DEFAULT_TOOL_COLLIDERS,
-            default_shape="cylinder",
-        )
-        self.tool_retractable_z_mm: float = RobotModel.DEFAULT_TOOL_RETRACTABLE_Z_MM
-        self.tool_profiles_directory: str = RobotModel.DEFAULT_TOOL_PROFILES_DIRECTORY
-        self.selected_tool_profile: str = RobotModel.DEFAULT_SELECTED_TOOL_PROFILE
-        self.workspace_scene_name: str = RobotModel.DEFAULT_WORKSPACE_SCENE_NAME
-        self.workspace_file_path: str = ""
-        self.workspace_cad_elements: List[dict[str, Any]] = []
-        self.workspace_tcp_zones: List[dict[str, Any]] = []
-        self.workspace_collision_zones: List[dict[str, Any]] = []
                
         # Position home du robot
         self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
@@ -156,10 +124,7 @@ class RobotModel(QObject):
             MgiSingularitiesBehavior(MgiSingularityBehavior.CONTINUE),
             MgiConfigurationFilter.allow_all())
         
-        self.tool = RobotTool()
-        self._build_T_tool()
-
-        self.MGI_solver = MGI(self.mgi_params, self.tool)
+        self.MGI_solver = MGI(self.mgi_params, RobotTool())
 
         self.current_tcp_mgi_result: MgiResult = MgiResult()
 
@@ -197,6 +162,8 @@ class RobotModel(QObject):
 
         self._user_inhibit_compute_fk = False
         self._inhibit_compute_fk = False
+        self.current_tool = RobotTool()
+        self.current_tool_transform = RobotModel.build_tool_transform(self.current_tool)
 
     # ====================================================================
     # RÉGION: MGI Fonctions utilitaires
@@ -286,7 +253,13 @@ class RobotModel(QObject):
     # RÉGION: Inverse Kinematics
     # ====================================================================
 
-    def compute_ik_optimise(self, target: list[float], q_initial: list[float], params=None):
+    def compute_ik_optimise(
+        self,
+        target: list[float],
+        q_initial: list[float],
+        params=None,
+        tool: RobotTool | None = None,
+    ):
         """
         Solveur MGI optimisé par la Jacobienne inverse (Levenberg-Marquardt).
 
@@ -304,16 +277,26 @@ class RobotModel(QObject):
         from utils.mgi_jacobien import mgi_jacobien, MgiJacobienParams
         if params is None:
             params = MgiJacobienParams()
-        return mgi_jacobien(target, self, q_initial, params)
+        return mgi_jacobien(target, self, q_initial, params, tool=tool)
 
-    def compute_ik(self, x: float, y: float, z: float, a: float, b: float, c: float):
+    def compute_ik(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        a: float,
+        b: float,
+        c: float,
+        tool: RobotTool | None = None,
+    ):
+        self.MGI_solver.set_tool(self._resolve_tool(tool))
         self.MGI_solver.set_q1ValueIfSingularityQ1(self.joint_values[0])
         self.MGI_solver.set_q4ValueIfSingularityQ5(self.joint_values[4])
         self.MGI_solver.set_q6ValueIfSingularityQ5(self.joint_values[5])
         return self.MGI_solver.compute_mgi(x, y, z, a, b, c)
 
-    def compute_ik_target(self, target: list[float]):
-        return self.compute_ik(target[0], target[1], target[2], target[3], target[4], target[5])
+    def compute_ik_target(self, target: list[float], tool: RobotTool | None = None):
+        return self.compute_ik(target[0], target[1], target[2], target[3], target[4], target[5], tool=tool)
 
     def get_best_mgi_solution(self, mgi_result: MgiResult):
         joints_rad = [math.radians(q) for q in self.joint_values]
@@ -323,7 +306,57 @@ class RobotModel(QObject):
     # RÉGION: Forward Kinematics
     # ====================================================================
 
-    def compute_fk(self, q1: float, q2: float, q3: float, q4: float, q5: float, q6: float):
+    @staticmethod
+    def build_tool_transform(tool: RobotTool | None = None):
+        current_tool = tool if tool is not None else RobotTool()
+        ta_rad = radians(current_tool.a)
+        tb_rad = radians(current_tool.b)
+        tc_rad = radians(current_tool.c)
+        rotation = MGI._rot_z(ta_rad) @ MGI._rot_y(tb_rad) @ MGI._rot_x(tc_rad)
+        transform = np.eye(4)
+        transform[:3, :3] = rotation
+        transform[:3, 3] = [current_tool.x, current_tool.y, current_tool.z]
+        return transform
+
+    @staticmethod
+    def _copy_tool(tool: RobotTool | None = None) -> RobotTool:
+        source_tool = tool if tool is not None else RobotTool()
+        return RobotTool(
+            source_tool.x,
+            source_tool.y,
+            source_tool.z,
+            source_tool.a,
+            source_tool.b,
+            source_tool.c,
+        )
+
+    def set_tool(self, tool: RobotTool | None = None) -> None:
+        new_tool = RobotModel._copy_tool(tool)
+        self.current_tool = new_tool
+        self.current_tool_transform = RobotModel.build_tool_transform(new_tool)
+        self.MGI_solver.set_tool(new_tool)
+        self._update_tcp_pose()
+
+    def _resolve_tool(self, tool: RobotTool | None = None) -> RobotTool:
+        if tool is not None:
+            return tool
+        return self.current_tool
+
+    def _resolve_tool_transform(self, tool: RobotTool | None = None) -> np.ndarray:
+        if tool is not None:
+            return RobotModel.build_tool_transform(tool)
+        return self.current_tool_transform.copy()
+
+    def compute_fk(
+        self,
+        q1: float,
+        q2: float,
+        q3: float,
+        q4: float,
+        q5: float,
+        q6: float,
+        tool: RobotTool | None = None,
+    ):
         """Calcule le MGD avec la liste complète des matrices de transformation
     
         Args:
@@ -374,10 +407,11 @@ class RobotModel(QObject):
             T_corrected = math_utils.correction_6d(T_corrected, *corr)
             corrected_matrices.append(T_corrected.copy())
         
-        T_dh = T_dh @ self.T_tool
+        tool_transform = self._resolve_tool_transform(tool)
+        T_dh = T_dh @ tool_transform
         dh_matrices.append(T_dh.copy())
 
-        T_corrected = T_corrected @ self.T_tool
+        T_corrected = T_corrected @ tool_transform
         T_corrected = math_utils.correction_6d(T_corrected, 0, 0, 0, 0, 0, 0)
         corrected_matrices.append(T_corrected.copy())
 
@@ -397,18 +431,18 @@ class RobotModel(QObject):
         
         return dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation
 
-    def compute_fk_joints(self, joints: list[float]):
+    def compute_fk_joints(self, joints: list[float], tool: RobotTool | None = None):
         if len(joints) < 6:
             return None
-        return self.compute_fk(joints[0], joints[1], joints[2], joints[3], joints[4], joints[5])
+        return self.compute_fk(joints[0], joints[1], joints[2], joints[3], joints[4], joints[5], tool=tool)
 
     def inhibit_auto_compute_fk_tcp(self, inhibit: bool):
         self._user_inhibit_compute_fk = inhibit
 
-    def compute_fk_tcp(self):
-        self._update_tcp_pose() 
+    def compute_fk_tcp(self, tool: RobotTool | None = None):
+        self._update_tcp_pose(tool=tool)
 
-    def _update_tcp_pose(self):
+    def _update_tcp_pose(self, tool: RobotTool | None = None):
         if self._inhibit_compute_fk or self._user_inhibit_compute_fk:
             return
         
@@ -416,7 +450,10 @@ class RobotModel(QObject):
         self._update_current_axis_config()
         # update TCP from FK
 
-        dh_matrices, corrected_matrices, dh_pose, corrected_pose, _ = self.compute_fk_joints(self.joint_values)
+        dh_matrices, corrected_matrices, dh_pose, corrected_pose, _ = self.compute_fk_joints(
+            self.joint_values,
+            tool=tool,
+        )
 
         self.current_tcp_dh_matrices = dh_matrices
         self.current_tcp_corrected_dh_matrices = corrected_matrices
@@ -427,7 +464,7 @@ class RobotModel(QObject):
         self._tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*self.tcp_pose[3:6])
 
         # update MGI for current TCP
-        self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose)
+        self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose, tool=tool)
 
         # emit quand tout a été mis à jour
         self.tcp_pose_changed.emit()
@@ -448,29 +485,8 @@ class RobotModel(QObject):
     # RÉGION: Tool
     # ============================================================================
     
-    def get_tool(self):
-        return self.tool
-    
-    def set_tool(self, tool: RobotTool):
-        self.tool = tool
-        self.MGI_solver.set_tool(tool)
-        self._build_T_tool()
-        self.tool_changed.emit()
-        self._update_tcp_pose()
-
-    def _build_T_tool(self):
-        # Transformation du tool
-        ta_rad = radians(self.tool.a)
-        tb_rad = radians(self.tool.b)
-        tc_rad = radians(self.tool.c)
-        R_tool = MGI._rot_z(ta_rad) @ MGI._rot_y(tb_rad) @ MGI._rot_x(tc_rad)
-        T_tool = np.eye(4)
-        T_tool[:3, :3] = R_tool
-        T_tool[:3, 3] = [self.tool.x, self.tool.y, self.tool.z]
-        self.T_tool = T_tool
-    
-    def get_T_tool(self):
-        return self.T_tool
+    def get_T_tool(self, tool: RobotTool | None = None):
+        return self._resolve_tool_transform(tool)
 
     def get_robot_cad_models(self) -> list[str]:
         """Retourne les chemins CAD du robot (base + axes)."""
@@ -490,32 +506,6 @@ class RobotModel(QObject):
         self.robot_cad_models_changed.emit()
         self.cad_models_changed.emit()
 
-    def get_tool_cad_model(self) -> str:
-        """Retourne le chemin CAD optionnel de l'outil."""
-        return str(self.tool_cad_model)
-
-    def set_tool_cad_model(self, tool_cad_model: str | None) -> None:
-        """Définit le chemin CAD optionnel de l'outil (chaine vide pour désactiver)."""
-        normalized = "" if tool_cad_model is None else str(tool_cad_model)
-        if normalized == self.tool_cad_model:
-            return
-        self.tool_cad_model = normalized
-        self.tool_cad_model_changed.emit()
-        self.cad_models_changed.emit()
-
-    def get_tool_cad_offset_rz(self) -> float:
-        """Retourne l'offset visuel Rz (en deg) applique a la CAO tool uniquement."""
-        return float(self.tool_cad_offset_rz)
-
-    def set_tool_cad_offset_rz(self, offset_deg: float) -> None:
-        """Definit l'offset visuel Rz (en deg) applique a la CAO tool uniquement."""
-        normalized = float(offset_deg)
-        if normalized == self.tool_cad_offset_rz:
-            return
-        self.tool_cad_offset_rz = normalized
-        self.tool_cad_offset_rz_changed.emit()
-        self.cad_models_changed.emit()
-
     def get_axis_colliders(self) -> list[dict[str, Any]]:
         return axis_colliders_to_dict(self.axis_colliders, 6)
 
@@ -525,148 +515,6 @@ class RobotModel(QObject):
             return
         self.axis_colliders = normalized
         self.axis_colliders_changed.emit()
-
-    def get_tool_colliders(self) -> list[dict[str, Any]]:
-        return [dict(collider) for collider in parse_primitive_colliders(self.tool_colliders, default_shape="cylinder")]
-
-    def set_tool_colliders(self, tool_colliders: list[dict[str, Any]]) -> None:
-        normalized = parse_primitive_colliders(tool_colliders, default_shape="cylinder")
-        if normalized == self.tool_colliders:
-            return
-        self.tool_colliders = normalized
-        self.tool_colliders_changed.emit()
-
-    def get_tool_retractable_z_mm(self) -> float:
-        return float(self.tool_retractable_z_mm)
-
-    def set_tool_retractable_z_mm(self, retractable_z_mm: float) -> None:
-        normalized = float(retractable_z_mm)
-        if normalized == self.tool_retractable_z_mm:
-            return
-        self.tool_retractable_z_mm = normalized
-        self.tool_retractable_z_changed.emit()
-
-    def get_tool_profiles_directory(self) -> str:
-        """Retourne le dossier des profils tool."""
-        return str(self.tool_profiles_directory)
-
-    def set_tool_profiles_directory(self, directory: str | None) -> None:
-        """Definit le dossier des profils tool."""
-        normalized = "" if directory is None else str(directory).strip()
-        if normalized == "":
-            normalized = RobotModel.DEFAULT_TOOL_PROFILES_DIRECTORY
-        if normalized == self.tool_profiles_directory:
-            return
-        self.tool_profiles_directory = normalized
-        self.tool_profiles_directory_changed.emit()
-
-    def get_selected_tool_profile(self) -> str:
-        """Retourne le profil tool selectionne (fichier JSON) ou chaine vide."""
-        return str(self.selected_tool_profile)
-
-    def set_selected_tool_profile(self, profile_path: str | None) -> None:
-        """Definit le profil tool selectionne (fichier JSON) ou chaine vide."""
-        normalized = "" if profile_path is None else str(profile_path).strip()
-        if normalized == self.selected_tool_profile:
-            return
-        self.selected_tool_profile = normalized
-        self.selected_tool_profile_changed.emit()
-
-    # ============================================================================
-    # REGION: Workspace
-    # ============================================================================
-
-    def get_workspace_scene_name(self) -> str:
-        return str(self.workspace_scene_name)
-
-    def set_workspace_scene_name(self, scene_name: str) -> None:
-        normalized = str(scene_name).strip()
-        if normalized == "":
-            normalized = RobotModel.DEFAULT_WORKSPACE_SCENE_NAME
-        if normalized == self.workspace_scene_name:
-            return
-        self.workspace_scene_name = normalized
-        self.workspace_changed.emit()
-
-    def get_workspace_file_path(self) -> str:
-        return str(self.workspace_file_path)
-
-    def set_workspace_file_path(self, file_path: str | None) -> None:
-        normalized = "" if file_path is None else str(file_path).strip()
-        if normalized == self.workspace_file_path:
-            return
-        self.workspace_file_path = normalized
-        self.workspace_changed.emit()
-
-    def get_workspace_cad_elements(self) -> list[dict[str, Any]]:
-        from models.workspace_file import parse_workspace_cad_elements
-
-        return parse_workspace_cad_elements(self.workspace_cad_elements)
-
-    def set_workspace_cad_elements(self, cad_elements: list[dict[str, Any]], emit: bool = True) -> None:
-        from models.workspace_file import parse_workspace_cad_elements
-
-        normalized = parse_workspace_cad_elements(cad_elements)
-        if normalized == self.workspace_cad_elements:
-            return
-        self.workspace_cad_elements = normalized
-        if emit:
-            self.workspace_changed.emit()
-
-    def get_workspace_tcp_zones(self) -> list[dict[str, Any]]:
-        return parse_primitive_colliders(self.workspace_tcp_zones, default_shape="box")
-
-    def set_workspace_tcp_zones(self, zones: list[dict[str, Any]], emit: bool = True) -> None:
-        normalized = parse_primitive_colliders(zones, default_shape="box")
-        if normalized == self.workspace_tcp_zones:
-            return
-        self.workspace_tcp_zones = normalized
-        if emit:
-            self.workspace_changed.emit()
-
-    def get_workspace_collision_zones(self) -> list[dict[str, Any]]:
-        return parse_primitive_colliders(self.workspace_collision_zones, default_shape="box")
-
-    def set_workspace_collision_zones(self, zones: list[dict[str, Any]], emit: bool = True) -> None:
-        normalized = parse_primitive_colliders(zones, default_shape="box")
-        if normalized == self.workspace_collision_zones:
-            return
-        self.workspace_collision_zones = normalized
-        if emit:
-            self.workspace_changed.emit()
-
-    def set_workspace_data(
-        self,
-        scene_name: str,
-        cad_elements: list[dict[str, Any]],
-        tcp_zones: list[dict[str, Any]],
-        collision_zones: list[dict[str, Any]],
-        file_path: str | None = None,
-    ) -> None:
-        from models.workspace_file import parse_workspace_cad_elements
-
-        normalized_scene_name = str(scene_name).strip() if scene_name else RobotModel.DEFAULT_WORKSPACE_SCENE_NAME
-        normalized_cad_elements = parse_workspace_cad_elements(cad_elements)
-        normalized_tcp_zones = parse_primitive_colliders(tcp_zones, default_shape="box")
-        normalized_collision_zones = parse_primitive_colliders(collision_zones, default_shape="box")
-        normalized_file_path = "" if file_path is None else str(file_path).strip()
-
-        has_changes = (
-            normalized_scene_name != self.workspace_scene_name
-            or normalized_cad_elements != self.workspace_cad_elements
-            or normalized_tcp_zones != self.workspace_tcp_zones
-            or normalized_collision_zones != self.workspace_collision_zones
-            or normalized_file_path != self.workspace_file_path
-        )
-        if not has_changes:
-            return
-
-        self.workspace_scene_name = normalized_scene_name
-        self.workspace_cad_elements = normalized_cad_elements
-        self.workspace_tcp_zones = normalized_tcp_zones
-        self.workspace_collision_zones = normalized_collision_zones
-        self.workspace_file_path = normalized_file_path
-        self.workspace_changed.emit()
 
     # ============================================================================
     # RÉGION: Getters - Configuration générale

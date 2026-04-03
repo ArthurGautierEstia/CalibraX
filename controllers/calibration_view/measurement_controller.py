@@ -3,6 +3,7 @@ from PyQt6.QtCore import QObject
 from PyQt6.QtWidgets import QFileDialog
 
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from widgets.calibration_view.measurement_widget import MeasurementWidget
 
 from utils.file_io import FileIOHandler
@@ -14,9 +15,16 @@ import math
 
 
 class MeasurementController(QObject):
-    def __init__(self, robot_model: RobotModel, measurement_widget: MeasurementWidget, parent: QObject = None):
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        measurement_widget: MeasurementWidget,
+        parent: QObject = None,
+    ):
         super().__init__(parent)
         self.robot_model = robot_model
+        self.tool_model = tool_model
         self.measurement_widget = measurement_widget
         self._setup_connections()
     
@@ -36,7 +44,7 @@ class MeasurementController(QObject):
         self.robot_model.dh_params_changed.connect(self._update_tcp_offsets_from_selection)
         self.robot_model.joints_changed.connect(self._update_tcp_offsets_from_selection)
         self.robot_model.axis_reversed_changed.connect(self._update_tcp_offsets_from_selection)
-        self.robot_model.tool_changed.connect(self._update_tcp_offsets_from_selection)
+        self.tool_model.tool_changed.connect(self._update_tcp_offsets_from_selection)
 
     # ======
     # Connection callbacks
@@ -310,7 +318,7 @@ class MeasurementController(QObject):
 
             T = T @ math_utils.dh_modified(alpha, d, theta, r)
 
-        T = T @ self.robot_model.get_T_tool()
+        T = T @ self.robot_model.get_T_tool(self.tool_model.get_tool())
         return T[:3, 3].astype(float)
 
     def _build_selected_dh_params(self, theoretical_dh: list[list[float]]) -> list[list[float]]:

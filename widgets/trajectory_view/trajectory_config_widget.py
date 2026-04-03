@@ -32,6 +32,7 @@ from models.trajectory_keypoint import (
     TrajectoryKeypoint,
 )
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from models.trajectory_result import TrajectoryResult
 from widgets.trajectory_view.trajectory_keypoint_dialog import TrajectoryKeypointDialog
 
@@ -54,9 +55,10 @@ class TrajectoryConfigWidget(QWidget):
     goToRequested = pyqtSignal(int)
     timeSmoothingChanged = pyqtSignal(bool)
 
-    def __init__(self, robot_model: RobotModel, parent: QWidget = None) -> None:
+    def __init__(self, robot_model: RobotModel, tool_model: ToolModel, parent: QWidget = None) -> None:
         super().__init__(parent)
         self.robot_model = robot_model
+        self.tool_model = tool_model
 
         self.keypoints_table = QTableWidget(0, 11)
         self.btn_add = QPushButton("Ajouter")
@@ -207,12 +209,12 @@ class TrajectoryConfigWidget(QWidget):
         if row < 0 or row >= len(keypoints):
             return None
 
-        end_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row])
+        end_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row], tool=self.tool_model.get_tool())
         if end_xyz is None:
             return None
 
         if row > 0:
-            start_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row - 1])
+            start_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row - 1], tool=self.tool_model.get_tool())
         else:
             tcp_pose = self.robot_model.get_tcp_pose()
             start_xyz = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
@@ -281,7 +283,7 @@ class TrajectoryConfigWidget(QWidget):
         if self._focus_active_dialog():
             return
 
-        dialog = TrajectoryKeypointDialog(self.robot_model, self)
+        dialog = TrajectoryKeypointDialog(self.robot_model, self.tool_model, self)
         dialog.setModal(False)
         dialog.setWindowModality(Qt.WindowModality.NonModal)
         dialog.setWindowFlag(Qt.WindowType.Window, True)

@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem, QAbstractItemView, QLabel
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QFont
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtGui
@@ -8,11 +8,15 @@ import numpy as np
 from stl import mesh
 
 import utils.math_utils as math_utils
+from models.app_session_file import ViewerDisplayState
 from models.collider_models import parse_axis_colliders, parse_primitive_colliders
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
+from models.workspace_model import WorkspaceModel
 
 class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
+    display_state_changed = pyqtSignal(object)
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
@@ -44,6 +48,8 @@ class Viewer3DWidget(QWidget):
         self._cad_showed = True
         self._ghost_visible = False
         self._robot_model: RobotModel | None = None
+        self._tool_model: ToolModel | None = None
+        self._workspace_model: WorkspaceModel | None = None
         self._mesh_data_cache: dict[str, gl.MeshData] = {}
         self._missing_mesh_paths: set[str] = set()
         self._primitive_mesh_cache: dict[str, gl.MeshData] = {}
@@ -62,6 +68,7 @@ class Viewer3DWidget(QWidget):
         self._robot_colliders_visible = True
         self._tool_colliders_visible = True
         self.transparency_enabled = False
+        self._loading_feedback_depth = 0
         self.setup_ui()
 
     def setup_ui(self):
@@ -175,11 +182,60 @@ class Viewer3DWidget(QWidget):
         self.msg_label.adjustSize()
         self._position_overlays()
 
+    def begin_loading_feedback(self, message: str) -> None:
+        self._loading_feedback_depth += 1
+        self._set_label_msg(message)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+
+    def end_loading_feedback(self) -> None:
+        if self._loading_feedback_depth > 0:
+            self._loading_feedback_depth -= 1
+        if self._loading_feedback_depth <= 0:
+            self._loading_feedback_depth = 0
+            self._clear_label_msg()
+            try:
+                QApplication.restoreOverrideCursor()
+            except Exception:
+                pass
+        QApplication.processEvents()
+
+    def get_display_state(self) -> ViewerDisplayState:
+        return ViewerDisplayState(
+            cad_visible=bool(self._cad_showed),
+            transparency_enabled=bool(self.transparency_enabled),
+            show_axes=bool(self.show_axes),
+            frames_visibility=[bool(v) for v in self.frames_visibility],
+            workspace_tcp_zones_visible=bool(self._workspace_tcp_zones_visible),
+            workspace_collision_zones_visible=bool(self._workspace_collision_zones_visible),
+            robot_colliders_visible=bool(self._robot_colliders_visible),
+            tool_colliders_visible=bool(self._tool_colliders_visible),
+        )
+
+    def apply_display_state(self, state: ViewerDisplayState, emit_signal: bool = False) -> None:
+        self._cad_showed = bool(state.cad_visible)
+        self.transparency_enabled = bool(state.transparency_enabled)
+        self.show_axes = bool(state.show_axes)
+        self.frames_visibility = [bool(v) for v in state.frames_visibility]
+        self._workspace_tcp_zones_visible = bool(state.workspace_tcp_zones_visible)
+        self._workspace_collision_zones_visible = bool(state.workspace_collision_zones_visible)
+        self._robot_colliders_visible = bool(state.robot_colliders_visible)
+        self._tool_colliders_visible = bool(state.tool_colliders_visible)
+        self._clear_and_refresh()
+        if self.transparency_enabled:
+            self.set_transparency(True, emit_signal=False)
+        if emit_signal:
+            self._emit_display_state_changed()
+
+    def _emit_display_state_changed(self) -> None:
+        self.display_state_changed.emit(self.get_display_state())
+
     def on_frame_clicked(self, item: QListWidgetItem):
         """Gère le clic sur un élément de la liste"""
         index = self.frame_list.row(item)
         self.frames_visibility[index] = not self.frames_visibility[index]
         self._clear_and_refresh()
+        self._emit_display_state_changed()
     
     def _on_cad_button_clicked(self):
         self.set_robot_visibility(not self._cad_showed)
@@ -192,22 +248,27 @@ class Viewer3DWidget(QWidget):
         for i in range(len(self.frames_visibility)):
             self.frames_visibility[i] = self.show_axes
         self._clear_and_refresh()
+        self._emit_display_state_changed()
 
     def _on_workspace_tcp_zones_button_clicked(self):
         self._workspace_tcp_zones_visible = not self._workspace_tcp_zones_visible
         self._apply_items_visibility(self._workspace_tcp_zone_items, self._workspace_tcp_zones_visible)
+        self._emit_display_state_changed()
 
     def _on_workspace_collision_zones_button_clicked(self):
         self._workspace_collision_zones_visible = not self._workspace_collision_zones_visible
         self._apply_items_visibility(self._workspace_collision_zone_items, self._workspace_collision_zones_visible)
+        self._emit_display_state_changed()
 
     def _on_robot_colliders_button_clicked(self):
         self._robot_colliders_visible = not self._robot_colliders_visible
         self._apply_items_visibility(self._robot_collider_items, self._robot_colliders_visible)
+        self._emit_display_state_changed()
 
     def _on_tool_colliders_button_clicked(self):
         self._tool_colliders_visible = not self._tool_colliders_visible
         self._apply_items_visibility(self._tool_collider_items, self._tool_colliders_visible)
+        self._emit_display_state_changed()
 
     def update_frame_list_ui(self):
         """Met à jour l'apparence de la liste (Gras = Visible)"""
@@ -448,36 +509,47 @@ class Viewer3DWidget(QWidget):
             if i < len(self.frames_visibility) and self.frames_visibility[i]:
                 self.draw_frame(T)
     
-    def load_cad(self, robot_model: RobotModel):
+    def load_cad(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
         self._robot_model = robot_model
-        self._set_label_msg("CAD loading...")
-        QApplication.processEvents()  # Force le traitement des événements pour afficher le curseur
-        matrices = self._resolve_cad_matrices(robot_model)
-        self.last_corrected_matrices = matrices
-        self.add_robot_links(matrices)
-        if self.transparency_enabled:
-            self.set_transparency(True)
-        self._clear_label_msg()
-        self._cad_loaded = True
+        self._tool_model = tool_model
+        self.begin_loading_feedback("Chargement CAO robot...")
+        try:
+            matrices = self._resolve_cad_matrices(robot_model, tool_model)
+            self.last_corrected_matrices = matrices
+            self.add_robot_links(matrices)
+            if self.transparency_enabled:
+                self.set_transparency(True, emit_signal=False)
+            self._cad_loaded = True
+        finally:
+            self.end_loading_feedback()
 
-    def reload_tool_cad(self, robot_model: RobotModel):
+    def reload_tool_cad(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
         self._robot_model = robot_model
+        self._tool_model = tool_model
         if not self._cad_loaded:
-            self.load_cad(robot_model)
+            self.load_cad(robot_model, tool_model)
             return
 
-        matrices = self._resolve_cad_matrices(robot_model)
-        self.last_corrected_matrices = matrices
-        ghost_matrices = self.last_ghost_corrected_matrices if self.last_ghost_corrected_matrices else matrices
-        tool_cad_model = self._resolve_tool_cad_model()
+        self.begin_loading_feedback("Chargement CAO tool...")
+        try:
+            matrices = self._resolve_cad_matrices(robot_model, tool_model)
+            self.last_corrected_matrices = matrices
+            ghost_matrices = self.last_ghost_corrected_matrices if self.last_ghost_corrected_matrices else matrices
+            tool_cad_model = self._resolve_tool_cad_model()
 
-        self._replace_tool_link(matrices, tool_cad_model, ghost=False)
-        self._replace_tool_link(ghost_matrices, tool_cad_model, ghost=True)
+            self._replace_tool_link(matrices, tool_cad_model, ghost=False)
+            self._replace_tool_link(ghost_matrices, tool_cad_model, ghost=True)
 
-        if self.transparency_enabled:
-            self.set_transparency(True)
+            if self.transparency_enabled:
+                self.set_transparency(True, emit_signal=False)
+        finally:
+            self.end_loading_feedback()
 
-    def _resolve_cad_matrices(self, robot_model: RobotModel) -> list[np.ndarray]:
+    def _resolve_cad_matrices(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel | None = None,
+    ) -> list[np.ndarray]:
         matrices = robot_model.get_current_tcp_corrected_dh_matrices()
         if matrices:
             return matrices
@@ -485,7 +557,8 @@ class Viewer3DWidget(QWidget):
         if self.last_corrected_matrices:
             return self.last_corrected_matrices
 
-        fk_result = robot_model.compute_fk_joints(robot_model.get_joints())
+        active_tool = tool_model.get_tool() if tool_model is not None else None
+        fk_result = robot_model.compute_fk_joints(robot_model.get_joints(), tool=active_tool)
         if fk_result is None:
             return []
 
@@ -534,14 +607,14 @@ class Viewer3DWidget(QWidget):
         return [str(path) for path in cad_models]
 
     def _resolve_tool_cad_model(self) -> str:
-        if self._robot_model is None:
+        if self._tool_model is None:
             return ""
-        return str(self._robot_model.get_tool_cad_model())
+        return str(self._tool_model.get_tool_cad_model())
 
     def _resolve_tool_cad_offset_rz(self) -> float:
-        if self._robot_model is None:
+        if self._tool_model is None:
             return 0.0
-        return float(self._robot_model.get_tool_cad_offset_rz())
+        return float(self._tool_model.get_tool_cad_offset_rz())
 
     @staticmethod
     def _resolve_tool_attachment_matrix_index(matrices) -> int | None:
@@ -680,9 +753,10 @@ class Viewer3DWidget(QWidget):
         if not ghost and not self._cad_showed:
             mesh_item.hide()
 
-    def update_robot(self, robot_model: RobotModel):
+    def update_robot(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
         """Met à jour la visualisation 3D avec repères et visibilité des frames"""
         self._robot_model = robot_model
+        self._tool_model = tool_model
 
         #self.last_dh_matrices = robot_model.get_current_tcp_dh_matrices()
         #self.last_corrected_matrices = robot_model.get_current_tcp_corrected_dh_matrices()
@@ -690,27 +764,42 @@ class Viewer3DWidget(QWidget):
         # ne pas prendre les matrices courantes mais recalculer à partir des joints actuels (inversé)
         # compute_fk_joints va renvoyer les valeurs correctes sans inversion
 
-        dh_matrices, corrected_matrices, _, _, _ = robot_model.compute_fk_joints(robot_model.get_joints())
+        active_tool = tool_model.get_tool() if tool_model is not None else None
+        dh_matrices, corrected_matrices, _, _, _ = robot_model.compute_fk_joints(
+            robot_model.get_joints(),
+            tool=active_tool,
+        )
 
         self.last_dh_matrices = dh_matrices
         self.last_corrected_matrices = corrected_matrices
 
         self._clear_and_refresh()
 
-    def update_workspace(self, robot_model: RobotModel) -> None:
-        self._robot_model = robot_model
-        self._workspace_elements = robot_model.get_workspace_cad_elements()
-        self._workspace_tcp_zones = parse_primitive_colliders(robot_model.get_workspace_tcp_zones(), default_shape="box")
-        self._workspace_collision_zones = parse_primitive_colliders(
-            robot_model.get_workspace_collision_zones(),
+    def update_workspace(self, workspace_model: WorkspaceModel | None) -> None:
+        self._workspace_model = workspace_model
+        self._workspace_elements = [] if workspace_model is None else workspace_model.get_workspace_cad_elements()
+        self._workspace_tcp_zones = parse_primitive_colliders(
+            [] if workspace_model is None else workspace_model.get_workspace_tcp_zones(),
             default_shape="box",
         )
-        self._clear_and_refresh()
+        self._workspace_collision_zones = parse_primitive_colliders(
+            [] if workspace_model is None else workspace_model.get_workspace_collision_zones(),
+            default_shape="box",
+        )
+        self.begin_loading_feedback("Chargement scene workspace...")
+        try:
+            self._clear_and_refresh()
+        finally:
+            self.end_loading_feedback()
 
-    def update_collision_models(self, robot_model: RobotModel) -> None:
+    def update_collision_models(self, robot_model: RobotModel, tool_model: ToolModel | None = None) -> None:
         self._robot_model = robot_model
+        self._tool_model = tool_model
         self._axis_colliders = parse_axis_colliders(robot_model.get_axis_colliders(), 6)
-        self._tool_colliders = parse_primitive_colliders(robot_model.get_tool_colliders(), default_shape="cylinder")
+        self._tool_colliders = parse_primitive_colliders(
+            [] if tool_model is None else tool_model.get_tool_colliders(),
+            default_shape="cylinder",
+        )
         self._clear_and_refresh()
 
     @staticmethod
@@ -1118,16 +1207,20 @@ class Viewer3DWidget(QWidget):
         except Exception:
             pass
 
-    def set_robot_visibility(self, visible: bool):
+    def set_robot_visibility(self, visible: bool, emit_signal: bool = True):
         self._cad_showed = visible
         for mesh_item in self.robot_links:
             if visible: mesh_item.show()
             else: mesh_item.hide()
+        if emit_signal:
+            self._emit_display_state_changed()
 
-    def set_transparency(self, enabled: bool):
+    def set_transparency(self, enabled: bool, emit_signal: bool = True):
         self.transparency_enabled = enabled
         for mesh_item in self.robot_links:
             mesh_item.setGLOptions('translucent' if enabled else 'opaque')
+        if emit_signal:
+            self._emit_display_state_changed()
 
     def toogle_base_axis_frames(self):
         self.show_axes = True
@@ -1135,6 +1228,7 @@ class Viewer3DWidget(QWidget):
         last = size - 1
         self.frames_visibility = [(i == 0 or i == last) for i in range(size)]
         self._clear_and_refresh()
+        self._emit_display_state_changed()
 
     def show_robot_ghost(self):
         self._ghost_visible = True
@@ -1142,7 +1236,7 @@ class Viewer3DWidget(QWidget):
         if not self._cad_loaded:
             matrices = self.last_corrected_matrices
             if not matrices and self._robot_model is not None:
-                matrices = self._resolve_cad_matrices(self._robot_model)
+                matrices = self._resolve_cad_matrices(self._robot_model, self._tool_model)
                 self.last_corrected_matrices = matrices
             if matrices:
                 self.add_robot_links(matrices)
@@ -1163,7 +1257,8 @@ class Viewer3DWidget(QWidget):
             self.hide_robot_ghost()
             return
 
-        fk_result = self._robot_model.compute_fk_joints(joints)
+        active_tool = self._tool_model.get_tool() if self._tool_model is not None else None
+        fk_result = self._robot_model.compute_fk_joints(joints, tool=active_tool)
         if fk_result is None:
             self.hide_robot_ghost()
             return

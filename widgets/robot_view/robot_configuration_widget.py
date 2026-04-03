@@ -652,15 +652,9 @@ class RobotConfigurationWidget(QWidget):
             return
         file_path = self.tool_profiles_combo.currentData()
         if not file_path:
-            self._apply_no_tool_profile(emit_signals=True)
             self.selected_tool_profile_changed.emit("")
             return
-        if self._load_tool_profile(str(file_path)):
-            self.selected_tool_profile_changed.emit(self._normalize_project_path(str(file_path)))
-            return
-
-        self._apply_no_tool_profile(emit_signals=True)
-        self.selected_tool_profile_changed.emit("")
+        self.selected_tool_profile_changed.emit(self._normalize_project_path(str(file_path)))
 
     def _refresh_tool_profiles(self) -> None:
         if self.tool_profiles_combo is None or self.tool_profiles_dir_line_edit is None:
@@ -1258,46 +1252,26 @@ class RobotConfigurationWidget(QWidget):
         if self.tool_profiles_combo is None:
             return
         target = "" if profile_path is None else str(profile_path).strip()
-        if not target:
-            self._tool_profile_loading = True
-            self.tool_profiles_combo.setCurrentIndex(0)
-            self._tool_profile_loading = False
-            self._apply_no_tool_profile(emit_signals=True)
-            self.selected_tool_profile_changed.emit("")
-            return
-
-        target_abs = os.path.normcase(os.path.abspath(self._resolve_filesystem_path(target)))
-        target_index = -1
-        for idx in range(self.tool_profiles_combo.count()):
-            item_data = self.tool_profiles_combo.itemData(idx)
-            if not item_data:
-                continue
-            item_abs = os.path.normcase(os.path.abspath(str(item_data)))
-            if item_abs == target_abs:
-                target_index = idx
-                break
-
-        if target_index < 0:
-            self._tool_profile_loading = True
-            self.tool_profiles_combo.setCurrentIndex(0)
-            self._tool_profile_loading = False
-            self._apply_no_tool_profile(emit_signals=True)
-            self.selected_tool_profile_changed.emit("")
-            return
-
         self._tool_profile_loading = True
-        self.tool_profiles_combo.setCurrentIndex(target_index)
-        self._tool_profile_loading = False
-        item_data = self.tool_profiles_combo.itemData(target_index)
-        if item_data and self._load_tool_profile(str(item_data)):
-            self.selected_tool_profile_changed.emit(self._normalize_project_path(str(item_data)))
-            return
+        try:
+            if not target:
+                self.tool_profiles_combo.setCurrentIndex(0)
+                return
 
-        self._tool_profile_loading = True
-        self.tool_profiles_combo.setCurrentIndex(0)
-        self._tool_profile_loading = False
-        self._apply_no_tool_profile(emit_signals=True)
-        self.selected_tool_profile_changed.emit("")
+            target_abs = os.path.normcase(os.path.abspath(self._resolve_filesystem_path(target)))
+            target_index = -1
+            for idx in range(self.tool_profiles_combo.count()):
+                item_data = self.tool_profiles_combo.itemData(idx)
+                if not item_data:
+                    continue
+                item_abs = os.path.normcase(os.path.abspath(str(item_data)))
+                if item_abs == target_abs:
+                    target_index = idx
+                    break
+
+            self.tool_profiles_combo.setCurrentIndex(target_index if target_index >= 0 else 0)
+        finally:
+            self._tool_profile_loading = False
 
     def get_selected_tool_profile(self) -> str:
         if self.tool_profiles_combo is None:

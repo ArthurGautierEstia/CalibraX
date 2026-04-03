@@ -24,6 +24,7 @@ import numpy as np
 from dataclasses import dataclass, field
 
 import utils.math_utils as math_utils
+from utils.mgi import RobotTool
 
 
 # ============================================================================
@@ -182,7 +183,8 @@ def _compute_erreur_pose(T_cible: np.ndarray, T_actuel: np.ndarray) -> np.ndarra
 
 def _compute_jacobienne_numerique(q_deg: list[float],
                                   robot_model,
-                                  epsilon_rad: float) -> np.ndarray:
+                                  epsilon_rad: float,
+                                  tool: RobotTool | None = None) -> np.ndarray:
     """
     Calcule la Jacobienne numérique 6×6 par différences finies centrées.
 
@@ -217,8 +219,8 @@ def _compute_jacobienne_numerique(q_deg: list[float],
         q_minus[j] -= epsilon_deg
 
         # --- MGD corrigé pour les deux perturbations ---
-        _, corrected_plus, _, _, _ = robot_model.compute_fk_joints(q_plus)
-        _, corrected_minus, _, _, _ = robot_model.compute_fk_joints(q_minus)
+        _, corrected_plus, _, _, _ = robot_model.compute_fk_joints(q_plus, tool=tool)
+        _, corrected_minus, _, _, _ = robot_model.compute_fk_joints(q_minus, tool=tool)
 
         # Matrice TCP corrigée (dernier élément = flange + outil)
         T_plus = corrected_plus[-1]
@@ -298,7 +300,8 @@ def _clamper_limites(q_deg: list[float],
 def mgi_jacobien(target: list[float],
                  robot_model,
                  q_initial: list[float],
-                 params: MgiJacobienParams | None = None) -> MgiJacobienResultat:
+                 params: MgiJacobienParams | None = None,
+                 tool: RobotTool | None = None) -> MgiJacobienResultat:
     """
     Solveur MGI optimisé par la Jacobienne inverse avec amortissement
     de Levenberg-Marquardt.
@@ -339,7 +342,7 @@ def mgi_jacobien(target: list[float],
         # ----------------------------------------------------------------
         # 1. Calcul de la pose actuelle via le MGD CORRIGÉ
         # ----------------------------------------------------------------
-        fk_result = robot_model.compute_fk_joints(q_deg)
+        fk_result = robot_model.compute_fk_joints(q_deg, tool=tool)
         if fk_result is None:
             resultat.message = "Erreur : compute_fk_joints a retourné None"
             return resultat
@@ -374,7 +377,7 @@ def mgi_jacobien(target: list[float],
         # ----------------------------------------------------------------
         # 4. Jacobienne numérique (différences finies centrées)
         # ----------------------------------------------------------------
-        J = _compute_jacobienne_numerique(q_deg, robot_model, params.epsilon)
+        J = _compute_jacobienne_numerique(q_deg, robot_model, params.epsilon, tool=tool)
 
         # ----------------------------------------------------------------
         # 5. Correction articulaire (Levenberg-Marquardt)
