@@ -10,6 +10,7 @@ from utils.str_utils import str_to_float
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 
 class RobotConfigurationController(QObject):
+    DEFAULT_ROBOT_CONFIG_DIRECTORY = os.path.join(".", "configurations", "robots")
 
     configuration_loaded = pyqtSignal()
 
@@ -29,14 +30,9 @@ class RobotConfigurationController(QObject):
         self.robot_model.axis_jerk_limits_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.axis_reversed_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
-        self.robot_model.tool_cad_model_changed.connect(self._on_robot_cad_models_changed)
-        self.robot_model.tool_cad_offset_rz_changed.connect(self._on_robot_cad_models_changed)
-        self.robot_model.tool_profiles_directory_changed.connect(self._on_robot_tool_profiles_directory_changed)
-
         # Signals from View
         self.robot_configuration_widget.text_changed_requested.connect(self._on_view_name_changed)
         self.robot_configuration_widget.dh_value_changed.connect(self._on_view_dh_value_changed)
-        self.robot_configuration_widget.tool_changed.connect(self._on_view_tool_changed)
         self.robot_configuration_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
         self.robot_configuration_widget.axis_colliders_config_changed.connect(self._on_view_axis_colliders_config_changed)
         self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
@@ -44,12 +40,6 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.position_transport_requested.connect(self._on_view_position_transport_requested)
         self.robot_configuration_widget.home_position_requested.connect(self._on_view_home_position_requested)
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
-        self.robot_configuration_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
-        self.robot_configuration_widget.tool_cad_offset_rz_changed.connect(self._on_view_tool_cad_offset_rz_changed)
-        self.robot_configuration_widget.tool_colliders_changed.connect(self._on_view_tool_colliders_changed)
-        self.robot_configuration_widget.tool_retractable_z_changed.connect(self._on_view_tool_retractable_z_changed)
-        self.robot_configuration_widget.tool_profiles_directory_changed.connect(self._on_view_tool_profiles_directory_changed)
-        self.robot_configuration_widget.selected_tool_profile_changed.connect(self._on_view_selected_tool_profile_changed)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
         self.robot_configuration_widget.export_config_requested.connect(self._on_view_export_config_requested)
 
@@ -64,7 +54,6 @@ class RobotConfigurationController(QObject):
         self.update_axis_colliders_view()
         self.update_positions_config_view()
         self.update_cad_view()
-        self.update_tool_view()
 
     def _on_robot_name_changed(self) -> None:
         self.update_robot_name_view()
@@ -78,9 +67,6 @@ class RobotConfigurationController(QObject):
     def _on_robot_cad_models_changed(self) -> None:
         self.update_cad_view()
 
-    def _on_robot_tool_profiles_directory_changed(self) -> None:
-        self.update_tool_view()
-
     def _on_view_name_changed(self) -> None:
         self.robot_model.set_robot_name(self.robot_configuration_widget.get_robot_name())
 
@@ -88,17 +74,16 @@ class RobotConfigurationController(QObject):
         fval = str_to_float(value)
         self.robot_model.set_dh_param(row, col, fval)
     
-    def _on_view_tool_changed(self, tool) -> None:
-        self.robot_model.set_tool(tool)
-
     def _on_view_axis_config_changed(
         self,
         axis_limits: list[tuple[float, float]],
+        cartesian_slider_limits_xyz: list[tuple[float, float]],
         axis_speed_limits: list[float],
         axis_jerk_limits: list[float],
         axis_reversed: list[int],
     ) -> None:
         self.robot_model.inhibit_auto_compute_fk_tcp(True)
+        self.robot_model.set_cartesian_slider_limits_xyz(cartesian_slider_limits_xyz)
         self.robot_model.set_axis_speed_limits(axis_speed_limits)
         self.robot_model.set_axis_jerk_limits(axis_jerk_limits)
         self.robot_model.set_axis_limits(axis_limits)
@@ -141,24 +126,6 @@ class RobotConfigurationController(QObject):
     def _on_view_robot_cad_models_changed(self, robot_cad_models: list[str]) -> None:
         self.robot_model.set_robot_cad_models(robot_cad_models)
 
-    def _on_view_tool_cad_model_changed(self, tool_cad_model: str) -> None:
-        self.robot_model.set_tool_cad_model(tool_cad_model)
-
-    def _on_view_tool_cad_offset_rz_changed(self, offset_deg: float) -> None:
-        self.robot_model.set_tool_cad_offset_rz(offset_deg)
-
-    def _on_view_tool_colliders_changed(self, tool_colliders: list[dict]) -> None:
-        self.robot_model.set_tool_colliders(tool_colliders)
-
-    def _on_view_tool_retractable_z_changed(self, retractable_z_mm: float) -> None:
-        self.robot_model.set_tool_retractable_z_mm(retractable_z_mm)
-
-    def _on_view_tool_profiles_directory_changed(self, directory: str) -> None:
-        self.robot_model.set_tool_profiles_directory(directory)
-
-    def _on_view_selected_tool_profile_changed(self, profile_path: str) -> None:
-        self.robot_model.set_selected_tool_profile(profile_path)
-    
     def _on_view_load_config_requested(self) -> None:
         self.load_configuration()
 
@@ -178,6 +145,7 @@ class RobotConfigurationController(QObject):
     def update_axis_config_view(self) -> None:
         self.robot_configuration_widget.set_axis_config(
             self.robot_model.get_axis_limits(),
+            self.robot_model.get_cartesian_slider_limits_xyz(),
             self.robot_model.get_axis_speed_limits(),
             self.robot_model.get_axis_jerk_limits(),
             self.robot_model.get_axis_reversed(),
@@ -195,25 +163,15 @@ class RobotConfigurationController(QObject):
 
     def update_cad_view(self) -> None:
         self.robot_configuration_widget.set_robot_cad_models(self.robot_model.get_robot_cad_models())
-        self.robot_configuration_widget.set_tool_cad_model(self.robot_model.get_tool_cad_model())
-        self.robot_configuration_widget.set_tool_cad_offset_rz(self.robot_model.get_tool_cad_offset_rz())
-
-    def update_tool_view(self) -> None:
-        self.robot_configuration_widget.set_tool_profiles_directory(self.robot_model.get_tool_profiles_directory())
-        self.robot_configuration_widget.set_selected_tool_profile(self.robot_model.get_selected_tool_profile())
-        self.robot_configuration_widget.set_tool(self.robot_model.get_tool())
-        self.robot_configuration_widget.set_tool_colliders(self.robot_model.get_tool_colliders())
-        self.robot_configuration_widget.set_tool_retractable_z_mm(self.robot_model.get_tool_retractable_z_mm())
 
     def load_configuration(self):
         """Charger une configuration depuis un fichier json"""
-        currentDir = os.getcwd()
-        configurationDir = os.path.join(currentDir, 'configurations') 
+        configuration_dir = self._robot_configuration_directory()
 
         file_path, data = FileIOHandler.select_and_load_json(
             self.robot_configuration_widget,
             "Charger une configuration robot",
-            configurationDir if os.path.exists(configurationDir) else currentDir
+            configuration_dir,
         )
 
         if data:
@@ -221,19 +179,40 @@ class RobotConfigurationController(QObject):
                 show_error_popup("Erreur d'importation", "Le fichier de configuration n'est pas au format adapté. Veuillez vérifier le contenu.")
                 return
             
-            config = RobotConfigurationFile.from_dict(data)
-            self.robot_model.load_from_configuration_file(config, file_path)
-            self.configuration_loaded.emit()
+            self.load_configuration_from_path(file_path)
 
     def export_configuration(self):
         """Exporter la configuration actuelle"""
-        currentDir = os.getcwd()
-        configurationDir = os.path.join(currentDir, 'configurations') 
+        configuration_dir = self._robot_configuration_directory()
 
         config = RobotConfigurationFile.from_robot_model(self.robot_model)
         FileIOHandler.save_json(
             self.robot_configuration_widget,
             "Exporter/Sauvegarder une configuration robot",
             config.to_dict(),
-            configurationDir if os.path.exists(configurationDir) else currentDir
+            configuration_dir,
         )
+
+    def load_configuration_from_path(self, file_path: str, show_errors: bool = True) -> bool:
+        _, data = FileIOHandler.load_json(file_path)
+        if not isinstance(data, dict):
+            if show_errors:
+                show_error_popup(
+                    "Erreur d'importation",
+                    "Le fichier de configuration n'est pas au format adapte. Veuillez verifier le contenu.",
+                )
+            return False
+
+        config = RobotConfigurationFile.from_dict(data)
+        self.robot_model.load_from_configuration_file(config, file_path)
+        self.configuration_loaded.emit()
+        return True
+
+    @staticmethod
+    def _robot_configuration_directory() -> str:
+        root_dir = os.getcwd()
+        configuration_dir = os.path.abspath(
+            os.path.join(root_dir, RobotConfigurationController.DEFAULT_ROBOT_CONFIG_DIRECTORY)
+        )
+        os.makedirs(configuration_dir, exist_ok=True)
+        return configuration_dir

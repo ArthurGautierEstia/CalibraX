@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
+from models.reference_frame import ReferenceFrame
+
 
 class CartesianControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées cartésiennes"""
@@ -14,6 +16,7 @@ class CartesianControlWidget(QWidget):
     # ============================================================================
     cartesian_value_changed = pyqtSignal(int, float)  # index (0-5), value
     convention_changed = pyqtSignal(str)  # convention name
+    reference_frame_changed = pyqtSignal(str)
     
     # ============================================================================
     # RÉGION: Conventions constructeurs
@@ -70,6 +73,7 @@ class CartesianControlWidget(QWidget):
         self.spinboxes_cart: List[QDoubleSpinBox] = []
         self.labels_cart: List[QLabel] = []
         self.current_convention = "Kuka"
+        self.current_reference_frame = ReferenceFrame.BASE.value
         self._compact = bool(compact)
         
         # ========================================================================
@@ -99,15 +103,23 @@ class CartesianControlWidget(QWidget):
         self.convention_combo.setCurrentText(self.current_convention)
         self.convention_combo.currentTextChanged.connect(self._on_convention_changed)
         self.convention_combo.setEnabled(False)
+        self.reference_frame_combo = QComboBox()
+        self.reference_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
+        self.reference_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
+        self.reference_frame_combo.currentIndexChanged.connect(self._on_reference_frame_changed)
         self.convention_description = QLabel(self.CONVENTIONS[self.current_convention]["description"])
         self.convention_description.setStyleSheet("font-size: 10px; font-style: italic; color: gray;")
+        convention_layout = QHBoxLayout()
         if not self._compact:
-            convention_layout = QHBoxLayout()
             convention_label = QLabel("Convention:")
             convention_layout.addWidget(convention_label)
             convention_layout.addWidget(self.convention_combo)
-            convention_layout.addStretch()
-            layout.addLayout(convention_layout)
+        reference_label = QLabel("Repère:")
+        convention_layout.addWidget(reference_label)
+        convention_layout.addWidget(self.reference_frame_combo)
+        convention_layout.addStretch()
+        layout.addLayout(convention_layout)
+        if not self._compact:
             layout.addWidget(self.convention_description)
         
         # ========================================================================
@@ -218,6 +230,11 @@ class CartesianControlWidget(QWidget):
         
         # Émettre le signal
         self.convention_changed.emit(convention_name)
+
+    def _on_reference_frame_changed(self, _index: int) -> None:
+        raw = self.reference_frame_combo.currentData()
+        self.current_reference_frame = ReferenceFrame.from_value(raw).value
+        self.reference_frame_changed.emit(self.current_reference_frame)
     
     # ============================================================================
     # RÉGION: Méthodes publiques
@@ -263,6 +280,21 @@ class CartesianControlWidget(QWidget):
     def get_current_convention(self) -> str:
         """Retourne la convention actuellement sélectionnée"""
         return self.current_convention
+
+    def get_reference_frame(self) -> str:
+        return self.current_reference_frame
+
+    def set_reference_frame(self, reference_frame: str, emit_signal: bool = False) -> None:
+        normalized = ReferenceFrame.from_value(reference_frame)
+        index = self.reference_frame_combo.findData(normalized.value)
+        if index < 0:
+            return
+        self.reference_frame_combo.blockSignals(True)
+        self.reference_frame_combo.setCurrentIndex(index)
+        self.reference_frame_combo.blockSignals(False)
+        self.current_reference_frame = normalized.value
+        if emit_signal:
+            self.reference_frame_changed.emit(self.current_reference_frame)
     
     def update_axis_limits(self, limits: List[Tuple[float, float]]) -> None:
         """Met à jour les limites des axes

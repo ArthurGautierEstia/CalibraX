@@ -3,6 +3,8 @@ import bisect
 from dataclasses import dataclass
 
 from models.robot_model import RobotModel
+from models.workspace_model import WorkspaceModel
+from models.tool_model import ToolModel
 from models.trajectory_keypoint import (
     ConfigurationPolicy,
     KeypointMotionMode,
@@ -21,6 +23,7 @@ from models.trajectory_result import (
 )
 from utils.bezier3 import Bezier3Coefficients3D
 import utils.math_utils as math_utils
+from utils.reference_frame_utils import convert_pose_to_base_frame
 from utils.mgi import MGI, MgiConfigKey, MgiResult, MgiResultItem, MgiResultStatus, ConfigurationIdentifier
 
 
@@ -56,11 +59,15 @@ class TrajectoryBuilder:
     def __init__(
         self,
         robot_model: RobotModel,
+        tool_model: ToolModel,
+        workspace_model: WorkspaceModel,
         behavior: TrajectoryBuilderBehavior = TrajectoryBuilderBehavior.CONTINUE_ON_ERROR,
         sample_dt_s: float = DEFAULT_SAMPLE_DT_S,
         smooth_time_enabled: bool = True,
     ) -> None:
         self.robot_model = robot_model
+        self.tool_model = tool_model
+        self.workspace_model = workspace_model
         self.behavior = behavior
         self.sample_dt_s = sample_dt_s if sample_dt_s > 0.0 else TrajectoryBuilder.DEFAULT_SAMPLE_DT_S
         self.smooth_time_enabled = bool(smooth_time_enabled)
@@ -144,11 +151,15 @@ class TrajectoryBuilder:
 
     def _resolve_keypoint_pose(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
-            return [float(v) for v in keypoint.cartesian_target[:6]]
+            return convert_pose_to_base_frame(
+                keypoint.cartesian_target,
+                keypoint.cartesian_frame,
+                self.workspace_model.get_robot_base_pose_world(),
+            )
         return self._resolve_pose_from_joints(keypoint.joint_target)
 
     def _resolve_pose_from_joints(self, joints_deg: list[float]) -> list[float] | None:
-        fk_result = self.robot_model.compute_fk_joints(joints_deg)
+        fk_result = self.robot_model.compute_fk_joints(joints_deg, tool=self.tool_model.get_tool())
         if fk_result is None:
             return None
         _, _, dh_pose, _, _ = fk_result
@@ -519,7 +530,7 @@ class TrajectoryBuilder:
 
     def _get_working_mgi_solver(self) -> MGI:
         if self._working_mgi_solver is None:
-            self._working_mgi_solver = MGI(self.robot_model.mgi_params, self.robot_model.get_tool())
+            self._working_mgi_solver = MGI(self.robot_model.mgi_params, self.tool_model.get_tool())
         return self._working_mgi_solver
 
     def _get_robot_allowed_configs(self) -> set[MgiConfigKey]:
@@ -807,7 +818,7 @@ class TrajectoryBuilder:
         if not segments:
             return trajectory
 
-        self._working_mgi_solver = MGI(self.robot_model.mgi_params, self.robot_model.get_tool())
+        self._working_mgi_solver = MGI(self.robot_model.mgi_params, self.tool_model.get_tool())
         self._robot_allowed_configs = set(self.robot_model.get_allowed_configurations())
         self._joint_weights = [float(v) for v in self.robot_model.get_joint_weights()[:6]]
         try:
@@ -1458,7 +1469,7 @@ class TrajectoryBuilder:
         sample.joints = TrajectoryBuilder._normalize_joints_6(joints_deg)
 
         # B) Compute pose from FK and expose configuration reachability metadata.
-        fk_result = self.robot_model.compute_fk_joints(sample.joints)
+        fk_result = self.robot_model.compute_fk_joints(sample.joints, tool=self.tool_model.get_tool())
         if fk_result is None:
             sample.reachable = False
             sample.error_code = TrajectorySampleErrorCode.POINT_UNREACHABLE

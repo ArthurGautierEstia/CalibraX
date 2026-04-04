@@ -1,8 +1,0 @@
-QPushButton:hover {
-    background-color: #2C2C2C;
-    color: #FF6F00;
-}
-QPushButton:pressed {
-    background-color: #FF6F00; /* Accent orange KUKA */
-    color: #FFFFFF;
-}

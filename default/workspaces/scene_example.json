@@ -1,0 +1,77 @@
+{
+    "scene_name": "scene_example",
+    "robot_base_pose_world": [
+        0.0,
+        0.0,
+        499.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "cad_elements": [
+        {
+            "name": "Element 1",
+            "cad_model": "./default/workspaces_stl/convoyeur-1000-3000.stl",
+            "pose": [
+                900.0,
+                -1500.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "name": "Element 2",
+            "cad_model": "./default/workspaces_stl/embase-mobile.stl",
+            "pose": [
+                -1100.0,
+                -400.0,
+                119.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    ],
+    "tcp_zones": [
+        {
+            "name": "Zone TCP 1",
+            "enabled": true,
+            "shape": "box",
+            "pose": [
+                900.0,
+                0.0,
+                900.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size_x": 1000.0,
+            "size_y": 1500.0,
+            "size_z": 500.0,
+            "radius": 100.0,
+            "height": 200.0
+        }
+    ],
+    "collision_zones": [
+        {
+            "name": "Zone collision 1",
+            "enabled": true,
+            "shape": "box",
+            "pose": [
+                900.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size_x": 1000.0,
+            "size_y": 3000.0,
+            "size_z": 900.0,
+            "radius": 100.0,
+            "height": 200.0
+        }
+    ]
+}

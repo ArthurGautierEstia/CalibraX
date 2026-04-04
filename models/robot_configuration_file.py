@@ -21,11 +21,12 @@ DEFAULT_AXIS_LIMITS: list[tuple[float, float]] = [
 DEFAULT_AXIS_SPEED_LIMITS: list[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
 DEFAULT_AXIS_JERK_LIMITS: list[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
 DEFAULT_AXIS_COLLIDERS: list[dict[str, Any]] = default_axis_colliders(6)
-DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./robot_stl/rocky{i}.stl" for i in range(7)]
-DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./configurations/tools"
-DEFAULT_SELECTED_TOOL_PROFILE: str = ""
-
-
+DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: list[tuple[float, float]] = [
+    (-1000.0, 1000.0),
+    (-1000.0, 1000.0),
+    (-1000.0, 1000.0),
+]
+DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./default/robots_stl/rocky{i}.stl" for i in range(7)]
 @dataclass
 class RobotConfigurationFile:
     """Representation d'un fichier de configuration robot."""
@@ -34,6 +35,9 @@ class RobotConfigurationFile:
     dh: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0] for _ in range(6)])
     corr: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(6)])
     axis_limits: list[tuple[float, float]] = field(default_factory=lambda: list(DEFAULT_AXIS_LIMITS))
+    cartesian_slider_limits_xyz: list[tuple[float, float]] = field(
+        default_factory=lambda: list(DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
+    )
     axis_speed_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_SPEED_LIMITS))
     axis_jerk_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_JERK_LIMITS))
     axis_colliders: list[dict[str, Any]] = field(default_factory=lambda: axis_colliders_to_dict(DEFAULT_AXIS_COLLIDERS, 6))
@@ -44,8 +48,6 @@ class RobotConfigurationFile:
     position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0])
     position_transport: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
-    tool_profiles_directory: str = DEFAULT_TOOL_PROFILES_DIRECTORY
-    selected_tool_profile: str = DEFAULT_SELECTED_TOOL_PROFILE
 
     # Tracks which fields were present when loaded from JSON.
     present_fields: set[str] = field(default_factory=set, repr=False)
@@ -116,6 +118,23 @@ class RobotConfigurationFile:
 
         while len(limits) < 6:
             limits.append(DEFAULT_AXIS_LIMITS[len(limits)])
+        return limits
+
+    @classmethod
+    def _parse_cartesian_slider_limits_xyz(cls, values: Any) -> list[tuple[float, float]]:
+        limits: list[tuple[float, float]] = []
+        if not isinstance(values, list):
+            values = []
+
+        for i, item in enumerate(values[:3]):
+            default_min, default_max = DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ[i]
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                limits.append((cls._safe_float(item[0], default_min), cls._safe_float(item[1], default_max)))
+            else:
+                limits.append((default_min, default_max))
+
+        while len(limits) < 3:
+            limits.append(DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ[len(limits)])
         return limits
 
     @classmethod
@@ -199,6 +218,7 @@ class RobotConfigurationFile:
             dh=[row[:] for row in robot_model.get_dh_params()[:6]],
             corr=[row[:] for row in robot_model.get_corrections()],
             axis_limits=[tuple(v) for v in robot_model.get_axis_limits()],
+            cartesian_slider_limits_xyz=[tuple(v) for v in robot_model.get_cartesian_slider_limits_xyz()],
             axis_speed_limits=robot_model.get_axis_speed_limits(),
             axis_jerk_limits=robot_model.get_axis_jerk_limits(),
             axis_colliders=robot_model.get_axis_colliders(),
@@ -209,13 +229,12 @@ class RobotConfigurationFile:
             position_zero=robot_model.get_position_zero(),
             position_transport=robot_model.get_position_transport(),
             robot_cad_models=robot_model.get_robot_cad_models(),
-            tool_profiles_directory=robot_model.get_tool_profiles_directory(),
-            selected_tool_profile=robot_model.get_selected_tool_profile(),
             present_fields={
                 "name",
                 "dh",
                 "corr",
                 "axis_limits",
+                "cartesian_slider_limits_xyz",
                 "axis_speed_limits",
                 "axis_jerk_limits",
                 "axis_colliders",
@@ -226,8 +245,6 @@ class RobotConfigurationFile:
                 "position_zero",
                 "position_transport",
                 "robot_cad_models",
-                "tool_profiles_directory",
-                "selected_tool_profile",
             },
         )
 
@@ -254,18 +271,17 @@ class RobotConfigurationFile:
 
         if "robot_cad_models" not in data and "robot_cad_files" in data:
             present_fields.add("robot_cad_models")
-        present_fields.add("tool_profiles_directory")
-        present_fields.add("selected_tool_profile")
 
         allowed_configs = cls._parse_allowed_configs(data.get(allowed_raw_key)) if allowed_raw_key else set(MgiConfigKey)
-        tool_profiles_directory = data.get("tool_profiles_directory", DEFAULT_TOOL_PROFILES_DIRECTORY)
-        selected_tool_profile = data.get("selected_tool_profile", DEFAULT_SELECTED_TOOL_PROFILE)
 
         return cls(
             name=name,
             dh=cls._parse_matrix(data.get("dh"), 6, 4, 0.0),
             corr=cls._parse_matrix(data.get("corr"), 6, 6, 0.0),
             axis_limits=cls._parse_axis_limits(data.get("axis_limits")),
+            cartesian_slider_limits_xyz=cls._parse_cartesian_slider_limits_xyz(
+                data.get("cartesian_slider_limits_xyz")
+            ),
             axis_speed_limits=cls._parse_axis_speed_limits(data.get("axis_speed_limits")),
             axis_jerk_limits=cls._parse_axis_jerk_limits(data.get("axis_jerk_limits")),
             axis_colliders=parse_axis_colliders(data.get("axis_colliders", DEFAULT_AXIS_COLLIDERS), 6),
@@ -279,8 +295,6 @@ class RobotConfigurationFile:
                 data.get("robot_cad_models", data.get("robot_cad_files")),
                 DEFAULT_ROBOT_CAD_MODELS,
             ),
-            tool_profiles_directory="" if tool_profiles_directory is None else str(tool_profiles_directory),
-            selected_tool_profile="" if selected_tool_profile is None else str(selected_tool_profile),
             present_fields=present_fields,
         )
 
@@ -290,6 +304,7 @@ class RobotConfigurationFile:
             "dh": [[str(val) for val in row] for row in self.dh[:6]],
             "corr": [[str(val) for val in row] for row in self.corr[:6]],
             "axis_limits": self.axis_limits[:6],
+            "cartesian_slider_limits_xyz": self.cartesian_slider_limits_xyz[:3],
             "axis_speed_limits": self.axis_speed_limits[:6],
             "axis_jerk_limits": self.axis_jerk_limits[:6],
             "axis_colliders": axis_colliders_to_dict(self.axis_colliders, 6),
@@ -300,8 +315,6 @@ class RobotConfigurationFile:
             "position_zero": self.position_zero[:6],
             "position_transport": self.position_transport[:6],
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
-            "tool_profiles_directory": str(self.tool_profiles_directory),
-            "selected_tool_profile": str(self.selected_tool_profile),
         }
 
     def apply_to_robot_model(self, robot_model: RobotModel) -> None:
@@ -319,6 +332,8 @@ class RobotConfigurationFile:
             robot_model.set_allowed_configurations(self.allowed_configs)
         if "axis_limits" in self.present_fields:
             robot_model.set_axis_limits(self.axis_limits)
+        if "cartesian_slider_limits_xyz" in self.present_fields:
+            robot_model.set_cartesian_slider_limits_xyz(self.cartesian_slider_limits_xyz)
         if "axis_speed_limits" in self.present_fields:
             robot_model.set_axis_speed_limits(self.axis_speed_limits)
         if "axis_jerk_limits" in self.present_fields:
@@ -333,10 +348,6 @@ class RobotConfigurationFile:
             robot_model.set_position_transport(self.position_transport)
         if "robot_cad_models" in self.present_fields:
             robot_model.set_robot_cad_models(self.robot_cad_models)
-        if "tool_profiles_directory" in self.present_fields:
-            robot_model.set_tool_profiles_directory(self.tool_profiles_directory)
-        if "selected_tool_profile" in self.present_fields:
-            robot_model.set_selected_tool_profile(self.selected_tool_profile)
 
     def save(self, file_path: str) -> None:
         with open(file_path, "w") as file:

@@ -20,7 +20,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QHeaderView
+    QHeaderView,
+    QComboBox
 )
 
 import utils.math_utils as math_utils
@@ -31,9 +32,13 @@ from models.trajectory_keypoint import (
     KeypointTargetType,
     TrajectoryKeypoint,
 )
+from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
+from models.workspace_model import WorkspaceModel
 from models.trajectory_result import TrajectoryResult
 from widgets.trajectory_view.trajectory_keypoint_dialog import TrajectoryKeypointDialog
+from utils.reference_frame_utils import convert_pose_from_base_frame
 
 
 class TrajectoryConfigWidget(QWidget):
@@ -53,10 +58,19 @@ class TrajectoryConfigWidget(QWidget):
     updateRobotGhostRequested = pyqtSignal(object)
     goToRequested = pyqtSignal(int)
     timeSmoothingChanged = pyqtSignal(bool)
+    cartesianDisplayFrameChanged = pyqtSignal(str)
 
-    def __init__(self, robot_model: RobotModel, parent: QWidget = None) -> None:
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        workspace_model: WorkspaceModel,
+        parent: QWidget = None,
+    ) -> None:
         super().__init__(parent)
         self.robot_model = robot_model
+        self.tool_model = tool_model
+        self.workspace_model = workspace_model
 
         self.keypoints_table = QTableWidget(0, 11)
         self.btn_add = QPushButton("Ajouter")
@@ -69,6 +83,7 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_export = QPushButton("Exporter")
         self.btn_delete_all = QPushButton("Tout supprimer")
         self.cb_smooth_time = QCheckBox("Lisser le temps")
+        self.cartesian_display_frame_combo = QComboBox()
         self.cb_smooth_time.setChecked(True)
         self.cb_smooth_time.setToolTip(
             "Active : transition cubique. "
@@ -97,6 +112,11 @@ class TrajectoryConfigWidget(QWidget):
 
         options_row = QHBoxLayout()
         options_row.addWidget(self.cb_smooth_time)
+        options_row.addSpacing(12)
+        options_row.addWidget(QLabel("Repère cartésien"))
+        self.cartesian_display_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
+        self.cartesian_display_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
+        options_row.addWidget(self.cartesian_display_frame_combo)
         options_row.addStretch()
         layout.addLayout(options_row)
 
@@ -142,6 +162,7 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_import.clicked.connect(self._on_import_clicked)
         self.btn_export.clicked.connect(self._on_export_clicked)
         self.cb_smooth_time.toggled.connect(self._on_time_smoothing_toggled)
+        self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
 
     def _emit_keypoints_changed(self) -> None:
@@ -164,8 +185,25 @@ class TrajectoryConfigWidget(QWidget):
     def _on_time_smoothing_toggled(self, checked: bool) -> None:
         self.timeSmoothingChanged.emit(bool(checked))
 
+    def _on_cartesian_display_frame_changed(self, _index: int) -> None:
+        self.cartesianDisplayFrameChanged.emit(self.get_cartesian_display_frame())
+
     def is_time_smoothing_enabled(self) -> bool:
         return self.cb_smooth_time.isChecked()
+
+    def get_cartesian_display_frame(self) -> str:
+        return ReferenceFrame.from_value(self.cartesian_display_frame_combo.currentData()).value
+
+    def set_cartesian_display_frame(self, display_frame: str, emit_signal: bool = False) -> None:
+        normalized = ReferenceFrame.from_value(display_frame)
+        index = self.cartesian_display_frame_combo.findData(normalized.value)
+        if index < 0:
+            return
+        self.cartesian_display_frame_combo.blockSignals(True)
+        self.cartesian_display_frame_combo.setCurrentIndex(index)
+        self.cartesian_display_frame_combo.blockSignals(False)
+        if emit_signal:
+            self.cartesianDisplayFrameChanged.emit(normalized.value)
 
     def set_time_smoothing_enabled(self, enabled: bool, emit_signal: bool = False) -> None:
         self.cb_smooth_time.blockSignals(True)
@@ -207,12 +245,22 @@ class TrajectoryConfigWidget(QWidget):
         if row < 0 or row >= len(keypoints):
             return None
 
-        end_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row])
+        end_xyz = resolve_keypoint_xyz(
+            self.robot_model,
+            keypoints[row],
+            tool=self.tool_model.get_tool(),
+            robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+        )
         if end_xyz is None:
             return None
 
         if row > 0:
-            start_xyz = resolve_keypoint_xyz(self.robot_model, keypoints[row - 1])
+            start_xyz = resolve_keypoint_xyz(
+                self.robot_model,
+                keypoints[row - 1],
+                tool=self.tool_model.get_tool(),
+                robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+            )
         else:
             tcp_pose = self.robot_model.get_tcp_pose()
             start_xyz = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
@@ -281,7 +329,7 @@ class TrajectoryConfigWidget(QWidget):
         if self._focus_active_dialog():
             return
 
-        dialog = TrajectoryKeypointDialog(self.robot_model, self)
+        dialog = TrajectoryKeypointDialog(self.robot_model, self.tool_model, self.workspace_model, self)
         dialog.setModal(False)
         dialog.setWindowModality(Qt.WindowModality.NonModal)
         dialog.setWindowFlag(Qt.WindowType.Window, True)
@@ -310,11 +358,17 @@ class TrajectoryConfigWidget(QWidget):
             initial_keypoint = TrajectoryKeypoint(
                 target_type=last_keypoint.target_type,
                 cartesian_target=list(last_keypoint.cartesian_target),
+                cartesian_frame=last_keypoint.cartesian_frame,
                 joint_target=list(last_keypoint.joint_target),
             )
         else:
             initial_keypoint = TrajectoryKeypoint(
-                cartesian_target=list(self.robot_model.get_tcp_pose()),
+                cartesian_target=convert_pose_from_base_frame(
+                    self.robot_model.get_tcp_pose(),
+                    self.get_cartesian_display_frame(),
+                    self.workspace_model.get_robot_base_pose_world(),
+                ),
+                cartesian_frame=ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                 joint_target=list(self.robot_model.get_joints()),
             )
 
@@ -528,7 +582,11 @@ class TrajectoryConfigWidget(QWidget):
 
             values = [
                 str(idx + 1),
-                "CART" if keypoint.target_type == KeypointTargetType.CARTESIAN else "JOINT",
+                (
+                    f"CART({keypoint.cartesian_frame.value})"
+                    if keypoint.target_type == KeypointTargetType.CARTESIAN
+                    else "JOINT"
+                ),
                 keypoint.mode.value,
                 self._speed_text(keypoint),
             ]

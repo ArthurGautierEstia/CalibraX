@@ -2,6 +2,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QSplitter
 
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
+from models.workspace_model import WorkspaceModel
 from widgets.viewer_3d_widget import Viewer3DWidget
 from views.robot_view import RobotView
 from views.workspace_view import WorkspaceView
@@ -13,7 +15,13 @@ from views.trajectory_view import TrajectoryView
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, robot_model: RobotModel, parent: QWidget=None):
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        workspace_model: WorkspaceModel,
+        parent: QWidget = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Calibrax")
 
@@ -25,7 +33,7 @@ class MainWindow(QMainWindow):
         self.joint_control_view = JointControlView()
         self.cartesian_control_view = CartesianControlView()
         self.jog_view = JogView()
-        self.trajectory_view = TrajectoryView(robot_model)
+        self.trajectory_view = TrajectoryView(robot_model, tool_model, workspace_model)
 
         self.viewer3d = Viewer3DWidget()
 

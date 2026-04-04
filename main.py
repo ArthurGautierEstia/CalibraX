@@ -1,34 +1,65 @@
-import sys
+import argparse
 import os
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon, QColor, QPalette
+import sys
 
-from models.robot_model import RobotModel
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QColor, QIcon, QPalette
+from PyQt6.QtWidgets import QApplication
+
 from controllers.main_controller import MainController
+from models.robot_model import RobotModel
+from models.tool_model import ToolModel
+from models.workspace_model import WorkspaceModel
 from views.main_window import MainWindow
 
-from utils.file_io import FileIOHandler
 
-class MGDApplication:
-    def __init__(self):
+def parse_startup_options(argv: list[str]) -> dict[str, str]:
+    parser = argparse.ArgumentParser(description="CalibraX")
+    parser.add_argument("config_path", nargs="?", help="Chemin optionnel vers une configuration robot JSON.")
+    parser.add_argument("--config", dest="config_override", help="Chemin vers une configuration robot JSON.")
+    parser.add_argument("--tool", dest="tool_path", help="Chemin vers un profil tool JSON.")
+    parser.add_argument("--workspace", dest="workspace_path", help="Chemin vers un workspace JSON.")
+    parser.add_argument(
+        "--session",
+        dest="session_path",
+        default=MainController.DEFAULT_SESSION_FILE,
+        help="Chemin vers le fichier de session applicative JSON.",
+    )
+    args = parser.parse_args(argv)
+
+    return {
+        "config": args.config_override or args.config_path or "",
+        "tool": args.tool_path or "",
+        "workspace": args.workspace_path or "",
+        "session": args.session_path or MainController.DEFAULT_SESSION_FILE,
+    }
+
+
+class CalibraxApplication:
+    def __init__(self, startup_options: dict[str, str]):
         self.app = QApplication(sys.argv)
         self.apply_kuka_accent()
 
-        currentDir = os.getcwd()
-        icon_path = os.path.join(currentDir, "appicon.ico")
-
+        current_dir = os.getcwd()
+        icon_path = os.path.join(current_dir, "appicon.ico")
         self.app.setWindowIcon(QIcon(icon_path))
 
-        #self.load_theme("themes/test.qss")
-
         self.robot_model = RobotModel()
-        self.main_window = MainWindow(self.robot_model)
+        self.tool_model = ToolModel()
+        self.workspace_model = WorkspaceModel()
+        self.main_window = MainWindow(self.robot_model, self.tool_model, self.workspace_model)
+        self.main_controller = MainController(
+            self.robot_model,
+            self.tool_model,
+            self.workspace_model,
+            self.main_window,
+            startup_options=startup_options,
+        )
 
-        self.main_controller = MainController(self.robot_model, self.main_window)
+        self.app.aboutToQuit.connect(self.main_controller.flush_session)
 
     def apply_kuka_accent(self):
-        """Force une couleur d'accent orange au lieu de la couleur systeme."""
+        """Force une couleur d'accent orange au lieu de la couleur système."""
         accent = QColor("#FF6F00")
         palette = self.app.palette()
         palette.setColor(QPalette.ColorRole.Highlight, accent)
@@ -39,30 +70,13 @@ class MGDApplication:
             palette.setColor(QPalette.ColorRole.Accent, accent)
         self.app.setPalette(palette)
 
-    def load_theme(self, file: str = "themes/dark_theme.qss"):
-        try:
-            with open(file, "r") as f:
-                self.app.setStyleSheet(f.read())
-        except FileNotFoundError:
-            print(f"Fichier {file} non trouvé, thème par défaut utilisé")
-
-    def load_data(self, config_file: str):
-        config_file, data = FileIOHandler.load_json(config_file)
-        if data and config_file:
-            self.robot_model.load_from_dict(data, config_file)
-            self.main_window.get_viewer3d().load_cad(self.robot_model)
-            self.main_window.get_viewer3d().set_transparency(True)
-            self.main_window.get_viewer3d().toogle_base_axis_frames()
-
     def run(self):
         self.main_window.showMaximized()
-        if len(sys.argv) > 1:
-            config_file = sys.argv[1]
-            if os.path.exists(config_file) and config_file.endswith(".json"):
-                QTimer.singleShot(100, lambda: self.load_data(config_file))
-
+        QTimer.singleShot(0, self.main_controller.bootstrap_startup)
         sys.exit(self.app.exec())
 
+
 if __name__ == "__main__":
-    app = MGDApplication()
+    startup_options = parse_startup_options(sys.argv[1:])
+    app = CalibraxApplication(startup_options)
     app.run()

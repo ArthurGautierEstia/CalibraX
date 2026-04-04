@@ -16,7 +16,6 @@ class ToolConfigFile:
     tool_cad_model: str = ""
     tool_cad_offset_rz: float = 0.0
     tool_colliders: list[dict[str, Any]] | None = None
-    retractable_z_mm: float = 0.0
 
     def __post_init__(self) -> None:
         if self.tool is None:
@@ -28,7 +27,6 @@ class ToolConfigFile:
         self.tool_cad_model = "" if self.tool_cad_model is None else str(self.tool_cad_model)
         self.tool_cad_offset_rz = float(self.tool_cad_offset_rz)
         self.tool_colliders = parse_primitive_colliders(self.tool_colliders, default_shape="cylinder")
-        self.retractable_z_mm = float(self.retractable_z_mm)
 
     @staticmethod
     def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -64,7 +62,6 @@ class ToolConfigFile:
             tool_cad_model="" if data.get("tool_cad_model") is None else str(data.get("tool_cad_model")),
             tool_cad_offset_rz=cls._safe_float(data.get("tool_cad_offset_rz", 0.0), 0.0),
             tool_colliders=parse_primitive_colliders(data.get("tool_colliders"), default_shape="cylinder"),
-            retractable_z_mm=cls._safe_float(data.get("retractable_z_mm", 0.0), 0.0),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,7 +78,6 @@ class ToolConfigFile:
             "tool_cad_model": self.tool_cad_model,
             "tool_cad_offset_rz": float(self.tool_cad_offset_rz),
             "tool_colliders": [primitive_collider_to_dict(collider) for collider in self.tool_colliders],
-            "retractable_z_mm": float(self.retractable_z_mm),
         }
 
     def to_robot_tool(self) -> RobotTool:
@@ -95,7 +91,6 @@ class ToolConfigFile:
         tool_cad_model: str,
         tool_cad_offset_rz: float,
         tool_colliders: list[dict[str, Any]] | None = None,
-        retractable_z_mm: float = 0.0,
     ) -> ToolConfigFile:
         return cls(
             name=name,
@@ -110,7 +105,6 @@ class ToolConfigFile:
             tool_cad_model=tool_cad_model,
             tool_cad_offset_rz=float(tool_cad_offset_rz),
             tool_colliders=parse_primitive_colliders(tool_colliders, default_shape="cylinder"),
-            retractable_z_mm=float(retractable_z_mm),
         )
 
     def save(self, file_path: str) -> None:

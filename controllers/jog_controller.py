@@ -3,16 +3,28 @@ import numpy as np
 from typing import Tuple, Optional
 
 from models.robot_model import RobotModel
+from models.tool_model import ToolModel
+from models.workspace_model import WorkspaceModel
 from views.jog_view import JogView
 import utils.math_utils as math_utils
+from utils.reference_frame_utils import convert_pose_from_base_frame
 
 class JogController(QObject):
     """Contrôleur pour la vue Jog - gère les interactions de jog articulaire et cartésien avec jog continu"""
     
-    def __init__(self, robot_model: RobotModel, jog_view: JogView, parent: QObject = None):
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        workspace_model: WorkspaceModel,
+        jog_view: JogView,
+        parent: QObject = None,
+    ):
         super().__init__(parent)
         
         self.robot_model = robot_model
+        self.tool_model = tool_model
+        self.workspace_model = workspace_model
         self.jog_view = jog_view
 
         self.jog_joint_widget = self.jog_view.get_jog_joint_widget()
@@ -62,10 +74,12 @@ class JogController(QObject):
         self.jog_cartesian_widget.delta_changed.connect(self._on_jog_cartesian_delta_changed)
 
         self.jog_cartesian_widget.jog_base_tool_changed.connect(self._on_base_tool_changed)
+        self.jog_tcp_visualization_widget.display_frame_changed.connect(self._on_tcp_display_frame_changed)
         
         # Connexions du modèle pour mettre à jour l'affichage
         self.robot_model.tcp_pose_changed.connect(self._update_display_from_model)
         self.robot_model.axis_limits_changed.connect(self._update_axis_limits)
+        self.workspace_model.workspace_changed.connect(self._update_display_from_model)
     
     def _on_jog_joint_delta_changed(self, value: float):
         self.jog_step_joint = value
@@ -192,7 +206,7 @@ class JogController(QObject):
                     target[5] = newABC[2]
 
             # Appeler le MGI sur la nouvelle pose cible
-            mgi_result = self.robot_model.compute_ik_target(target)
+            mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
             
             # Si des solutions existent, appliquer la meilleure
             if mgi_result:
@@ -208,6 +222,9 @@ class JogController(QObject):
         """Appelé quand l'utilisateur change de référentiel (Base/Tool)"""
         self.base_tool_reference = reference
     
+    def _on_tcp_display_frame_changed(self, _frame: str) -> None:
+        self._update_display_from_model()
+
     def _update_display_from_model(self) -> None:
         """Met à jour l'affichage depuis les données du modèle"""
         if not self.robot_model.has_configuration:
@@ -218,7 +235,11 @@ class JogController(QObject):
         self.jog_angles_visualization_widget.set_axis_limits(self.robot_model.axis_limits)
         
         # Mettre à jour la visualisation du TCP
-        tcp_pose = self.robot_model.get_tcp_pose()
+        tcp_pose = convert_pose_from_base_frame(
+            self.robot_model.get_tcp_pose(),
+            self.jog_tcp_visualization_widget.get_display_frame(),
+            self.workspace_model.get_robot_base_pose_world(),
+        )
         self.jog_tcp_visualization_widget.set_tcp_pose(tcp_pose)
         self.jog_matrix_widget.set_matrix(self.robot_model.get_tcp_rotation_matrix())
     

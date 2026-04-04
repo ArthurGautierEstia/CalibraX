@@ -34,13 +34,15 @@ class ToolWidget(QWidget):
 
         # Groupe pour l'outil
         group = QGroupBox("Configuration de l'outil")
-        group_layout = QHBoxLayout(group)
+        group_layout = QVBoxLayout(group)
 
         # Description
         description = QLabel("Paramètres de transformation de l'outil\n"
                            "par rapport au flange du robot")
         description.setWordWrap(True)
         group_layout.addWidget(description)
+
+        inputs_layout = QHBoxLayout()
 
         # Paramètres de translation
         trans_layout = QVBoxLayout()
@@ -63,7 +65,7 @@ class ToolWidget(QWidget):
             axis_layout.addWidget(spin_box)
             trans_layout.addLayout(axis_layout)
 
-        group_layout.addLayout(trans_layout)
+        inputs_layout.addLayout(trans_layout)
 
         # Paramètres de rotation
         rot_layout = QVBoxLayout()
@@ -86,13 +88,15 @@ class ToolWidget(QWidget):
             axis_layout.addWidget(spin_box)
             rot_layout.addLayout(axis_layout)
 
-        group_layout.addLayout(rot_layout)
+        inputs_layout.addLayout(rot_layout)
 
         # Bouton pour remettre à zéro
         from PyQt6.QtWidgets import QPushButton
         reset_btn = QPushButton("Remettre à zéro")
         reset_btn.clicked.connect(self._reset_to_identity)
-        group_layout.addWidget(reset_btn)
+        inputs_layout.addWidget(reset_btn)
+
+        group_layout.addLayout(inputs_layout)
 
         layout.addWidget(group)
         layout.addStretch()

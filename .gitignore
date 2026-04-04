@@ -1,8 +1,15 @@
 __pycache__/
 *.pyc
 
-trajectories/
 .vscode/
 #configurations/
 .claude/
 CLAUDE.md
+
+app_session.json
+
+trajectories/
+configurations/
+workspaces/
+
+!default/*

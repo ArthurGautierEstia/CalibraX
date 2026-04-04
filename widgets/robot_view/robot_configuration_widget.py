@@ -47,7 +47,7 @@ class RobotConfigurationWidget(QWidget):
     tool_changed = pyqtSignal(RobotTool)
     axis_colliders_config_changed = pyqtSignal(list)
 
-    axis_config_changed = pyqtSignal(list, list, list, list)
+    axis_config_changed = pyqtSignal(list, list, list, list, list)
     positions_config_changed = pyqtSignal(list, list, list)
     position_zero_requested = pyqtSignal()
     position_transport_requested = pyqtSignal()
@@ -56,7 +56,6 @@ class RobotConfigurationWidget(QWidget):
     robot_cad_models_changed = pyqtSignal(list)
     tool_cad_model_changed = pyqtSignal(str)
     tool_cad_offset_rz_changed = pyqtSignal(float)
-    tool_retractable_z_changed = pyqtSignal(float)
     tool_colliders_changed = pyqtSignal(list)
     tool_profiles_directory_changed = pyqtSignal(str)
     selected_tool_profile_changed = pyqtSignal(str)
@@ -105,8 +104,8 @@ class RobotConfigurationWidget(QWidget):
         self.robot_cad_line_edits: list[QLineEdit] = []
         self.tool_cad_line_edit: QLineEdit | None = None
         self.tool_cad_offset_rz_spin: QDoubleSpinBox | None = None
-        self.tool_retractable_z_spin: QDoubleSpinBox | None = None
         self.table_axis_colliders: QTableWidget | None = None
+        self.table_cartesian_slider_limits: QTableWidget | None = None
         self.table_tool_colliders: QTableWidget | None = None
         self._tool_collider_type_combos: list[QComboBox] = []
         self._tool_collider_enabled_checkboxes: list[QCheckBox] = []
@@ -159,7 +158,6 @@ class RobotConfigurationWidget(QWidget):
         self.tool_widget.tool_changed.connect(self._on_tool_changed)
         self.tool_widget_container_layout.addWidget(self.tool_widget)
         self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)
-        self.set_tool_retractable_z_mm(0.0)
         self.set_tool_colliders([])
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
 
@@ -212,6 +210,17 @@ class RobotConfigurationWidget(QWidget):
 
         self.table_axis.itemChanged.connect(self._on_axis_item_changed)
         layout.addWidget(self.table_axis)
+
+        cartesian_group = QGroupBox("Plages des sliders cartesiens")
+        cartesian_layout = QVBoxLayout(cartesian_group)
+        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du controle cartesien."))
+        self.table_cartesian_slider_limits = QTableWidget(3, 2)
+        self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min (mm)", "Max (mm)"])
+        self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
+        self.table_cartesian_slider_limits.horizontalHeader().setDefaultSectionSize(120)
+        self.table_cartesian_slider_limits.itemChanged.connect(self._on_cartesian_slider_limits_item_changed)
+        cartesian_layout.addWidget(self.table_cartesian_slider_limits)
+        layout.addWidget(cartesian_group)
 
         return tab
 
@@ -356,7 +365,7 @@ class RobotConfigurationWidget(QWidget):
         self.tool_profiles_dir_line_edit.setReadOnly(True)
         profiles_grid.addWidget(self.tool_profiles_dir_line_edit, 0, 1)
 
-        pick_tools_dir_btn = QPushButton("Selectionner dossier")
+        pick_tools_dir_btn = QPushButton("Sélectionner dossier")
         pick_tools_dir_btn.clicked.connect(self._on_pick_tool_profiles_directory)
         profiles_grid.addWidget(pick_tools_dir_btn, 0, 2)
 
@@ -403,14 +412,6 @@ class RobotConfigurationWidget(QWidget):
         self.tool_cad_offset_rz_spin.setSingleStep(1.0)
         self.tool_cad_offset_rz_spin.valueChanged.connect(self.tool_cad_offset_rz_changed.emit)
         tool_cad_grid.addWidget(self.tool_cad_offset_rz_spin, 1, 1)
-
-        tool_cad_grid.addWidget(QLabel("Retractable Z (mm)"), 2, 0)
-        self.tool_retractable_z_spin = QDoubleSpinBox()
-        self.tool_retractable_z_spin.setRange(0.0, 2000.0)
-        self.tool_retractable_z_spin.setDecimals(2)
-        self.tool_retractable_z_spin.setSingleStep(0.5)
-        self.tool_retractable_z_spin.valueChanged.connect(self.tool_retractable_z_changed.emit)
-        tool_cad_grid.addWidget(self.tool_retractable_z_spin, 2, 1)
 
         layout.addLayout(tool_cad_grid)
 
@@ -462,6 +463,9 @@ class RobotConfigurationWidget(QWidget):
     def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
         if item.column() in (RobotConfigurationWidget.COL_AXIS_SPEED, RobotConfigurationWidget.COL_AXIS_JERK):
             self._refresh_estimated_accel_for_row(item.row())
+        self._emit_axis_config_changed()
+
+    def _on_cartesian_slider_limits_item_changed(self, _item: QTableWidgetItem) -> None:
         self._emit_axis_config_changed()
 
     def _on_axis_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
@@ -556,7 +560,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_robot_cad(self, index: int) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selectionner une CAO",
+            "Sélectionner une CAO",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -569,7 +573,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_multiple_robot_cad(self) -> None:
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Selectionner plusieurs CAO robot",
+            "Sélectionner plusieurs CAO robot",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -618,7 +622,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_tool_cad(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selectionner une CAO de tool",
+            "Sélectionner une CAO de tool",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -640,7 +644,7 @@ class RobotConfigurationWidget(QWidget):
         start_directory = self._resolve_filesystem_path(current_directory) if current_directory else self._get_tools_start_directory()
         selected_dir = QFileDialog.getExistingDirectory(
             self,
-            "Selectionner le dossier des tools",
+            "Sélectionner le dossier des tools",
             start_directory,
         )
         if not selected_dir:
@@ -652,15 +656,9 @@ class RobotConfigurationWidget(QWidget):
             return
         file_path = self.tool_profiles_combo.currentData()
         if not file_path:
-            self._apply_no_tool_profile(emit_signals=True)
             self.selected_tool_profile_changed.emit("")
             return
-        if self._load_tool_profile(str(file_path)):
-            self.selected_tool_profile_changed.emit(self._normalize_project_path(str(file_path)))
-            return
-
-        self._apply_no_tool_profile(emit_signals=True)
-        self.selected_tool_profile_changed.emit("")
+        self.selected_tool_profile_changed.emit(self._normalize_project_path(str(file_path)))
 
     def _refresh_tool_profiles(self) -> None:
         if self.tool_profiles_combo is None or self.tool_profiles_dir_line_edit is None:
@@ -711,8 +709,6 @@ class RobotConfigurationWidget(QWidget):
 
         self.set_tool_cad_offset_rz(profile.tool_cad_offset_rz)
         self.tool_cad_offset_rz_changed.emit(profile.tool_cad_offset_rz)
-        self.set_tool_retractable_z_mm(profile.retractable_z_mm)
-        self.tool_retractable_z_changed.emit(profile.retractable_z_mm)
         self.set_tool_colliders(profile.tool_colliders)
         self.tool_colliders_changed.emit(self.get_tool_colliders())
         return True
@@ -736,6 +732,14 @@ class RobotConfigurationWidget(QWidget):
         raw_name = self.tool_name_line_edit.text().strip() if self.tool_name_line_edit is not None else ""
         if not raw_name:
             QMessageBox.information(self, "Nom manquant", "Saisissez un nom de tool avant d'enregistrer.")
+            return
+
+        if self._has_forbidden_filename_chars(raw_name):
+            QMessageBox.warning(
+                self,
+                "Nom invalide",
+                "Le nom du tool contient des caracteres interdits pour un nom de fichier.",
+            )
             return
 
         safe_name = self._sanitize_tool_file_name(raw_name)
@@ -768,7 +772,6 @@ class RobotConfigurationWidget(QWidget):
             self.get_tool_cad_model(),
             self.get_tool_cad_offset_rz(),
             self.get_tool_colliders(),
-            self.get_tool_retractable_z_mm(),
         )
         try:
             profile.save(output_path)
@@ -796,9 +799,6 @@ class RobotConfigurationWidget(QWidget):
         self.set_tool_cad_offset_rz(0.0)
         if emit_signals:
             self.tool_cad_offset_rz_changed.emit(0.0)
-        self.set_tool_retractable_z_mm(0.0)
-        if emit_signals:
-            self.tool_retractable_z_changed.emit(0.0)
         self.set_tool_colliders([])
         if emit_signals:
             self.tool_colliders_changed.emit([])
@@ -853,15 +853,16 @@ class RobotConfigurationWidget(QWidget):
     @staticmethod
     def _get_cad_start_directory() -> str:
         current_dir = os.getcwd()
-        robot_stl_dir = os.path.join(current_dir, "robot_stl")
-        if os.path.isdir(robot_stl_dir):
-            return robot_stl_dir
+        robots_stl_dir = os.path.join(current_dir, "default", "robots_stl")
+        if os.path.isdir(robots_stl_dir):
+            return robots_stl_dir
         return current_dir
 
     @staticmethod
     def _get_tools_start_directory() -> str:
         current_dir = os.getcwd()
         tools_dir = os.path.join(current_dir, "configurations", "tools")
+        os.makedirs(tools_dir, exist_ok=True)
         if os.path.isdir(tools_dir):
             return tools_dir
         tools_dir = os.path.join(current_dir, "tools")
@@ -875,6 +876,11 @@ class RobotConfigurationWidget(QWidget):
         safe = name.replace(" ", "_")
         safe = "".join("_" if char in forbidden else char for char in safe).strip().strip(".")
         return safe
+
+    @staticmethod
+    def _has_forbidden_filename_chars(name: str) -> bool:
+        forbidden = '<>:"/\\|?*'
+        return any(char in forbidden for char in str(name))
 
     @staticmethod
     def _resolve_filesystem_path(path: str) -> str:
@@ -916,6 +922,7 @@ class RobotConfigurationWidget(QWidget):
     def _emit_axis_config_changed(self) -> None:
         self.axis_config_changed.emit(
             self.get_axis_limits(),
+            self.get_cartesian_slider_limits_xyz(),
             self.get_axis_speed_limits(),
             self.get_axis_jerk_limits(),
             self.get_axis_reversed(),
@@ -954,6 +961,7 @@ class RobotConfigurationWidget(QWidget):
     def set_axis_config(
         self,
         axis_limits: list[tuple[float, float]],
+        cartesian_slider_limits_xyz: list[tuple[float, float]],
         axis_speed_limits: list[float],
         axis_jerk_limits: list[float],
         axis_reversed: list[int],
@@ -980,6 +988,7 @@ class RobotConfigurationWidget(QWidget):
             self._refresh_estimated_accel_column()
         finally:
             self.table_axis.blockSignals(False)
+        self.set_cartesian_slider_limits_xyz(cartesian_slider_limits_xyz)
 
     def get_axis_limits(self) -> list[tuple[float, float]]:
         limits: list[tuple[float, float]] = []
@@ -991,6 +1000,36 @@ class RobotConfigurationWidget(QWidget):
 
     def get_axis_speed_limits(self) -> list[float]:
         return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0) for row in range(6)]
+
+    def set_cartesian_slider_limits_xyz(self, limits: list[tuple[float, float]]) -> None:
+        if self.table_cartesian_slider_limits is None:
+            return
+
+        defaults = [(-1000.0, 1000.0)] * 3
+        self.table_cartesian_slider_limits.blockSignals(True)
+        try:
+            for row in range(3):
+                min_val, max_val = defaults[row]
+                if row < len(limits):
+                    min_val = float(limits[row][0])
+                    max_val = float(limits[row][1])
+                self.table_cartesian_slider_limits.setItem(row, 0, QTableWidgetItem(str(min_val)))
+                self.table_cartesian_slider_limits.setItem(row, 1, QTableWidgetItem(str(max_val)))
+        finally:
+            self.table_cartesian_slider_limits.blockSignals(False)
+
+    def get_cartesian_slider_limits_xyz(self) -> list[tuple[float, float]]:
+        if self.table_cartesian_slider_limits is None:
+            return [(-1000.0, 1000.0)] * 3
+
+        defaults = [(-1000.0, 1000.0)] * 3
+        limits: list[tuple[float, float]] = []
+        for row in range(3):
+            default_min, default_max = defaults[row]
+            min_val = self._cell_to_float(self.table_cartesian_slider_limits, row, 0, default_min)
+            max_val = self._cell_to_float(self.table_cartesian_slider_limits, row, 1, default_max)
+            limits.append((min_val, max_val))
+        return limits
 
     def get_axis_jerk_limits(self) -> list[float]:
         return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, 0.0) for row in range(6)]
@@ -1169,18 +1208,6 @@ class RobotConfigurationWidget(QWidget):
             return 0.0
         return float(self.tool_cad_offset_rz_spin.value())
 
-    def set_tool_retractable_z_mm(self, retractable_z_mm: float) -> None:
-        if self.tool_retractable_z_spin is None:
-            return
-        self.tool_retractable_z_spin.blockSignals(True)
-        self.tool_retractable_z_spin.setValue(float(retractable_z_mm))
-        self.tool_retractable_z_spin.blockSignals(False)
-
-    def get_tool_retractable_z_mm(self) -> float:
-        if self.tool_retractable_z_spin is None:
-            return 0.0
-        return float(self.tool_retractable_z_spin.value())
-
     def set_tool_colliders(self, tool_colliders: list[dict[str, Any]]) -> None:
         if self.table_tool_colliders is None:
             return
@@ -1243,6 +1270,9 @@ class RobotConfigurationWidget(QWidget):
         if not normalized:
             normalized = self._default_tools_directory()
         normalized = self._normalize_project_path(normalized)
+        resolved_directory = self._resolve_filesystem_path(normalized)
+        if resolved_directory:
+            os.makedirs(resolved_directory, exist_ok=True)
         self.tool_profiles_dir_line_edit.setText(normalized)
         self._refresh_tool_profiles()
         if emit_change:
@@ -1258,46 +1288,26 @@ class RobotConfigurationWidget(QWidget):
         if self.tool_profiles_combo is None:
             return
         target = "" if profile_path is None else str(profile_path).strip()
-        if not target:
-            self._tool_profile_loading = True
-            self.tool_profiles_combo.setCurrentIndex(0)
-            self._tool_profile_loading = False
-            self._apply_no_tool_profile(emit_signals=True)
-            self.selected_tool_profile_changed.emit("")
-            return
-
-        target_abs = os.path.normcase(os.path.abspath(self._resolve_filesystem_path(target)))
-        target_index = -1
-        for idx in range(self.tool_profiles_combo.count()):
-            item_data = self.tool_profiles_combo.itemData(idx)
-            if not item_data:
-                continue
-            item_abs = os.path.normcase(os.path.abspath(str(item_data)))
-            if item_abs == target_abs:
-                target_index = idx
-                break
-
-        if target_index < 0:
-            self._tool_profile_loading = True
-            self.tool_profiles_combo.setCurrentIndex(0)
-            self._tool_profile_loading = False
-            self._apply_no_tool_profile(emit_signals=True)
-            self.selected_tool_profile_changed.emit("")
-            return
-
         self._tool_profile_loading = True
-        self.tool_profiles_combo.setCurrentIndex(target_index)
-        self._tool_profile_loading = False
-        item_data = self.tool_profiles_combo.itemData(target_index)
-        if item_data and self._load_tool_profile(str(item_data)):
-            self.selected_tool_profile_changed.emit(self._normalize_project_path(str(item_data)))
-            return
+        try:
+            if not target:
+                self.tool_profiles_combo.setCurrentIndex(0)
+                return
 
-        self._tool_profile_loading = True
-        self.tool_profiles_combo.setCurrentIndex(0)
-        self._tool_profile_loading = False
-        self._apply_no_tool_profile(emit_signals=True)
-        self.selected_tool_profile_changed.emit("")
+            target_abs = os.path.normcase(os.path.abspath(self._resolve_filesystem_path(target)))
+            target_index = -1
+            for idx in range(self.tool_profiles_combo.count()):
+                item_data = self.tool_profiles_combo.itemData(idx)
+                if not item_data:
+                    continue
+                item_abs = os.path.normcase(os.path.abspath(str(item_data)))
+                if item_abs == target_abs:
+                    target_index = idx
+                    break
+
+            self.tool_profiles_combo.setCurrentIndex(target_index if target_index >= 0 else 0)
+        finally:
+            self._tool_profile_loading = False
 
     def get_selected_tool_profile(self) -> str:
         if self.tool_profiles_combo is None:

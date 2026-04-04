@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum
 import math
 
+from models.reference_frame import ReferenceFrame
 from utils.mgi import ConfigurationIdentifier, MgiConfigKey
 
 
@@ -31,6 +32,7 @@ class TrajectoryKeypoint:
         self,
         target_type: KeypointTargetType = KeypointTargetType.CARTESIAN,
         cartesian_target: list[float] | None = None,
+        cartesian_frame: ReferenceFrame | str = ReferenceFrame.BASE,
         joint_target: list[float] | None = None,
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
         cubic_vectors: list[list[float]] | None = None,
@@ -50,6 +52,7 @@ class TrajectoryKeypoint:
             6,
             0.0,
         )
+        self.cartesian_frame = ReferenceFrame.from_value(cartesian_frame)
         self.joint_target = self._normalize_float_list(
             [0.0] * 6 if joint_target is None else list(joint_target),
             6,
@@ -193,6 +196,7 @@ class TrajectoryKeypoint:
         return TrajectoryKeypoint(
             target_type=self.target_type,
             cartesian_target=list(self.cartesian_target),
+            cartesian_frame=self.cartesian_frame,
             joint_target=list(self.joint_target),
             mode=self.mode,
             cubic_vectors=[list(self.cubic_vectors[0]), list(self.cubic_vectors[1])],
@@ -209,6 +213,7 @@ class TrajectoryKeypoint:
         return {
             "target_type": self.target_type.value,
             "cartesian_target": [float(v) for v in self.cartesian_target[:6]],
+            "cartesian_frame": self.cartesian_frame.value,
             "joint_target": [float(v) for v in self.joint_target[:6]],
             "mode": self.mode.value,
             "cubic_vectors": [
@@ -283,6 +288,7 @@ class TrajectoryKeypoint:
         return TrajectoryKeypoint(
             target_type=target_type,
             cartesian_target=raw.get("cartesian_target"),
+            cartesian_frame=ReferenceFrame.from_value(raw.get("cartesian_frame")),
             joint_target=raw.get("joint_target"),
             mode=mode,
             cubic_vectors=cubic_vectors,
