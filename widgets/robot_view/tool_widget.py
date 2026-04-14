@@ -20,7 +20,7 @@ class ToolWidget(QWidget):
         if tool is None:
             tool = RobotTool()
 
-        self._tool = tool
+        self._tool = self._copy_tool(tool)
         self._spin_boxes: dict[str, QDoubleSpinBox] = {}
 
         self._init_ui()
@@ -105,9 +105,21 @@ class ToolWidget(QWidget):
     # Internals
     # ---------------------------------------------------------
 
+    @staticmethod
+    def _copy_tool(tool: RobotTool | None = None) -> RobotTool:
+        source = tool if tool is not None else RobotTool()
+        return RobotTool(
+            float(source.x),
+            float(source.y),
+            float(source.z),
+            float(source.a),
+            float(source.b),
+            float(source.c),
+        )
+
     def _on_param_changed(self, param: str, value: float):
         setattr(self._tool, param, value)
-        self.tool_changed.emit(self._tool)
+        self.tool_changed.emit(self._copy_tool(self._tool))
 
     def _reset_to_identity(self):
         """Remet l'outil à l'identité (pas de transformation)"""
@@ -117,7 +129,7 @@ class ToolWidget(QWidget):
             self._spin_boxes[param].blockSignals(True)
             self._spin_boxes[param].setValue(0.0)
             self._spin_boxes[param].blockSignals(False)
-        self.tool_changed.emit(self._tool)
+        self.tool_changed.emit(self._copy_tool(self._tool))
 
     # ---------------------------------------------------------
     # Public API
@@ -125,13 +137,13 @@ class ToolWidget(QWidget):
 
     def set_tool(self, tool: RobotTool):
         """Met à jour l'outil affiché"""
-        self._tool = tool
+        self._tool = self._copy_tool(tool)
         for param in ['x', 'y', 'z', 'a', 'b', 'c']:
-            value = getattr(tool, param)
+            value = getattr(self._tool, param)
             self._spin_boxes[param].blockSignals(True)
             self._spin_boxes[param].setValue(value)
             self._spin_boxes[param].blockSignals(False)
 
     def get_tool(self) -> RobotTool:
         """Retourne l'outil actuel"""
-        return self._tool
+        return self._copy_tool(self._tool)
