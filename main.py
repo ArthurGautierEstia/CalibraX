@@ -15,8 +15,7 @@ from views.main_window import MainWindow
 
 def parse_startup_options(argv: list[str]) -> dict[str, str]:
     parser = argparse.ArgumentParser(description="CalibraX")
-    parser.add_argument("config_path", nargs="?", help="Chemin optionnel vers une configuration robot JSON.")
-    parser.add_argument("--config", dest="config_override", help="Chemin vers une configuration robot JSON.")
+    parser.add_argument("--config", dest="config_path", help="Chemin vers une configuration robot JSON.")
     parser.add_argument("--tool", dest="tool_path", help="Chemin vers un profil tool JSON.")
     parser.add_argument("--workspace", dest="workspace_path", help="Chemin vers un workspace JSON.")
     parser.add_argument(
@@ -28,7 +27,7 @@ def parse_startup_options(argv: list[str]) -> dict[str, str]:
     args = parser.parse_args(argv)
 
     return {
-        "config": args.config_override or args.config_path or "",
+        "config": args.config_path or "",
         "tool": args.tool_path or "",
         "workspace": args.workspace_path or "",
         "session": args.session_path or MainController.DEFAULT_SESSION_FILE,

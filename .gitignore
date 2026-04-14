@@ -11,5 +11,6 @@ app_session.json
 trajectories/
 configurations/
 workspaces/
+tools/
 
 !default/*
