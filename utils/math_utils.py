@@ -5,23 +5,6 @@ from PyQt6.QtWidgets import QTableWidget
 # RÉGION: Parsing et utilitaires
 # ============================================================================
 
-def parse_value(expr: str):
-    """Parse une expression mathématique contenant potentiellement 'pi'"""
-    
-    try:
-        expr = expr.replace("pi", "np.pi")
-        return eval(expr, {"np": np})
-    except Exception:
-        raise ValueError(f"Expression invalide: {expr}")
-
-def get_cell_value(table: QTableWidget, row: int, col: int, default=0):
-    """Récupère la valeur d'une cellule de table Qt"""
-    item = table.item(row, col)
-    if item and item.text().strip() != "":
-        return parse_value(item.text())
-    return default
-
-
 def norm3(x: float, y: float, z: float) -> float:
     """Euclidean norm in 3D."""
     return float(np.sqrt(x * x + y * y + z * z))
