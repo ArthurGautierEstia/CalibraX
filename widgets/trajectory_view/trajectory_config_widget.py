@@ -517,14 +517,12 @@ class TrajectoryConfigWidget(QWidget):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
-            if isinstance(payload, dict):
-                raw_keypoints = payload.get("keypoints")
-                smooth_time_enabled = bool(payload.get("smooth_time_enabled", True))
-                bezier_degree = TrajectoryBezierDegree.from_value(payload.get("bezier_degree"))
-            else:
-                raw_keypoints = payload
-                smooth_time_enabled = True
-                bezier_degree = TrajectoryBezierDegree.BEZIER5
+            if not isinstance(payload, dict):
+                raise ValueError("Format invalide: le fichier doit contenir un objet de trajectoire.")
+
+            raw_keypoints = payload.get("keypoints")
+            smooth_time_enabled = bool(payload.get("smooth_time_enabled", True))
+            bezier_degree = TrajectoryBezierDegree.from_value(payload.get("bezier_degree", TrajectoryBezierDegree.BEZIER5.value))
             if not isinstance(raw_keypoints, list):
                 raise ValueError("Format invalide: liste de keypoints introuvable.")
             parsed_keypoints = [TrajectoryKeypoint.from_dict(item) for item in raw_keypoints]
@@ -555,8 +553,6 @@ class TrajectoryConfigWidget(QWidget):
             return
 
         payload = {
-            "format": "calibrax_trajectory_keypoints",
-            "version": 2,
             "smooth_time_enabled": self.is_time_smoothing_enabled(),
             "bezier_degree": self.get_bezier_degree().value,
             "keypoints": [keypoint.to_dict() for keypoint in self._keypoints],
