@@ -167,7 +167,9 @@ class TrajectoryKeypointDialog(QDialog):
         top_controls_layout = QHBoxLayout()
         self.target_type_combo.addItem("Cartesienne (X Y Z A B C)", KeypointTargetType.CARTESIAN.value)
         self.target_type_combo.addItem("Articulaire (J1 J2 J3 J4 J5 J6)", KeypointTargetType.JOINT.value)
-        self.mode_combo.addItems([KeypointMotionMode.PTP.value, KeypointMotionMode.LINEAR.value, KeypointMotionMode.CUBIC.value])
+        self.mode_combo.addItem(KeypointMotionMode.PTP.value, KeypointMotionMode.PTP.value)
+        self.mode_combo.addItem(KeypointMotionMode.LINEAR.value, KeypointMotionMode.LINEAR.value)
+        self.mode_combo.addItem("BEZIER", KeypointMotionMode.CUBIC.value)
         top_controls_layout.addWidget(QLabel("Type de target"))
         top_controls_layout.addWidget(self.target_type_combo)
         top_controls_layout.addSpacing(10)
@@ -562,7 +564,10 @@ class TrajectoryKeypointDialog(QDialog):
         return KeypointTargetType(self.target_type_combo.currentData())
 
     def _current_mode(self) -> KeypointMotionMode:
-        return KeypointMotionMode(self.mode_combo.currentText())
+        raw = self.mode_combo.currentData()
+        if raw is None:
+            raw = self.mode_combo.currentText()
+        return KeypointMotionMode(str(raw))
 
     def _current_configuration_policy(self) -> ConfigurationPolicy:
         raw = str(self.config_policy_combo.currentData())
@@ -1156,7 +1161,9 @@ class TrajectoryKeypointDialog(QDialog):
         self._linear_speed_mps = keypoint.linear_speed_mps
 
         self.mode_combo.blockSignals(True)
-        self.mode_combo.setCurrentText(keypoint.mode.value)
+        mode_idx = self.mode_combo.findData(keypoint.mode.value)
+        if mode_idx >= 0:
+            self.mode_combo.setCurrentIndex(mode_idx)
         self.mode_combo.blockSignals(False)
         self._last_mode = keypoint.mode
 

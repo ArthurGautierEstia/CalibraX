@@ -11,6 +11,7 @@ from models.trajectory_keypoint import (
     KeypointTargetType,
     TrajectoryKeypoint,
 )
+from models.trajectory_options import TrajectoryBezierDegree
 from models.trajectory_result import (
     SegmentResult,
     TrajectoryBuilderBehavior,
@@ -22,6 +23,7 @@ from models.trajectory_result import (
     TrajectorySegment,
 )
 from utils.bezier3 import Bezier3Coefficients3D
+from utils.bezier5 import Bezier5Coefficients3D
 import utils.math_utils as math_utils
 from utils.reference_frame_utils import convert_pose_to_base_frame
 from utils.mgi import MGI, MgiConfigKey, MgiResult, MgiResultItem, MgiResultStatus, ConfigurationIdentifier
@@ -32,7 +34,7 @@ class _BezierSegmentDescriptor:
     segment: TrajectorySegment
     from_pose: list[float]
     to_pose: list[float]
-    coeffs: Bezier3Coefficients3D
+    coeffs: Bezier3Coefficients3D | Bezier5Coefficients3D
     t_out: list[float]
     t_in: list[float]
     arc_length_mm: float
@@ -64,6 +66,7 @@ class TrajectoryBuilder:
         behavior: TrajectoryBuilderBehavior = TrajectoryBuilderBehavior.CONTINUE_ON_ERROR,
         sample_dt_s: float = DEFAULT_SAMPLE_DT_S,
         smooth_time_enabled: bool = True,
+        bezier_degree: TrajectoryBezierDegree | str = TrajectoryBezierDegree.BEZIER5,
     ) -> None:
         self.robot_model = robot_model
         self.tool_model = tool_model
@@ -71,12 +74,16 @@ class TrajectoryBuilder:
         self.behavior = behavior
         self.sample_dt_s = sample_dt_s if sample_dt_s > 0.0 else TrajectoryBuilder.DEFAULT_SAMPLE_DT_S
         self.smooth_time_enabled = bool(smooth_time_enabled)
+        self.bezier_degree = TrajectoryBezierDegree.from_value(bezier_degree)
         self._working_mgi_solver: MGI | None = None
         self._robot_allowed_configs: set[MgiConfigKey] | None = None
         self._joint_weights: list[float] | None = None
 
     def set_time_smoothing_enabled(self, enabled: bool) -> None:
         self.smooth_time_enabled = bool(enabled)
+
+    def set_bezier_degree(self, degree: TrajectoryBezierDegree | str) -> None:
+        self.bezier_degree = TrajectoryBezierDegree.from_value(degree)
 
     @staticmethod
     def linear_speed_mps_to_mmps(speed_mps: float) -> float:
@@ -317,7 +324,10 @@ class TrajectoryBuilder:
         return required_duration_s, effective_speed_limits
 
     @staticmethod
-    def _estimate_arc_length(coeffs: Bezier3Coefficients3D, samples_count: int = DEFAULT_ARC_LENGTH_SAMPLES) -> float:
+    def _estimate_arc_length(
+        coeffs: Bezier3Coefficients3D | Bezier5Coefficients3D,
+        samples_count: int = DEFAULT_ARC_LENGTH_SAMPLES,
+    ) -> float:
         """
         Approximation de l'abscisse curviligne
         """
@@ -353,7 +363,7 @@ class TrajectoryBuilder:
 
     @staticmethod
     def _build_arc_length_lut(
-        coeffs: Bezier3Coefficients3D,
+        coeffs: Bezier3Coefficients3D | Bezier5Coefficients3D,
         samples_count: int = DEFAULT_ARC_LENGTH_SAMPLES,
     ) -> tuple[list[float], list[float]]:
         if samples_count < 2:
@@ -370,6 +380,17 @@ class TrajectoryBuilder:
             s_values.append(float(cumulative))
             prev = p
         return t_values, s_values
+
+    def _build_bezier_coefficients(
+        self,
+        p0: list[float],
+        p3: list[float],
+        t_out: list[float],
+        t_in: list[float],
+    ) -> Bezier3Coefficients3D | Bezier5Coefficients3D:
+        if self.bezier_degree == TrajectoryBezierDegree.BEZIER5:
+            return Bezier5Coefficients3D(p0, p3, t_out, t_in)
+        return Bezier3Coefficients3D(p0, p3, t_out, t_in)
 
     @staticmethod
     def _distance_to_bezier_parameter(
@@ -456,7 +477,7 @@ class TrajectoryBuilder:
         else:
             t_out, t_in = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
 
-        coeffs = Bezier3Coefficients3D(p0, p3, t_out, t_in)
+        coeffs = self._build_bezier_coefficients(p0, p3, t_out, t_in)
         arc_lut_t, arc_lut_s = TrajectoryBuilder._build_arc_length_lut(coeffs)
         arc_length_mm = float(arc_lut_s[-1]) if arc_lut_s else 0.0
         speed_mmps = TrajectoryBuilder.linear_speed_mps_to_mmps(segment.to_keypoint.linear_speed_mps)
@@ -1052,7 +1073,7 @@ class TrajectoryBuilder:
             # [0] = start-side direction/amplitude, [1] = end-side direction/amplitude.
             t_out, t_in = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
 
-        coeffs = Bezier3Coefficients3D(p0, p3, t_out, t_in)
+        coeffs = self._build_bezier_coefficients(p0, p3, t_out, t_in)
         arc_length_mm = TrajectoryBuilder._estimate_arc_length(coeffs)
         speed_mmps = TrajectoryBuilder.linear_speed_mps_to_mmps(segment.to_keypoint.linear_speed_mps)
         intervals = TrajectoryBuilder._resolve_num_intervals(arc_length_mm, speed_mmps, self.sample_dt_s)

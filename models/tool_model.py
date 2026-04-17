@@ -32,18 +32,23 @@ class ToolModel(QObject):
             default_shape="cylinder",
         )
 
+    @staticmethod
+    def _copy_tool(tool: RobotTool | None = None) -> RobotTool:
+        source = tool if tool is not None else RobotTool()
+        return RobotTool(
+            float(source.x),
+            float(source.y),
+            float(source.z),
+            float(source.a),
+            float(source.b),
+            float(source.c),
+        )
+
     def get_tool(self) -> RobotTool:
-        return self.tool
+        return self._copy_tool(self.tool)
 
     def set_tool(self, tool: RobotTool) -> None:
-        normalized = RobotTool(
-            float(tool.x),
-            float(tool.y),
-            float(tool.z),
-            float(tool.a),
-            float(tool.b),
-            float(tool.c),
-        )
+        normalized = self._copy_tool(tool)
         if vars(normalized) == vars(self.tool):
             return
         self.tool = normalized

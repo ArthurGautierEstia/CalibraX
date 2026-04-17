@@ -150,16 +150,16 @@
         {
             "axis": 0,
             "enabled": true,
-            "radius": 120.0,
-            "height": -400.0,
+            "radius": 140.0,
+            "height": -480.0,
             "direction_axis": "z",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_axis": "z",
+            "offset_value": 80.0
         },
         {
             "axis": 1,
             "enabled": true,
-            "radius": 100.0,
+            "radius": 80.0,
             "height": 655.0,
             "direction_axis": "x",
             "offset_axis": "",
@@ -168,7 +168,7 @@
         {
             "axis": 2,
             "enabled": true,
-            "radius": 70.0,
+            "radius": 60.0,
             "height": 555.0,
             "direction_axis": "y",
             "offset_axis": "x",

@@ -1,9 +1,13 @@
 from typing import Optional
 
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from widgets.trajectory_view.trajectory_config_timeline_widget import TrajectoryConfigTimelineWidget
-from widgets.trajectory_view.trajectory_graph_panel_widget import GraphMode, TrajectoryGraphPanelWidget
+from widgets.trajectory_view.trajectory_graph_panel_widget import (
+    GraphDisplayMode,
+    GraphMode,
+    TrajectoryGraphPanelWidget,
+)
 
 
 class TrajectoryGraphsWidget(QWidget):
@@ -18,6 +22,7 @@ class TrajectoryGraphsWidget(QWidget):
         self.config_timeline.setMinimumHeight(230)
 
         self.btn_popout = QPushButton("Detacher les graphes")
+        self.display_mode_combo = QComboBox()
         self._detachable_panels = QWidget(self)
 
         self._popout_dialog: Optional[QDialog] = None
@@ -33,6 +38,10 @@ class TrajectoryGraphsWidget(QWidget):
         layout = QVBoxLayout(self)
 
         header = QHBoxLayout()
+        header.addWidget(QLabel("Affichage"))
+        self.display_mode_combo.addItem("Line", GraphDisplayMode.LINE.value)
+        self.display_mode_combo.addItem("Dot", GraphDisplayMode.DOT.value)
+        header.addWidget(self.display_mode_combo)
         header.addWidget(self.btn_popout)
         header.addStretch()
         layout.addLayout(header)
@@ -47,6 +56,12 @@ class TrajectoryGraphsWidget(QWidget):
 
     def _setup_connections(self) -> None:
         self.btn_popout.clicked.connect(self._on_popout_clicked)
+        self.display_mode_combo.currentIndexChanged.connect(self._on_display_mode_changed)
+
+    def _on_display_mode_changed(self, _index: int) -> None:
+        selected_mode = self.display_mode_combo.currentData()
+        self.articular_panel.set_display_mode(selected_mode)
+        self.cartesian_panel.set_display_mode(selected_mode)
 
     def _on_popout_clicked(self) -> None:
         if self._popout_dialog is None:

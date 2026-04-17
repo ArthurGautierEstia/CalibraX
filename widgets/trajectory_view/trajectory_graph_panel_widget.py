@@ -8,6 +8,11 @@ class GraphMode(Enum):
     CARTESIAN = 0
     ARTICULAR = 1
 
+
+class GraphDisplayMode(Enum):
+    LINE = "line"
+    DOT = "dot"
+
 class TrajectoryGraphPanelWidget(QWidget):
     """Graph panel for a trajectory (articular or cartesian)."""
 
@@ -47,6 +52,7 @@ class TrajectoryGraphPanelWidget(QWidget):
 
         self._plots = [self.position_plot, self.velocity_plot, self.acceleration_plot]
         self._plot_items: List[List[pg.PlotDataItem]] = []
+        self._axis_pens = [pg.mkPen(color=color, width=2) for color in self.AXIS_COLORS]
         self._plot_data: List[List[List[float]]] = [
             [[] for _ in range(6)],
             [[] for _ in range(6)],
@@ -55,6 +61,7 @@ class TrajectoryGraphPanelWidget(QWidget):
         self._time_data: List[List[float]] = [[], [], []]
         self._key_time_lines: List[List[pg.InfiniteLine]] = [[], [], []]
         self._time_indicator_lines: List[Optional[pg.InfiniteLine]] = [None, None, None]
+        self._display_mode = GraphDisplayMode.LINE
 
         self._setup_ui()
         self._setup_plots()
@@ -114,9 +121,8 @@ class TrajectoryGraphPanelWidget(QWidget):
 
         for plot in self._plots:
             items = []
-            for color in self.AXIS_COLORS:
-                pen = pg.mkPen(color=color, width=2)
-                item = plot.plot([], [], pen=pen)
+            for _color in self.AXIS_COLORS:
+                item = plot.plot([], [])
                 items.append(item)
             self._plot_items.append(items)
 
@@ -153,6 +159,22 @@ class TrajectoryGraphPanelWidget(QWidget):
         if accelerations is not None:
             self._set_plot_data(2, time_s, accelerations)
 
+    def set_display_mode(self, display_mode: GraphDisplayMode | str) -> None:
+        if isinstance(display_mode, GraphDisplayMode):
+            normalized = display_mode
+        else:
+            try:
+                normalized = GraphDisplayMode(str(display_mode).strip().lower())
+            except ValueError:
+                normalized = GraphDisplayMode.LINE
+
+        if normalized == self._display_mode:
+            return
+
+        self._display_mode = normalized
+        for plot_idx in range(3):
+            self._refresh_plot_items(plot_idx)
+
     def set_key_times(self, times: List[float]) -> None:
         for idx, plot in enumerate(self._plots):
             for line in self._key_time_lines[idx]:
@@ -187,9 +209,33 @@ class TrajectoryGraphPanelWidget(QWidget):
             return
         self._time_data[plot_idx] = list(time_s)
         self._plot_data[plot_idx] = [list(values) for values in series[:6]]
-        for axis in range(6):
-            self._plot_items[plot_idx][axis].setData(time_s, series[axis])
+        self._refresh_plot_items(plot_idx)
         self._update_ranges(plot_idx)
+
+    def _refresh_plot_items(self, plot_idx: int) -> None:
+        time_s = self._time_data[plot_idx]
+        for axis in range(6):
+            self._plot_items[plot_idx][axis].setData(
+                time_s,
+                self._plot_data[plot_idx][axis],
+                **self._display_kwargs(axis),
+            )
+
+    def _display_kwargs(self, axis: int) -> dict:
+        color = self.AXIS_COLORS[axis]
+        pen = self._axis_pens[axis]
+        if self._display_mode == GraphDisplayMode.DOT:
+            return {
+                "pen": None,
+                "symbol": "o",
+                "symbolSize": 2,
+                "symbolPen": None,
+                "symbolBrush": color,
+            }
+        return {
+            "pen": pen,
+            "symbol": None,
+        }
 
     def _update_visibility(self) -> None:
         for plot_idx in range(3):

@@ -61,6 +61,7 @@ class TrajectoryController(QObject):
             self.tool_model,
             self.workspace_model,
             smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
+            bezier_degree=self.config_widget.get_bezier_degree(),
         )
         self.current_trajectory = TrajectoryResult()
         self.current_samples: list[TrajectorySample] = []
@@ -94,6 +95,7 @@ class TrajectoryController(QObject):
         self.config_widget.trajectoryPreviewFinished.connect(self._on_trajectory_preview_finished)
         self.config_widget.keypoints_changed.connect(self._on_keypoints_changed)
         self.config_widget.timeSmoothingChanged.connect(self._on_time_smoothing_changed)
+        self.config_widget.bezierDegreeChanged.connect(self._on_bezier_degree_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_cartesian_display_frame_changed)
         self.actions_widget.compute_requested.connect(self._on_compute_requested)
         self.actions_widget.export_trajectory_requested.connect(self._on_export_trajectory_requested)
@@ -146,6 +148,12 @@ class TrajectoryController(QObject):
 
     def _on_time_smoothing_changed(self, _enabled: bool) -> None:
         self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
+        if self._is_keypoint_preview_active:
+            return
+        self._recompute_trajectory()
+
+    def _on_bezier_degree_changed(self, _degree: str) -> None:
+        self.trajectory_builder.set_bezier_degree(self.config_widget.get_bezier_degree())
         if self._is_keypoint_preview_active:
             return
         self._recompute_trajectory()
@@ -337,6 +345,7 @@ class TrajectoryController(QObject):
     def _recompute_trajectory(self, keypoints_override: list[TrajectoryKeypoint] | None = None) -> None:
         self._stop_playback()
         self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
+        self.trajectory_builder.set_bezier_degree(self.config_widget.get_bezier_degree())
         if keypoints_override is None:
             keypoints = self.config_widget.get_keypoints()
         else:
