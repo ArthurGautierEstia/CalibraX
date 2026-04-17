@@ -112,6 +112,7 @@ class MeasurementController(QObject):
             self._on_view_repere_selected(first_item.text(0))
 
         self.display_measured_dh_parameters()
+        self.measurement_widget.set_measured_controls_enabled(True)
 
     def _parse_csv_measurements(self, file_path: str) -> list:
         """
@@ -195,6 +196,7 @@ class MeasurementController(QObject):
         self.robot_model.clear_measurements()
         self.robot_model.clear_measurement_points()
         self.measurement_widget.clear_measurements()
+        self.measurement_widget.set_measured_controls_enabled(False)
         self._update_tcp_offsets_from_selection()
     
     def _invert_homogeneous_transform(self, T: np.ndarray) -> np.ndarray:
@@ -339,6 +341,10 @@ class MeasurementController(QObject):
                         selected[row][col] = float(measured[row][col])
 
         return selected
+
+    def get_selected_measured_dh_params(self) -> list[list[float]]:
+        theoretical_dh = self.robot_model.get_dh_params()
+        return self._build_selected_dh_params(theoretical_dh)
 
     def _update_tcp_offsets_from_selection(self) -> None:
         theoretical_dh = self.robot_model.get_dh_params()

@@ -33,6 +33,8 @@ class RobotConfigurationFile:
 
     name: str = ""
     dh: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0] for _ in range(6)])
+    dh_measured: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0] for _ in range(6)])
+    dh_measured_enabled: bool = False
     corr: list[list[float]] = field(default_factory=lambda: [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(6)])
     axis_limits: list[tuple[float, float]] = field(default_factory=lambda: list(DEFAULT_AXIS_LIMITS))
     cartesian_slider_limits_xyz: list[tuple[float, float]] = field(
@@ -229,9 +231,13 @@ class RobotConfigurationFile:
             position_zero=robot_model.get_position_zero(),
             position_transport=robot_model.get_position_transport(),
             robot_cad_models=robot_model.get_robot_cad_models(),
+            dh_measured=[row[:] for row in robot_model.get_measured_dh_params()[:6]],
+            dh_measured_enabled=robot_model.get_measured_dh_enabled(),
             present_fields={
                 "name",
                 "dh",
+                "dh_measured",
+                "dh_measured_enabled",
                 "corr",
                 "axis_limits",
                 "cartesian_slider_limits_xyz",
@@ -295,6 +301,8 @@ class RobotConfigurationFile:
                 data.get("robot_cad_models", data.get("robot_cad_files")),
                 DEFAULT_ROBOT_CAD_MODELS,
             ),
+            dh_measured=cls._parse_matrix(data.get("dh_measured"), 6, 4, 0.0),
+            dh_measured_enabled=bool(data.get("dh_measured_enabled", False)),
             present_fields=present_fields,
         )
 
@@ -302,6 +310,8 @@ class RobotConfigurationFile:
         return {
             "name": [self.name],
             "dh": [[str(val) for val in row] for row in self.dh[:6]],
+            "dh_measured": [[str(val) for val in row] for row in self.dh_measured[:6]],
+            "dh_measured_enabled": self.dh_measured_enabled,
             "corr": [[str(val) for val in row] for row in self.corr[:6]],
             "axis_limits": self.axis_limits[:6],
             "cartesian_slider_limits_xyz": self.cartesian_slider_limits_xyz[:3],
@@ -348,6 +358,10 @@ class RobotConfigurationFile:
             robot_model.set_position_transport(self.position_transport)
         if "robot_cad_models" in self.present_fields:
             robot_model.set_robot_cad_models(self.robot_cad_models)
+        if "dh_measured" in self.present_fields:
+            robot_model.set_measured_dh_params(self.dh_measured)
+        if "dh_measured_enabled" in self.present_fields:
+            robot_model.set_measured_dh_enabled(self.dh_measured_enabled)
 
     def save(self, file_path: str) -> None:
         with open(file_path, "w") as file:

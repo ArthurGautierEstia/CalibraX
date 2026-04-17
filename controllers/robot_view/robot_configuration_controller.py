@@ -25,6 +25,8 @@ class RobotConfigurationController(QObject):
         self.robot_model.configuration_changed.connect(self._on_robot_configuration_changed)
         self.robot_model.robot_name_changed.connect(self._on_robot_name_changed)
         self.robot_model.dh_params_changed.connect(self._on_robot_dh_table_changed)
+        self.robot_model.measured_dh_params_changed.connect(self._on_robot_measured_dh_table_changed)
+        self.robot_model.measured_dh_enabled_changed.connect(self._on_robot_measured_dh_enabled_changed)
         self.robot_model.axis_limits_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.axis_speed_limits_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.axis_jerk_limits_changed.connect(self._on_robot_axis_config_changed)
@@ -33,6 +35,7 @@ class RobotConfigurationController(QObject):
         # Signals from View
         self.robot_configuration_widget.text_changed_requested.connect(self._on_view_name_changed)
         self.robot_configuration_widget.dh_value_changed.connect(self._on_view_dh_value_changed)
+        self.robot_configuration_widget.measured_dh_enabled_changed.connect(self._on_view_measured_dh_enabled_changed)
         self.robot_configuration_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
         self.robot_configuration_widget.axis_colliders_config_changed.connect(self._on_view_axis_colliders_config_changed)
         self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
@@ -50,6 +53,7 @@ class RobotConfigurationController(QObject):
     def _on_robot_configuration_changed(self) -> None:
         self.update_robot_name_view()
         self.update_dh_table_view()
+        self.update_measured_dh_table_view()
         self.update_axis_config_view()
         self.update_axis_colliders_view()
         self.update_positions_config_view()
@@ -60,6 +64,12 @@ class RobotConfigurationController(QObject):
 
     def _on_robot_dh_table_changed(self) -> None:
         self.update_dh_table_view()
+
+    def _on_robot_measured_dh_table_changed(self) -> None:
+        self.update_measured_dh_table_view()
+
+    def _on_robot_measured_dh_enabled_changed(self) -> None:
+        self.robot_model.compute_fk_tcp()
 
     def _on_robot_axis_config_changed(self) -> None:
         self.update_axis_config_view()
@@ -73,6 +83,9 @@ class RobotConfigurationController(QObject):
     def _on_view_dh_value_changed(self, row: int, col: int, value: str) -> None:
         fval = str_to_float(value)
         self.robot_model.set_dh_param(row, col, fval)
+
+    def _on_view_measured_dh_enabled_changed(self, enabled: bool) -> None:
+        self.robot_model.set_measured_dh_enabled(enabled)
     
     def _on_view_axis_config_changed(
         self,
@@ -141,6 +154,15 @@ class RobotConfigurationController(QObject):
     
     def update_dh_table_view(self) -> None:
         self.robot_configuration_widget.set_dh_params(self.robot_model.get_dh_params())
+
+    def update_measured_dh_table_view(self) -> None:
+        measured_params = self.robot_model.get_measured_dh_params()
+        has_measured_params = self.robot_model.get_measured_dh_enabled() or any(
+            any(abs(value) > 1e-9 for value in row) for row in measured_params
+        )
+        self.robot_configuration_widget.set_measured_dh_params(measured_params)
+        self.robot_configuration_widget.measured_dh_toggle.setEnabled(has_measured_params)
+        self.robot_configuration_widget.set_measured_dh_table_enabled(self.robot_model.get_measured_dh_enabled())
 
     def update_axis_config_view(self) -> None:
         self.robot_configuration_widget.set_axis_config(

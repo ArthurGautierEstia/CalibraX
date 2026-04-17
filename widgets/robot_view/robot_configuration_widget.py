@@ -4,7 +4,8 @@ import math
 import os
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -36,12 +37,94 @@ from utils.mgi import RobotTool
 from models.tool_config_file import ToolConfigFile
 
 
+class SwitchControl(QWidget):
+    toggled = pyqtSignal(bool)
+    
+    def __init__(self, off_text: str = "Off", on_text: str = "On", parent: QWidget | None = None):
+        super().__init__(parent)
+        self._off_text = off_text
+        self._on_text = on_text
+        self._checked = False
+        self._animation = None
+        self._animation_progress = 0.0
+        
+        self.setFixedSize(220, 34)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Couleurs
+        self._color_off = QColor("#999999")
+        self._color_on = QColor("#ff8c00")
+        self._color_circle = QColor("#ffffff")
+        self._color_text = QColor("#ffffff")
+    
+    def isChecked(self) -> bool:
+        return self._checked
+    
+    def setChecked(self, checked: bool) -> None:
+        if checked != self._checked:
+            self._checked = checked
+            self._start_animation()
+        else:
+            self._animation_progress = 1.0 if checked else 0.0
+            self.update()
+    
+    def _start_animation(self) -> None:
+        self._animation = QPropertyAnimation(self, b"_animation_progress")
+        self._animation.setStartValue(0.0 if self._checked else 1.0)
+        self._animation.setEndValue(1.0 if self._checked else 0.0)
+        self._animation.setDuration(300)
+        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._animation.valueChanged.connect(self.update)
+        self._animation.finished.connect(self._on_animation_finished)
+        self._animation.start()
+    
+    def _on_animation_finished(self) -> None:
+        self._animation = None
+        self.toggled.emit(self._checked)
+    
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and not self._animation:
+            self.setChecked(not self._checked)
+    
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Dimensions
+        margin = 4
+        track_height = 20
+        track_width = 46
+        track_rect = QRect(margin, (self.height() - track_height) // 2, track_width, track_height)
+        circle_diameter = track_height - 4
+        
+        # Fond arrondi (track)
+        track_color = self._color_on if self._checked else self._color_off
+        painter.setBrush(track_color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(track_rect, track_height / 2, track_height / 2)
+        
+        # Cercle
+        circle_x = track_rect.x() + 2 + self._animation_progress * (track_width - circle_diameter - 4)
+        circle_y = track_rect.y() + 2
+        painter.setBrush(self._color_circle)
+        painter.drawEllipse(int(circle_x), int(circle_y), circle_diameter, circle_diameter)
+        
+        # Texte à droite du switch
+        painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+        painter.setPen(self._color_text)
+        
+        text = self._on_text if self._checked else self._off_text
+        text_rect = QRect(track_rect.right() + 10, 0, self.width() - track_rect.right() - margin - 10, self.height())
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+
+
 class RobotConfigurationWidget(QWidget):
     """Widget principal de configuration robot (DH + axes + positions + CAD)."""
 
     load_config_requested = pyqtSignal()
     text_changed_requested = pyqtSignal()
     export_config_requested = pyqtSignal()
+    measured_dh_enabled_changed = pyqtSignal(bool)
 
     dh_value_changed = pyqtSignal(int, int, str)
     tool_changed = pyqtSignal(RobotTool)
@@ -168,6 +251,18 @@ class RobotConfigurationWidget(QWidget):
         title = QLabel("Table de Denavit-Hartenberg")
         layout.addWidget(title)
 
+        self.measured_dh_toggle = SwitchControl("Configuration d'usine", "Configuration robot mesuré")
+        self.measured_dh_toggle.setChecked(False)
+        self.measured_dh_toggle.setEnabled(False)
+        self.measured_dh_toggle.toggled.connect(self._on_measured_dh_toggle_changed)
+        layout.addWidget(self.measured_dh_toggle)
+
+        tables_layout = QHBoxLayout()
+
+        nominal_layout = QVBoxLayout()
+        nominal_label = QLabel("Valeurs nominales")
+        nominal_layout.addWidget(nominal_label)
+
         self.table_dh = QTableWidget(6, 4)
         self.table_dh.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
         self.table_dh.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
@@ -175,8 +270,26 @@ class RobotConfigurationWidget(QWidget):
         self.table_dh.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh.horizontalHeader().setDefaultSectionSize(90)
         self.table_dh.cellChanged.connect(self._on_dh_cell_changed)
-        layout.addWidget(self.table_dh)
+        nominal_layout.addWidget(self.table_dh)
+        tables_layout.addLayout(nominal_layout, 1)
 
+        measured_layout = QVBoxLayout()
+        measured_label = QLabel("Valeurs mesurées")
+        measured_layout.addWidget(measured_label)
+
+        self.table_dh_measured = QTableWidget(6, 4)
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
+        self.table_dh_measured.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
+        self.table_dh_measured.horizontalHeader().setDefaultSectionSize(90)
+        self.table_dh_measured.setEnabled(False)
+        measured_layout.addWidget(self.table_dh_measured)
+        tables_layout.addLayout(measured_layout, 1)
+
+        layout.addLayout(tables_layout)
         return tab
 
     def _build_axis_tab(self) -> QWidget:
@@ -947,6 +1060,35 @@ class RobotConfigurationWidget(QWidget):
                     self.table_dh.setItem(row, col, QTableWidgetItem(value))
         finally:
             self.table_dh.blockSignals(False)
+
+    def set_measured_dh_params(self, params: list[list[float]]) -> None:
+        if self.table_dh_measured is None:
+            return
+
+        self.table_dh_measured.blockSignals(True)
+        try:
+            for row in range(6):
+                values = params[row] if row < len(params) else []
+                for col in range(4):
+                    value = str(values[col]) if col < len(values) else ""
+                    self.table_dh_measured.setItem(row, col, QTableWidgetItem(value))
+        finally:
+            self.table_dh_measured.blockSignals(False)
+
+    def set_measured_dh_table_enabled(self, enabled: bool) -> None:
+        if self.measured_dh_toggle is not None:
+            self.measured_dh_toggle.setChecked(enabled)
+        if self.table_dh_measured is not None:
+            self.table_dh_measured.setEnabled(enabled)
+        if self.table_dh is not None:
+            self.table_dh.setEnabled(not enabled)
+
+    def _on_measured_dh_toggle_changed(self, checked: bool) -> None:
+        if self.table_dh_measured is not None:
+            self.table_dh_measured.setEnabled(checked)
+        if self.table_dh is not None:
+            self.table_dh.setEnabled(not checked)
+        self.measured_dh_enabled_changed.emit(checked)
 
     def get_dh_params(self) -> list[list[str]]:
         params: list[list[str]] = []

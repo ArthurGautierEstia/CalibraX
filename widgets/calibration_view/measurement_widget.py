@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Any
 from PyQt6.QtWidgets import (
     QLayout, QWidget, QVBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
-    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox, QHBoxLayout, QCheckBox
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox, QSizePolicy, QHBoxLayout, QCheckBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QEvent
 from PyQt6.QtGui import QFont
@@ -77,6 +77,7 @@ class MeasurementWidget(QWidget):
     import_measurements_requested = pyqtSignal()
     clear_measurements_requested = pyqtSignal()
     set_as_reference_requested = pyqtSignal()
+    apply_measured_dh_requested = pyqtSignal()
     repere_selected = pyqtSignal(str)
     rotation_type_changed = pyqtSignal(str)
     dh_checkboxes_changed = pyqtSignal()
@@ -145,10 +146,12 @@ class MeasurementWidget(QWidget):
 
         self.btn_set_as_ref = QPushButton("Définir en Référence")
         self.btn_set_as_ref.clicked.connect(self.set_as_reference_requested.emit)
+        self.btn_set_as_ref.setEnabled(False)
         buttons_layout.addWidget(self.btn_set_as_ref)
 
         self.btn_clear = QPushButton("Effacer")
         self.btn_clear.clicked.connect(self.clear_measurements_requested.emit)
+        self.btn_clear.setEnabled(False)
         buttons_layout.addWidget(self.btn_clear)
 
         main_layout.addLayout(buttons_layout)
@@ -166,6 +169,7 @@ class MeasurementWidget(QWidget):
         self.table_dh_measured.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_dh_measured.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(120)
+        self.table_dh_measured.setEnabled(False)
 
         self.table_tcp_offsets = QTableWidget(3, 2)
         self.table_tcp_offsets.setHorizontalHeaderLabels(["TCP", "Offsets"])
@@ -188,15 +192,18 @@ class MeasurementWidget(QWidget):
         self.setLayout(main_layout)
 
         buttons2_layout = QHBoxLayout()
-        self.btn_check_all = QPushButton("Tout séléctionner")
-        self.btn_check_all.clicked.connect(self.check_all_dh_checkboxes)
-        buttons2_layout.addWidget(self.btn_check_all)
+        self.btn_toggle_check = QPushButton("Tout sélectionner")
+        self.btn_toggle_check.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.btn_toggle_check.clicked.connect(self.toggle_dh_checkboxes)
+        self.btn_toggle_check.setEnabled(False)
+        buttons2_layout.addWidget(self.btn_toggle_check, 1)
 
-        self.btn_uncheck_all = QPushButton("Tout désélectionner")
-        self.btn_uncheck_all.clicked.connect(self.uncheck_all_dh_checkboxes)
-        buttons2_layout.addWidget(self.btn_uncheck_all)
+        self.btn_apply_measured = QPushButton("Appliquer à la configuration robot")
+        self.btn_apply_measured.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.btn_apply_measured.clicked.connect(self.apply_measured_dh_requested.emit)
+        self.btn_apply_measured.setEnabled(False)
+        buttons2_layout.addWidget(self.btn_apply_measured, 1)
 
-        buttons2_layout.addStretch(1)
         main_layout.addLayout(buttons2_layout)
 
     def _is_dh_cell_disabled(self, row: int, col: int) -> bool:
@@ -516,11 +523,33 @@ class MeasurementWidget(QWidget):
                 if isinstance(cell_widget, DHCellWidget) and param_name in states:
                     cell_widget.set_checked(states[param_name])
 
-    def check_all_dh_checkboxes(self) -> None:
-        self._set_all_dh_checkboxes(True)
+    def toggle_dh_checkboxes(self) -> None:
+        self._set_all_dh_checkboxes(not self._are_all_dh_checkboxes_checked())
 
-    def uncheck_all_dh_checkboxes(self) -> None:
-        self._set_all_dh_checkboxes(False)
+    def _are_all_dh_checkboxes_checked(self) -> bool:
+        for row in range(self.table_dh_measured.rowCount()):
+            for col in range(self.table_dh_measured.columnCount()):
+                cell_widget = self.table_dh_measured.cellWidget(row, col)
+                if isinstance(cell_widget, DHCellWidget) and cell_widget.isEnabled() and not cell_widget.is_checked():
+                    return False
+        return True
+
+    def _are_any_dh_checkboxes_checked(self) -> bool:
+        for row in range(self.table_dh_measured.rowCount()):
+            for col in range(self.table_dh_measured.columnCount()):
+                cell_widget = self.table_dh_measured.cellWidget(row, col)
+                if isinstance(cell_widget, DHCellWidget) and cell_widget.isEnabled() and cell_widget.is_checked():
+                    return True
+        return False
+
+    def _update_toggle_check_button_text(self) -> None:
+        if self._are_all_dh_checkboxes_checked():
+            self.btn_toggle_check.setText("Tout désélectionner")
+        else:
+            self.btn_toggle_check.setText("Tout sélectionner")
+
+    def _update_apply_button_state(self) -> None:
+        self.btn_apply_measured.setEnabled(self._are_any_dh_checkboxes_checked())
 
     def _set_all_dh_checkboxes(self, checked: bool) -> None:
         for row in range(self.table_dh_measured.rowCount()):
@@ -528,9 +557,13 @@ class MeasurementWidget(QWidget):
                 cell_widget = self.table_dh_measured.cellWidget(row, col)
                 if isinstance(cell_widget, DHCellWidget) and cell_widget.isEnabled():
                     cell_widget.set_checked(checked)
+        self._update_toggle_check_button_text()
+        self._update_apply_button_state()
         self.dh_checkboxes_changed.emit()
 
     def _emit_dh_checkboxes_changed(self, *_args) -> None:
+        self._update_toggle_check_button_text()
+        self._update_apply_button_state()
         self.dh_checkboxes_changed.emit()
 
     def get_measured_dh_params(self) -> List[List[float]]:
@@ -550,3 +583,15 @@ class MeasurementWidget(QWidget):
                 row_values.append(value)
             measured.append(row_values)
         return measured
+
+    def set_measured_controls_enabled(self, enabled: bool) -> None:
+        """Active ou désactive les contrôles des valeurs mesurées"""
+        self.table_dh_measured.setEnabled(enabled)
+        self.btn_toggle_check.setEnabled(enabled)
+        self.btn_set_as_ref.setEnabled(enabled)
+        self.btn_clear.setEnabled(enabled)
+        # Désactiver le bouton appliquer lors du clear
+        if not enabled:
+            self.btn_apply_measured.setEnabled(False)
+        # Désactiver le bouton importer si des mesures sont présentes
+        self.btn_import_me.setEnabled(not enabled)

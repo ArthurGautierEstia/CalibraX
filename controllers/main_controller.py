@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtWidgets import QMessageBox
 
 from controllers.calibration_controller import CalibrationController
 from controllers.cartesian_control_controller import CartesianControlController
@@ -83,7 +84,10 @@ class MainController(QObject):
         self.robot_model.configuration_changed.connect(self._on_robot_model_config_changed)
         self.robot_model.configuration_changed.connect(self._schedule_session_save)
         self.robot_model.axis_colliders_changed.connect(self._schedule_session_save)
+        self.robot_model.measured_dh_params_changed.connect(self._schedule_session_save)
+        self.robot_model.measured_dh_enabled_changed.connect(self._schedule_session_save)
         self.robot_controller.configuration_loaded.connect(self._on_config_loaded)
+        self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
 
         self.tool_model.tool_changed.connect(self._on_tool_changed)
         self.tool_model.tool_visual_changed.connect(self._schedule_session_save)
@@ -101,6 +105,19 @@ class MainController(QObject):
         self.main_window.get_trajectory_view().get_config_widget().cartesianDisplayFrameChanged.connect(
             self._schedule_session_save
         )
+
+    def _on_apply_measured_dh_requested(self) -> None:
+        measured_dh = self.calibration_controller.measurement_controller.get_selected_measured_dh_params()
+        self.robot_model.set_measured_dh_params(measured_dh)
+        self.robot_model.set_measured_dh_enabled(True)
+        self.robot_controller.dh_controller.robot_configuration_widget.set_measured_dh_params(measured_dh)
+        self.robot_controller.dh_controller.robot_configuration_widget.set_measured_dh_table_enabled(True)
+        QMessageBox.information(
+            self.main_window,
+            "Configuration modifiée",
+            "Les paramètres sélectionnés ont été appliqués à la configuration robot.",
+        )
+        self.robot_controller.dh_controller.robot_configuration_widget.measured_dh_toggle.setEnabled(True)
 
     def bootstrap_startup(self) -> None:
         session = self._load_session()

@@ -45,6 +45,8 @@ class RobotModel(QObject):
     
     # Paramètres DH
     dh_params_changed = pyqtSignal()
+    measured_dh_params_changed = pyqtSignal()
+    measured_dh_enabled_changed = pyqtSignal()
 
     allowed_config_changed = pyqtSignal()
 
@@ -115,6 +117,8 @@ class RobotModel(QObject):
         # 7 lignes : 6 joints + outil (tool frame)
         # Chaque ligne contient [a, alpha, d, theta]
         self.dh_params: List[List[float]] = [[0, 0, 0, 0] for _ in range(7)]
+        self.measured_dh_params: List[List[float]] = [[0, 0, 0, 0] for _ in range(6)]
+        self.measured_dh_enabled: bool = False
         
         self.current_tcp_dh_matrices: List[np.ndarray] = []
         self.current_tcp_corrected_dh_matrices: List[np.ndarray] = []
@@ -788,8 +792,9 @@ class RobotModel(QObject):
         return [row.copy() for row in self.dh_params]
     
     def get_dh_param(self, row: int, col: int):
-        """Retourne un paramètre DH spécifique"""
-        return self.dh_params[row][col] if 0 <= row < 6 and 0 <= col < 4 else 0
+        """Retourne un paramètre DH spécifique (mesurés si activés, sinon théoriques)"""
+        dh_source = self.measured_dh_params if self.measured_dh_enabled else self.dh_params
+        return dh_source[row][col] if 0 <= row < 6 and 0 <= col < 4 else 0
     
     def get_dh_row(self, row: int):
         """Retourne une ligne complète de paramètres DH"""
@@ -835,7 +840,27 @@ class RobotModel(QObject):
 
             except (ValueError, TypeError):
                 print(f"Erreur: valeurs DH invalides pour la ligne {row}")
-    
+
+    def get_measured_dh_params(self) -> list[list[float]]:
+        """Retourne les paramètres DH mesurés"""
+        return [row.copy() for row in self.measured_dh_params]
+
+    def set_measured_dh_params(self, params: list[list[float]]):
+        """Définit les paramètres DH mesurés"""
+        self.measured_dh_params = [list(row) for row in params]
+        while len(self.measured_dh_params) < 6:
+            self.measured_dh_params.append([0.0, 0.0, 0.0, 0.0])
+        self.measured_dh_params = self.measured_dh_params[:6]
+        self.measured_dh_params_changed.emit()
+
+    def get_measured_dh_enabled(self) -> bool:
+        return self.measured_dh_enabled
+
+    def set_measured_dh_enabled(self, enabled: bool):
+        self.measured_dh_enabled = bool(enabled)
+        self.measured_dh_enabled_changed.emit()
+        self.measured_dh_params_changed.emit()
+
     # ============================================================================
     # RÉGION: Corrections
     # ============================================================================

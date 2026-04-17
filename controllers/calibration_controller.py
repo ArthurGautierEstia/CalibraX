@@ -27,4 +27,5 @@ class CalibrationController(QObject):
             self.tool_model,
             self.calibration_view.get_measurement_widget(),
         )
+        self.apply_measured_dh_requested = self.measurement_controller.measurement_widget.apply_measured_dh_requested
         self.correction_table_controller = CorrectionTableController(self.robot_model, self.calibration_view.get_correction_widget())
