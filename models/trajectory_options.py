@@ -8,11 +8,7 @@ class TrajectoryBezierDegree(Enum):
     BEZIER5 = "BEZIER5"
 
     @staticmethod
-    def from_value(value: object, default: "TrajectoryBezierDegree" | None = None) -> "TrajectoryBezierDegree":
-        fallback = TrajectoryBezierDegree.BEZIER5 if default is None else default
+    def from_value(value: object) -> "TrajectoryBezierDegree":
         if isinstance(value, TrajectoryBezierDegree):
             return value
-        try:
-            return TrajectoryBezierDegree(str(value))
-        except (TypeError, ValueError):
-            return fallback
+        return TrajectoryBezierDegree(str(value))
