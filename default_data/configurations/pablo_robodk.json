@@ -159,42 +159,42 @@
         {
             "axis": 1,
             "enabled": true,
-            "radius": 40.0,
-            "height": 200.0,
+            "radius": 200.0,
+            "height": 1350.0,
             "direction_axis": "x",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_axis": "z",
+            "offset_value": -300.0
         },
         {
             "axis": 2,
             "enabled": true,
-            "radius": 40.0,
-            "height": 200.0,
+            "radius": 250.0,
+            "height": 930.0,
             "direction_axis": "y",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_axis": "y",
+            "offset_value": -450.0
         },
         {
             "axis": 3,
             "enabled": true,
-            "radius": 40.0,
-            "height": 200.0,
-            "direction_axis": "y",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "radius": 150.0,
+            "height": 820.0,
+            "direction_axis": "z",
+            "offset_axis": "z",
+            "offset_value": -700.0
         },
         {
             "axis": 4,
             "enabled": true,
-            "radius": 40.0,
-            "height": 200.0,
+            "radius": 110.0,
+            "height": 240.0,
             "direction_axis": "y",
             "offset_axis": "",
             "offset_value": 0.0
         },
         {
             "axis": 5,
-            "enabled": true,
+            "enabled": false,
             "radius": 40.0,
             "height": 200.0,
             "direction_axis": "z",
