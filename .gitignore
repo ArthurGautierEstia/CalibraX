@@ -8,9 +8,10 @@ CLAUDE.md
 
 app_session.json
 
+
 trajectories/
-configurations/
 workspaces/
 tools/
+measures/
 
 !default/*
