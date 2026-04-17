@@ -11,7 +11,7 @@
     "cad_elements": [
         {
             "name": "Element 1",
-            "cad_model": "./default/workspaces_stl/convoyeur-1000-3000.stl",
+            "cad_model": "./default_data/workspaces_stl/convoyeur-1000-3000.stl",
             "pose": [
                 900.0,
                 -1500.0,
@@ -23,7 +23,7 @@
         },
         {
             "name": "Element 2",
-            "cad_model": "./default/workspaces_stl/embase-mobile.stl",
+            "cad_model": "./default_data/workspaces_stl/embase-mobile.stl",
             "pose": [
                 -1100.0,
                 -400.0,

@@ -10,7 +10,7 @@ from utils.str_utils import str_to_float
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 
 class RobotConfigurationController(QObject):
-    DEFAULT_ROBOT_CONFIG_DIRECTORY = os.path.join(".", "configurations", "robots")
+    DEFAULT_ROBOT_CONFIG_DIRECTORY = os.path.join("user_data", "configurations")
 
     configuration_loaded = pyqtSignal()
 

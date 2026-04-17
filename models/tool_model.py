@@ -12,7 +12,7 @@ class ToolModel(QObject):
     DEFAULT_TOOL_CAD_MODEL: str = ""
     DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
     DEFAULT_TOOL_COLLIDERS: list[dict[str, Any]] = []
-    DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./configurations/tools"
+    DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./user_data/tools"
     DEFAULT_SELECTED_TOOL_PROFILE: str = ""
 
     tool_changed = pyqtSignal()

@@ -253,12 +253,12 @@
         0.0
     ],
     "robot_cad_models": [
-        "./default/robots_stl/Rocky/rocky0.stl",
-        "./default/robots_stl/Rocky/rocky1.stl",
-        "./default/robots_stl/Rocky/rocky2.stl",
-        "./default/robots_stl/Rocky/rocky3.stl",
-        "./default/robots_stl/Rocky/rocky4.stl",
-        "./default/robots_stl/Rocky/rocky5.stl",
-        "./default/robots_stl/Rocky/rocky6.stl"
+        "./default_data/robots_stl/Rocky/rocky0.stl",
+        "./default_data/robots_stl/Rocky/rocky1.stl",
+        "./default_data/robots_stl/Rocky/rocky2.stl",
+        "./default_data/robots_stl/Rocky/rocky3.stl",
+        "./default_data/robots_stl/Rocky/rocky4.stl",
+        "./default_data/robots_stl/Rocky/rocky5.stl",
+        "./default_data/robots_stl/Rocky/rocky6.stl"
     ]
 }

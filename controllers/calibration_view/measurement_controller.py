@@ -15,6 +15,7 @@ import math
 
 
 class MeasurementController(QObject):
+    DEFAULT_MEASUREMENTS_DIRECTORY = os.path.join(".", "user_data", "measures")
     def __init__(
         self,
         robot_model: RobotModel,
@@ -58,12 +59,12 @@ class MeasurementController(QObject):
     
     def _on_view_import_measurements_requested(self) -> None:
         currentDir = os.getcwd()
-        configurationDir = os.path.join(currentDir, 'configurations')
+        measurementsDir = os.path.join(currentDir, MeasurementController.DEFAULT_MEASUREMENTS_DIRECTORY)
 
         file_path, _ = QFileDialog.getOpenFileName(
             self.measurement_widget,
             "Importer un fichier de mesures",
-            configurationDir if os.path.exists(configurationDir) else currentDir,
+            measurementsDir if os.path.exists(measurementsDir) else currentDir,
             "Fichiers CSV (*.csv)"
         )
 

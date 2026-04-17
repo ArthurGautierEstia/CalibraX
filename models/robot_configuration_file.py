@@ -26,7 +26,7 @@ DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: list[tuple[float, float]] = [
     (-1000.0, 1000.0),
     (-1000.0, 1000.0),
 ]
-DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./default/robots_stl/rocky{i}.stl" for i in range(7)]
+DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./default_data/robots_stl/rocky{i}.stl" for i in range(7)]
 @dataclass
 class RobotConfigurationFile:
     """Representation d'un fichier de configuration robot."""

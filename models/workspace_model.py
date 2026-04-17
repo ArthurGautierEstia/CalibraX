@@ -10,7 +10,7 @@ from utils.reference_frame_utils import normalize_pose6
 
 
 class WorkspaceModel(QObject):
-    DEFAULT_WORKSPACE_DIRECTORY: str = "./workspaces"
+    DEFAULT_WORKSPACE_DIRECTORY: str = "./user_data/workspaces"
     DEFAULT_WORKSPACE_SCENE_NAME: str = "scene"
 
     workspace_changed = pyqtSignal()

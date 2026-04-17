@@ -2,16 +2,9 @@ __pycache__/
 *.pyc
 
 .vscode/
-#configurations/
 .claude/
 CLAUDE.md
 
 app_session.json
 
-
-trajectories/
-workspaces/
-tools/
-measures/
-
-!default/*
+user_data/*
