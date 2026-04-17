@@ -32,6 +32,7 @@ from models.trajectory_keypoint import (
     KeypointTargetType,
     TrajectoryKeypoint,
 )
+from models.trajectory_options import TrajectoryBezierDegree
 from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -58,6 +59,7 @@ class TrajectoryConfigWidget(QWidget):
     updateRobotGhostRequested = pyqtSignal(object)
     goToRequested = pyqtSignal(int)
     timeSmoothingChanged = pyqtSignal(bool)
+    bezierDegreeChanged = pyqtSignal(str)
     cartesianDisplayFrameChanged = pyqtSignal(str)
 
     def __init__(
@@ -83,11 +85,12 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_export = QPushButton("Exporter")
         self.btn_delete_all = QPushButton("Tout supprimer")
         self.cb_smooth_time = QCheckBox("Lisser le temps")
+        self.bezier_degree_combo = QComboBox()
         self.cartesian_display_frame_combo = QComboBox()
         self.cb_smooth_time.setChecked(True)
         self.cb_smooth_time.setToolTip(
             "Active : transition cubique. "
-            "Desactive : transition linéaire"
+            "Désactive : transition linéaire"
         )
 
         self._keypoints: list[TrajectoryKeypoint] = []
@@ -112,6 +115,11 @@ class TrajectoryConfigWidget(QWidget):
 
         options_row = QHBoxLayout()
         options_row.addWidget(self.cb_smooth_time)
+        options_row.addSpacing(12)
+        options_row.addWidget(QLabel("Interpolation"))
+        self.bezier_degree_combo.addItem("Bezier 5", TrajectoryBezierDegree.BEZIER5.value)
+        self.bezier_degree_combo.addItem("Bezier 3", TrajectoryBezierDegree.BEZIER3.value)
+        options_row.addWidget(self.bezier_degree_combo)
         options_row.addSpacing(12)
         options_row.addWidget(QLabel("Repère cartésien"))
         self.cartesian_display_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
@@ -162,6 +170,7 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_import.clicked.connect(self._on_import_clicked)
         self.btn_export.clicked.connect(self._on_export_clicked)
         self.cb_smooth_time.toggled.connect(self._on_time_smoothing_toggled)
+        self.bezier_degree_combo.currentIndexChanged.connect(self._on_bezier_degree_changed)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
 
@@ -180,10 +189,14 @@ class TrajectoryConfigWidget(QWidget):
         self._is_editing_active = active
         self.keypoints_table.setEnabled(not active)
         self.cb_smooth_time.setEnabled(not active)
+        self.bezier_degree_combo.setEnabled(not active)
         self._update_buttons_state()
 
     def _on_time_smoothing_toggled(self, checked: bool) -> None:
         self.timeSmoothingChanged.emit(bool(checked))
+
+    def _on_bezier_degree_changed(self, _index: int) -> None:
+        self.bezierDegreeChanged.emit(self.get_bezier_degree().value)
 
     def _on_cartesian_display_frame_changed(self, _index: int) -> None:
         self.cartesianDisplayFrameChanged.emit(self.get_cartesian_display_frame())
@@ -191,8 +204,22 @@ class TrajectoryConfigWidget(QWidget):
     def is_time_smoothing_enabled(self) -> bool:
         return self.cb_smooth_time.isChecked()
 
+    def get_bezier_degree(self) -> TrajectoryBezierDegree:
+        return TrajectoryBezierDegree.from_value(self.bezier_degree_combo.currentData())
+
     def get_cartesian_display_frame(self) -> str:
         return ReferenceFrame.from_value(self.cartesian_display_frame_combo.currentData()).value
+
+    def set_bezier_degree(self, degree: TrajectoryBezierDegree | str, emit_signal: bool = False) -> None:
+        normalized = TrajectoryBezierDegree.from_value(degree)
+        index = self.bezier_degree_combo.findData(normalized.value)
+        if index < 0:
+            return
+        self.bezier_degree_combo.blockSignals(True)
+        self.bezier_degree_combo.setCurrentIndex(index)
+        self.bezier_degree_combo.blockSignals(False)
+        if emit_signal:
+            self.bezierDegreeChanged.emit(normalized.value)
 
     def set_cartesian_display_frame(self, display_frame: str, emit_signal: bool = False) -> None:
         normalized = ReferenceFrame.from_value(display_frame)
@@ -493,9 +520,11 @@ class TrajectoryConfigWidget(QWidget):
             if isinstance(payload, dict):
                 raw_keypoints = payload.get("keypoints")
                 smooth_time_enabled = bool(payload.get("smooth_time_enabled", True))
+                bezier_degree = TrajectoryBezierDegree.from_value(payload.get("bezier_degree"))
             else:
                 raw_keypoints = payload
                 smooth_time_enabled = True
+                bezier_degree = TrajectoryBezierDegree.BEZIER5
             if not isinstance(raw_keypoints, list):
                 raise ValueError("Format invalide: liste de keypoints introuvable.")
             parsed_keypoints = [TrajectoryKeypoint.from_dict(item) for item in raw_keypoints]
@@ -505,6 +534,7 @@ class TrajectoryConfigWidget(QWidget):
 
         self._keypoints = parsed_keypoints
         self.set_time_smoothing_enabled(smooth_time_enabled, emit_signal=False)
+        self.set_bezier_degree(bezier_degree, emit_signal=False)
         self._refresh_table()
         self.keypoints_table.clearSelection()
         self._emit_selection_changed()
@@ -526,8 +556,9 @@ class TrajectoryConfigWidget(QWidget):
 
         payload = {
             "format": "calibrax_trajectory_keypoints",
-            "version": 1,
+            "version": 2,
             "smooth_time_enabled": self.is_time_smoothing_enabled(),
+            "bezier_degree": self.get_bezier_degree().value,
             "keypoints": [keypoint.to_dict() for keypoint in self._keypoints],
         }
         try:
@@ -560,6 +591,12 @@ class TrajectoryConfigWidget(QWidget):
         return f"{keypoint.speed:.3f} m/s"
 
     @staticmethod
+    def _mode_text(keypoint: TrajectoryKeypoint) -> str:
+        if keypoint.mode == KeypointMotionMode.CUBIC:
+            return "BEZIER"
+        return keypoint.mode.value
+
+    @staticmethod
     def _configuration_text(keypoint: TrajectoryKeypoint) -> str:
         if keypoint.target_type == KeypointTargetType.JOINT:
             forced = keypoint.forced_config.name if keypoint.forced_config is not None else "?"
@@ -587,7 +624,7 @@ class TrajectoryConfigWidget(QWidget):
                     if keypoint.target_type == KeypointTargetType.CARTESIAN
                     else "JOINT"
                 ),
-                keypoint.mode.value,
+                self._mode_text(keypoint),
                 self._speed_text(keypoint),
             ]
             values.extend(f"{v:.3f}" for v in target_values[:6])
