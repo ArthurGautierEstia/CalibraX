@@ -212,7 +212,7 @@ class TrajectoryController(QObject):
         target_pose = convert_pose_to_base_frame(
             keypoint.cartesian_target[:6],
             keypoint.cartesian_frame,
-            self.workspace_model.get_robot_base_pose_world(),
+            self.workspace_model.get_robot_base_transform_world(),
         )
         mgi_result = self.robot_model.compute_ik_target(target_pose, tool=self.tool_model.get_tool())
         best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
@@ -300,19 +300,19 @@ class TrajectoryController(QObject):
         ]
 
         display_frame = self.config_widget.get_cartesian_display_frame()
-        robot_base_pose_world = self.workspace_model.get_robot_base_pose_world()
+        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
 
         try:
             with open(path, "w", encoding="utf-8", newline="") as handle:
                 writer = csv.writer(handle, delimiter=";")
                 writer.writerow(header)
                 for sample in self.current_samples:
-                    pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_pose_world)
+                    pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_transform)
                     if display_frame == "WORLD":
-                        cartesian_velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_pose_world)
+                        cartesian_velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_transform)
                         cartesian_acceleration = twist_base_to_world(
                             sample.cartesian_acceleration[:6],
-                            robot_base_pose_world,
+                            robot_base_transform,
                         )
                     else:
                         cartesian_velocity = [float(v) for v in sample.cartesian_velocity[:6]]
@@ -449,13 +449,13 @@ class TrajectoryController(QObject):
 
     def _cartesian_samples_for_display(self) -> list[tuple[list[float], list[float], list[float]]]:
         display_frame = self.config_widget.get_cartesian_display_frame()
-        robot_base_pose_world = self.workspace_model.get_robot_base_pose_world()
+        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         out: list[tuple[list[float], list[float], list[float]]] = []
         for sample in self.current_samples:
-            pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_pose_world)
+            pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_transform)
             if display_frame == "WORLD":
-                velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_pose_world)
-                acceleration = twist_base_to_world(sample.cartesian_acceleration[:6], robot_base_pose_world)
+                velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_transform)
+                acceleration = twist_base_to_world(sample.cartesian_acceleration[:6], robot_base_transform)
             else:
                 velocity = [float(v) for v in sample.cartesian_velocity[:6]]
                 acceleration = [float(v) for v in sample.cartesian_acceleration[:6]]
@@ -549,6 +549,7 @@ class TrajectoryController(QObject):
 
         tangent_out_segments: list[list[list[float]]] = []
         tangent_in_segments: list[list[list[float]]] = []
+        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         count = min(len(self.current_trajectory.segments), len(keypoints))
         for segment_index in range(count):
             segment_result = self.current_trajectory.segments[segment_index]
@@ -556,7 +557,7 @@ class TrajectoryController(QObject):
                 self.robot_model,
                 keypoints[segment_index],
                 tool=self.tool_model.get_tool(),
-                robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+                robot_base_pose_world=robot_base_transform,
             )
             if end_anchor is None:
                 continue
@@ -568,7 +569,7 @@ class TrajectoryController(QObject):
                     self.robot_model,
                     keypoints[segment_index - 1],
                     tool=self.tool_model.get_tool(),
-                    robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+                    robot_base_pose_world=robot_base_transform,
                 )
                 if start_anchor is None:
                     continue
@@ -613,12 +614,13 @@ class TrajectoryController(QObject):
 
         points_xyz: list[list[float]] = []
         index_map: list[int] = []
+        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         for idx, keypoint in enumerate(self._displayed_keypoints):
             xyz = resolve_keypoint_xyz(
                 self.robot_model,
                 keypoint,
                 tool=self.tool_model.get_tool(),
-                robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+                robot_base_pose_world=robot_base_transform,
             )
             if xyz is None:
                 continue

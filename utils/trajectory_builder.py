@@ -161,7 +161,7 @@ class TrajectoryBuilder:
             return convert_pose_to_base_frame(
                 keypoint.cartesian_target,
                 keypoint.cartesian_frame,
-                self.workspace_model.get_robot_base_pose_world(),
+                self.workspace_model.get_robot_base_transform_world(),
             )
         return self._resolve_pose_from_joints(keypoint.joint_target)
 

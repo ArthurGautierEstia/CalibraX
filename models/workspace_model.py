@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from models.collider_models import parse_primitive_colliders
 from models.workspace_file import parse_workspace_cad_elements
-from utils.reference_frame_utils import normalize_pose6
+from utils.reference_frame_utils import FrameTransform, normalize_pose6
 
 
 class WorkspaceModel(QObject):
@@ -20,6 +20,12 @@ class WorkspaceModel(QObject):
         self.workspace_scene_name: str = WorkspaceModel.DEFAULT_WORKSPACE_SCENE_NAME
         self.workspace_file_path: str = ""
         self.robot_base_pose_world: list[float] = [0.0] * 6
+        self._robot_base_revision: int = 0
+        self._workspace_structure_revision: int = 0
+        self._robot_base_transform_world: FrameTransform = FrameTransform.from_pose(
+            self.robot_base_pose_world,
+            revision=self._robot_base_revision,
+        )
         self.workspace_cad_elements: list[dict[str, Any]] = []
         self.workspace_tcp_zones: list[dict[str, Any]] = []
         self.workspace_collision_zones: list[dict[str, Any]] = []
@@ -49,11 +55,31 @@ class WorkspaceModel(QObject):
     def get_robot_base_pose_world(self) -> list[float]:
         return [float(v) for v in self.robot_base_pose_world[:6]]
 
+    def get_robot_base_revision(self) -> int:
+        return int(self._robot_base_revision)
+
+    def get_workspace_structure_revision(self) -> int:
+        return int(self._workspace_structure_revision)
+
+    def get_robot_base_transform_world(self) -> FrameTransform:
+        return self._robot_base_transform_world
+
+    def _set_robot_base_pose_world_cached(self, pose: list[float]) -> None:
+        self.robot_base_pose_world = [float(v) for v in pose[:6]]
+        self._robot_base_revision += 1
+        self._robot_base_transform_world = FrameTransform.from_pose(
+            self.robot_base_pose_world,
+            revision=self._robot_base_revision,
+        )
+
+    def _touch_workspace_structure(self) -> None:
+        self._workspace_structure_revision += 1
+
     def set_robot_base_pose_world(self, pose: list[float], emit: bool = True) -> None:
         normalized = normalize_pose6(pose)
         if normalized == self.robot_base_pose_world:
             return
-        self.robot_base_pose_world = normalized
+        self._set_robot_base_pose_world_cached(normalized)
         if emit:
             self.workspace_changed.emit()
 
@@ -65,6 +91,7 @@ class WorkspaceModel(QObject):
         if normalized == self.workspace_cad_elements:
             return
         self.workspace_cad_elements = normalized
+        self._touch_workspace_structure()
         if emit:
             self.workspace_changed.emit()
 
@@ -76,6 +103,7 @@ class WorkspaceModel(QObject):
         if normalized == self.workspace_tcp_zones:
             return
         self.workspace_tcp_zones = normalized
+        self._touch_workspace_structure()
         if emit:
             self.workspace_changed.emit()
 
@@ -87,6 +115,7 @@ class WorkspaceModel(QObject):
         if normalized == self.workspace_collision_zones:
             return
         self.workspace_collision_zones = normalized
+        self._touch_workspace_structure()
         if emit:
             self.workspace_changed.emit()
 
@@ -119,11 +148,21 @@ class WorkspaceModel(QObject):
         if not has_changes:
             return
 
+        robot_base_changed = normalized_robot_base_pose_world != self.robot_base_pose_world
+        workspace_structure_changed = (
+            normalized_cad_elements != self.workspace_cad_elements
+            or normalized_tcp_zones != self.workspace_tcp_zones
+            or normalized_collision_zones != self.workspace_collision_zones
+        )
+
         self.workspace_scene_name = normalized_scene_name
-        self.robot_base_pose_world = normalized_robot_base_pose_world
+        if robot_base_changed:
+            self._set_robot_base_pose_world_cached(normalized_robot_base_pose_world)
         self.workspace_cad_elements = normalized_cad_elements
         self.workspace_tcp_zones = normalized_tcp_zones
         self.workspace_collision_zones = normalized_collision_zones
+        if workspace_structure_changed:
+            self._touch_workspace_structure()
         self.workspace_file_path = normalized_file_path
         self.workspace_changed.emit()
 

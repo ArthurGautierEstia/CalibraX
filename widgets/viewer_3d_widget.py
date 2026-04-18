@@ -1,4 +1,8 @@
 import os
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
+
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidgetItem
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -16,10 +20,80 @@ from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 from utils.reference_frame_utils import (
-    base_pose_world_to_matrix,
+    FrameTransform,
+    normalize_pose6,
     transform_matrix_base_to_world,
     transform_points_base_to_world,
 )
+
+
+@dataclass(frozen=True)
+class WorkspaceElementState:
+    name: str
+    cad_model: str
+    pose: tuple[float, float, float, float, float, float]
+    world_transform: np.ndarray
+    revision: int
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any], index: int) -> "WorkspaceElementState":
+        name = str(value.get("name", f"Element {index + 1}")).strip()
+        if name == "":
+            name = f"Element {index + 1}"
+        cad_model = str(value.get("cad_model", "")).strip()
+        pose = tuple(normalize_pose6(value.get("pose", [0.0] * 6)))
+        transform = math_utils.pose_zyx_to_matrix(pose)
+        transform.setflags(write=False)
+        revision = hash((name, cad_model, pose))
+        return cls(name, cad_model, pose, transform, revision)
+
+
+@dataclass(frozen=True)
+class PrimitiveColliderState:
+    name: str
+    enabled: bool
+    shape: str
+    pose: tuple[float, float, float, float, float, float]
+    size_x: float
+    size_y: float
+    size_z: float
+    radius: float
+    height: float
+    local_transform: np.ndarray
+    shape_key: tuple[str, float, float, float, float, float]
+    revision: int
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any], index: int) -> "PrimitiveColliderState":
+        name = str(value.get("name", f"Zone {index + 1}")).strip()
+        if name == "":
+            name = f"Zone {index + 1}"
+        shape = str(value.get("shape", "box")).strip().lower()
+        shape = shape if shape in {"box", "cylinder", "sphere"} else "box"
+        pose = tuple(normalize_pose6(value.get("pose", [0.0] * 6)))
+        size_x = max(0.0, float(value.get("size_x", 100.0)))
+        size_y = max(0.0, float(value.get("size_y", 100.0)))
+        size_z = max(0.0, float(value.get("size_z", 100.0)))
+        radius = max(0.0, float(value.get("radius", 50.0)))
+        height = max(0.0, float(value.get("height", 100.0)))
+        local_transform = math_utils.pose_zyx_to_matrix(pose)
+        local_transform.setflags(write=False)
+        shape_key = (shape, size_x, size_y, size_z, radius, height)
+        revision = hash((name, bool(value.get("enabled", True)), shape_key, pose))
+        return cls(
+            name=name,
+            enabled=bool(value.get("enabled", True)),
+            shape=shape,
+            pose=pose,
+            size_x=size_x,
+            size_y=size_y,
+            size_z=size_z,
+            radius=radius,
+            height=height,
+            local_transform=local_transform,
+            shape_key=shape_key,
+            revision=revision,
+        )
 
 class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
@@ -48,6 +122,8 @@ class Viewer3DWidget(QWidget):
         self._robot_ghost_link_matrix_indices: list[int] = []
         self._robot_link_roles: list[str] = []
         self._robot_ghost_link_roles: list[str] = []
+        self._robot_frame_items: list[gl.GLLinePlotItem] = []
+        self._workspace_frame_items: list[gl.GLLinePlotItem] = []
         self.last_invert_table = []
         self.frames_visibility: list[bool] = []
         self.workspace_frames_visibility: list[bool] = []
@@ -58,14 +134,16 @@ class Viewer3DWidget(QWidget):
         self._robot_model: RobotModel | None = None
         self._tool_model: ToolModel | None = None
         self._workspace_model: WorkspaceModel | None = None
+        self._robot_base_transform_world = FrameTransform.from_pose([0.0] * 6)
+        self._workspace_structure_revision: int | None = None
         self._mesh_data_cache: dict[str, gl.MeshData] = {}
         self._missing_mesh_paths: set[str] = set()
         self._primitive_mesh_cache: dict[str, gl.MeshData] = {}
-        self._workspace_elements: list[dict] = []
+        self._workspace_elements: list[WorkspaceElementState] = []
         self._workspace_frame_matrices: list[np.ndarray] = []
         self._workspace_frame_labels: list[str] = []
-        self._workspace_tcp_zones: list[dict] = []
-        self._workspace_collision_zones: list[dict] = []
+        self._workspace_tcp_zones: list[PrimitiveColliderState] = []
+        self._workspace_collision_zones: list[PrimitiveColliderState] = []
         self._axis_colliders: list[dict] = []
         self._tool_colliders: list[dict] = []
         self._workspace_element_items: list[gl.GLMeshItem] = []
@@ -333,6 +411,8 @@ class Viewer3DWidget(QWidget):
     def clear_viewer(self):
         self.viewer.clear()
         self.add_grid()
+        self._robot_frame_items = []
+        self._workspace_frame_items = []
         self._trajectory_path_items = []
         self._trajectory_keypoints_item = None
         self._trajectory_keypoint_selected_item = None
@@ -525,21 +605,26 @@ class Viewer3DWidget(QWidget):
         else:
             couleurs = [color, color, color]
 
+        items = []
         for i, axis in enumerate(axes):
             plt = gl.GLLinePlotItem(pos=axis, color=couleurs[i], width=3, antialias=True)
             self.viewer.addItem(plt)
+            items.append(plt)
+        return items
 
     def draw_all_frames(self, matrices):
         """Dessine les repères en fonction de leur visibilité individuelle"""
+        self._clear_viewer_items(self._robot_frame_items)
         for i, T in enumerate(matrices):
             # On dessine seulement si l'index est marqué visible dans la liste
             if i < len(self.frames_visibility) and self.frames_visibility[i]:
-                self.draw_frame(self._transform_robot_matrix_to_world(T))
+                self._robot_frame_items.extend(self.draw_frame(self._transform_robot_matrix_to_world(T)))
     
     def draw_workspace_frames(self) -> None:
+        self._clear_viewer_items(self._workspace_frame_items)
         for i, transform in enumerate(self._workspace_frame_matrices):
             if i < len(self.workspace_frames_visibility) and self.workspace_frames_visibility[i]:
-                self.draw_frame(transform)
+                self._workspace_frame_items.extend(self.draw_frame(transform))
 
     @staticmethod
     def _normalize_visibility_list(
@@ -693,18 +778,8 @@ class Viewer3DWidget(QWidget):
         if abs(offset_rz_deg) < 1e-12:
             return transform_matrix
 
-        theta = np.radians(offset_rz_deg)
-        rot_z = np.array(
-            [
-                [np.cos(theta), -np.sin(theta), 0.0, 0.0],
-                [np.sin(theta), np.cos(theta), 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            dtype=float,
-        )
         # Rotation locale autour de l'axe Z du repere outil.
-        return transform_matrix @ rot_z
+        return transform_matrix @ math_utils.homogeneous_rotation_z(offset_rz_deg, degrees=True)
 
     @staticmethod
     def _resolve_link_color(matrix_index: int) -> tuple[float, float, float, float]:
@@ -834,19 +909,53 @@ class Viewer3DWidget(QWidget):
         self.last_dh_matrices = dh_matrices
         self.last_corrected_matrices = corrected_matrices
 
-        self._clear_and_refresh()
+        self._refresh_robot_state_items()
 
     def update_workspace(self, workspace_model: WorkspaceModel | None) -> None:
+        previous_model = self._workspace_model
+        previous_base_revision = self._robot_base_transform_world.revision
+        previous_structure_revision = self._workspace_structure_revision
+
         self._workspace_model = workspace_model
-        self._workspace_elements = [] if workspace_model is None else workspace_model.get_workspace_cad_elements()
-        self._workspace_tcp_zones = parse_primitive_colliders(
+        self._robot_base_transform_world = (
+            FrameTransform.from_pose([0.0] * 6)
+            if workspace_model is None
+            else workspace_model.get_robot_base_transform_world()
+        )
+        self._workspace_structure_revision = (
+            None if workspace_model is None else workspace_model.get_workspace_structure_revision()
+        )
+
+        same_workspace = previous_model is workspace_model
+        pose_changed = previous_base_revision != self._robot_base_transform_world.revision
+        structure_changed = previous_structure_revision != self._workspace_structure_revision
+        if same_workspace and pose_changed and not structure_changed:
+            self._refresh_robot_state_items()
+            return
+        if same_workspace and not pose_changed and not structure_changed:
+            return
+
+        raw_elements = [] if workspace_model is None else workspace_model.get_workspace_cad_elements()
+        raw_tcp_zones = parse_primitive_colliders(
             [] if workspace_model is None else workspace_model.get_workspace_tcp_zones(),
             default_shape="box",
         )
-        self._workspace_collision_zones = parse_primitive_colliders(
+        raw_collision_zones = parse_primitive_colliders(
             [] if workspace_model is None else workspace_model.get_workspace_collision_zones(),
             default_shape="box",
         )
+        self._workspace_elements = [
+            WorkspaceElementState.from_dict(element, index)
+            for index, element in enumerate(raw_elements)
+        ]
+        self._workspace_tcp_zones = [
+            PrimitiveColliderState.from_dict(zone, index)
+            for index, zone in enumerate(raw_tcp_zones)
+        ]
+        self._workspace_collision_zones = [
+            PrimitiveColliderState.from_dict(zone, index)
+            for index, zone in enumerate(raw_collision_zones)
+        ]
         self.begin_loading_feedback("Chargement scene workspace...")
         try:
             self._clear_and_refresh()
@@ -861,47 +970,38 @@ class Viewer3DWidget(QWidget):
             [] if tool_model is None else tool_model.get_tool_colliders(),
             default_shape="cylinder",
         )
-        self._clear_and_refresh()
+        self._render_robot_axis_colliders()
+        self._render_tool_colliders()
 
     @staticmethod
     def _pose_to_matrix(pose: list[float]) -> np.ndarray:
-        values = [float(pose[idx]) if idx < len(pose) else 0.0 for idx in range(6)]
-        transform = np.eye(4, dtype=float)
-        transform[:3, :3] = math_utils.euler_to_rotation_matrix(values[3], values[4], values[5], degrees=True)
-        transform[:3, 3] = [values[0], values[1], values[2]]
-        return transform
+        return math_utils.pose_zyx_to_matrix(pose)
 
     def _get_robot_base_pose_world(self) -> list[float]:
-        if self._workspace_model is None:
-            return [0.0] * 6
-        return self._workspace_model.get_robot_base_pose_world()
+        return self._robot_base_transform_world.pose_list()
 
     def _get_robot_base_world_transform(self) -> np.ndarray:
-        return base_pose_world_to_matrix(self._get_robot_base_pose_world())
+        return self._robot_base_transform_world.matrix.copy()
 
     def _transform_robot_matrix_to_world(self, transform: np.ndarray) -> np.ndarray:
-        return transform_matrix_base_to_world(transform, self._get_robot_base_pose_world())
+        return transform_matrix_base_to_world(transform, self._robot_base_transform_world)
 
     def _transform_robot_points_to_world(self, points_xyz: np.ndarray) -> np.ndarray:
-        return transform_points_base_to_world(points_xyz, self._get_robot_base_pose_world())
+        return transform_points_base_to_world(points_xyz, self._robot_base_transform_world)
 
     def _render_workspace_models(self) -> None:
+        self._clear_viewer_items(self._workspace_element_items)
         self._workspace_element_items.clear()
         self._workspace_frame_matrices = [np.eye(4, dtype=float)]
         self._workspace_frame_labels = ["World"]
 
-        for element_index, element in enumerate(self._workspace_elements):
-            stl_path = str(element.get("cad_model", "")).strip()
-            pose = element.get("pose", [0.0] * 6)
-            transform = self._pose_to_matrix(pose)
-            element_name = str(element.get("name", f"Element {element_index + 1}")).strip()
-            if element_name == "":
-                element_name = f"Element {element_index + 1}"
+        for element in self._workspace_elements:
+            transform = element.world_transform
             self._workspace_frame_matrices.append(transform)
-            self._workspace_frame_labels.append(element_name)
-            if stl_path == "":
+            self._workspace_frame_labels.append(element.name)
+            if element.cad_model == "":
                 continue
-            item = self.load_robot_mesh(stl_path, transform, (0.65, 0.70, 0.80, 0.45))
+            item = self.load_robot_mesh(element.cad_model, transform, (0.65, 0.70, 0.80, 0.45))
             if item is None:
                 continue
             item.setGLOptions('translucent')
@@ -909,8 +1009,8 @@ class Viewer3DWidget(QWidget):
             self._workspace_element_items.append(item)
 
     def _render_workspace_zones(self) -> None:
-        self._workspace_tcp_zone_items.clear()
-        self._workspace_collision_zone_items.clear()
+        self._clear_viewer_items(self._workspace_tcp_zone_items)
+        self._clear_viewer_items(self._workspace_collision_zone_items)
 
         for zone in self._workspace_tcp_zones:
             item = self._build_primitive_item(zone, (1.0, 0.93, 0.2, 0.22))
@@ -931,7 +1031,7 @@ class Viewer3DWidget(QWidget):
                 item.hide()
 
     def _render_robot_axis_colliders(self) -> None:
-        self._robot_collider_items.clear()
+        self._clear_viewer_items(self._robot_collider_items)
         if len(self.last_corrected_matrices) < 1:
             return
 
@@ -987,7 +1087,7 @@ class Viewer3DWidget(QWidget):
                 item.hide()
 
     def _render_tool_colliders(self) -> None:
-        self._tool_collider_items.clear()
+        self._clear_viewer_items(self._tool_collider_items)
         if len(self.last_corrected_matrices) == 0:
             return
 
@@ -1011,6 +1111,32 @@ class Viewer3DWidget(QWidget):
             self._tool_collider_items.append(item)
             if not self._tool_colliders_visible:
                 item.hide()
+
+    def _refresh_robot_state_items(self) -> None:
+        num_frames = len(self.last_dh_matrices)
+        if len(self.frames_visibility) != num_frames:
+            self.frames_visibility = [True] * num_frames
+
+        if self.show_axes:
+            self.draw_all_frames(self.last_dh_matrices)
+        else:
+            self._clear_viewer_items(self._robot_frame_items)
+
+        if self._cad_loaded:
+            self.update_robot_poses(self.last_corrected_matrices)
+
+        if self.last_ghost_corrected_matrices:
+            self._update_robot_ghost_poses(self.last_ghost_corrected_matrices)
+            for mesh_item in self.robot_ghost_links:
+                if self._ghost_visible:
+                    mesh_item.show()
+                else:
+                    mesh_item.hide()
+
+        self._render_robot_axis_colliders()
+        self._render_tool_colliders()
+        self._render_trajectory_overlay()
+        self.update_frame_list_ui()
 
     def _clear_and_refresh(self):
         num_frames = len(self.last_dh_matrices)
@@ -1072,31 +1198,39 @@ class Viewer3DWidget(QWidget):
                     T[3,0], T[3,1], T[3,2], T[3,3]
                 )
                 mesh_item.setTransform(qmat)
-                self.viewer.addItem(mesh_item)
+                self._ensure_viewer_item(mesh_item)
 
     def _build_primitive_item(
         self,
-        primitive: dict,
+        primitive: PrimitiveColliderState | dict,
         color: tuple[float, float, float, float],
         base_transform: np.ndarray | None = None,
         skip_pose: bool = False,
     ) -> gl.GLMeshItem | None:
-        shape = str(primitive.get("shape", "box")).strip().lower()
-        mesh_data = self._build_primitive_mesh_data(
-            shape,
-            primitive.get("size_x", 100.0),
-            primitive.get("size_y", 100.0),
-            primitive.get("size_z", 100.0),
-            primitive.get("radius", 50.0),
-            primitive.get("height", 100.0),
-        )
+        if isinstance(primitive, PrimitiveColliderState):
+            shape = primitive.shape
+            size_x = primitive.size_x
+            size_y = primitive.size_y
+            size_z = primitive.size_z
+            radius = primitive.radius
+            height = primitive.height
+            primitive_transform = primitive.local_transform
+        else:
+            shape = str(primitive.get("shape", "box")).strip().lower()
+            size_x = primitive.get("size_x", 100.0)
+            size_y = primitive.get("size_y", 100.0)
+            size_z = primitive.get("size_z", 100.0)
+            radius = primitive.get("radius", 50.0)
+            height = primitive.get("height", 100.0)
+            primitive_transform = self._pose_to_matrix(primitive.get("pose", [0.0] * 6))
+
+        mesh_data = self._build_primitive_mesh_data(shape, size_x, size_y, size_z, radius, height)
         if mesh_data is None:
             return None
 
         transform = np.array(base_transform if base_transform is not None else np.eye(4), dtype=float)
         if not skip_pose:
-            pose_transform = self._pose_to_matrix(primitive.get("pose", [0.0] * 6))
-            transform = transform @ pose_transform
+            transform = transform @ primitive_transform
 
         item = gl.GLMeshItem(meshdata=mesh_data, smooth=True, color=color, shader='shaded')
         item.setTransform(
@@ -1111,6 +1245,7 @@ class Viewer3DWidget(QWidget):
         return item
 
     @staticmethod
+    @lru_cache(maxsize=6)
     def _primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
         rotation = np.eye(4, dtype=float)
         normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
@@ -1274,6 +1409,20 @@ class Viewer3DWidget(QWidget):
             else:
                 item.hide()
 
+    def _ensure_viewer_item(self, item) -> None:
+        if item is None:
+            return
+        try:
+            if item not in self.viewer.items:
+                self.viewer.addItem(item)
+        except Exception:
+            self.viewer.addItem(item)
+
+    def _clear_viewer_items(self, items: list) -> None:
+        for item in list(items):
+            self._safe_remove_viewer_item(item)
+        items.clear()
+
     def clear_robot_links(self):
         for mesh_item in self.robot_links:
             self._safe_remove_viewer_item(mesh_item)
@@ -1401,4 +1550,4 @@ class Viewer3DWidget(QWidget):
                     T[3,0], T[3,1], T[3,2], T[3,3]
                 )
                 mesh_item.setTransform(qmat)
-                self.viewer.addItem(mesh_item)
+                self._ensure_viewer_item(mesh_item)

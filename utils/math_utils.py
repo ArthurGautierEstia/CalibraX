@@ -1,5 +1,6 @@
+from collections.abc import Iterable
+
 import numpy as np
-from PyQt6.QtWidgets import QTableWidget
 
 # ============================================================================
 # RÉGION: Parsing et utilitaires
@@ -32,6 +33,30 @@ def is_near_zero_vector_xyz(vector_xyz: list[float], epsilon: float = 1e-9) -> b
         and abs(float(vector_xyz[1])) <= epsilon
         and abs(float(vector_xyz[2])) <= epsilon
     )
+
+
+def normalize_pose6(values: object) -> list[float]:
+    """Normalize a project XYZABC pose to six floats."""
+    if isinstance(values, dict):
+        out = [
+            float(values.get("x", 0.0)),
+            float(values.get("y", 0.0)),
+            float(values.get("z", 0.0)),
+            float(values.get("a", 0.0)),
+            float(values.get("b", 0.0)),
+            float(values.get("c", 0.0)),
+        ]
+    elif isinstance(values, Iterable) and not isinstance(values, (str, bytes)):
+        seq = list(values)
+        out = []
+        for idx in range(6):
+            try:
+                out.append(float(seq[idx] if idx < len(seq) else 0.0))
+            except (TypeError, ValueError):
+                out.append(0.0)
+    else:
+        out = [0.0] * 6
+    return out[:6]
 
 # ============================================================================
 # RÉGION: Transformations Denavit-Hartenberg
@@ -238,6 +263,141 @@ def rotation_matrix_to_fixed_zyx(R):
 # ============================================================================
 # RÉGION: Transitions
 # ============================================================================
+
+def pose_zyx_to_matrix(pose: object) -> np.ndarray:
+    """Build a 4x4 matrix from a project pose [X, Y, Z, A, B, C]."""
+    values = normalize_pose6(pose)
+    transform = np.eye(4, dtype=float)
+    transform[:3, :3] = euler_to_rotation_matrix(values[3], values[4], values[5], degrees=True)
+    transform[:3, 3] = [values[0], values[1], values[2]]
+    return transform
+
+
+def matrix_to_pose_zyx(transform: np.ndarray) -> list[float]:
+    """Extract a project pose [X, Y, Z, A, B, C] from a 4x4 matrix."""
+    matrix = np.array(transform, dtype=float)
+    if matrix.shape != (4, 4):
+        raise ValueError("La matrice doit etre de taille 4x4")
+    angles = rotation_matrix_to_euler_zyx(matrix[:3, :3])
+    return [
+        float(matrix[0, 3]),
+        float(matrix[1, 3]),
+        float(matrix[2, 3]),
+        float(angles[0]),
+        float(angles[1]),
+        float(angles[2]),
+    ]
+
+
+def invert_homogeneous_transform(transform: np.ndarray, validate: bool = False) -> np.ndarray:
+    """Invert a rigid 4x4 homogeneous transform."""
+    matrix = np.array(transform, dtype=float)
+    if matrix.shape != (4, 4):
+        raise ValueError("La matrice doit etre de taille 4x4")
+    if validate and not np.allclose(matrix[3, :], np.array([0.0, 0.0, 0.0, 1.0]), atol=1e-12):
+        raise ValueError("La matrice n'est pas une transformation homogene rigide valide")
+
+    rotation = matrix[:3, :3]
+    translation = matrix[:3, 3]
+    inverse = np.eye(4, dtype=float)
+    inverse[:3, :3] = rotation.T
+    inverse[:3, 3] = -(rotation.T @ translation)
+    return inverse
+
+
+def orthonormalize_rotation(rotation: np.ndarray) -> np.ndarray:
+    """Project a near-rotation matrix onto SO(3)."""
+    matrix = np.array(rotation, dtype=float)
+    if matrix.shape != (3, 3):
+        raise ValueError("La matrice de rotation doit etre de taille 3x3")
+    U, _, Vt = np.linalg.svd(matrix)
+    rotation_ortho = U @ Vt
+    if np.linalg.det(rotation_ortho) < 0:
+        U[:, -1] *= -1.0
+        rotation_ortho = U @ Vt
+    return rotation_ortho
+
+
+def rotation_matrix_to_rotation_vector(rotation: np.ndarray) -> np.ndarray:
+    """Return an axis-angle vector in radians from a 3x3 rotation matrix."""
+    matrix = np.array(rotation, dtype=float)
+    if matrix.shape != (3, 3):
+        raise ValueError("La matrice de rotation doit etre de taille 3x3")
+
+    cos_theta = np.clip((np.trace(matrix) - 1.0) / 2.0, -1.0, 1.0)
+    theta = np.arccos(cos_theta)
+
+    if abs(theta) < 1e-10:
+        return np.zeros(3)
+
+    if abs(theta - np.pi) < 1e-6:
+        axis_matrix = matrix + np.eye(3)
+        col_norms = [np.linalg.norm(axis_matrix[:, j]) for j in range(3)]
+        best_col = int(np.argmax(col_norms))
+        best_norm = col_norms[best_col]
+        if best_norm <= 1e-12:
+            return np.zeros(3)
+        axis = axis_matrix[:, best_col] / best_norm
+        return axis * theta
+
+    axis = np.array([
+        matrix[2, 1] - matrix[1, 2],
+        matrix[0, 2] - matrix[2, 0],
+        matrix[1, 0] - matrix[0, 1],
+    ]) / (2.0 * np.sin(theta))
+    return axis * theta
+
+
+def homogeneous_rotation_z(angle: float, degrees: bool = True) -> np.ndarray:
+    """Build a 4x4 homogeneous rotation around Z."""
+    transform = np.eye(4, dtype=float)
+    transform[:3, :3] = rot_z(angle, degrees=degrees)
+    return transform
+
+
+def transform_xyz_limits_yaw_only(
+    limits_xyz: list[tuple[float, float]],
+    pose_world: object,
+) -> list[tuple[float, float]]:
+    """Transform base XYZ slider limits into world using translation and A/Rz only."""
+    pose = normalize_pose6(pose_world)
+    tx, ty, tz = pose[:3]
+    rz_rad = np.radians(pose[3])
+    cos_rz = float(np.cos(rz_rad))
+    sin_rz = float(np.sin(rz_rad))
+
+    normalized_limits: list[tuple[float, float]] = []
+    for idx in range(3):
+        try:
+            min_val = float(limits_xyz[idx][0])
+            max_val = float(limits_xyz[idx][1])
+        except (TypeError, ValueError, IndexError):
+            min_val = 0.0
+            max_val = 0.0
+        normalized_limits.append((min(min_val, max_val), max(min_val, max_val)))
+
+    x_min, x_max = normalized_limits[0]
+    y_min, y_max = normalized_limits[1]
+    z_min, z_max = normalized_limits[2]
+
+    xy_world_points = []
+    for x in (x_min, x_max):
+        for y in (y_min, y_max):
+            xy_world_points.append(
+                (
+                    tx + x * cos_rz - y * sin_rz,
+                    ty + x * sin_rz + y * cos_rz,
+                )
+            )
+
+    world_x = [point[0] for point in xy_world_points]
+    world_y = [point[1] for point in xy_world_points]
+    return [
+        (float(min(world_x)), float(max(world_x))),
+        (float(min(world_y)), float(max(world_y))),
+        (float(tz + z_min), float(tz + z_max)),
+    ]
+
 
 def cubique_transition(t: float) -> float:
     """

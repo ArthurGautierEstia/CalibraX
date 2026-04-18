@@ -238,7 +238,7 @@ class JogController(QObject):
         tcp_pose = convert_pose_from_base_frame(
             self.robot_model.get_tcp_pose(),
             self.jog_tcp_visualization_widget.get_display_frame(),
-            self.workspace_model.get_robot_base_pose_world(),
+            self.workspace_model.get_robot_base_transform_world(),
         )
         self.jog_tcp_visualization_widget.set_tcp_pose(tcp_pose)
         self.jog_matrix_widget.set_matrix(self.robot_model.get_tcp_rotation_matrix())

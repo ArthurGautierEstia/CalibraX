@@ -82,52 +82,6 @@ class MgiJacobienResultat:
     """Message informatif sur la convergence."""
 
 
-# ============================================================================
-# RÉGION: Mathématiques internes
-# ============================================================================
-
-def _rotation_matrix_to_rotation_vector(R: np.ndarray) -> np.ndarray:
-    """
-    Extrait le vecteur rotation (axis × angle) d'une matrice de rotation 3×3.
-
-    Utilise la formule de Rodrigues. Gère les cas singuliers :
-    - Rotation nulle (θ ≈ 0) → vecteur nul
-    - Rotation de 180° (θ ≈ π) → extraction par décomposition de (R + I)
-
-    Args:
-        R: Matrice de rotation 3×3
-
-    Returns:
-        Vecteur 3D (axis × angle) en radians, norme = angle de rotation
-    """
-    # Angle de rotation via la trace : cos(θ) = (trace(R) - 1) / 2
-    cos_theta = np.clip((np.trace(R) - 1.0) / 2.0, -1.0, 1.0)
-    theta = np.arccos(cos_theta)
-
-    if abs(theta) < 1e-10:
-        # Rotation nulle
-        return np.zeros(3)
-
-    if abs(theta - np.pi) < 1e-6:
-        # Rotation de 180° : cas dégénéré de la formule standard
-        # L'axe est dans la colonne de (R + I) avec la plus grande norme
-        M = R + np.eye(3)
-        col_norms = [np.linalg.norm(M[:, j]) for j in range(3)]
-        best_col = int(np.argmax(col_norms))
-        axis = M[:, best_col] / col_norms[best_col]
-        return axis * theta
-
-    # Cas général : axe via le vecteur antisymétrique de (R - Rᵀ)
-    # axis = [R[2,1]-R[1,2], R[0,2]-R[2,0], R[1,0]-R[0,1]] / (2·sin(θ))
-    axis = np.array([
-        R[2, 1] - R[1, 2],
-        R[0, 2] - R[2, 0],
-        R[1, 0] - R[0, 1]
-    ]) / (2.0 * np.sin(theta))
-
-    return axis * theta
-
-
 def _build_T_cible(x: float, y: float, z: float,
                    a: float, b: float, c: float) -> np.ndarray:
     """
@@ -140,11 +94,7 @@ def _build_T_cible(x: float, y: float, z: float,
     Returns:
         Matrice homogène 4×4
     """
-    T = np.eye(4)
-    # Convention ZYX : R = Rz(a) · Ry(b) · Rx(c)
-    T[:3, :3] = math_utils.euler_to_rotation_matrix(a, b, c, degrees=True)
-    T[:3, 3] = [x, y, z]
-    return T
+    return math_utils.pose_zyx_to_matrix([x, y, z, a, b, c])
 
 
 def _compute_erreur_pose(T_cible: np.ndarray, T_actuel: np.ndarray) -> np.ndarray:
@@ -176,7 +126,7 @@ def _compute_erreur_pose(T_cible: np.ndarray, T_actuel: np.ndarray) -> np.ndarra
     R_cible = T_cible[:3, :3]
     R_actuel = T_actuel[:3, :3]
     R_err = R_cible @ R_actuel.T
-    erreur_ori = _rotation_matrix_to_rotation_vector(R_err)  # radians
+    erreur_ori = math_utils.rotation_matrix_to_rotation_vector(R_err)  # radians
 
     return np.concatenate([erreur_pos, erreur_ori])
 
@@ -232,7 +182,7 @@ def _compute_jacobienne_numerique(q_deg: list[float],
         # --- Différence d'orientation (rad/rad) via vecteur rotation ---
         # Rotation de T_minus vers T_plus : R_diff = R_plus · R_minusᵀ
         R_diff = T_plus[:3, :3] @ T_minus[:3, :3].T
-        delta_ori = _rotation_matrix_to_rotation_vector(R_diff) / (2.0 * epsilon_rad)
+        delta_ori = math_utils.rotation_matrix_to_rotation_vector(R_diff) / (2.0 * epsilon_rad)
 
         J[:, j] = np.concatenate([delta_pos, delta_ori])
 

@@ -276,7 +276,7 @@ class TrajectoryConfigWidget(QWidget):
             self.robot_model,
             keypoints[row],
             tool=self.tool_model.get_tool(),
-            robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+            robot_base_pose_world=self.workspace_model.get_robot_base_transform_world(),
         )
         if end_xyz is None:
             return None
@@ -286,7 +286,7 @@ class TrajectoryConfigWidget(QWidget):
                 self.robot_model,
                 keypoints[row - 1],
                 tool=self.tool_model.get_tool(),
-                robot_base_pose_world=self.workspace_model.get_robot_base_pose_world(),
+                robot_base_pose_world=self.workspace_model.get_robot_base_transform_world(),
             )
         else:
             tcp_pose = self.robot_model.get_tcp_pose()
@@ -393,7 +393,7 @@ class TrajectoryConfigWidget(QWidget):
                 cartesian_target=convert_pose_from_base_frame(
                     self.robot_model.get_tcp_pose(),
                     self.get_cartesian_display_frame(),
-                    self.workspace_model.get_robot_base_pose_world(),
+                    self.workspace_model.get_robot_base_transform_world(),
                 ),
                 cartesian_frame=ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                 joint_target=list(self.robot_model.get_joints()),

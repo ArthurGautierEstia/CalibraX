@@ -5,6 +5,8 @@ from enum import Enum
 from itertools import product
 from typing import Set, override
 
+import utils.math_utils as math_utils
+
 EPSILON = 1e-6
 # Tolerance (rad) for considering Q3A and Q3B as the same elbow branch.
 Q3_SINGULARITY_EPS = 1e-4
@@ -553,24 +555,15 @@ class MGI():
 
     @staticmethod
     def _rot_z(a: float):
-        ca, sa = cos(a), sin(a)
-        return np.array([[ca, -sa, 0.0],
-                [sa,  ca, 0.0],
-                [0.0, 0.0, 1.0]])
+        return math_utils.rot_z(a, degrees=False)
 
     @staticmethod
     def _rot_y(b: float):
-        cb, sb = cos(b), sin(b)
-        return np.array([[ cb, 0.0, sb],
-                [0.0, 1.0, 0.0],
-                [-sb, 0.0, cb]])
+        return math_utils.rot_y(b, degrees=False)
 
     @staticmethod
     def _rot_x(c: float):
-        cc, sc = cos(c), sin(c)
-        return np.array([[1.0, 0.0, 0.0],
-                [0.0,  cc, -sc],
-                [0.0,  sc,  cc]])
+        return math_utils.rot_x(c, degrees=False)
     
     @staticmethod
     def _add_pi(angle: float)-> float:
@@ -601,65 +594,16 @@ class MGI():
             return x, y, z, a_deg, b_deg, c_deg
 
         # 1. Matrice de transformation TCP (pose demandée)
-        a_rad = radians(a_deg)
-        b_rad = radians(b_deg)
-        c_rad = radians(c_deg)
-        R_tcp = MGI._rot_z(a_rad) @ MGI._rot_y(b_rad) @ MGI._rot_x(c_rad)
-        T_tcp = np.eye(4)
-        T_tcp[:3, :3] = R_tcp
-        T_tcp[:3, 3] = [x, y, z]
+        T_tcp = math_utils.pose_zyx_to_matrix([x, y, z, a_deg, b_deg, c_deg])
         
         # 2. Matrice de transformation du Tool (offset par rapport au flange)
-        ta_rad = radians(tool.a)
-        tb_rad = radians(tool.b)
-        tc_rad = radians(tool.c)
-        R_tool = MGI._rot_z(ta_rad) @ MGI._rot_y(tb_rad) @ MGI._rot_x(tc_rad)
-        T_tool = np.eye(4)
-        T_tool[:3, :3] = R_tool
-        T_tool[:3, 3] = [tool.x, tool.y, tool.z]
+        T_tool = math_utils.pose_zyx_to_matrix([tool.x, tool.y, tool.z, tool.a, tool.b, tool.c])
         
         # 3. Calcul de la pose du flange : T_flange = T_tcp * T_tool^(-1)
-        T_tool_inv = np.linalg.inv(T_tool)
+        T_tool_inv = math_utils.invert_homogeneous_transform(T_tool)
         T_flange = T_tcp @ T_tool_inv
         
-        # 4. Extraction de la position du flange
-        xf = T_flange[0, 3]
-        yf = T_flange[1, 3]
-        zf = T_flange[2, 3]
-        
-        # 5. Extraction des angles d'Euler ZYX du flange
-        R_flange = T_flange[:3, :3]
-        
-        # Conversion rotation matrix -> Euler ZYX (convention KUKA: Rz*Ry*Rx)
-        # R = [r11 r12 r13]
-        #     [r21 r22 r23]
-        #     [r31 r32 r33]
-        # B = atan2(-r31, sqrt(r11² + r21²))
-        # A = atan2(r21/cos(B), r11/cos(B))
-        # C = atan2(r32/cos(B), r33/cos(B))
-        
-        r11, r12, _ = R_flange[0, :]
-        r21, r22, _ = R_flange[1, :]
-        r31, r32, r33 = R_flange[2, :]
-        
-        # Calcul de B (rotation autour de Y)
-        bf_rad = atan2(-r31, sqrt(r11**2 + r21**2))
-        
-        # Gestion du cas singulier (cos(B) ≈ 0)
-        cos_b = cos(bf_rad)
-        if abs(cos_b) > EPSILON:
-            af_rad = atan2(r21 / cos_b, r11 / cos_b)
-            cf_rad = atan2(r32 / cos_b, r33 / cos_b)
-        else:
-            # Singularité : B = ±90°, on pose arbitrairement C = 0
-            af_rad = atan2(-r12, r22)
-            cf_rad = 0.0
-        
-        af_deg = degrees(af_rad)
-        bf_deg = degrees(bf_rad)
-        cf_deg = degrees(cf_rad)
-        
-        return xf, yf, zf, af_deg, bf_deg, cf_deg
+        return tuple(math_utils.matrix_to_pose_zyx(T_flange))
 
     @staticmethod
     def _compute_flange_to_mgi_coordinates(x: float, y: float, z: float,
@@ -671,12 +615,7 @@ class MGI():
                 - R0 placé sur R1  => translation -r1 sur Z_base
                 - repères 4/5/6 confondus (centre poignet) => translation -r6 sur Z_tool
         """
-        # Rotation KUKA: R = Rz(A)*Ry(B)*Rx(C)
-        a_rad = radians(a_deg)
-        b_rad = radians(b_deg)
-        c_rad = radians(c_deg)
-
-        R = MGI._rot_z(a_rad) @ MGI._rot_y(b_rad) @ MGI._rot_x(c_rad)
+        R = math_utils.euler_to_rotation_matrix(a_deg, b_deg, c_deg, degrees=True)
 
         # Axe Z_tool exprimé dans la base = 3e colonne de R
         ztx, zty, ztz = R[0][2], R[1][2], R[2][2]

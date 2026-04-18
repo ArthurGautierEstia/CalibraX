@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt, QEvent
 from PyQt6.QtGui import QFont
 import utils.math_utils as math_utils
-import math
 import numpy as np
 
 
@@ -313,36 +312,7 @@ class MeasurementWidget(QWidget):
             if "R" in measurement and isinstance(measurement["R"], np.ndarray):
                 R = measurement["R"]
             else:
-                A_rad = math.radians(A)
-                B_rad = math.radians(B)
-                C_rad = math.radians(C)
-
-                ca = math.cos(A_rad)
-                sa = math.sin(A_rad)
-                cb = math.cos(B_rad)
-                sb = math.sin(B_rad)
-                cc = math.cos(C_rad)
-                sc = math.sin(C_rad)
-
-                Rx = np.array([
-                    [1, 0, 0],
-                    [0, ca, -sa],
-                    [0, sa, ca],
-                ])
-
-                Ry = np.array([
-                    [cb, 0, sb],
-                    [0, 1, 0],
-                    [-sb, 0, cb],
-                ])
-
-                Rz = np.array([
-                    [cc, -sc, 0],
-                    [sc, cc, 0],
-                    [0, 0, 1],
-                ])
-
-                R = Rz @ Ry @ Rx
+                R = math_utils.euler_to_rotation_matrix(A, B, C, degrees=True)
 
         angles = self._rotation_matrix_to_display_angles(R)
         A = float(angles[0])

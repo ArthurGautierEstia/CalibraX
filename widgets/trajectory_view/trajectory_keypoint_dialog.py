@@ -414,8 +414,8 @@ class TrajectoryKeypointDialog(QDialog):
         self.cartesian_target_widget.cartesian_value_changed.connect(self._on_cartesian_target_changed)
         self.cartesian_target_widget.reference_frame_changed.connect(self._on_cartesian_reference_frame_changed)
 
-    def _robot_base_pose_world(self) -> list[float]:
-        return self.workspace_model.get_robot_base_pose_world()
+    def _robot_base_pose_world(self):
+        return self.workspace_model.get_robot_base_transform_world()
 
     def _get_cartesian_target_in_base_frame(self) -> list[float]:
         return convert_pose_to_base_frame(

@@ -322,14 +322,9 @@ class RobotModel(QObject):
     @staticmethod
     def build_tool_transform(tool: RobotTool | None = None):
         current_tool = tool if tool is not None else RobotTool()
-        ta_rad = radians(current_tool.a)
-        tb_rad = radians(current_tool.b)
-        tc_rad = radians(current_tool.c)
-        rotation = MGI._rot_z(ta_rad) @ MGI._rot_y(tb_rad) @ MGI._rot_x(tc_rad)
-        transform = np.eye(4)
-        transform[:3, :3] = rotation
-        transform[:3, 3] = [current_tool.x, current_tool.y, current_tool.z]
-        return transform
+        return math_utils.pose_zyx_to_matrix(
+            [current_tool.x, current_tool.y, current_tool.z, current_tool.a, current_tool.b, current_tool.c]
+        )
 
     @staticmethod
     def _copy_tool(tool: RobotTool | None = None) -> RobotTool:

@@ -201,27 +201,11 @@ class MeasurementController(QObject):
     
     def _invert_homogeneous_transform(self, T: np.ndarray) -> np.ndarray:
         """Invert a 4x4 rigid homogeneous transform (SE(3))."""
-        if not isinstance(T, np.ndarray) or T.shape != (4, 4):
-            raise ValueError("La matrice doit être de taille 4x4")
-
-        if not np.allclose(T[3, :], np.array([0.0, 0.0, 0.0, 1.0]), atol=1e-12):
-            raise ValueError("La matrice n'est pas une transformation homogène rigide valide")
-
-        R = T[:3, :3]
-        t = T[:3, 3]
-        T_inv = np.eye(4)
-        T_inv[:3, :3] = R.T
-        T_inv[:3, 3] = -(R.T @ t)
-        return T_inv
+        return math_utils.invert_homogeneous_transform(T, validate=True)
 
     def _orthonormalize_rotation(self, R: np.ndarray) -> np.ndarray:
         """Project a near-rotation matrix onto SO(3)."""
-        U, _, Vt = np.linalg.svd(R)
-        R_ortho = U @ Vt
-        if np.linalg.det(R_ortho) < 0:
-            U[:, -1] *= -1.0
-            R_ortho = U @ Vt
-        return R_ortho
+        return math_utils.orthonormalize_rotation(R)
 
     def _on_view_set_as_reference_requested(self) -> None:
         current_item = self.measurement_widget.tree.currentItem()
@@ -487,7 +471,7 @@ class MeasurementController(QObject):
         for joint_idx in range(1, min(7, len(cumulative))):
             T_prev = cumulative[joint_idx - 1]
             T_curr = cumulative[joint_idx]
-            T_joint = np.linalg.inv(T_prev) @ T_curr
+            T_joint = math_utils.invert_homogeneous_transform(T_prev) @ T_curr
 
             params = self._extract_dh_params_from_matrix(T_joint)
 
