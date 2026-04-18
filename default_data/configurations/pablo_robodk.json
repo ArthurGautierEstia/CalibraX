@@ -40,6 +40,45 @@
             "240.0"
         ]
     ],
+    "dh_measured": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "675.0"
+        ],
+        [
+            "-89.9754",
+            "350.0166",
+            "0.0454",
+            "0.0"
+        ],
+        [
+            "0.019",
+            "1350.5545",
+            "-89.9889",
+            "0.0727"
+        ],
+        [
+            "-89.9787",
+            "-40.498",
+            "-0.0106",
+            "1199.7355"
+        ],
+        [
+            "89.9969",
+            "0.0",
+            "0.0054",
+            "0.0"
+        ],
+        [
+            "-90.0646",
+            "0.0",
+            "180.0",
+            "240.0"
+        ]
+    ],
+    "dh_measured_enabled": false,
     "corr": [
         [
             "0.0",
@@ -118,16 +157,16 @@
     ],
     "cartesian_slider_limits_xyz": [
         [
-            -1000.0,
-            1000.0
+            -3140.0,
+            3140.0
         ],
         [
-            -1000.0,
-            1000.0
+            -3140.0,
+            3140.0
         ],
         [
-            -1000.0,
-            1000.0
+            -3140.0,
+            3140.0
         ]
     ],
     "axis_speed_limits": [
@@ -151,16 +190,16 @@
             "axis": 0,
             "enabled": true,
             "radius": 550.0,
-            "height": -825.0,
+            "height": -910.0,
             "direction_axis": "z",
             "offset_axis": "z",
-            "offset_value": 150.0
+            "offset_value": 232.0
         },
         {
             "axis": 1,
             "enabled": true,
-            "radius": 200.0,
-            "height": 1350.0,
+            "radius": 160.0,
+            "height": 1500.0,
             "direction_axis": "x",
             "offset_axis": "z",
             "offset_value": -300.0
@@ -168,26 +207,26 @@
         {
             "axis": 2,
             "enabled": true,
-            "radius": 250.0,
-            "height": 930.0,
+            "radius": 200.0,
+            "height": 600.0,
             "direction_axis": "y",
             "offset_axis": "y",
-            "offset_value": -450.0
+            "offset_value": -430.0
         },
         {
             "axis": 3,
             "enabled": true,
             "radius": 150.0,
-            "height": 820.0,
+            "height": 1100.0,
             "direction_axis": "z",
             "offset_axis": "z",
-            "offset_value": -700.0
+            "offset_value": -1020.0
         },
         {
             "axis": 4,
             "enabled": true,
-            "radius": 110.0,
-            "height": 240.0,
+            "radius": 150.0,
+            "height": 239.0,
             "direction_axis": "y",
             "offset_axis": "",
             "offset_value": 0.0
