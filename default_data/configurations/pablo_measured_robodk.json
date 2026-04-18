@@ -1,0 +1,303 @@
+{
+    "name": [
+        "Pablo - KR240-2900F (Measured)"
+    ],
+    "dh": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "675.0"
+        ],
+        [
+            "-90.0",
+            "350.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "1350.0",
+            "-90.0",
+            "0.0"
+        ],
+        [
+            "-90.0",
+            "-41.0",
+            "0.0",
+            "1200.0"
+        ],
+        [
+            "90.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "-90.0",
+            "0.0",
+            "180.0",
+            "240.0"
+        ]
+    ],
+    "dh_measured": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "675.0"
+        ],
+        [
+            "-89.9754",
+            "350.0166",
+            "0.0454",
+            "0.0"
+        ],
+        [
+            "0.019",
+            "1350.5545",
+            "-89.9889",
+            "0.0727"
+        ],
+        [
+            "-89.9787",
+            "-40.498",
+            "-0.0106",
+            "1199.7355"
+        ],
+        [
+            "89.9969",
+            "0.0",
+            "0.0054",
+            "0.0"
+        ],
+        [
+            "-90.0646",
+            "0.0",
+            "180.0",
+            "240.0"
+        ]
+    ],
+    "dh_measured_enabled": false,
+    "corr": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ]
+    ],
+    "axis_limits": [
+        [
+            -170.0,
+            170.0
+        ],
+        [
+            -190.0,
+            45.0
+        ],
+        [
+            -120.0,
+            156.0
+        ],
+        [
+            -185.0,
+            185.0
+        ],
+        [
+            -120.0,
+            120.0
+        ],
+        [
+            -350.0,
+            350.0
+        ]
+    ],
+    "cartesian_slider_limits_xyz": [
+        [
+            -3000.0,
+            3000.0
+        ],
+        [
+            -3000.0,
+            3000.0
+        ],
+        [
+            -3000.0,
+            3000.0
+        ]
+    ],
+    "axis_speed_limits": [
+        300.0,
+        225.0,
+        255.0,
+        381.0,
+        311.0,
+        492.0
+    ],
+    "axis_jerk_limits": [
+        6000.0,
+        5000.0,
+        5000.0,
+        7500.0,
+        6500.0,
+        9000.0
+    ],
+    "axis_colliders": [
+        {
+            "axis": 0,
+            "enabled": true,
+            "radius": 550.0,
+            "height": -825.0,
+            "direction_axis": "z",
+            "offset_axis": "z",
+            "offset_value": 150.0
+        },
+        {
+            "axis": 1,
+            "enabled": true,
+            "radius": 40.0,
+            "height": 200.0,
+            "direction_axis": "x",
+            "offset_axis": "",
+            "offset_value": 0.0
+        },
+        {
+            "axis": 2,
+            "enabled": true,
+            "radius": 40.0,
+            "height": 200.0,
+            "direction_axis": "y",
+            "offset_axis": "",
+            "offset_value": 0.0
+        },
+        {
+            "axis": 3,
+            "enabled": true,
+            "radius": 40.0,
+            "height": 200.0,
+            "direction_axis": "y",
+            "offset_axis": "",
+            "offset_value": 0.0
+        },
+        {
+            "axis": 4,
+            "enabled": true,
+            "radius": 40.0,
+            "height": 200.0,
+            "direction_axis": "y",
+            "offset_axis": "",
+            "offset_value": 0.0
+        },
+        {
+            "axis": 5,
+            "enabled": true,
+            "radius": 40.0,
+            "height": 200.0,
+            "direction_axis": "z",
+            "offset_axis": "",
+            "offset_value": 0.0
+        }
+    ],
+    "axis_reversed": [
+        -1,
+        1,
+        1,
+        -1,
+        1,
+        -1
+    ],
+    "joint_weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+    ],
+    "allowed_configs": [
+        "FUN",
+        "FUF",
+        "FDN",
+        "FDF",
+        "BUN",
+        "BUF",
+        "BDN",
+        "BDF"
+    ],
+    "home_position": [
+        0.0,
+        -90.0,
+        90.0,
+        0.0,
+        45.0,
+        0.0
+    ],
+    "position_zero": [
+        0.0,
+        -90.0,
+        90.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "position_transport": [
+        0.0,
+        -105.0,
+        156.0,
+        0.0,
+        120.0,
+        0.0
+    ],
+    "robot_cad_models": [
+        "./default_data/robots_stl/Pablo/pablo0.stl",
+        "./default_data/robots_stl/Pablo/pablo1.stl",
+        "./default_data/robots_stl/Pablo/pablo2.stl",
+        "./default_data/robots_stl/Pablo/pablo3.stl",
+        "./default_data/robots_stl/Pablo/pablo4.stl",
+        "./default_data/robots_stl/Pablo/pablo5.stl",
+        "./default_data/robots_stl/Pablo/pablo6.stl"
+    ]
+}
