@@ -29,6 +29,7 @@ class RobotConfigurationController(QObject):
         self.robot_model.measured_dh_enabled_changed.connect(self._on_robot_measured_dh_enabled_changed)
         self.robot_model.axis_limits_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.axis_speed_limits_changed.connect(self._on_robot_axis_config_changed)
+        self.robot_model.axis_accel_limits_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.axis_jerk_limits_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.axis_reversed_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
@@ -92,6 +93,7 @@ class RobotConfigurationController(QObject):
         axis_limits: list[tuple[float, float]],
         cartesian_slider_limits_xyz: list[tuple[float, float]],
         axis_speed_limits: list[float],
+        axis_accel_limits: list[float],
         axis_jerk_limits: list[float],
         axis_reversed: list[int],
     ) -> None:
@@ -99,6 +101,7 @@ class RobotConfigurationController(QObject):
         self.robot_model.set_cartesian_slider_limits_xyz(cartesian_slider_limits_xyz)
         self.robot_model.set_axis_speed_limits(axis_speed_limits)
         self.robot_model.set_axis_jerk_limits(axis_jerk_limits)
+        self.robot_model.set_axis_accel_limits(axis_accel_limits)
         self.robot_model.set_axis_limits(axis_limits)
         self.robot_model.set_axis_reversed(axis_reversed)
         self.robot_model.inhibit_auto_compute_fk_tcp(False)
@@ -169,6 +172,7 @@ class RobotConfigurationController(QObject):
             self.robot_model.get_axis_limits(),
             self.robot_model.get_cartesian_slider_limits_xyz(),
             self.robot_model.get_axis_speed_limits(),
+            self.robot_model.get_axis_accel_limits(),
             self.robot_model.get_axis_jerk_limits(),
             self.robot_model.get_axis_reversed(),
         )

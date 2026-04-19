@@ -24,6 +24,10 @@ class RobotModel(QObject):
     DEFAULT_AXIS_SPEED_LIMITS: List[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
     # Estimated defaults (deg/s^3), can be refined from real traces.
     DEFAULT_AXIS_JERK_LIMITS: List[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
+    DEFAULT_AXIS_ACCEL_LIMITS: List[float] = [
+        round(math.sqrt(speed * jerk), 3)
+        for speed, jerk in zip(DEFAULT_AXIS_SPEED_LIMITS, DEFAULT_AXIS_JERK_LIMITS)
+    ]
     DEFAULT_AXIS_COLLIDERS: List[dict[str, Any]] = default_axis_colliders(6)
     DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = [
         (-1000.0, 1000.0),
@@ -60,6 +64,7 @@ class RobotModel(QObject):
     axis_limits_changed = pyqtSignal()
     cartesian_slider_limits_changed = pyqtSignal()
     axis_speed_limits_changed = pyqtSignal()
+    axis_accel_limits_changed = pyqtSignal()
     axis_jerk_limits_changed = pyqtSignal()
     joint_weights_changed = pyqtSignal()
     
@@ -92,6 +97,7 @@ class RobotModel(QObject):
             RobotModel.DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ
         )
         self.axis_speed_limits: List[float] = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
+        self.axis_accel_limits: List[float] = list(RobotModel.DEFAULT_AXIS_ACCEL_LIMITS)
         self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
         self.axis_colliders: List[dict[str, Any]] = axis_colliders_to_dict(RobotModel.DEFAULT_AXIS_COLLIDERS, 6)
@@ -624,6 +630,14 @@ class RobotModel(QObject):
         """Retourne les limites de vitesse de tous les axes en deg/s"""
         return self.axis_speed_limits.copy()
 
+    def get_axis_accel_limit(self, index: int) -> float:
+        """Retourne la limite d'acceleration d'un axe specifique en deg/s^2"""
+        return self.axis_accel_limits[index] if 0 <= index < 6 else 0.0
+
+    def get_axis_accel_limits(self):
+        """Retourne les limites d'acceleration de tous les axes en deg/s^2"""
+        return self.axis_accel_limits.copy()
+
     def get_axis_jerk_limit(self, index: int) -> float:
         """Retourne la limite de jerk d'un axe spécifique en deg/s^3"""
         return self.axis_jerk_limits[index] if 0 <= index < 6 else 0.0
@@ -744,6 +758,18 @@ class RobotModel(QObject):
         if len(limits) >= 6:
             self.axis_speed_limits = [float(v) for v in limits[:6]]
             self.axis_speed_limits_changed.emit()
+
+    def set_axis_accel_limit(self, index: int, value: float):
+        """DÃ©finit la limite d'acceleration d'un axe specifique en deg/s^2"""
+        if 0 <= index < 6:
+            self.axis_accel_limits[index] = max(0.0, float(value))
+            self.axis_accel_limits_changed.emit()
+
+    def set_axis_accel_limits(self, limits: list[float]):
+        """DÃ©finit les limites d'acceleration de tous les axes en deg/s^2"""
+        if len(limits) >= 6:
+            self.axis_accel_limits = [max(0.0, float(v)) for v in limits[:6]]
+            self.axis_accel_limits_changed.emit()
 
     def set_axis_jerk_limit(self, index: int, value: float):
         """Définit la limite de jerk d'un axe spécifique en deg/s^3"""

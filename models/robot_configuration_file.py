@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import math
 from typing import Any, TYPE_CHECKING
 
 from models.collider_models import axis_colliders_to_dict, default_axis_colliders, parse_axis_colliders
@@ -20,6 +21,10 @@ DEFAULT_AXIS_LIMITS: list[tuple[float, float]] = [
 ]
 DEFAULT_AXIS_SPEED_LIMITS: list[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
 DEFAULT_AXIS_JERK_LIMITS: list[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
+DEFAULT_AXIS_ACCEL_LIMITS: list[float] = [
+    round(math.sqrt(speed * jerk), 3)
+    for speed, jerk in zip(DEFAULT_AXIS_SPEED_LIMITS, DEFAULT_AXIS_JERK_LIMITS)
+]
 DEFAULT_AXIS_COLLIDERS: list[dict[str, Any]] = default_axis_colliders(6)
 DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: list[tuple[float, float]] = [
     (-1000.0, 1000.0),
@@ -41,6 +46,7 @@ class RobotConfigurationFile:
         default_factory=lambda: list(DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
     )
     axis_speed_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_SPEED_LIMITS))
+    axis_accel_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_ACCEL_LIMITS))
     axis_jerk_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_JERK_LIMITS))
     axis_colliders: list[dict[str, Any]] = field(default_factory=lambda: axis_colliders_to_dict(DEFAULT_AXIS_COLLIDERS, 6))
     axis_reversed: list[int] = field(default_factory=lambda: [1] * 6)
@@ -153,6 +159,34 @@ class RobotConfigurationFile:
         return speed_limits
 
     @classmethod
+    def _calculate_axis_accel_limits(cls, speed_limits: list[float], jerk_limits: list[float]) -> list[float]:
+        accel_limits: list[float] = []
+        for index in range(6):
+            speed = cls._safe_float(speed_limits[index] if index < len(speed_limits) else 0.0, 0.0)
+            jerk = cls._safe_float(jerk_limits[index] if index < len(jerk_limits) else 0.0, 0.0)
+            accel_limits.append(round(math.sqrt(max(0.0, speed) * max(0.0, jerk)), 3))
+        return accel_limits
+
+    @classmethod
+    def _parse_axis_accel_limits(
+        cls,
+        values: Any,
+        speed_limits: list[float],
+        jerk_limits: list[float],
+    ) -> list[float]:
+        defaults = cls._calculate_axis_accel_limits(speed_limits, jerk_limits)
+        accel_limits: list[float] = []
+        if not isinstance(values, list):
+            values = []
+
+        for i, item in enumerate(values[:6]):
+            accel_limits.append(max(0.0, cls._safe_float(item, defaults[i])))
+
+        while len(accel_limits) < 6:
+            accel_limits.append(defaults[len(accel_limits)])
+        return accel_limits
+
+    @classmethod
     def _parse_axis_jerk_limits(cls, values: Any) -> list[float]:
         jerk_limits: list[float] = []
         if not isinstance(values, list):
@@ -222,6 +256,7 @@ class RobotConfigurationFile:
             axis_limits=[tuple(v) for v in robot_model.get_axis_limits()],
             cartesian_slider_limits_xyz=[tuple(v) for v in robot_model.get_cartesian_slider_limits_xyz()],
             axis_speed_limits=robot_model.get_axis_speed_limits(),
+            axis_accel_limits=robot_model.get_axis_accel_limits(),
             axis_jerk_limits=robot_model.get_axis_jerk_limits(),
             axis_colliders=robot_model.get_axis_colliders(),
             axis_reversed=robot_model.get_axis_reversed(),
@@ -242,6 +277,7 @@ class RobotConfigurationFile:
                 "axis_limits",
                 "cartesian_slider_limits_xyz",
                 "axis_speed_limits",
+                "axis_accel_limits",
                 "axis_jerk_limits",
                 "axis_colliders",
                 "axis_reversed",
@@ -279,6 +315,10 @@ class RobotConfigurationFile:
             present_fields.add("robot_cad_models")
 
         allowed_configs = cls._parse_allowed_configs(data.get(allowed_raw_key)) if allowed_raw_key else set(MgiConfigKey)
+        axis_speed_limits = cls._parse_axis_speed_limits(data.get("axis_speed_limits"))
+        axis_jerk_limits = cls._parse_axis_jerk_limits(data.get("axis_jerk_limits"))
+        if "axis_accel_limits" not in present_fields:
+            present_fields.add("axis_accel_limits")
 
         return cls(
             name=name,
@@ -288,8 +328,13 @@ class RobotConfigurationFile:
             cartesian_slider_limits_xyz=cls._parse_cartesian_slider_limits_xyz(
                 data.get("cartesian_slider_limits_xyz")
             ),
-            axis_speed_limits=cls._parse_axis_speed_limits(data.get("axis_speed_limits")),
-            axis_jerk_limits=cls._parse_axis_jerk_limits(data.get("axis_jerk_limits")),
+            axis_speed_limits=axis_speed_limits,
+            axis_accel_limits=cls._parse_axis_accel_limits(
+                data.get("axis_accel_limits"),
+                axis_speed_limits,
+                axis_jerk_limits,
+            ),
+            axis_jerk_limits=axis_jerk_limits,
             axis_colliders=parse_axis_colliders(data.get("axis_colliders", DEFAULT_AXIS_COLLIDERS), 6),
             axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
             joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
@@ -316,6 +361,7 @@ class RobotConfigurationFile:
             "axis_limits": self.axis_limits[:6],
             "cartesian_slider_limits_xyz": self.cartesian_slider_limits_xyz[:3],
             "axis_speed_limits": self.axis_speed_limits[:6],
+            "axis_accel_limits": self.axis_accel_limits[:6],
             "axis_jerk_limits": self.axis_jerk_limits[:6],
             "axis_colliders": axis_colliders_to_dict(self.axis_colliders, 6),
             "axis_reversed": self.axis_reversed[:6],
@@ -348,6 +394,8 @@ class RobotConfigurationFile:
             robot_model.set_axis_speed_limits(self.axis_speed_limits)
         if "axis_jerk_limits" in self.present_fields:
             robot_model.set_axis_jerk_limits(self.axis_jerk_limits)
+        if "axis_accel_limits" in self.present_fields:
+            robot_model.set_axis_accel_limits(self.axis_accel_limits)
         if "axis_colliders" in self.present_fields:
             robot_model.set_axis_colliders(self.axis_colliders)
         if "home_position" in self.present_fields:

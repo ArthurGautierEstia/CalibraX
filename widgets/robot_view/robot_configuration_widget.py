@@ -49,7 +49,7 @@ class RobotConfigurationWidget(QWidget):
     tool_changed = pyqtSignal(RobotTool)
     axis_colliders_config_changed = pyqtSignal(list)
 
-    axis_config_changed = pyqtSignal(list, list, list, list, list)
+    axis_config_changed = pyqtSignal(list, list, list, list, list, list)
     positions_config_changed = pyqtSignal(list, list, list)
     position_zero_requested = pyqtSignal()
     position_transport_requested = pyqtSignal()
@@ -65,7 +65,7 @@ class RobotConfigurationWidget(QWidget):
     COL_AXIS_MIN = 0
     COL_AXIS_MAX = 1
     COL_AXIS_SPEED = 2
-    COL_AXIS_ACCEL_EST = 3
+    COL_AXIS_ACCEL = 3
     COL_AXIS_JERK = 4
     COL_AXIS_REVERSED = 5
 
@@ -226,7 +226,7 @@ class RobotConfigurationWidget(QWidget):
                 "Min (deg)",
                 "Max (deg)",
                 "Vitesse max (deg/s)",
-                "Accel estimee (deg/s^2)",
+                "Accel max (deg/s^2)",
                 "Jerk max (deg/s^3)",
                 "Inverse",
             ]
@@ -237,8 +237,7 @@ class RobotConfigurationWidget(QWidget):
         self.axis_reversed_checkboxes.clear()
         for row in range(6):
             accel_item = QTableWidgetItem("")
-            accel_item.setFlags(accel_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL_EST, accel_item)
+            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL, accel_item)
 
             checkbox = QCheckBox()
             checkbox.stateChanged.connect(self._emit_axis_config_changed)
@@ -247,6 +246,13 @@ class RobotConfigurationWidget(QWidget):
 
         self.table_axis.itemChanged.connect(self._on_axis_item_changed)
         layout.addWidget(self.table_axis)
+
+        axis_button_layout = QHBoxLayout()
+        reset_accel_button = QPushButton("Recalculer accels par defaut")
+        reset_accel_button.clicked.connect(self._on_reset_axis_accel_limits_clicked)
+        axis_button_layout.addWidget(reset_accel_button)
+        axis_button_layout.addStretch()
+        layout.addLayout(axis_button_layout)
 
         cartesian_group = QGroupBox("Plages des sliders cartesiens")
         cartesian_layout = QVBoxLayout(cartesian_group)
@@ -491,11 +497,15 @@ class RobotConfigurationWidget(QWidget):
             self.dh_value_changed.emit(row, col, item.text())
 
     def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
-        if item.column() in (RobotConfigurationWidget.COL_AXIS_SPEED, RobotConfigurationWidget.COL_AXIS_JERK):
-            self._refresh_estimated_accel_for_row(item.row())
+        if item.column() == RobotConfigurationWidget.COL_AXIS_ACCEL:
+            self._format_axis_accel_item(item)
         self._emit_axis_config_changed()
 
     def _on_cartesian_slider_limits_item_changed(self, _item: QTableWidgetItem) -> None:
+        self._emit_axis_config_changed()
+
+    def _on_reset_axis_accel_limits_clicked(self) -> None:
+        self._reset_axis_accel_limits_to_calculated_defaults()
         self._emit_axis_config_changed()
 
     def _on_axis_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
@@ -849,23 +859,33 @@ class RobotConfigurationWidget(QWidget):
         item = table.item(row, column)
         return self._safe_float(item.text() if item else "", default)
 
-    def _refresh_estimated_accel_for_row(self, row: int) -> None:
+    def _calculate_default_axis_accel_for_row(self, row: int) -> float:
         speed = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0))
         jerk = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, 0.0))
-        accel = math.sqrt(speed * jerk)
+        return math.sqrt(speed * jerk)
 
-        accel_item = self.table_axis.item(row, RobotConfigurationWidget.COL_AXIS_ACCEL_EST)
+    def _set_axis_accel_cell(self, row: int, accel: float) -> None:
+        accel_item = self.table_axis.item(row, RobotConfigurationWidget.COL_AXIS_ACCEL)
         if accel_item is None:
             accel_item = QTableWidgetItem("")
-            accel_item.setFlags(accel_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL_EST, accel_item)
+            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL, accel_item)
         accel_item.setText(f"{accel:.3f}")
 
-    def _refresh_estimated_accel_column(self) -> None:
+    def _format_axis_accel_item(self, item: QTableWidgetItem) -> None:
+        if item.text().strip() == "":
+            return
+        accel = max(0.0, self._safe_float(item.text(), 0.0))
+        self.table_axis.blockSignals(True)
+        try:
+            item.setText(f"{accel:.3f}")
+        finally:
+            self.table_axis.blockSignals(False)
+
+    def _reset_axis_accel_limits_to_calculated_defaults(self) -> None:
         self.table_axis.blockSignals(True)
         try:
             for row in range(6):
-                self._refresh_estimated_accel_for_row(row)
+                self._set_axis_accel_cell(row, self._calculate_default_axis_accel_for_row(row))
         finally:
             self.table_axis.blockSignals(False)
 
@@ -943,6 +963,7 @@ class RobotConfigurationWidget(QWidget):
             self.get_axis_limits(),
             self.get_cartesian_slider_limits_xyz(),
             self.get_axis_speed_limits(),
+            self.get_axis_accel_limits(),
             self.get_axis_jerk_limits(),
             self.get_axis_reversed(),
         )
@@ -1013,6 +1034,7 @@ class RobotConfigurationWidget(QWidget):
         axis_limits: list[tuple[float, float]],
         cartesian_slider_limits_xyz: list[tuple[float, float]],
         axis_speed_limits: list[float],
+        axis_accel_limits: list[float],
         axis_jerk_limits: list[float],
         axis_reversed: list[int],
     ) -> None:
@@ -1023,19 +1045,19 @@ class RobotConfigurationWidget(QWidget):
                 max_val = axis_limits[row][1] if row < len(axis_limits) else 180.0
                 speed = axis_speed_limits[row] if row < len(axis_speed_limits) else 0.0
                 jerk = axis_jerk_limits[row] if row < len(axis_jerk_limits) else 0.0
+                accel = axis_accel_limits[row] if row < len(axis_accel_limits) else math.sqrt(max(0.0, float(speed)) * max(0.0, float(jerk)))
                 reversed_axis = axis_reversed[row] if row < len(axis_reversed) else 1
 
                 self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_MIN, QTableWidgetItem(str(min_val)))
                 self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_MAX, QTableWidgetItem(str(max_val)))
                 self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_SPEED, QTableWidgetItem(str(speed)))
+                self._set_axis_accel_cell(row, float(accel))
                 self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_JERK, QTableWidgetItem(str(jerk)))
 
                 checkbox = self.axis_reversed_checkboxes[row]
                 checkbox.blockSignals(True)
                 checkbox.setChecked(reversed_axis == -1)
                 checkbox.blockSignals(False)
-
-            self._refresh_estimated_accel_column()
         finally:
             self.table_axis.blockSignals(False)
         self.set_cartesian_slider_limits_xyz(cartesian_slider_limits_xyz)
@@ -1050,6 +1072,9 @@ class RobotConfigurationWidget(QWidget):
 
     def get_axis_speed_limits(self) -> list[float]:
         return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0) for row in range(6)]
+
+    def get_axis_accel_limits(self) -> list[float]:
+        return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_ACCEL, 0.0) for row in range(6)]
 
     def set_cartesian_slider_limits_xyz(self, limits: list[tuple[float, float]]) -> None:
         if self.table_cartesian_slider_limits is None:

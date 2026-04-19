@@ -576,7 +576,7 @@ class TrajectoryBuilder:
     def _get_axis_dynamic_limits(self) -> tuple[list[float], list[float], list[float]]:
         # Dynamic checks must always rely on robot-model limits (no per-segment override).
         speed_limits = TrajectoryBuilder._normalize_positive_limits(self.robot_model.get_axis_speed_limits())
-        accel_limits = TrajectoryBuilder._normalize_positive_limits(self.robot_model.get_axis_estimated_accel_limits())
+        accel_limits = TrajectoryBuilder._normalize_positive_limits(self.robot_model.get_axis_accel_limits())
         jerk_limits = TrajectoryBuilder._normalize_positive_limits(self.robot_model.get_axis_jerk_limits())
         return speed_limits, accel_limits, jerk_limits
 
