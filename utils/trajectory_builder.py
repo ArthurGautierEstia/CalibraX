@@ -50,6 +50,7 @@ class TrajectoryBuilder:
     DEFAULT_SAMPLE_DT_S = 0.004  # 4 ms
     DEFAULT_ARC_LENGTH_SAMPLES = 200
     MAX_SAMPLES_PER_SEGMENT = 50_000
+    QUINTIC_PEAK_SPEED_SCALE = 1.875
     _EPS = 1e-9
     # Heuristic thresholds to detect "teleportation-like" joint jumps.
     # These values are intentionally high to avoid flagging ordinary overspeed cases.
@@ -70,6 +71,7 @@ class TrajectoryBuilder:
         sample_dt_s: float = DEFAULT_SAMPLE_DT_S,
         smooth_time_enabled: bool = True,
         bezier_degree: TrajectoryBezierDegree | str = TrajectoryBezierDegree.BEZIER5,
+        jerk_check_enabled: bool = True,
     ) -> None:
         self.robot_model = robot_model
         self.tool_model = tool_model
@@ -78,6 +80,7 @@ class TrajectoryBuilder:
         self.sample_dt_s = sample_dt_s if sample_dt_s > 0.0 else TrajectoryBuilder.DEFAULT_SAMPLE_DT_S
         self.smooth_time_enabled = bool(smooth_time_enabled)
         self.bezier_degree = TrajectoryBezierDegree.from_value(bezier_degree)
+        self.jerk_check_enabled = bool(jerk_check_enabled)
         self._working_mgi_solver: MGI | None = None
         self._robot_allowed_configs: set[MgiConfigKey] | None = None
         self._joint_weights: list[float] | None = None
@@ -87,6 +90,9 @@ class TrajectoryBuilder:
 
     def set_bezier_degree(self, degree: TrajectoryBezierDegree | str) -> None:
         self.bezier_degree = TrajectoryBezierDegree.from_value(degree)
+
+    def set_jerk_check_enabled(self, enabled: bool) -> None:
+        self.jerk_check_enabled = bool(enabled)
 
     @staticmethod
     def linear_speed_mps_to_mmps(speed_mps: float) -> float:
@@ -313,8 +319,6 @@ class TrajectoryBuilder:
             axis_speed_limits.append(0.0)
         effective_speed_limits = [max(0.0, v * speed_ratio) for v in axis_speed_limits]
 
-        # For s(t)=6t^5-15t^4+10t^3, max(ds/dtau)=1.875.
-        quintic_peak_scale = 1.875
         required_duration_s = 0.0
         for axis in range(6):
             move = abs(joint_deltas_deg[axis])
@@ -324,7 +328,10 @@ class TrajectoryBuilder:
             if vmax <= self._EPS:
                 return None, None
 
-            required_duration_s = max(required_duration_s, quintic_peak_scale * move / vmax)
+            required_duration_s = max(
+                required_duration_s,
+                TrajectoryBuilder.QUINTIC_PEAK_SPEED_SCALE * move / vmax,
+            )
         
         return required_duration_s, effective_speed_limits
 
@@ -349,18 +356,29 @@ class TrajectoryBuilder:
         return total
 
     @staticmethod
-    def _resolve_num_intervals(arc_length_mm: float, speed_mmps: float, sample_dt_s: float) -> int:
+    def _resolve_num_intervals(
+        arc_length_mm: float,
+        speed_mmps: float,
+        sample_dt_s: float,
+        peak_speed_scale: float = 1.0,
+    ) -> int:
         """
         Identifier le nombre d'intervalle pour parcourir la courbe à une vitesse donnée, pour un échantillonage temporel donnée.
         """
         if arc_length_mm <= TrajectoryBuilder._EPS or speed_mmps <= TrajectoryBuilder._EPS:
             return 1
 
-        # T = D/V
-        theoretical_duration_s = arc_length_mm / speed_mmps
+        # T = D/V, scaled when the temporal profile has a peak velocity above its average.
+        profile_scale = max(1.0, float(peak_speed_scale))
+        theoretical_duration_s = profile_scale * arc_length_mm / speed_mmps
         # intervals = T/dT
         intervals = int(math.ceil(theoretical_duration_s / sample_dt_s))
         return min(max(1, intervals), TrajectoryBuilder.MAX_SAMPLES_PER_SEGMENT)
+
+    def _time_profile_peak_speed_scale(self) -> float:
+        if self.smooth_time_enabled:
+            return TrajectoryBuilder.QUINTIC_PEAK_SPEED_SCALE
+        return 1.0
 
     @staticmethod
     def _is_lin_or_cubic_mode(mode: KeypointMotionMode) -> bool:
@@ -649,6 +667,78 @@ class TrajectoryBuilder:
             if acc < stats.max_deceleration:
                 stats.max_deceleration = acc
 
+    @staticmethod
+    def _reset_cartesian_dynamics(sample: TrajectorySample) -> None:
+        sample.cartesian_velocity = [0.0] * 6
+        sample.cartesian_acceleration = [0.0] * 6
+        sample.cartesian_jerk = [0.0] * 6
+        sample.cartesian_velocity_valid = False
+        sample.cartesian_acceleration_valid = False
+        sample.cartesian_jerk_valid = False
+        sample.velocity = 0.0
+        sample.acceleration = 0.0
+
+    @staticmethod
+    def _reset_articular_dynamics(sample: TrajectorySample) -> None:
+        sample.articular_velocity = [0.0] * 6
+        sample.articular_acceleration = [0.0] * 6
+        sample.articular_jerk = [0.0] * 6
+        sample.articular_velocity_valid = False
+        sample.articular_acceleration_valid = False
+        sample.articular_jerk_valid = False
+
+    @staticmethod
+    def _update_cartesian_dynamics(
+        sample: TrajectorySample,
+        previous_sample: TrajectorySample | None,
+        dt: float,
+    ) -> None:
+        TrajectoryBuilder._reset_cartesian_dynamics(sample)
+        if previous_sample is None:
+            return
+        if not sample.reachable or not previous_sample.reachable:
+            return
+
+        dA = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[3], sample.pose[3])
+        dB = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[4], sample.pose[4])
+        dC = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[5], sample.pose[5])
+
+        sample.cartesian_velocity[0] = (sample.pose[0] - previous_sample.pose[0]) / dt
+        sample.cartesian_velocity[1] = (sample.pose[1] - previous_sample.pose[1]) / dt
+        sample.cartesian_velocity[2] = (sample.pose[2] - previous_sample.pose[2]) / dt
+        sample.cartesian_velocity[3] = dA / dt
+        sample.cartesian_velocity[4] = dB / dt
+        sample.cartesian_velocity[5] = dC / dt
+        sample.cartesian_velocity_valid = True
+        sample.velocity = math_utils.norm3(
+            sample.cartesian_velocity[0],
+            sample.cartesian_velocity[1],
+            sample.cartesian_velocity[2],
+        )
+
+        if not getattr(previous_sample, "cartesian_velocity_valid", False):
+            return
+
+        for axis in range(6):
+            sample.cartesian_acceleration[axis] = (
+                sample.cartesian_velocity[axis] - previous_sample.cartesian_velocity[axis]
+            ) / dt
+        sample.cartesian_acceleration_valid = True
+        sample.acceleration = math_utils.norm3(
+            sample.cartesian_acceleration[0],
+            sample.cartesian_acceleration[1],
+            sample.cartesian_acceleration[2],
+        )
+
+        if not getattr(previous_sample, "cartesian_acceleration_valid", False):
+            return
+
+        for axis in range(6):
+            sample.cartesian_jerk[axis] = (
+                sample.cartesian_acceleration[axis] - previous_sample.cartesian_acceleration[axis]
+            ) / dt
+        sample.cartesian_jerk_valid = True
+
     def _register_sample_error(self, result: SegmentResult, sample: TrajectorySample, sample_index: int) -> None:
         if sample.error_code == TrajectorySampleErrorCode.NONE:
             return
@@ -664,9 +754,7 @@ class TrajectoryBuilder:
         previous_sample: TrajectorySample | None,
         dt: float,
     ) -> None:
-        sample.articular_velocity = [0.0] * 6
-        sample.articular_acceleration = [0.0] * 6
-        sample.articular_jerk = [0.0] * 6
+        TrajectoryBuilder._reset_articular_dynamics(sample)
         if previous_sample is None:
             return
         if not sample.reachable or not previous_sample.reachable:
@@ -675,9 +763,24 @@ class TrajectoryBuilder:
         for axis in range(6):
             vel = (sample.joints[axis] - previous_sample.joints[axis]) / dt
             sample.articular_velocity[axis] = vel
+        sample.articular_velocity_valid = True
+
+        if not getattr(previous_sample, "articular_velocity_valid", False):
+            return
+
+        for axis in range(6):
+            vel = sample.articular_velocity[axis]
             acc = (vel - previous_sample.articular_velocity[axis]) / dt
             sample.articular_acceleration[axis] = acc
+        sample.articular_acceleration_valid = True
+
+        if not getattr(previous_sample, "articular_acceleration_valid", False):
+            return
+
+        for axis in range(6):
+            acc = sample.articular_acceleration[axis]
             sample.articular_jerk[axis] = (acc - previous_sample.articular_acceleration[axis]) / dt
+        sample.articular_jerk_valid = True
 
     def _set_primary_dynamic_error(self, sample: TrajectorySample) -> None:
         if sample.error_code != TrajectorySampleErrorCode.NONE:
@@ -728,7 +831,7 @@ class TrajectoryBuilder:
         eps = 1e-6
         for axis in range(6):
             vel = abs(float(sample.articular_velocity[axis]))
-            if vel > float(speed_limits_deg_s[axis]) + eps:
+            if sample.articular_velocity_valid and vel > float(speed_limits_deg_s[axis]) + eps:
                 sample.dynamic_violations.append(
                     TrajectoryDynamicViolation(
                         TrajectoryDynamicViolationKind.SPEED,
@@ -741,7 +844,7 @@ class TrajectoryBuilder:
 
             acc = abs(float(sample.articular_acceleration[axis]))
             accel_limit = float(accel_limits_deg_s2[axis])
-            if accel_limit > self._EPS and acc > accel_limit + eps:
+            if sample.articular_acceleration_valid and accel_limit > self._EPS and acc > accel_limit + eps:
                 sample.dynamic_violations.append(
                     TrajectoryDynamicViolation(
                         TrajectoryDynamicViolationKind.ACCELERATION,
@@ -752,20 +855,21 @@ class TrajectoryBuilder:
                     )
                 )
 
-            jerk_limit = float(jerk_limits_deg_s3[axis])
-            if jerk_limit <= self._EPS:
-                continue
-            jerk = abs(float(sample.articular_jerk[axis]))
-            if jerk > jerk_limit + eps:
-                sample.dynamic_violations.append(
-                    TrajectoryDynamicViolation(
-                        TrajectoryDynamicViolationKind.JERK,
-                        axis,
-                        jerk,
-                        jerk_limit,
-                        TrajectoryDynamicViolationSeverity.ERROR,
+            if self.jerk_check_enabled:
+                jerk_limit = float(jerk_limits_deg_s3[axis])
+                if jerk_limit <= self._EPS:
+                    continue
+                jerk = abs(float(sample.articular_jerk[axis]))
+                if sample.articular_jerk_valid and jerk > jerk_limit + eps:
+                    sample.dynamic_violations.append(
+                        TrajectoryDynamicViolation(
+                            TrajectoryDynamicViolationKind.JERK,
+                            axis,
+                            jerk,
+                            jerk_limit,
+                            TrajectoryDynamicViolationSeverity.ERROR,
+                        )
                     )
-                )
 
         self._set_primary_dynamic_error(sample)
 
@@ -808,8 +912,8 @@ class TrajectoryBuilder:
             if delta_q <= allowed_delta:
                 continue
 
-            vel = abs(float(sample.articular_velocity[axis]))
-            acc = abs(float(sample.articular_acceleration[axis]))
+            vel = abs(float(sample.articular_velocity[axis])) if sample.articular_velocity_valid else 0.0
+            acc = abs(float(sample.articular_acceleration[axis])) if sample.articular_acceleration_valid else 0.0
 
             # Second gate: dynamics consistent with a near-instant jump.
             speed_threshold = max(
@@ -880,6 +984,7 @@ class TrajectoryBuilder:
             dt = sample.time - previous_sample.time
             if dt <= self._EPS:
                 dt = self.sample_dt_s
+        TrajectoryBuilder._update_cartesian_dynamics(sample, previous_sample, dt)
         self._update_articular_dynamics(sample, previous_sample, dt)
         speed_limits, accel_limits, jerk_limits = self._get_axis_dynamic_limits()
         self._apply_config_jump_detection_if_needed(sample, previous_sample, speed_limits, accel_limits)
@@ -1132,7 +1237,12 @@ class TrajectoryBuilder:
         coeffs = self._build_bezier_coefficients(p0, p3, t_out, t_in)
         arc_length_mm = TrajectoryBuilder._estimate_arc_length(coeffs)
         speed_mmps = TrajectoryBuilder.linear_speed_mps_to_mmps(segment.to_keypoint.linear_speed_mps)
-        intervals = TrajectoryBuilder._resolve_num_intervals(arc_length_mm, speed_mmps, self.sample_dt_s)
+        intervals = TrajectoryBuilder._resolve_num_intervals(
+            arc_length_mm,
+            speed_mmps,
+            self.sample_dt_s,
+            self._time_profile_peak_speed_scale(),
+        )
 
         result = SegmentResult()
         result.status = TrajectoryComputationStatus.SUCCESS
@@ -1153,10 +1263,9 @@ class TrajectoryBuilder:
         for i in range(1, intervals + 1):
             time_s = start_time_s + i * self.sample_dt_s
             linear_t = i / intervals
-            # smooth_t3, smooth_t5 = math_utils.pair_cubic_quintic_transition(linear_t)
-            smooth_t3 = math_utils.cubic_transition(linear_t) if self.smooth_time_enabled else linear_t
+            smooth_t = math_utils.quintic_transition(linear_t) if self.smooth_time_enabled else linear_t
             smooth_t5 = math_utils.quintic_transition(linear_t)
-            xyz = coeffs.point(smooth_t3)
+            xyz = coeffs.point(smooth_t)
             orientation_abc = [
                 TrajectoryBuilder._wrap_angle_deg(from_pose[3] + dA * smooth_t5),
                 TrajectoryBuilder._wrap_angle_deg(from_pose[4] + dB * smooth_t5),
@@ -1214,7 +1323,7 @@ class TrajectoryBuilder:
         active_segment_idx = 0
         for step in range(1, intervals + 1):
             linear_u = step / intervals
-            smooth_u = math_utils.cubic_transition(linear_u) if self.smooth_time_enabled else linear_u
+            smooth_u = math_utils.quintic_transition(linear_u) if self.smooth_time_enabled else linear_u
             distance_mm = float(smooth_u) * total_length_mm
 
             while (
@@ -1249,7 +1358,7 @@ class TrajectoryBuilder:
         if total_length_mm <= self._EPS or speed_mmps <= self._EPS:
             intervals = 1
         else:
-            theoretical_duration_s = total_length_mm / speed_mmps
+            theoretical_duration_s = self._time_profile_peak_speed_scale() * total_length_mm / speed_mmps
             intervals = int(math.ceil(theoretical_duration_s / self.sample_dt_s))
             intervals = min(max(1, intervals), max_intervals)
 
@@ -1474,50 +1583,15 @@ class TrajectoryBuilder:
             sample.joints = TrajectoryBuilder._normalize_joints_6(solution.joints)
 
         if previous_sample is None:
-            sample.cartesian_velocity = [0.0] * 6
-            sample.cartesian_acceleration = [0.0] * 6
-            sample.cartesian_jerk = [0.0] * 6
-            sample.articular_velocity = [0.0] * 6
-            sample.articular_acceleration = [0.0] * 6
-            sample.articular_jerk = [0.0] * 6
-            sample.velocity = 0.0
-            sample.acceleration = 0.0
+            TrajectoryBuilder._reset_cartesian_dynamics(sample)
+            TrajectoryBuilder._reset_articular_dynamics(sample)
             return sample
 
         dt = sample.time - previous_sample.time
         if dt <= self._EPS:
             dt = self.sample_dt_s
 
-        dA = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[3], sample.pose[3])
-        dB = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[4], sample.pose[4])
-        dC = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[5], sample.pose[5])
-
-        sample.cartesian_velocity[0] = (sample.pose[0] - previous_sample.pose[0]) / dt
-        sample.cartesian_velocity[1] = (sample.pose[1] - previous_sample.pose[1]) / dt
-        sample.cartesian_velocity[2] = (sample.pose[2] - previous_sample.pose[2]) / dt
-        sample.cartesian_velocity[3] = dA / dt
-        sample.cartesian_velocity[4] = dB / dt
-        sample.cartesian_velocity[5] = dC / dt
-
-        for axis in range(6):
-            sample.cartesian_acceleration[axis] = (
-                sample.cartesian_velocity[axis] - previous_sample.cartesian_velocity[axis]
-            ) / dt
-            sample.cartesian_jerk[axis] = (
-                sample.cartesian_acceleration[axis] - previous_sample.cartesian_acceleration[axis]
-            ) / dt
-
-        sample.velocity = math_utils.norm3(
-            sample.cartesian_velocity[0],
-            sample.cartesian_velocity[1],
-            sample.cartesian_velocity[2],
-        )
-        sample.acceleration = math_utils.norm3(
-            sample.cartesian_acceleration[0],
-            sample.cartesian_acceleration[1],
-            sample.cartesian_acceleration[2],
-        )
-
+        TrajectoryBuilder._update_cartesian_dynamics(sample, previous_sample, dt)
         self._update_articular_dynamics(sample, previous_sample, dt)
         self._apply_config_jump_detection_if_needed(
             sample,
@@ -1585,49 +1659,15 @@ class TrajectoryBuilder:
 
         # C) Compute cartesian/articular dynamics from previous sample.
         if previous_sample is None:
-            sample.cartesian_velocity = [0.0] * 6
-            sample.cartesian_acceleration = [0.0] * 6
-            sample.cartesian_jerk = [0.0] * 6
-            sample.articular_velocity = [0.0] * 6
-            sample.articular_acceleration = [0.0] * 6
-            sample.articular_jerk = [0.0] * 6
-            sample.velocity = 0.0
-            sample.acceleration = 0.0
+            TrajectoryBuilder._reset_cartesian_dynamics(sample)
+            TrajectoryBuilder._reset_articular_dynamics(sample)
             return sample
 
         dt = sample.time - previous_sample.time
         if dt <= self._EPS:
             dt = self.sample_dt_s
 
-        dA = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[3], sample.pose[3])
-        dB = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[4], sample.pose[4])
-        dC = TrajectoryBuilder._shortest_angle_delta_deg(previous_sample.pose[5], sample.pose[5])
-
-        sample.cartesian_velocity[0] = (sample.pose[0] - previous_sample.pose[0]) / dt
-        sample.cartesian_velocity[1] = (sample.pose[1] - previous_sample.pose[1]) / dt
-        sample.cartesian_velocity[2] = (sample.pose[2] - previous_sample.pose[2]) / dt
-        sample.cartesian_velocity[3] = dA / dt
-        sample.cartesian_velocity[4] = dB / dt
-        sample.cartesian_velocity[5] = dC / dt
-
-        for axis in range(6):
-            sample.cartesian_acceleration[axis] = (
-                sample.cartesian_velocity[axis] - previous_sample.cartesian_velocity[axis]
-            ) / dt
-            sample.cartesian_jerk[axis] = (
-                sample.cartesian_acceleration[axis] - previous_sample.cartesian_acceleration[axis]
-            ) / dt
-
-        sample.velocity = math_utils.norm3(
-            sample.cartesian_velocity[0],
-            sample.cartesian_velocity[1],
-            sample.cartesian_velocity[2],
-        )
-        sample.acceleration = math_utils.norm3(
-            sample.cartesian_acceleration[0],
-            sample.cartesian_acceleration[1],
-            sample.cartesian_acceleration[2],
-        )
+        TrajectoryBuilder._update_cartesian_dynamics(sample, previous_sample, dt)
         self._update_articular_dynamics(sample, previous_sample, dt)
         self._apply_config_jump_detection_if_needed(
             sample,

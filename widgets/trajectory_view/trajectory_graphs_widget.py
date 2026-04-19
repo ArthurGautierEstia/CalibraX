@@ -21,7 +21,7 @@ class TrajectoryGraphsWidget(QWidget):
         self.config_timeline = TrajectoryConfigTimelineWidget()
         self.config_timeline.setMinimumHeight(230)
 
-        self.btn_popout = QPushButton("Detacher les graphes")
+        self.btn_popout = QPushButton("Détacher les graphes")
         self.display_mode_combo = QComboBox()
         self._detachable_panels = QWidget(self)
 
@@ -118,7 +118,7 @@ class TrajectoryGraphsWidget(QWidget):
             else:
                 self._dock_layout.addWidget(self._detachable_panels)
 
-        self.btn_popout.setText("Detacher les graphes")
+        self.btn_popout.setText("Détacher les graphes")
         self.articular_panel.set_in_page_mode(True)
         self.cartesian_panel.set_in_page_mode(True)
 

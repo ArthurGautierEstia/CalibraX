@@ -86,9 +86,15 @@ class TrajectorySample:
         self.cartesian_velocity = [0.0] * 6
         self.cartesian_acceleration = [0.0] * 6
         self.cartesian_jerk = [0.0] * 6
+        self.cartesian_velocity_valid = False
+        self.cartesian_acceleration_valid = False
+        self.cartesian_jerk_valid = False
         self.articular_velocity = [0.0] * 6
         self.articular_acceleration = [0.0] * 6
         self.articular_jerk = [0.0] * 6
+        self.articular_velocity_valid = False
+        self.articular_acceleration_valid = False
+        self.articular_jerk_valid = False
         self.dynamic_violations: list[TrajectoryDynamicViolation] = []
         self.error_code = TrajectorySampleErrorCode.NONE
         self.error_axis: int | None = None

@@ -63,6 +63,7 @@ class TrajectoryController(QObject):
             self.workspace_model,
             smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
             bezier_degree=self.config_widget.get_bezier_degree(),
+            jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
         )
         self.current_trajectory = TrajectoryResult()
         self.current_samples: list[TrajectorySample] = []
@@ -96,6 +97,7 @@ class TrajectoryController(QObject):
         self.config_widget.trajectoryPreviewFinished.connect(self._on_trajectory_preview_finished)
         self.config_widget.keypoints_changed.connect(self._on_keypoints_changed)
         self.config_widget.timeSmoothingChanged.connect(self._on_time_smoothing_changed)
+        self.config_widget.jerkCheckChanged.connect(self._on_jerk_check_changed)
         self.config_widget.bezierDegreeChanged.connect(self._on_bezier_degree_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_cartesian_display_frame_changed)
         self.actions_widget.compute_requested.connect(self._on_compute_requested)
@@ -149,6 +151,12 @@ class TrajectoryController(QObject):
 
     def _on_time_smoothing_changed(self, _enabled: bool) -> None:
         self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
+        if self._is_keypoint_preview_active:
+            return
+        self._recompute_trajectory()
+
+    def _on_jerk_check_changed(self, _enabled: bool) -> None:
+        self.trajectory_builder.set_jerk_check_enabled(self.config_widget.is_jerk_check_enabled())
         if self._is_keypoint_preview_active:
             return
         self._recompute_trajectory()
@@ -288,6 +296,12 @@ class TrajectoryController(QObject):
             "dddc",
             "dynamic_errors",
             "dynamic_warnings",
+            "articular_velocity_valid",
+            "articular_acceleration_valid",
+            "articular_jerk_valid",
+            "cartesian_velocity_valid",
+            "cartesian_acceleration_valid",
+            "cartesian_jerk_valid",
         ]
 
     @staticmethod
@@ -373,6 +387,16 @@ class TrajectoryController(QObject):
                     row.extend(self._fmt_csv(v) for v in cartesian_jerk[:6])
                     row.append(self._format_dynamic_violations(sample, TrajectoryDynamicViolationSeverity.ERROR))
                     row.append(self._format_dynamic_violations(sample, TrajectoryDynamicViolationSeverity.WARNING))
+                    row.extend(
+                        [
+                            str(bool(sample.articular_velocity_valid)).upper(),
+                            str(bool(sample.articular_acceleration_valid)).upper(),
+                            str(bool(sample.articular_jerk_valid)).upper(),
+                            str(bool(sample.cartesian_velocity_valid)).upper(),
+                            str(bool(sample.cartesian_acceleration_valid)).upper(),
+                            str(bool(sample.cartesian_jerk_valid)).upper(),
+                        ]
+                    )
                     writer.writerow(row)
         except Exception as exc:
             QMessageBox.warning(
@@ -384,6 +408,7 @@ class TrajectoryController(QObject):
     def _recompute_trajectory(self, keypoints_override: list[TrajectoryKeypoint] | None = None) -> None:
         self._stop_playback()
         self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
+        self.trajectory_builder.set_jerk_check_enabled(self.config_widget.is_jerk_check_enabled())
         self.trajectory_builder.set_bezier_degree(self.config_widget.get_bezier_degree())
         if keypoints_override is None:
             keypoints = self.config_widget.get_keypoints()

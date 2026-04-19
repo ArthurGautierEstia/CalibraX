@@ -225,7 +225,7 @@ class RobotConfigurationController(QObject):
             if show_errors:
                 show_error_popup(
                     "Erreur d'importation",
-                    "Le fichier de configuration n'est pas au format adapte. Veuillez verifier le contenu.",
+                    "Le fichier de configuration n'est pas au format adapte. Veuillez vérifier le contenu.",
                 )
             return False
 

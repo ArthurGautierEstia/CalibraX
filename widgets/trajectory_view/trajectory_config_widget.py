@@ -61,6 +61,7 @@ class TrajectoryConfigWidget(QWidget):
     timeSmoothingChanged = pyqtSignal(bool)
     bezierDegreeChanged = pyqtSignal(str)
     cartesianDisplayFrameChanged = pyqtSignal(str)
+    jerkCheckChanged = pyqtSignal(bool)
 
     def __init__(
         self,
@@ -85,12 +86,18 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_export = QPushButton("Exporter")
         self.btn_delete_all = QPushButton("Tout supprimer")
         self.cb_smooth_time = QCheckBox("Lisser le temps")
+        self.cb_check_jerk = QCheckBox("Vérif. jerk")
         self.bezier_degree_combo = QComboBox()
         self.cartesian_display_frame_combo = QComboBox()
         self.cb_smooth_time.setChecked(True)
         self.cb_smooth_time.setToolTip(
-            "Active : transition cubique. "
+            "Active : transition quintique. "
             "Désactive : transition linéaire"
+        )
+        self.cb_check_jerk.setChecked(True)
+        self.cb_check_jerk.setToolTip(
+            "Active : signale les dépassements de jerk. "
+            "Désactivé : conserve les controles vitesse et accéleration."
         )
 
         self._keypoints: list[TrajectoryKeypoint] = []
@@ -115,10 +122,11 @@ class TrajectoryConfigWidget(QWidget):
 
         options_row = QHBoxLayout()
         options_row.addWidget(self.cb_smooth_time)
+        options_row.addWidget(self.cb_check_jerk)
         options_row.addSpacing(12)
         options_row.addWidget(QLabel("Interpolation"))
-        self.bezier_degree_combo.addItem("Bezier 5", TrajectoryBezierDegree.BEZIER5.value)
-        self.bezier_degree_combo.addItem("Bezier 3", TrajectoryBezierDegree.BEZIER3.value)
+        self.bezier_degree_combo.addItem("Bézier 5", TrajectoryBezierDegree.BEZIER5.value)
+        self.bezier_degree_combo.addItem("Bézier 3", TrajectoryBezierDegree.BEZIER3.value)
         options_row.addWidget(self.bezier_degree_combo)
         options_row.addSpacing(12)
         options_row.addWidget(QLabel("Repère cartésien"))
@@ -170,6 +178,7 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_import.clicked.connect(self._on_import_clicked)
         self.btn_export.clicked.connect(self._on_export_clicked)
         self.cb_smooth_time.toggled.connect(self._on_time_smoothing_toggled)
+        self.cb_check_jerk.toggled.connect(self._on_jerk_check_toggled)
         self.bezier_degree_combo.currentIndexChanged.connect(self._on_bezier_degree_changed)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
@@ -189,11 +198,15 @@ class TrajectoryConfigWidget(QWidget):
         self._is_editing_active = active
         self.keypoints_table.setEnabled(not active)
         self.cb_smooth_time.setEnabled(not active)
+        self.cb_check_jerk.setEnabled(not active)
         self.bezier_degree_combo.setEnabled(not active)
         self._update_buttons_state()
 
     def _on_time_smoothing_toggled(self, checked: bool) -> None:
         self.timeSmoothingChanged.emit(bool(checked))
+
+    def _on_jerk_check_toggled(self, checked: bool) -> None:
+        self.jerkCheckChanged.emit(bool(checked))
 
     def _on_bezier_degree_changed(self, _index: int) -> None:
         self.bezierDegreeChanged.emit(self.get_bezier_degree().value)
@@ -203,6 +216,9 @@ class TrajectoryConfigWidget(QWidget):
 
     def is_time_smoothing_enabled(self) -> bool:
         return self.cb_smooth_time.isChecked()
+
+    def is_jerk_check_enabled(self) -> bool:
+        return self.cb_check_jerk.isChecked()
 
     def get_bezier_degree(self) -> TrajectoryBezierDegree:
         return TrajectoryBezierDegree.from_value(self.bezier_degree_combo.currentData())
@@ -238,6 +254,13 @@ class TrajectoryConfigWidget(QWidget):
         self.cb_smooth_time.blockSignals(False)
         if emit_signal:
             self.timeSmoothingChanged.emit(self.cb_smooth_time.isChecked())
+
+    def set_jerk_check_enabled(self, enabled: bool, emit_signal: bool = False) -> None:
+        self.cb_check_jerk.blockSignals(True)
+        self.cb_check_jerk.setChecked(bool(enabled))
+        self.cb_check_jerk.blockSignals(False)
+        if emit_signal:
+            self.jerkCheckChanged.emit(self.cb_check_jerk.isChecked())
 
     def _update_buttons_state(self) -> None:
         if self._is_editing_active:
@@ -522,6 +545,7 @@ class TrajectoryConfigWidget(QWidget):
 
             raw_keypoints = payload.get("keypoints")
             smooth_time_enabled = bool(payload.get("smooth_time_enabled", True))
+            jerk_check_enabled = bool(payload.get("jerk_check_enabled", True))
             bezier_degree = TrajectoryBezierDegree.from_value(payload.get("bezier_degree", TrajectoryBezierDegree.BEZIER5.value))
             if not isinstance(raw_keypoints, list):
                 raise ValueError("Format invalide: liste de keypoints introuvable.")
@@ -532,6 +556,7 @@ class TrajectoryConfigWidget(QWidget):
 
         self._keypoints = parsed_keypoints
         self.set_time_smoothing_enabled(smooth_time_enabled, emit_signal=False)
+        self.set_jerk_check_enabled(jerk_check_enabled, emit_signal=False)
         self.set_bezier_degree(bezier_degree, emit_signal=False)
         self._refresh_table()
         self.keypoints_table.clearSelection()
@@ -554,6 +579,7 @@ class TrajectoryConfigWidget(QWidget):
 
         payload = {
             "smooth_time_enabled": self.is_time_smoothing_enabled(),
+            "jerk_check_enabled": self.is_jerk_check_enabled(),
             "bezier_degree": self.get_bezier_degree().value,
             "keypoints": [keypoint.to_dict() for keypoint in self._keypoints],
         }

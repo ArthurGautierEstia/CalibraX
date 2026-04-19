@@ -147,9 +147,9 @@ class RobotConfigurationWidget(QWidget):
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_dh_tab(), "DH Table")
-        self.tabs.addTab(self._build_axis_tab(), "Parametrage des axes")
+        self.tabs.addTab(self._build_axis_tab(), "Paramétrage des axes")
         self.tabs.addTab(self._build_axis_colliders_tab(), "Colliders axes")
-        self.tabs.addTab(self._build_positions_tab(), "Parametrage des positions")
+        self.tabs.addTab(self._build_positions_tab(), "Paramétrage des positions")
         self.tabs.addTab(self._build_cad_tab(), "CAO")
         top_layout.addWidget(self.tabs)
 
