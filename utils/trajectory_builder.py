@@ -13,6 +13,9 @@ from models.trajectory_keypoint import (
 )
 from models.trajectory_options import TrajectoryBezierDegree
 from models.trajectory_result import (
+    TrajectoryDynamicViolation,
+    TrajectoryDynamicViolationKind,
+    TrajectoryDynamicViolationSeverity,
     SegmentResult,
     TrajectoryBuilderBehavior,
     TrajectoryComputationStatus,
@@ -124,8 +127,10 @@ class TrajectoryBuilder:
             return TrajectoryComputationStatus.POINT_UNREACHABLE
         if error_code == TrajectorySampleErrorCode.CONFIGURATION_JUMP:
             return TrajectoryComputationStatus.CONFIGURATION_JUMP
-        if error_code == TrajectorySampleErrorCode.OVER_DYNAMIC_LIMIT:
-            return TrajectoryComputationStatus.OVER_DYNAMIC_LIMIT
+        if error_code == TrajectorySampleErrorCode.SPEED_LIMIT_EXCEEDED:
+            return TrajectoryComputationStatus.SPEED_LIMIT_EXCEEDED
+        if error_code == TrajectorySampleErrorCode.JERK_LIMIT_EXCEEDED:
+            return TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED
         if error_code == TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION:
             return TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
         return TrajectoryComputationStatus.SUCCESS
@@ -661,6 +666,7 @@ class TrajectoryBuilder:
     ) -> None:
         sample.articular_velocity = [0.0] * 6
         sample.articular_acceleration = [0.0] * 6
+        sample.articular_jerk = [0.0] * 6
         if previous_sample is None:
             return
         if not sample.reachable or not previous_sample.reachable:
@@ -669,7 +675,40 @@ class TrajectoryBuilder:
         for axis in range(6):
             vel = (sample.joints[axis] - previous_sample.joints[axis]) / dt
             sample.articular_velocity[axis] = vel
-            sample.articular_acceleration[axis] = (vel - previous_sample.articular_velocity[axis]) / dt
+            acc = (vel - previous_sample.articular_velocity[axis]) / dt
+            sample.articular_acceleration[axis] = acc
+            sample.articular_jerk[axis] = (acc - previous_sample.articular_acceleration[axis]) / dt
+
+    def _set_primary_dynamic_error(self, sample: TrajectorySample) -> None:
+        if sample.error_code != TrajectorySampleErrorCode.NONE:
+            return
+
+        speed_errors = [
+            violation
+            for violation in sample.dynamic_violations
+            if (
+                violation.severity == TrajectoryDynamicViolationSeverity.ERROR
+                and violation.kind == TrajectoryDynamicViolationKind.SPEED
+            )
+        ]
+        if speed_errors:
+            first = min(speed_errors, key=lambda violation: violation.axis)
+            sample.error_code = TrajectorySampleErrorCode.SPEED_LIMIT_EXCEEDED
+            sample.error_axis = first.axis
+            return
+
+        jerk_errors = [
+            violation
+            for violation in sample.dynamic_violations
+            if (
+                violation.severity == TrajectoryDynamicViolationSeverity.ERROR
+                and violation.kind == TrajectoryDynamicViolationKind.JERK
+            )
+        ]
+        if jerk_errors:
+            first = min(jerk_errors, key=lambda violation: violation.axis)
+            sample.error_code = TrajectorySampleErrorCode.JERK_LIMIT_EXCEEDED
+            sample.error_axis = first.axis
 
     def _apply_dynamic_limits_if_needed(
         self,
@@ -686,34 +725,49 @@ class TrajectoryBuilder:
         if not sample.reachable or not previous_sample.reachable:
             return
 
-        dt = sample.time - previous_sample.time
-        if dt <= self._EPS:
-            dt = self.sample_dt_s
-
         eps = 1e-6
         for axis in range(6):
             vel = abs(float(sample.articular_velocity[axis]))
             if vel > float(speed_limits_deg_s[axis]) + eps:
-                sample.error_code = TrajectorySampleErrorCode.OVER_DYNAMIC_LIMIT
-                sample.error_axis = axis
-                return
+                sample.dynamic_violations.append(
+                    TrajectoryDynamicViolation(
+                        TrajectoryDynamicViolationKind.SPEED,
+                        axis,
+                        vel,
+                        float(speed_limits_deg_s[axis]),
+                        TrajectoryDynamicViolationSeverity.ERROR,
+                    )
+                )
 
             acc = abs(float(sample.articular_acceleration[axis]))
-            if acc > float(accel_limits_deg_s2[axis]) + eps:
-                sample.error_code = TrajectorySampleErrorCode.OVER_DYNAMIC_LIMIT
-                sample.error_axis = axis
-                return
+            accel_limit = float(accel_limits_deg_s2[axis])
+            if accel_limit > self._EPS and acc > accel_limit + eps:
+                sample.dynamic_violations.append(
+                    TrajectoryDynamicViolation(
+                        TrajectoryDynamicViolationKind.ACCELERATION,
+                        axis,
+                        acc,
+                        accel_limit,
+                        TrajectoryDynamicViolationSeverity.WARNING,
+                    )
+                )
 
             jerk_limit = float(jerk_limits_deg_s3[axis])
             if jerk_limit <= self._EPS:
                 continue
-            jerk = abs(
-                (float(sample.articular_acceleration[axis]) - float(previous_sample.articular_acceleration[axis])) / dt
-            )
+            jerk = abs(float(sample.articular_jerk[axis]))
             if jerk > jerk_limit + eps:
-                sample.error_code = TrajectorySampleErrorCode.OVER_DYNAMIC_LIMIT
-                sample.error_axis = axis
-                return
+                sample.dynamic_violations.append(
+                    TrajectoryDynamicViolation(
+                        TrajectoryDynamicViolationKind.JERK,
+                        axis,
+                        jerk,
+                        jerk_limit,
+                        TrajectoryDynamicViolationSeverity.ERROR,
+                    )
+                )
+
+        self._set_primary_dynamic_error(sample)
 
     def _apply_config_jump_detection_if_needed(
         self,
@@ -819,6 +873,7 @@ class TrajectoryBuilder:
         sample.reachable = True
         sample.error_code = TrajectorySampleErrorCode.NONE
         sample.error_axis = None
+        sample.dynamic_violations = []
 
         dt = self.sample_dt_s
         if previous_sample is not None:
@@ -826,8 +881,9 @@ class TrajectoryBuilder:
             if dt <= self._EPS:
                 dt = self.sample_dt_s
         self._update_articular_dynamics(sample, previous_sample, dt)
-        # speed_limits, accel_limits, jerk_limits = self._get_axis_dynamic_limits()
-        # self._apply_dynamic_limits_if_needed(sample, previous_sample, speed_limits, accel_limits, jerk_limits)
+        speed_limits, accel_limits, jerk_limits = self._get_axis_dynamic_limits()
+        self._apply_config_jump_detection_if_needed(sample, previous_sample, speed_limits, accel_limits)
+        self._apply_dynamic_limits_if_needed(sample, previous_sample, speed_limits, accel_limits, jerk_limits)
         return True
 
     def compute_trajectory(
@@ -977,7 +1033,7 @@ class TrajectoryBuilder:
         # 4) Build synchronized timing from speed limits and requested PTP speed percent.
         required_duration_s, effective_speed_limits = self._resolve_PTP_duration(segment, joint_deltas_deg)
         if required_duration_s is None or effective_speed_limits is None:
-            result.status = TrajectoryComputationStatus.OVER_DYNAMIC_LIMIT
+            result.status = TrajectoryComputationStatus.SPEED_LIMIT_EXCEEDED
             result.last_time = float(start_time_s)
             return result
 
@@ -1420,8 +1476,10 @@ class TrajectoryBuilder:
         if previous_sample is None:
             sample.cartesian_velocity = [0.0] * 6
             sample.cartesian_acceleration = [0.0] * 6
+            sample.cartesian_jerk = [0.0] * 6
             sample.articular_velocity = [0.0] * 6
             sample.articular_acceleration = [0.0] * 6
+            sample.articular_jerk = [0.0] * 6
             sample.velocity = 0.0
             sample.acceleration = 0.0
             return sample
@@ -1445,6 +1503,9 @@ class TrajectoryBuilder:
             sample.cartesian_acceleration[axis] = (
                 sample.cartesian_velocity[axis] - previous_sample.cartesian_velocity[axis]
             ) / dt
+            sample.cartesian_jerk[axis] = (
+                sample.cartesian_acceleration[axis] - previous_sample.cartesian_acceleration[axis]
+            ) / dt
 
         sample.velocity = math_utils.norm3(
             sample.cartesian_velocity[0],
@@ -1464,13 +1525,13 @@ class TrajectoryBuilder:
             speed_limits_deg_s,
             accel_limits_deg_s2,
         )
-        # self._apply_dynamic_limits_if_needed(
-        #     sample,
-        #     previous_sample,
-        #     speed_limits_deg_s,
-        #     accel_limits_deg_s2,
-        #     jerk_limits_deg_s3,
-        # )
+        self._apply_dynamic_limits_if_needed(
+            sample,
+            previous_sample,
+            speed_limits_deg_s,
+            accel_limits_deg_s2,
+            jerk_limits_deg_s3,
+        )
         return sample
 
     def _build_sample_from_ptp_joints(
@@ -1526,8 +1587,10 @@ class TrajectoryBuilder:
         if previous_sample is None:
             sample.cartesian_velocity = [0.0] * 6
             sample.cartesian_acceleration = [0.0] * 6
+            sample.cartesian_jerk = [0.0] * 6
             sample.articular_velocity = [0.0] * 6
             sample.articular_acceleration = [0.0] * 6
+            sample.articular_jerk = [0.0] * 6
             sample.velocity = 0.0
             sample.acceleration = 0.0
             return sample
@@ -1551,6 +1614,9 @@ class TrajectoryBuilder:
             sample.cartesian_acceleration[axis] = (
                 sample.cartesian_velocity[axis] - previous_sample.cartesian_velocity[axis]
             ) / dt
+            sample.cartesian_jerk[axis] = (
+                sample.cartesian_acceleration[axis] - previous_sample.cartesian_acceleration[axis]
+            ) / dt
 
         sample.velocity = math_utils.norm3(
             sample.cartesian_velocity[0],
@@ -1569,13 +1635,13 @@ class TrajectoryBuilder:
             speed_limits_deg_s,
             accel_limits_deg_s2,
         )
-        # self._apply_dynamic_limits_if_needed(
-        #     sample,
-        #     previous_sample,
-        #     speed_limits_deg_s,
-        #     accel_limits_deg_s2,
-        #     jerk_limits_deg_s3,
-        # )
+        self._apply_dynamic_limits_if_needed(
+            sample,
+            previous_sample,
+            speed_limits_deg_s,
+            accel_limits_deg_s2,
+            jerk_limits_deg_s3,
+        )
 
         return sample
 

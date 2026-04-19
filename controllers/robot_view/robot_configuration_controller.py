@@ -214,7 +214,7 @@ class RobotConfigurationController(QObject):
         config = RobotConfigurationFile.from_robot_model(self.robot_model)
         FileIOHandler.save_json(
             self.robot_configuration_widget,
-            "Exporter/Sauvegarder une configuration robot",
+            "Sauvegarder une configuration robot",
             config.to_dict(),
             configuration_dir,
         )

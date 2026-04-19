@@ -7,7 +7,8 @@ from utils.mgi import MgiConfigKey
 class TrajectoryComputationStatus(Enum):
     SUCCESS = "SUCCESS"
     POINT_UNREACHABLE = "POINT_UNREACHABLE"
-    OVER_DYNAMIC_LIMIT = "OVER_DYNAMIC_LIMIT"
+    SPEED_LIMIT_EXCEEDED = "SPEED_LIMIT_EXCEEDED"
+    JERK_LIMIT_EXCEEDED = "JERK_LIMIT_EXCEEDED"
     CONFIGURATION_JUMP = "CONFIGURATION_JUMP"
     NO_COMMON_ALLOWED_CONFIGURATION = "NO_COMMON_ALLOWED_CONFIGURATION"
     FORBIDDEN_CONFIGURATION = "FORBIDDEN_CONFIGURATION"
@@ -16,7 +17,8 @@ class TrajectoryComputationStatus(Enum):
 class TrajectorySampleErrorCode(Enum):
     NONE = "NONE"
     POINT_UNREACHABLE = "POINT_UNREACHABLE"
-    OVER_DYNAMIC_LIMIT = "OVER_DYNAMIC_LIMIT"
+    SPEED_LIMIT_EXCEEDED = "SPEED_LIMIT_EXCEEDED"
+    JERK_LIMIT_EXCEEDED = "JERK_LIMIT_EXCEEDED"
     CONFIGURATION_JUMP = "CONFIGURATION_JUMP"
     FORBIDDEN_CONFIGURATION = "FORBIDDEN_CONFIGURATION"
 
@@ -24,6 +26,33 @@ class TrajectorySampleErrorCode(Enum):
 class TrajectoryBuilderBehavior(Enum):
     CONTINUE_ON_ERROR = "CONTINUE_ON_ERROR"
     STOP_ON_ERROR = "STOP_ON_ERROR"
+
+
+class TrajectoryDynamicViolationKind(Enum):
+    SPEED = "SPEED"
+    ACCELERATION = "ACCELERATION"
+    JERK = "JERK"
+
+
+class TrajectoryDynamicViolationSeverity(Enum):
+    ERROR = "ERROR"
+    WARNING = "WARNING"
+
+
+class TrajectoryDynamicViolation:
+    def __init__(
+        self,
+        kind: TrajectoryDynamicViolationKind,
+        axis: int,
+        value: float,
+        limit: float,
+        severity: TrajectoryDynamicViolationSeverity,
+    ) -> None:
+        self.kind = kind
+        self.axis = int(axis)
+        self.value = float(value)
+        self.limit = float(limit)
+        self.severity = severity
 
 
 class TrajectorySampleMgiSolution:
@@ -56,8 +85,11 @@ class TrajectorySample:
         self.acceleration = 0.0
         self.cartesian_velocity = [0.0] * 6
         self.cartesian_acceleration = [0.0] * 6
+        self.cartesian_jerk = [0.0] * 6
         self.articular_velocity = [0.0] * 6
         self.articular_acceleration = [0.0] * 6
+        self.articular_jerk = [0.0] * 6
+        self.dynamic_violations: list[TrajectoryDynamicViolation] = []
         self.error_code = TrajectorySampleErrorCode.NONE
         self.error_axis: int | None = None
         self.mgi_solutions: dict[MgiConfigKey, TrajectorySampleMgiSolution] = {}

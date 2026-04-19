@@ -37,6 +37,7 @@ class TrajectoryActionsWidget(QWidget):
         self.time_slider = QSlider(Qt.Orientation.Horizontal)
         self.time_label = QLabel("Temps : 0.00 s")
         self.issues_label = QLabel("")
+        self.warnings_label = QLabel("")
 
         self._setup_ui()
         self._setup_connections()
@@ -70,6 +71,11 @@ class TrajectoryActionsWidget(QWidget):
         self.issues_label.setStyleSheet("color: #d9534f; font-weight: bold;")
         self.issues_label.hide()
         layout.addWidget(self.issues_label)
+
+        self.warnings_label.setWordWrap(True)
+        self.warnings_label.setStyleSheet("color: #f0ad4e; font-weight: bold;")
+        self.warnings_label.hide()
+        layout.addWidget(self.warnings_label)
 
     def _setup_connections(self) -> None:
         self.btn_compute.clicked.connect(self.compute_requested.emit)
@@ -117,6 +123,14 @@ class TrajectoryActionsWidget(QWidget):
             return
         self.issues_label.setText("Problemes detectes: " + " | ".join(messages))
         self.issues_label.show()
+
+    def set_warning_messages(self, messages: list[str]) -> None:
+        if not messages:
+            self.warnings_label.setText("")
+            self.warnings_label.hide()
+            return
+        self.warnings_label.setText("Warnings: " + " | ".join(messages))
+        self.warnings_label.show()
 
     def set_editing_locked(self, locked: bool) -> None:
         enabled = not locked

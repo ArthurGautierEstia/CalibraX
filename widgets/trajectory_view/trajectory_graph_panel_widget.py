@@ -19,10 +19,11 @@ class TrajectoryGraphPanelWidget(QWidget):
     POSITION_LBL = "Position"
     VELOCITY_LBL = "Vitesse"
     ACCELERATION_LBL = "Acceleration"
+    JERK_LBL = "Jerk"
     TIME_LBL = "Temps"
     PLOT_MIN_HEIGHT_PX = 150
-    PANEL_MIN_HEIGHT_PX = 520
-    PANEL_IN_PAGE_HEIGHT_PX = 620
+    PANEL_MIN_HEIGHT_PX = 680
+    PANEL_IN_PAGE_HEIGHT_PX = 780
 
     AXIS_COLORS = ["#ff3b30", "#34c759", "#007aff", "#ff00ff", "#ffd60a", "#00ffff"]
     AXIS_LABELS = {
@@ -49,18 +50,20 @@ class TrajectoryGraphPanelWidget(QWidget):
         self.position_plot = pg.PlotWidget()
         self.velocity_plot = pg.PlotWidget()
         self.acceleration_plot = pg.PlotWidget()
+        self.jerk_plot = pg.PlotWidget()
 
-        self._plots = [self.position_plot, self.velocity_plot, self.acceleration_plot]
+        self._plots = [self.position_plot, self.velocity_plot, self.acceleration_plot, self.jerk_plot]
         self._plot_items: List[List[pg.PlotDataItem]] = []
         self._axis_pens = [pg.mkPen(color=color, width=2) for color in self.AXIS_COLORS]
         self._plot_data: List[List[List[float]]] = [
             [[] for _ in range(6)],
             [[] for _ in range(6)],
             [[] for _ in range(6)],
+            [[] for _ in range(6)],
         ]
-        self._time_data: List[List[float]] = [[], [], []]
-        self._key_time_lines: List[List[pg.InfiniteLine]] = [[], [], []]
-        self._time_indicator_lines: List[Optional[pg.InfiniteLine]] = [None, None, None]
+        self._time_data: List[List[float]] = [[], [], [], []]
+        self._key_time_lines: List[List[pg.InfiniteLine]] = [[], [], [], []]
+        self._time_indicator_lines: List[Optional[pg.InfiniteLine]] = [None, None, None, None]
         self._display_mode = GraphDisplayMode.LINE
 
         self._setup_ui()
@@ -98,12 +101,15 @@ class TrajectoryGraphPanelWidget(QWidget):
         self.position_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
         self.velocity_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
         self.acceleration_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
+        self.jerk_plot.setMinimumHeight(self.PLOT_MIN_HEIGHT_PX)
         layout.addWidget(self.position_plot)
         layout.addWidget(self.velocity_plot)
         layout.addWidget(self.acceleration_plot)
+        layout.addWidget(self.jerk_plot)
         layout.setStretch(2, 1)
         layout.setStretch(3, 1)
         layout.setStretch(4, 1)
+        layout.setStretch(5, 1)
 
     def set_in_page_mode(self, in_page: bool) -> None:
         self.setMinimumHeight(self.PANEL_MIN_HEIGHT_PX)
@@ -113,7 +119,7 @@ class TrajectoryGraphPanelWidget(QWidget):
         self.setMaximumHeight(QWIDGETSIZE_MAX)
 
     def _setup_plots(self) -> None:
-        titles = [self.POSITION_LBL, self.VELOCITY_LBL, self.ACCELERATION_LBL]
+        titles = [self.POSITION_LBL, self.VELOCITY_LBL, self.ACCELERATION_LBL, self.JERK_LBL]
         for plot, title in zip(self._plots, titles):
             plot.showGrid(x=True, y=True, alpha=0.3)
             plot.setTitle(title)
@@ -137,13 +143,18 @@ class TrajectoryGraphPanelWidget(QWidget):
         for lbl, label in zip(self.axis_labels, labels):
             lbl.setText(label)
 
-        position_unit, velocity_unit, acceleration_unit = self._unit_labels()
+        position_unit, velocity_unit, acceleration_unit, jerk_unit = self._unit_labels()
         self.position_plot.setLabel("left", TrajectoryGraphPanelWidget.lblWithUnit(self.POSITION_LBL, position_unit))
         self.velocity_plot.setLabel("left", TrajectoryGraphPanelWidget.lblWithUnit(self.VELOCITY_LBL, velocity_unit))
         self.acceleration_plot.setLabel("left", TrajectoryGraphPanelWidget.lblWithUnit(self.ACCELERATION_LBL, acceleration_unit))
+        self.jerk_plot.setLabel("left", TrajectoryGraphPanelWidget.lblWithUnit(self.JERK_LBL, jerk_unit))
 
-    def _unit_labels(self) -> tuple[str, str, str]:
-        return ("°", "°/s", "°/s²") if self.mode == GraphMode.ARTICULAR else ("mm", "mm/s", "mm/s²")
+    def _unit_labels(self) -> tuple[str, str, str, str]:
+        return (
+            ("deg", "deg/s", "deg/s^2", "deg/s^3")
+            if self.mode == GraphMode.ARTICULAR
+            else ("mm", "mm/s", "mm/s^2", "mm/s^3")
+        )
 
     def set_trajectories(
         self,
@@ -151,6 +162,7 @@ class TrajectoryGraphPanelWidget(QWidget):
         positions: Optional[List[List[float]]] = None,
         velocities: Optional[List[List[float]]] = None,
         accelerations: Optional[List[List[float]]] = None,
+        jerks: Optional[List[List[float]]] = None,
     ) -> None:
         if positions is not None:
             self._set_plot_data(0, time_s, positions)
@@ -158,6 +170,8 @@ class TrajectoryGraphPanelWidget(QWidget):
             self._set_plot_data(1, time_s, velocities)
         if accelerations is not None:
             self._set_plot_data(2, time_s, accelerations)
+        if jerks is not None:
+            self._set_plot_data(3, time_s, jerks)
 
     def set_display_mode(self, display_mode: GraphDisplayMode | str) -> None:
         if isinstance(display_mode, GraphDisplayMode):
@@ -172,7 +186,7 @@ class TrajectoryGraphPanelWidget(QWidget):
             return
 
         self._display_mode = normalized
-        for plot_idx in range(3):
+        for plot_idx in range(len(self._plots)):
             self._refresh_plot_items(plot_idx)
 
     def set_key_times(self, times: List[float]) -> None:
@@ -238,7 +252,7 @@ class TrajectoryGraphPanelWidget(QWidget):
         }
 
     def _update_visibility(self) -> None:
-        for plot_idx in range(3):
+        for plot_idx in range(len(self._plots)):
             for axis, cb in enumerate(self.axis_checkboxes):
                 self._plot_items[plot_idx][axis].setVisible(cb.isChecked())
             self._update_ranges(plot_idx)

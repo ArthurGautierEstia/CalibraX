@@ -11,6 +11,7 @@ from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from models.trajectory_result import (
+    TrajectoryDynamicViolationSeverity,
     TrajectoryComputationStatus,
     TrajectoryResult,
     TrajectorySample,
@@ -20,7 +21,7 @@ from models.trajectory_result import (
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from utils.trajectory_builder import TrajectoryBuilder
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
-from utils.trajectory_status import build_trajectory_issue_messages
+from utils.trajectory_status import build_trajectory_issue_messages, build_trajectory_warning_messages
 from utils.reference_frame_utils import (
     convert_pose_from_base_frame,
     convert_pose_to_base_frame,
@@ -232,32 +233,8 @@ class TrajectoryController(QObject):
         return f"{float(value):.6f}"
 
     @staticmethod
-    def _preferred_trajectories_dir() -> str:
-        current_dir = os.getcwd()
-        trajectories_dir = os.path.join(current_dir, "trajectories")
-        return trajectories_dir if os.path.exists(trajectories_dir) else current_dir
-
-    def _on_export_trajectory_requested(self) -> None:
-        if not self.current_samples:
-            QMessageBox.warning(
-                self.trajectory_view,
-                "Export trajectoire",
-                "Aucune trajectoire calculee a exporter.",
-            )
-            return
-
-        start_dir = self._preferred_trajectories_dir()
-        default_path = str(Path(start_dir) / "trajectory_samples.csv") if start_dir else "trajectory_samples.csv"
-        path, _ = QFileDialog.getSaveFileName(
-            self.trajectory_view,
-            "Exporter la trajectoire calculee",
-            default_path,
-            "Fichiers CSV (*.csv);;Tous les fichiers (*.*)",
-        )
-        if not path:
-            return
-
-        header = [
+    def _trajectory_export_header() -> list[str]:
+        return [
             "statut",
             "config",
             "time",
@@ -279,6 +256,12 @@ class TrajectoryController(QObject):
             "ddj4",
             "ddj5",
             "ddj6",
+            "dddj1",
+            "dddj2",
+            "dddj3",
+            "dddj4",
+            "dddj5",
+            "dddj6",
             "x",
             "y",
             "z",
@@ -297,7 +280,57 @@ class TrajectoryController(QObject):
             "dda",
             "ddb",
             "ddc",
+            "dddx",
+            "dddy",
+            "dddz",
+            "ddda",
+            "dddb",
+            "dddc",
+            "dynamic_errors",
+            "dynamic_warnings",
         ]
+
+    @staticmethod
+    def _format_dynamic_violations(sample: TrajectorySample, severity: TrajectoryDynamicViolationSeverity) -> str:
+        parts: list[str] = []
+        for violation in sample.dynamic_violations:
+            if violation.severity != severity:
+                continue
+            axis = f"J{violation.axis + 1}" if violation.axis >= 0 else "J?"
+            parts.append(
+                f"{violation.kind.value}:{axis}:"
+                f"{TrajectoryController._fmt_csv(violation.value)}/"
+                f"{TrajectoryController._fmt_csv(violation.limit)}"
+            )
+        return "|".join(parts)
+
+    @staticmethod
+    def _preferred_trajectories_dir() -> str:
+        current_dir = os.getcwd()
+        trajectories_dir = os.path.join(current_dir, "trajectories")
+        return trajectories_dir if os.path.exists(trajectories_dir) else current_dir
+
+    def _on_export_trajectory_requested(self) -> None:
+        if not self.current_samples:
+            QMessageBox.warning(
+                self.trajectory_view,
+                "Export trajectoire",
+                "Aucune trajectoire calculée à exporter.",
+            )
+            return
+
+        start_dir = self._preferred_trajectories_dir()
+        default_path = str(Path(start_dir) / "trajectory_samples.csv") if start_dir else "trajectory_samples.csv"
+        path, _ = QFileDialog.getSaveFileName(
+            self.trajectory_view,
+            "Exporter la trajectoire calculée",
+            default_path,
+            "Fichiers CSV (*.csv);;Tous les fichiers (*.*)",
+        )
+        if not path:
+            return
+
+        header = self._trajectory_export_header()
 
         display_frame = self.config_widget.get_cartesian_display_frame()
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
@@ -314,9 +347,11 @@ class TrajectoryController(QObject):
                             sample.cartesian_acceleration[:6],
                             robot_base_transform,
                         )
+                        cartesian_jerk = twist_base_to_world(sample.cartesian_jerk[:6], robot_base_transform)
                     else:
                         cartesian_velocity = [float(v) for v in sample.cartesian_velocity[:6]]
                         cartesian_acceleration = [float(v) for v in sample.cartesian_acceleration[:6]]
+                        cartesian_jerk = [float(v) for v in sample.cartesian_jerk[:6]]
                     status = (
                         "VALID"
                         if sample.reachable and sample.error_code == TrajectorySampleErrorCode.NONE
@@ -331,9 +366,13 @@ class TrajectoryController(QObject):
                     row.extend(self._fmt_csv(v) for v in sample.joints[:6])
                     row.extend(self._fmt_csv(v) for v in sample.articular_velocity[:6])
                     row.extend(self._fmt_csv(v) for v in sample.articular_acceleration[:6])
+                    row.extend(self._fmt_csv(v) for v in sample.articular_jerk[:6])
                     row.extend(self._fmt_csv(v) for v in pose[:6])
                     row.extend(self._fmt_csv(v) for v in cartesian_velocity[:6])
                     row.extend(self._fmt_csv(v) for v in cartesian_acceleration[:6])
+                    row.extend(self._fmt_csv(v) for v in cartesian_jerk[:6])
+                    row.append(self._format_dynamic_violations(sample, TrajectoryDynamicViolationSeverity.ERROR))
+                    row.append(self._format_dynamic_violations(sample, TrajectoryDynamicViolationSeverity.WARNING))
                     writer.writerow(row)
         except Exception as exc:
             QMessageBox.warning(
@@ -402,8 +441,8 @@ class TrajectoryController(QObject):
 
         if not self.current_samples:
             empty_series = [[] for _ in range(6)]
-            articular_panel.set_trajectories([], empty_series, empty_series, empty_series)
-            cartesian_panel.set_trajectories([], empty_series, empty_series, empty_series)
+            articular_panel.set_trajectories([], empty_series, empty_series, empty_series, empty_series)
+            cartesian_panel.set_trajectories([], empty_series, empty_series, empty_series, empty_series)
             config_timeline.set_configuration_data([], [])
             articular_panel.set_key_times([])
             cartesian_panel.set_key_times([])
@@ -418,13 +457,15 @@ class TrajectoryController(QObject):
         cart_positions = [[sample[0][axis] for sample in cartesian_samples] for axis in range(6)]
         cart_velocities = [[sample[1][axis] for sample in cartesian_samples] for axis in range(6)]
         cart_accelerations = [[sample[2][axis] for sample in cartesian_samples] for axis in range(6)]
+        cart_jerks = [[sample[3][axis] for sample in cartesian_samples] for axis in range(6)]
         art_positions = [[sample.joints[axis] for sample in self.current_samples] for axis in range(6)]
         art_velocities = [[sample.articular_velocity[axis] for sample in self.current_samples] for axis in range(6)]
         art_accelerations = [[sample.articular_acceleration[axis] for sample in self.current_samples] for axis in range(6)]
+        art_jerks = [[sample.articular_jerk[axis] for sample in self.current_samples] for axis in range(6)]
         key_times = [segment.last_time for segment in self.current_trajectory.segments if segment.last_time > 0.0]
 
-        cartesian_panel.set_trajectories(times, cart_positions, cart_velocities, cart_accelerations)
-        articular_panel.set_trajectories(times, art_positions, art_velocities, art_accelerations)
+        cartesian_panel.set_trajectories(times, cart_positions, cart_velocities, cart_accelerations, cart_jerks)
+        articular_panel.set_trajectories(times, art_positions, art_velocities, art_accelerations, art_jerks)
         config_timeline.set_configuration_data(times, self.current_samples)
         cartesian_panel.set_key_times(key_times)
         articular_panel.set_key_times(key_times)
@@ -447,19 +488,21 @@ class TrajectoryController(QObject):
     def _sample_xyz(sample: TrajectorySample) -> list[float]:
         return [float(sample.pose[0]), float(sample.pose[1]), float(sample.pose[2])]
 
-    def _cartesian_samples_for_display(self) -> list[tuple[list[float], list[float], list[float]]]:
+    def _cartesian_samples_for_display(self) -> list[tuple[list[float], list[float], list[float], list[float]]]:
         display_frame = self.config_widget.get_cartesian_display_frame()
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
-        out: list[tuple[list[float], list[float], list[float]]] = []
+        out: list[tuple[list[float], list[float], list[float], list[float]]] = []
         for sample in self.current_samples:
             pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_transform)
             if display_frame == "WORLD":
                 velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_transform)
                 acceleration = twist_base_to_world(sample.cartesian_acceleration[:6], robot_base_transform)
+                jerk = twist_base_to_world(sample.cartesian_jerk[:6], robot_base_transform)
             else:
                 velocity = [float(v) for v in sample.cartesian_velocity[:6]]
                 acceleration = [float(v) for v in sample.cartesian_acceleration[:6]]
-            out.append((pose, velocity, acceleration))
+                jerk = [float(v) for v in sample.cartesian_jerk[:6]]
+            out.append((pose, velocity, acceleration, jerk))
         return out
 
     def _base_path_color_for_mode(self, mode: KeypointMotionMode) -> tuple[float, float, float, float]:
@@ -656,6 +699,7 @@ class TrajectoryController(QObject):
         self._update_graphs()
         self.actions_widget.set_time_range(0.0, 0.0)
         self.actions_widget.set_issue_messages([])
+        self.actions_widget.set_warning_messages([])
         self.viewer3d_controller.clear_trajectory_path()
         self.viewer3d_controller.clear_trajectory_keypoints()
         self.viewer3d_controller.clear_trajectory_edit_tangents()
@@ -664,7 +708,9 @@ class TrajectoryController(QObject):
 
     def _update_trajectory_issue_messages(self) -> None:
         issues = build_trajectory_issue_messages(self.current_trajectory)
+        warnings = build_trajectory_warning_messages(self.current_trajectory)
         self.actions_widget.set_issue_messages(issues)
+        self.actions_widget.set_warning_messages(warnings)
 
     def _on_time_value_changed(self, time_s: float) -> None:
         self._apply_time_value(time_s, force_real_robot=True)

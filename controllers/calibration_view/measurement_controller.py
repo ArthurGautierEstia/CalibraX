@@ -490,7 +490,7 @@ class MeasurementController(QObject):
         """Compute and display measured DH parameters in table_dh_measured."""
         dh_measured = self.calculate_measured_dh_parameters()
         if not dh_measured:
-            print("Aucune mesure DH calculee")
+            print("Aucune mesure DH calculée")
             self._update_tcp_offsets_from_selection()
             return
         self.measurement_widget.populate_dh_measured_deviations(dh_measured)

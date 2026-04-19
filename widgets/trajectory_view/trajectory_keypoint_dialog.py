@@ -31,7 +31,9 @@ import utils.math_utils as math_utils
 from utils.mgi import MgiConfigKey, MgiResultStatus
 from utils.trajectory_status import (
     build_segment_issue_messages,
+    build_segment_warning_messages,
     build_trajectory_issue_messages,
+    build_trajectory_warning_messages,
     join_issue_messages,
 )
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
@@ -109,7 +111,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._suspend_preview_emission = False
 
         self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
-        self.linear_group = QGroupBox("Tangentes du segment lineaire (entrant)")
+        self.linear_group = QGroupBox("Tangentes du segment linéaire (entrant)")
         self.cubic_vector_1: list[QDoubleSpinBox] = []
         self.cubic_vector_2: list[QDoubleSpinBox] = []
         self.cubic_amplitude_1 = QDoubleSpinBox()
@@ -117,15 +119,15 @@ class TrajectoryKeypointDialog(QDialog):
         self.linear_tangent_ratio_1 = QDoubleSpinBox()
         self.linear_tangent_ratio_2 = QDoubleSpinBox()
         self.linear_tangent_link_checkbox = QCheckBox("Lier debut/fin")
-        self.cubic_auto_start_btn = QPushButton("Auto (segment precedent)")
+        self.cubic_auto_start_btn = QPushButton("Auto (segment précedent)")
         self.cubic_auto_end_btn = QPushButton("Auto (segment suivant)")
         self.cubic_auto_update_adjacent_checkbox = QCheckBox(
-            "Mettre a jour automatiquement les tangentes des segments adjacents"
+            "Mettre à jour automatiquement les tangentes des segments adjacents"
         )
         self.cubic_auto_update_adjacent_checkbox.setChecked(True)
         self.cubic_hint_label = QLabel(
-            "Direction : le triplet X/Y/Z est normalise automatiquement. "
-            "Amplitude : longueur reelle de tangente en mm (min 0, pas de maximum)."
+            "Direction : le triplet X/Y/Z est normalisé automatiquement. "
+            "Amplitude : longueur réelle de tangente en mm (min 0, pas de maximum)."
         )
 
         self._context_keypoints: list[TrajectoryKeypoint] = []
@@ -135,9 +137,11 @@ class TrajectoryKeypointDialog(QDialog):
 
         self.config_policy_combo = QComboBox()
         self.forced_config_combo = QComboBox()
-        self.config_hint_label = QLabel("En mode articulaire, la configuration est deduite automatiquement depuis J1..J6.")
+        self.config_hint_label = QLabel("En mode articulaire, la configuration est déduite automatiquement depuis J1..J6.")
         self.current_segment_status_label = QLabel("")
+        self.current_segment_warning_label = QLabel("")
         self.trajectory_status_label = QLabel("")
+        self.trajectory_warning_label = QLabel("")
 
         self._setup_ui()
         self._setup_connections()
@@ -242,7 +246,7 @@ class TrajectoryKeypointDialog(QDialog):
         start_layout.addWidget(self.cubic_amplitude_1, 1, 1)
 
         self.cubic_auto_start_btn.setToolTip(
-            "Calcule la tangente de debut du segment courant a partir du segment precedent."
+            "Calcule la tangente de debut du segment courant à partir du segment précedent."
         )
         start_auto_label = QLabel()
         start_auto_label.setMinimumWidth(cubic_label_width)
@@ -271,7 +275,7 @@ class TrajectoryKeypointDialog(QDialog):
         end_layout.addWidget(self.cubic_amplitude_2, 1, 1)
 
         self.cubic_auto_end_btn.setToolTip(
-            "Calcule la tangente de fin du segment courant a partir du segment suivant."
+            "Calcule la tangente de fin du segment courant à partir du segment suivant."
         )
         end_auto_label = QLabel()
         end_auto_label.setMinimumWidth(cubic_label_width)
@@ -289,7 +293,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.cubic_group.setLayout(cubic_group_layout)
 
         self.cubic_auto_update_adjacent_checkbox.setToolTip(
-            "En edition, ajuste automatiquement les tangentes des segments cubiques precedent/suivant."
+            "En edition, ajuste automatiquement les tangentes des segments cubiques précedent/suivant."
         )
         cubic_tab_layout.addWidget(self.linear_group)
         cubic_tab_layout.addWidget(self.cubic_group)
@@ -332,10 +336,20 @@ class TrajectoryKeypointDialog(QDialog):
         self.current_segment_status_label.hide()
         layout.addWidget(self.current_segment_status_label)
 
+        self.current_segment_warning_label.setWordWrap(True)
+        self.current_segment_warning_label.setStyleSheet("color: #f0ad4e; font-weight: bold;")
+        self.current_segment_warning_label.hide()
+        layout.addWidget(self.current_segment_warning_label)
+
         self.trajectory_status_label.setWordWrap(True)
         self.trajectory_status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
         self.trajectory_status_label.hide()
         layout.addWidget(self.trajectory_status_label)
+
+        self.trajectory_warning_label.setWordWrap(True)
+        self.trajectory_warning_label.setStyleSheet("color: #f0ad4e; font-weight: bold;")
+        self.trajectory_warning_label.hide()
+        layout.addWidget(self.trajectory_warning_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -713,22 +727,37 @@ class TrajectoryKeypointDialog(QDialog):
         trajectory = self._context_trajectory_result
         if trajectory is None:
             TrajectoryKeypointDialog._set_status_label(self.current_segment_status_label, "Segment courant", [])
+            TrajectoryKeypointDialog._set_status_label(self.current_segment_warning_label, "Warning segment", [])
             TrajectoryKeypointDialog._set_status_label(self.trajectory_status_label, "Trajectoire", [])
+            TrajectoryKeypointDialog._set_status_label(self.trajectory_warning_label, "Warnings trajectoire", [])
             return
 
         global_messages = build_trajectory_issue_messages(trajectory)
+        global_warning_messages = build_trajectory_warning_messages(trajectory)
         TrajectoryKeypointDialog._set_status_label(self.trajectory_status_label, "Trajectoire", global_messages)
+        TrajectoryKeypointDialog._set_status_label(
+            self.trajectory_warning_label,
+            "Warnings trajectoire",
+            global_warning_messages,
+        )
 
         segment_index = self._resolve_current_segment_index()
         if segment_index is None or segment_index >= len(trajectory.segments):
             TrajectoryKeypointDialog._set_status_label(self.current_segment_status_label, "Segment courant", [])
+            TrajectoryKeypointDialog._set_status_label(self.current_segment_warning_label, "Warning segment", [])
             return
 
         segment_messages = build_segment_issue_messages(trajectory.segments[segment_index], segment_index)
+        segment_warning_messages = build_segment_warning_messages(trajectory.segments[segment_index], segment_index)
         TrajectoryKeypointDialog._set_status_label(
             self.current_segment_status_label,
             "Segment courant",
             segment_messages,
+        )
+        TrajectoryKeypointDialog._set_status_label(
+            self.current_segment_warning_label,
+            "Warning segment",
+            segment_warning_messages,
         )
 
     def update_trajectory_context(self, trajectory_result: TrajectoryResult | None) -> None:
@@ -1092,9 +1121,9 @@ class TrajectoryKeypointDialog(QDialog):
         self.target_stack.setCurrentIndex(1 if is_joint else 0)
 
         self.config_hint_label.setText(
-            "En mode articulaire, la configuration est deduite automatiquement depuis J1..J6."
+            "En mode articulaire, la configuration est déduite automatiquement depuis J1..J6."
             if is_joint
-            else "Auto: pas de contrainte locale. Current branch: branche issue du sample precedent. Forced: configuration explicite."
+            else "Auto: pas de contrainte locale. Current branch: branche issue du sample précedent. Forced: configuration explicite."
         )
         self._update_config_policy_editor_state()
 
