@@ -207,6 +207,7 @@ class RobotConfigurationWidget(QWidget):
         self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
         self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(90)
+        self.table_dh_measured.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_dh_measured.setEnabled(False)
         measured_layout.addWidget(self.table_dh_measured)
         tables_layout.addLayout(measured_layout, 1)
@@ -993,7 +994,9 @@ class RobotConfigurationWidget(QWidget):
                 values = params[row] if row < len(params) else []
                 for col in range(4):
                     value = str(values[col]) if col < len(values) else ""
-                    self.table_dh_measured.setItem(row, col, QTableWidgetItem(value))
+                    item = QTableWidgetItem(value)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.table_dh_measured.setItem(row, col, item)
         finally:
             self.table_dh_measured.blockSignals(False)
 
