@@ -110,6 +110,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._last_target_type = KeypointTargetType.CARTESIAN
         self._suspend_preview_emission = False
         self._updating_linear_tangent_fields = False
+        self._last_cartesian_reference_frame = ReferenceFrame.BASE.value
 
         self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
         self.linear_group = QGroupBox("Tangentes du segment linéaire (entrant)")
@@ -444,6 +445,8 @@ class TrajectoryKeypointDialog(QDialog):
         self.joint_target_widget.joint_value_changed.connect(self._on_joint_target_changed)
         self.cartesian_target_widget.cartesian_value_changed.connect(self._on_cartesian_target_changed)
         self.cartesian_target_widget.reference_frame_changed.connect(self._on_cartesian_reference_frame_changed)
+        self.robot_model.cartesian_slider_limits_changed.connect(self._on_cartesian_limits_context_changed)
+        self.workspace_model.workspace_changed.connect(self._on_cartesian_limits_context_changed)
 
     def _robot_base_pose_world(self):
         return self.workspace_model.get_robot_base_transform_world()
@@ -455,7 +458,30 @@ class TrajectoryKeypointDialog(QDialog):
             self._robot_base_pose_world(),
         )
 
+    def _display_cartesian_slider_limits_xyz(
+        self,
+        reference_frame: ReferenceFrame | str | None = None,
+    ) -> list[tuple[float, float]]:
+        xyz_limits = [
+            (float(min_val), float(max_val))
+            for min_val, max_val in self.robot_model.get_cartesian_slider_limits_xyz()
+        ]
+        frame = ReferenceFrame.from_value(
+            self.cartesian_target_widget.get_reference_frame() if reference_frame is None else reference_frame
+        )
+        if frame == ReferenceFrame.WORLD:
+            return math_utils.transform_xyz_limits_yaw_only(
+                xyz_limits,
+                self.workspace_model.get_robot_base_transform_world().pose,
+            )
+        return xyz_limits
+
+    def _apply_cartesian_target_limits(self) -> None:
+        xyz_limits = self._display_cartesian_slider_limits_xyz()
+        self.cartesian_target_widget.update_axis_limits(list(xyz_limits[:3]) + [(-180.0, 180.0)] * 3)
+
     def _set_cartesian_target_from_base_pose(self, pose_base: list[float]) -> None:
+        self._apply_cartesian_target_limits()
         self.cartesian_target_widget.set_all_cartesian(
             convert_pose_from_base_frame(
                 pose_base,
@@ -463,6 +489,12 @@ class TrajectoryKeypointDialog(QDialog):
                 self._robot_base_pose_world(),
             )
         )
+
+    def _on_cartesian_limits_context_changed(self) -> None:
+        self._apply_cartesian_target_limits()
+        if self._current_target_type() == KeypointTargetType.CARTESIAN:
+            self._refresh_cartesian_solutions_table()
+            self._emit_ghost_update()
 
     def _on_use_current_target_clicked(self) -> None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
@@ -494,6 +526,8 @@ class TrajectoryKeypointDialog(QDialog):
 
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             self.cartesian_target_widget.set_reference_frame(self._initial_keypoint.cartesian_frame.value)
+            self._last_cartesian_reference_frame = ReferenceFrame.from_value(self._initial_keypoint.cartesian_frame).value
+            self._apply_cartesian_target_limits()
             self.cartesian_target_widget.set_all_cartesian(list(self._initial_keypoint.cartesian_target))
             self._emit_ghost_update()
             return
@@ -1137,7 +1171,23 @@ class TrajectoryKeypointDialog(QDialog):
             self._refresh_cartesian_solutions_table()
             self._emit_ghost_update()
 
-    def _on_cartesian_reference_frame_changed(self, _frame: str) -> None:
+    def _on_cartesian_reference_frame_changed(self, frame: str) -> None:
+        previous_frame = ReferenceFrame.from_value(self._last_cartesian_reference_frame)
+        next_frame = ReferenceFrame.from_value(frame)
+        pose_base = convert_pose_to_base_frame(
+            self.cartesian_target_widget.get_cartesian_values(),
+            previous_frame,
+            self._robot_base_pose_world(),
+        )
+        self._last_cartesian_reference_frame = next_frame.value
+        self._apply_cartesian_target_limits()
+        self.cartesian_target_widget.set_all_cartesian(
+            convert_pose_from_base_frame(
+                pose_base,
+                next_frame,
+                self._robot_base_pose_world(),
+            )
+        )
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             self._refresh_cartesian_solutions_table()
             self._emit_ghost_update()
@@ -1288,6 +1338,8 @@ class TrajectoryKeypointDialog(QDialog):
             self.target_type_combo.blockSignals(False)
 
         self.cartesian_target_widget.set_reference_frame(keypoint.cartesian_frame.value)
+        self._last_cartesian_reference_frame = ReferenceFrame.from_value(keypoint.cartesian_frame).value
+        self._apply_cartesian_target_limits()
         self.cartesian_target_widget.set_all_cartesian(keypoint.cartesian_target)
         self.joint_target_widget.set_all_joints(keypoint.joint_target)
 
