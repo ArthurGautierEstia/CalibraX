@@ -40,6 +40,45 @@
             "80.0"
         ]
     ],
+    "dh_measured": [
+        [
+            "0",
+            "0",
+            "0",
+            "0"
+        ],
+        [
+            "0",
+            "0",
+            "0",
+            "0"
+        ],
+        [
+            "0",
+            "0",
+            "0",
+            "0"
+        ],
+        [
+            "0",
+            "0",
+            "0",
+            "0"
+        ],
+        [
+            "0",
+            "0",
+            "0",
+            "0"
+        ],
+        [
+            "0",
+            "0",
+            "0",
+            "0"
+        ]
+    ],
+    "dh_measured_enabled": false,
     "corr": [
         [
             "0.0",
@@ -118,16 +157,16 @@
     ],
     "cartesian_slider_limits_xyz": [
         [
-            -1000.0,
-            1000.0
+            -1100.0,
+            1100.0
         ],
         [
-            -1000.0,
-            1000.0
+            -1100.0,
+            1100.0
         ],
         [
-            -1000.0,
-            1000.0
+            -1100.0,
+            1100.0
         ]
     ],
     "axis_speed_limits": [
@@ -153,8 +192,11 @@
             "radius": 140.0,
             "height": -480.0,
             "direction_axis": "z",
-            "offset_axis": "z",
-            "offset_value": 80.0
+            "offset_xyz": [
+                0.0,
+                0.0,
+                80.0
+            ]
         },
         {
             "axis": 1,
@@ -162,8 +204,11 @@
             "radius": 80.0,
             "height": 655.0,
             "direction_axis": "x",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
         },
         {
             "axis": 2,
@@ -171,8 +216,11 @@
             "radius": 60.0,
             "height": 555.0,
             "direction_axis": "y",
-            "offset_axis": "x",
-            "offset_value": 35.0
+            "offset_xyz": [
+                35.0,
+                0.0,
+                0.0
+            ]
         },
         {
             "axis": 3,
@@ -180,8 +228,11 @@
             "radius": 70.0,
             "height": 0.0,
             "direction_axis": "z",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
         },
         {
             "axis": 4,
@@ -189,8 +240,11 @@
             "radius": 40.0,
             "height": 80.0,
             "direction_axis": "y",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
         },
         {
             "axis": 5,
@@ -198,8 +252,11 @@
             "radius": 40.0,
             "height": 0.0,
             "direction_axis": "z",
-            "offset_axis": "",
-            "offset_value": 0.0
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
         }
     ],
     "axis_reversed": [

@@ -85,6 +85,14 @@ def normalize_pose6(raw_pose: Any) -> list[float]:
     return pose[:6]
 
 
+def normalize_xyz3(raw_xyz: Any) -> list[float]:
+    if isinstance(raw_xyz, (list, tuple)):
+        values = [_safe_float(raw_xyz[idx] if idx < len(raw_xyz) else 0.0, 0.0) for idx in range(3)]
+    else:
+        values = [0.0, 0.0, 0.0]
+    return values[:3]
+
+
 def normalize_primitive_collider_dict(
     raw: Any,
     default_name: str = "Collider",
@@ -148,8 +156,7 @@ def default_axis_colliders(axis_count: int = 6) -> list[dict[str, Any]]:
                 "radius": 40.0,
                 "direction_axis": "z",
                 "height": 200.0,
-                "offset_axis": "",
-                "offset_value": 0.0,
+                "offset_xyz": [0.0, 0.0, 0.0],
             }
         )
 
@@ -167,35 +174,18 @@ def default_axis_colliders(axis_count: int = 6) -> list[dict[str, Any]]:
 
 def normalize_axis_collider_dict(raw: Any, axis_index: int) -> dict[str, Any]:
     data = raw if isinstance(raw, dict) else {}
-    legacy_height = _safe_float(data.get("height", data.get("height_value", data.get("h", 200.0))), 200.0)
-    offset_axis = _safe_axis_direction(
-        data.get("offset_axis", data.get("offset_direction", data.get("offset_dir", ""))),
-        "",
-    )
-    offset_value = _safe_float(data.get("offset_value", 0.0), 0.0)
-    if abs(offset_value) <= 1e-12:
-        legacy_offsets = {
-            "x": _safe_float(data.get("offset_x_value", 0.0), 0.0),
-            "y": _safe_float(data.get("offset_y_value", 0.0), 0.0),
-            "z": _safe_float(data.get("offset_z_value", 0.0), 0.0),
-        }
-        for axis_name in ("x", "y", "z"):
-            if abs(legacy_offsets[axis_name]) > 1e-12:
-                offset_axis = axis_name
-                offset_value = legacy_offsets[axis_name]
-                break
+    height = _safe_float(data.get("height", 200.0), 200.0)
 
     return {
         "axis": axis_index,
         "enabled": _safe_bool(data.get("enabled", data.get("active", True)), True),
         "radius": max(0.0, _safe_float(data.get("radius", data.get("r", 40.0)), 40.0)),
-        "height": float(legacy_height),
+        "height": float(height),
         "direction_axis": _safe_axis_direction(
             data.get("direction_axis", data.get("axis_direction", data.get("orientation_axis", "z"))),
             "z",
         ),
-        "offset_axis": offset_axis,
-        "offset_value": float(offset_value),
+        "offset_xyz": normalize_xyz3(data.get("offset_xyz")),
     }
 
 

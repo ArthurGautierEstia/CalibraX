@@ -77,8 +77,9 @@ class RobotConfigurationWidget(QWidget):
     COL_AXIS_COLLIDER_DIRECTION = 1
     COL_AXIS_COLLIDER_RADIUS = 2
     COL_AXIS_COLLIDER_HEIGHT = 3
-    COL_AXIS_COLLIDER_OFFSET_AXIS = 4
-    COL_AXIS_COLLIDER_OFFSET_VALUE = 5
+    COL_AXIS_COLLIDER_OFFSET_X = 4
+    COL_AXIS_COLLIDER_OFFSET_Y = 5
+    COL_AXIS_COLLIDER_OFFSET_Z = 6
 
     COL_PRIM_ENABLED = 0
     COL_PRIM_NAME = 1
@@ -264,15 +265,16 @@ class RobotConfigurationWidget(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        self.table_axis_colliders = QTableWidget(RobotConfigurationWidget.AXIS_COLLIDER_COUNT, 6)
+        self.table_axis_colliders = QTableWidget(RobotConfigurationWidget.AXIS_COLLIDER_COUNT, 7)
         self.table_axis_colliders.setHorizontalHeaderLabels(
             [
                 "Actif",
                 "Axe cylindre",
                 "Rayon (mm)",
                 "Hauteur (mm)",
-                "Axe decalage",
-                "Decalage (mm)",
+                "X (mm)",
+                "Y (mm)",
+                "Z (mm)",
             ]
         )
         vertical_labels = [f"q{i + 1}" for i in range(6)]
@@ -297,14 +299,6 @@ class RobotConfigurationWidget(QWidget):
                 direction_combo,
             )
             self.axis_collider_direction_combos.append(direction_combo)
-
-            offset_axis_combo = QComboBox()
-            offset_axis_combo.addItem("Aucun", "")
-            offset_axis_combo.addItem("X", "x")
-            offset_axis_combo.addItem("Y", "y")
-            offset_axis_combo.addItem("Z", "z")
-            offset_axis_combo.currentIndexChanged.connect(self._emit_axis_colliders_config_changed)
-            self.table_axis_colliders.setCellWidget(row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_AXIS, offset_axis_combo)
 
         self.table_axis_colliders.itemChanged.connect(self._on_axis_colliders_item_changed)
         layout.addWidget(self.table_axis_colliders)
@@ -622,8 +616,8 @@ class RobotConfigurationWidget(QWidget):
             cad_paths = cad_paths[:max_count]
             QMessageBox.information(
                 self,
-                "Selection limitee",
-                f"Seulement {max_count} fichiers sont utilises (indices 0 a {max_count - 1}).",
+                "Sélection limitée",
+                f"Seulement {max_count} fichiers sont utilisés (indices 0 à {max_count - 1}).",
             )
 
         start_index = 0
@@ -631,10 +625,10 @@ class RobotConfigurationWidget(QWidget):
             max_start = max_count - len(cad_paths)
             start_index, ok = QInputDialog.getInt(
                 self,
-                "Index de depart",
+                "Index de départ",
                 (
-                    f"{len(cad_paths)} fichiers selectionnes.\n"
-                    f"Choisissez l'index de depart pour l'affectation ({0} a {max_start})."
+                    f"{len(cad_paths)} fichiers sélectionnes.\n"
+                    f"Choisissez l'index de départ pour l'affectation ({0} à {max_start})."
                 ),
                 0,
                 0,
@@ -755,14 +749,14 @@ class RobotConfigurationWidget(QWidget):
 
         tools_dir = self._resolve_filesystem_path(self.tool_profiles_dir_line_edit.text().strip())
         if not tools_dir:
-            QMessageBox.information(self, "Dossier manquant", "Selectionnez d'abord un dossier de tools.")
+            QMessageBox.information(self, "Dossier manquant", "Sélectionnez d'abord un dossier de tools.")
             return
 
         if not os.path.isdir(tools_dir):
             try:
                 os.makedirs(tools_dir, exist_ok=True)
             except OSError as exc:
-                QMessageBox.warning(self, "Dossier invalide", f"Impossible de creer le dossier:\n{tools_dir}\n{exc}")
+                QMessageBox.warning(self, "Dossier invalide", f"Impossible de créer le dossier:\n{tools_dir}\n{exc}")
                 return
 
         raw_name = self.tool_name_line_edit.text().strip() if self.tool_name_line_edit is not None else ""
@@ -774,13 +768,13 @@ class RobotConfigurationWidget(QWidget):
             QMessageBox.warning(
                 self,
                 "Nom invalide",
-                "Le nom du tool contient des caracteres interdits pour un nom de fichier.",
+                "Le nom du tool contient des caractères interdits pour un nom de fichier.",
             )
             return
 
         safe_name = self._sanitize_tool_file_name(raw_name)
         if not safe_name:
-            QMessageBox.warning(self, "Nom invalide", "Le nom du tool ne peut pas etre utilise comme nom de fichier.")
+            QMessageBox.warning(self, "Nom invalide", "Le nom du tool ne peut pas etre utilisé comme nom de fichier.")
             return
 
         output_path = os.path.join(tools_dir, f"{safe_name}.json")
@@ -797,8 +791,8 @@ class RobotConfigurationWidget(QWidget):
             if not same_path:
                 QMessageBox.warning(
                     self,
-                    "Nom deja utilise",
-                    f"Un tool existe deja avec ce nom dans le dossier:\n{output_path}",
+                    "Nom déjà utilisé",
+                    f"Un tool existe déjà avec ce nom dans le dossier:\n{output_path}",
                 )
                 return
 
@@ -850,17 +844,6 @@ class RobotConfigurationWidget(QWidget):
             return float(stripped)
         except (TypeError, ValueError):
             return default
-
-    @staticmethod
-    def _set_combo_by_data(combo: QComboBox | None, target_data: str, fallback_data: str = "") -> None:
-        if combo is None:
-            return
-        index = combo.findData(target_data)
-        if index < 0:
-            index = combo.findData(fallback_data)
-        if index < 0:
-            index = 0
-        combo.setCurrentIndex(index)
 
     def _cell_to_float(self, table: QTableWidget, row: int, column: int, default: float = 0.0) -> float:
         item = table.item(row, column)
@@ -1124,15 +1107,18 @@ class RobotConfigurationWidget(QWidget):
                     "direction_axis": "z",
                     "radius": 40.0,
                     "height": 200.0,
-                    "offset_axis": "",
-                    "offset_value": 0.0,
+                    "offset_xyz": [0.0, 0.0, 0.0],
                 }
                 enabled = bool(collider.get("enabled", True))
                 direction_axis = str(collider.get("direction_axis", "z")).strip().lower()
                 radius = float(collider.get("radius", 40.0))
                 height = float(collider.get("height", 200.0))
-                offset_axis = str(collider.get("offset_axis", "")).strip().lower()
-                offset_value = float(collider.get("offset_value", 0.0))
+                offset_xyz = collider.get("offset_xyz", [0.0, 0.0, 0.0])
+                if not isinstance(offset_xyz, list):
+                    offset_xyz = [0.0, 0.0, 0.0]
+                offset_x = float(offset_xyz[0] if len(offset_xyz) > 0 else 0.0)
+                offset_y = float(offset_xyz[1] if len(offset_xyz) > 1 else 0.0)
+                offset_z = float(offset_xyz[2] if len(offset_xyz) > 2 else 0.0)
 
                 checkbox = self.axis_collider_enabled_checkboxes[row]
                 checkbox.blockSignals(True)
@@ -1143,15 +1129,6 @@ class RobotConfigurationWidget(QWidget):
                 direction_combo.blockSignals(True)
                 direction_combo.setCurrentText(direction_axis.upper() if direction_axis in {"x", "y", "z"} else "Z")
                 direction_combo.blockSignals(False)
-
-                offset_axis_combo = self.table_axis_colliders.cellWidget(
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_AXIS,
-                )
-                if isinstance(offset_axis_combo, QComboBox):
-                    offset_axis_combo.blockSignals(True)
-                    self._set_combo_by_data(offset_axis_combo, offset_axis, "")
-                    offset_axis_combo.blockSignals(False)
 
                 self.table_axis_colliders.setItem(
                     row,
@@ -1165,8 +1142,18 @@ class RobotConfigurationWidget(QWidget):
                 )
                 self.table_axis_colliders.setItem(
                     row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_VALUE,
-                    QTableWidgetItem(str(offset_value)),
+                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X,
+                    QTableWidgetItem(str(offset_x)),
+                )
+                self.table_axis_colliders.setItem(
+                    row,
+                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y,
+                    QTableWidgetItem(str(offset_y)),
+                )
+                self.table_axis_colliders.setItem(
+                    row,
+                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z,
+                    QTableWidgetItem(str(offset_z)),
                 )
         finally:
             self.table_axis_colliders.blockSignals(False)
@@ -1183,9 +1170,6 @@ class RobotConfigurationWidget(QWidget):
             enabled = self.axis_collider_enabled_checkboxes[row].isChecked()
             direction_axis = self.axis_collider_direction_combos[row].currentText().strip().lower()
 
-            offset_axis_widget = self.table_axis_colliders.cellWidget(row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_AXIS)
-            offset_axis = str(offset_axis_widget.currentData()) if isinstance(offset_axis_widget, QComboBox) else ""
-
             radius = self._cell_to_float(
                 self.table_axis_colliders,
                 row,
@@ -1198,10 +1182,22 @@ class RobotConfigurationWidget(QWidget):
                 RobotConfigurationWidget.COL_AXIS_COLLIDER_HEIGHT,
                 200.0,
             )
-            offset_value = self._cell_to_float(
+            offset_x = self._cell_to_float(
                 self.table_axis_colliders,
                 row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_VALUE,
+                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X,
+                0.0,
+            )
+            offset_y = self._cell_to_float(
+                self.table_axis_colliders,
+                row,
+                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y,
+                0.0,
+            )
+            offset_z = self._cell_to_float(
+                self.table_axis_colliders,
+                row,
+                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z,
                 0.0,
             )
             values.append(
@@ -1211,8 +1207,7 @@ class RobotConfigurationWidget(QWidget):
                     "direction_axis": direction_axis if direction_axis in {"x", "y", "z"} else "z",
                     "radius": max(0.0, radius),
                     "height": float(height),
-                    "offset_axis": offset_axis if offset_axis in {"x", "y", "z"} else "",
-                    "offset_value": float(offset_value),
+                    "offset_xyz": [float(offset_x), float(offset_y), float(offset_z)],
                 }
             )
         return values

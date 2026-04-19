@@ -1052,18 +1052,20 @@ class Viewer3DWidget(QWidget):
             base_transform = np.array(self.last_corrected_matrices[matrix_index], dtype=float)
             direction_axis = str(collider.get("direction_axis", "z")).strip().lower()
             direction_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-            offset_axis = str(collider.get("offset_axis", "")).strip().lower()
-            offset_value = float(collider.get("offset_value", 0.0))
+            offset_xyz = collider.get("offset_xyz", [0.0, 0.0, 0.0])
+            if not isinstance(offset_xyz, (list, tuple)):
+                offset_xyz = [0.0, 0.0, 0.0]
 
             orientation = self._primitive_extrusion_orientation(direction_axis, signed_height >= 0.0)
 
-            local_offset = np.array([0.0, 0.0, 0.0], dtype=float)
-            if offset_axis == "x":
-                local_offset[0] += offset_value
-            elif offset_axis == "y":
-                local_offset[1] += offset_value
-            elif offset_axis == "z":
-                local_offset[2] += offset_value
+            local_offset = np.array(
+                [
+                    float(offset_xyz[0] if len(offset_xyz) > 0 else 0.0),
+                    float(offset_xyz[1] if len(offset_xyz) > 1 else 0.0),
+                    float(offset_xyz[2] if len(offset_xyz) > 2 else 0.0),
+                ],
+                dtype=float,
+            )
 
             translation = np.eye(4, dtype=float)
             translation[:3, 3] = local_offset
