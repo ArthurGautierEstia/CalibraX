@@ -367,6 +367,16 @@ class TrajectoryConfigWidget(QWidget):
             self._auto_update_adjacent_cubic_tangents(preview_keypoints, row)
         self._emit_trajectory_preview(preview_keypoints)
 
+    @staticmethod
+    def _default_linear_tangent_ratio_for_bezier_degree(degree: TrajectoryBezierDegree) -> float:
+        if degree == TrajectoryBezierDegree.BEZIER5:
+            return 0.15
+        return 0.30
+
+    def _default_linear_tangent_ratios(self) -> list[float]:
+        ratio = TrajectoryConfigWidget._default_linear_tangent_ratio_for_bezier_degree(self.get_bezier_degree())
+        return [ratio, ratio]
+
     def _focus_active_dialog(self) -> bool:
         if self._active_dialog is None:
             return False
@@ -410,6 +420,7 @@ class TrajectoryConfigWidget(QWidget):
                 cartesian_target=list(last_keypoint.cartesian_target),
                 cartesian_frame=last_keypoint.cartesian_frame,
                 joint_target=list(last_keypoint.joint_target),
+                linear_tangent_ratios=self._default_linear_tangent_ratios(),
             )
         else:
             initial_keypoint = TrajectoryKeypoint(
@@ -420,6 +431,7 @@ class TrajectoryConfigWidget(QWidget):
                 ),
                 cartesian_frame=ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                 joint_target=list(self.robot_model.get_joints()),
+                linear_tangent_ratios=self._default_linear_tangent_ratios(),
             )
 
         self._open_keypoint_dialog(
