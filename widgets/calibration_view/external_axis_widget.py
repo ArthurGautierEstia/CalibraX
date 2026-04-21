@@ -3,6 +3,7 @@ from typing import List, Optional
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -118,15 +120,20 @@ class ExternalAxisWidget(QWidget):
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setMinimumHeight(260)
         self.plot_widget.setMaximumHeight(360)
-        self.plot_widget.setBackground("w")
-        self.plot_widget.setLabel("left", "Ecart (mm)")
+        self.plot_widget.setBackground("#151515")
+        self.plot_widget.setLabel("left", "Ecart (mm)", color="#d8d8d8")
         self.plot_widget.setLabel("bottom", "Valeurs théoriques (mm)")
         self.plot_widget.getAxis("left").enableAutoSIPrefix(False)
         self.plot_widget.getAxis("bottom").enableAutoSIPrefix(False)
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.addLegend()
+        self.plot_widget.getAxis("bottom").setLabel("Valeurs theoriques (mm)", color="#d8d8d8")
+        self.plot_widget.getAxis("left").setPen(pg.mkPen("#a8a8a8"))
+        self.plot_widget.getAxis("bottom").setPen(pg.mkPen("#a8a8a8"))
+        self.plot_widget.getAxis("left").setTextPen(pg.mkPen("#d8d8d8"))
+        self.plot_widget.getAxis("bottom").setTextPen(pg.mkPen("#d8d8d8"))
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.22)
         import_group_layout.addWidget(self.plot_widget, 0)
         self._build_statistics_group(import_group_layout)
+        import_group_layout.addLayout(self._build_plot_legend_layout())
         self._set_statistics_values()
 
         layout.addWidget(import_group)
@@ -248,6 +255,36 @@ class ExternalAxisWidget(QWidget):
         stats_layout.addStretch()
         parent_layout.addWidget(stats_group)
 
+    def _build_plot_legend_layout(self) -> QHBoxLayout:
+        legend_layout = QHBoxLayout()
+        legend_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        legend_layout.setSpacing(18)
+        legend_layout.addWidget(self._make_legend_sample("Aller", "#27d6a1", Qt.PenStyle.SolidLine))
+        legend_layout.addWidget(self._make_legend_sample("Retour", "#196079", Qt.PenStyle.DashLine))
+        return legend_layout
+
+    @staticmethod
+    def _make_legend_sample(label: str, color: str, style: Qt.PenStyle) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        sample = QLabel()
+        pixmap = QPixmap(34, 10)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(pg.mkPen(color=color, width=2, style=style))
+        painter.drawLine(2, 5, 32, 5)
+        painter.end()
+        sample.setPixmap(pixmap)
+        sample.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        layout.addWidget(sample)
+        layout.addWidget(QLabel(label))
+        return widget
+
     def _import_measurements(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -359,8 +396,8 @@ class ExternalAxisWidget(QWidget):
         return_data = self.measurements[forward_count:forward_count + return_count]
         self._add_tolerance_lines()
 
-        forward_colors = ["#d62728", "#2ca02c", "#1f77b4"]
-        return_colors = ["#ff7f0e", "#9467bd", "#17becf"]
+        forward_colors = ["#27d6a1", "#2ca02c", "#1f77b4"]
+        return_colors = ["#196079", "#9467bd", "#17becf"]
         labels = ["X", "Y", "Z"]
         checkboxes = [self.x_checkbox, self.y_checkbox, self.z_checkbox]
         all_values = []
@@ -387,7 +424,6 @@ class ExternalAxisWidget(QWidget):
                 pen=pg.mkPen(color=forward_color, width=2),
                 symbol="o",
                 symbolBrush=forward_color,
-                name=f"{label} Aller",
             )
             self.plot_widget.plot(
                 return_x,
@@ -395,7 +431,6 @@ class ExternalAxisWidget(QWidget):
                 pen=pg.mkPen(color=return_color, width=2, style=Qt.PenStyle.DashLine),
                 symbol="t",
                 symbolBrush=return_color,
-                name=f"{label} Retour",
             )
 
         if all_values:
