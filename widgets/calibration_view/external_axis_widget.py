@@ -51,6 +51,9 @@ class ExternalAxisWidget(QWidget):
         import_group_layout.setSpacing(5)
 
         import_layout = QHBoxLayout()
+        self.file_label = QLabel("Aucun fichier chargé")
+        self.file_label.setStyleSheet("border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;")
+        import_layout.addWidget(self.file_label)
         self.btn_import = QPushButton("Importer .txt")
         self.btn_import.clicked.connect(self._import_measurements)
         import_layout.addWidget(self.btn_import)
@@ -76,8 +79,8 @@ class ExternalAxisWidget(QWidget):
 
         tolerance_layout = QHBoxLayout()
         tolerance_layout.addWidget(QLabel("Tolerances :"))
-        self.tolerance_min_input = self._make_tolerance_spinbox(-0.1)
-        self.tolerance_max_input = self._make_tolerance_spinbox(0.1)
+        self.tolerance_min_input = self._make_tolerance_spinbox(-0.05)
+        self.tolerance_max_input = self._make_tolerance_spinbox(0.05)
         self.tolerance_min_input.valueChanged.connect(self._update_plot)
         self.tolerance_max_input.valueChanged.connect(self._update_plot)
         tolerance_layout.addWidget(QLabel("Min"))
@@ -131,9 +134,10 @@ class ExternalAxisWidget(QWidget):
         self.plot_widget.getAxis("left").setTextPen(pg.mkPen("#d8d8d8"))
         self.plot_widget.getAxis("bottom").setTextPen(pg.mkPen("#d8d8d8"))
         self.plot_widget.showGrid(x=True, y=True, alpha=0.22)
+        legend = self.plot_widget.addLegend(offset=(-85, 10))
+        legend.anchor((1, 0), (1, 0))
         import_group_layout.addWidget(self.plot_widget, 0)
         self._build_statistics_group(import_group_layout)
-        import_group_layout.addLayout(self._build_plot_legend_layout())
         self._set_statistics_values()
 
         layout.addWidget(import_group)
@@ -186,7 +190,7 @@ class ExternalAxisWidget(QWidget):
         compensation_group_layout.addLayout(compensation_params_layout)
 
         generate_layout = QHBoxLayout()
-        self.btn_generate_compensation_table = QPushButton("Exporter la table .SPF")
+        self.btn_generate_compensation_table = QPushButton("Exporter la table de compensation bidirectionnelle .SPF")
         self.btn_generate_compensation_table.clicked.connect(self._generate_compensation_table)
         generate_layout.addWidget(self.btn_generate_compensation_table)
         generate_layout.addStretch()
@@ -297,6 +301,10 @@ class ExternalAxisWidget(QWidget):
             return
 
         try:
+            # Mettre à jour le label avec le nom du fichier
+            import os
+            self.file_label.setText(os.path.basename(file_path))
+            
             data = self._read_measurements_file(file_path)
             if not data:
                 QMessageBox.warning(self, "Erreur", "Aucun point valide trouve dans le fichier.")
@@ -403,6 +411,9 @@ class ExternalAxisWidget(QWidget):
         all_values = []
         regression_theoretical = []
         regression_measured = []
+        
+        first_forward = True
+        first_return = True
 
         for index, (checkbox, label, forward_color, return_color) in enumerate(
             zip(checkboxes, labels, forward_colors, return_colors)
@@ -418,20 +429,49 @@ class ExternalAxisWidget(QWidget):
             regression_theoretical.extend(return_x)
             regression_measured.extend(forward_data[:, index])
             regression_measured.extend(return_data[:, index])
+            
             self.plot_widget.plot(
                 forward_x,
                 forward_error,
                 pen=pg.mkPen(color=forward_color, width=2),
                 symbol="o",
                 symbolBrush=forward_color,
+                name="Aller" if first_forward else None,
             )
+            first_forward = False
+            
             self.plot_widget.plot(
                 return_x,
                 return_error,
-                pen=pg.mkPen(color=return_color, width=2, style=Qt.PenStyle.DashLine),
+                pen=pg.mkPen(color=return_color, width=2),
                 symbol="t",
                 symbolBrush=return_color,
+                name="Retour" if first_return else None,
             )
+            first_return = False
+            
+            # Ajouter les lignes de régression linéaire pour Aller et Retour
+            forward_regression = self._calculate_linear_regression(forward_x, forward_data[:, index])
+            if forward_regression is not None:
+                slope, intercept = forward_regression
+                x_range = np.linspace(np.min(forward_x), np.max(forward_x), 100)
+                y_regression = slope * x_range + intercept - x_range  # Soustraire x_range car on affiche les erreurs
+                self.plot_widget.plot(
+                    x_range,
+                    y_regression,
+                    pen=pg.mkPen(color=forward_color, width=1, style=Qt.PenStyle.DotLine),
+                )
+            
+            return_regression = self._calculate_linear_regression(return_x, return_data[:, index])
+            if return_regression is not None:
+                slope, intercept = return_regression
+                x_range = np.linspace(np.min(return_x), np.max(return_x), 100)
+                y_regression = slope * x_range + intercept - x_range  # Soustraire x_range car on affiche les erreurs
+                self.plot_widget.plot(
+                    x_range,
+                    y_regression,
+                    pen=pg.mkPen(color=return_color, width=1, style=Qt.PenStyle.DotLine),
+                )
 
         if all_values:
             values_array = np.array(all_values, dtype=float)
