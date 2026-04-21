@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from widgets.calibration_view.measurement_widget import MeasurementWidget
 from widgets.calibration_view.correction_table_widget import CorrectionTableWidget
 from widgets.calibration_view.optimized_widget import OptimizedWidget
+from widgets.calibration_view.external_axis_widget import ExternalAxisWidget
 
 class CalibrationView(QWidget):
     """Vue de calibration du robot"""
@@ -15,6 +16,7 @@ class CalibrationView(QWidget):
             self.measurement_widget = MeasurementWidget()
             self.correction_widget = CorrectionTableWidget()
             self.optimized_widget = OptimizedWidget()
+            self.external_axis_widget = ExternalAxisWidget()
             self.tab_widget = QTabWidget()
 
             self._setup_ui()
@@ -39,6 +41,13 @@ class CalibrationView(QWidget):
         optimise_layout.addWidget(self.optimized_widget)
         self.tab_widget.addTab(optimise_tab, "Optimisée")
         
+        # Onglet Axe externe
+        external_axis_tab = QWidget()
+        external_axis_layout = QVBoxLayout(external_axis_tab)
+        external_axis_layout.setSpacing(5)
+        external_axis_layout.addWidget(self.external_axis_widget)
+        self.tab_widget.addTab(external_axis_tab, "Axe externe")
+        
         layout.addWidget(self.tab_widget)
 
 
@@ -49,6 +58,10 @@ class CalibrationView(QWidget):
     def get_correction_widget(self) -> CorrectionTableWidget:
         """Retourne le widget de tableau des corrections"""
         return self.correction_widget
+
+    def get_external_axis_widget(self) -> ExternalAxisWidget:
+        """Retourne le widget d'axe externe"""
+        return self.external_axis_widget
 
     def get_optimized_widget(self) -> OptimizedWidget:
         """Retourne le widget d'optimisation DH"""
