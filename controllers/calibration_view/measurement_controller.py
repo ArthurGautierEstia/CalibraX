@@ -462,8 +462,8 @@ class MeasurementController(QObject):
         if len(cumulative) > 7:
             cumulative = cumulative[:7]
 
-        # Known measurement pose (deg)
-        q_measured = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
+        # Get the current joint positions from robot model
+        q_measured = self.robot_model.get_joints()
         axis_reversed = self.robot_model.get_axis_reversed()
         q_effective = [q_measured[i] * axis_reversed[i] for i in range(6)]
 

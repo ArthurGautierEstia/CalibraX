@@ -22,7 +22,7 @@ class JointsController(QObject):
         self.joint_control_widget.joint_value_changed.connect(self._on_view_joint_value_changed)
         self.joint_control_widget.home_position_requested.connect(self._on_view_home_position_requested)
         self.joint_control_widget.position_zero_requested.connect(self._on_view_position_zero_requested)
-        self.joint_control_widget.position_transport_requested.connect(self._on_view_position_transport_requested)
+        self.joint_control_widget.position_calibration_requested.connect(self._on_view_position_calibration_requested)
 
     def _on_model_config_changed(self) -> None:
         """Callback quand le modele du robot signale un changement de configuration"""
@@ -49,5 +49,5 @@ class JointsController(QObject):
     def _on_view_position_zero_requested(self) -> None:
         self.robot_model.go_to_position_zero()
 
-    def _on_view_position_transport_requested(self) -> None:
-        self.robot_model.go_to_position_transport()
+    def _on_view_position_calibration_requested(self) -> None:
+        self.robot_model.go_to_position_calibration()

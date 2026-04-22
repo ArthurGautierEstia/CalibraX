@@ -54,7 +54,7 @@ class ExternalAxisWidget(QWidget):
         self.file_label = QLabel("Aucun fichier chargé")
         self.file_label.setStyleSheet("border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;")
         import_layout.addWidget(self.file_label)
-        self.btn_import = QPushButton("Importer .txt")
+        self.btn_import = QPushButton("Importer un ficher de mesures (.txt)")
         self.btn_import.clicked.connect(self._import_measurements)
         import_layout.addWidget(self.btn_import)
         import_layout.addStretch()
@@ -137,7 +137,7 @@ class ExternalAxisWidget(QWidget):
         legend = self.plot_widget.addLegend(offset=(-85, 10))
         legend.anchor((1, 0), (1, 0))
         import_group_layout.addWidget(self.plot_widget, 0)
-        self._build_statistics_group(import_group_layout)
+        import_group_layout.addLayout(self._build_statistics_layout())
         self._set_statistics_values()
 
         layout.addWidget(import_group)
@@ -238,17 +238,16 @@ class ExternalAxisWidget(QWidget):
         spinbox.setValue(value)
         return spinbox
 
-    def _build_statistics_group(self, parent_layout: QVBoxLayout) -> None:
-        stats_group = QGroupBox("Donnees statistiques")
-        stats_layout = QHBoxLayout(stats_group)
-        stats_layout.setSpacing(12)
+    def _build_statistics_layout(self) -> QHBoxLayout:
+        stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(20)
 
         self.min_label = QLabel("Min: -")
         self.max_label = QLabel("Max: -")
-        self.mean_label = QLabel("Moyenne: -")
-        self.amplitude_label = QLabel("Amplitude: -")
-        self.slope_label = QLabel("Pente regression: -")
-        self.intercept_label = QLabel("Ordonnee origine: -")
+        self.mean_label = QLabel("Moy: -")
+        self.amplitude_label = QLabel("Ampl: -")
+        self.slope_label = QLabel("Pente: -")
+        self.intercept_label = QLabel("Ordonnée: -")
 
         stats_layout.addWidget(self.min_label)
         stats_layout.addWidget(self.max_label)
@@ -257,7 +256,7 @@ class ExternalAxisWidget(QWidget):
         stats_layout.addWidget(self.slope_label)
         stats_layout.addWidget(self.intercept_label)
         stats_layout.addStretch()
-        parent_layout.addWidget(stats_group)
+        return stats_layout
 
     def _build_plot_legend_layout(self) -> QHBoxLayout:
         legend_layout = QHBoxLayout()
@@ -540,8 +539,8 @@ class ExternalAxisWidget(QWidget):
         forward_data = self.measurements[:forward_count, coordinate_index]
         return_data = self.measurements[forward_count:forward_count + return_count, coordinate_index]
 
-        forward_compensation = self.theoretical_forward - forward_data
-        return_compensation = self.theoretical_return - return_data
+        forward_compensation = forward_data - self.theoretical_forward
+        return_compensation = return_data - self.theoretical_return
         reference_compensation = self._compensation_at_calibration_position(
             self.theoretical_return if self.calibration_reference_combo.currentText() == "Retour" else self.theoretical_forward,
             return_compensation if self.calibration_reference_combo.currentText() == "Retour" else forward_compensation,
@@ -659,20 +658,20 @@ class ExternalAxisWidget(QWidget):
         if min_val is None:
             self.min_label.setText("Min: -")
             self.max_label.setText("Max: -")
-            self.mean_label.setText("Moyenne: -")
-            self.amplitude_label.setText("Amplitude: -")
-            self.slope_label.setText("Pente regression: -")
-            self.intercept_label.setText("Ordonnee origine: -")
+            self.mean_label.setText("Moy: -")
+            self.amplitude_label.setText("Ampl: -")
+            self.slope_label.setText("Pente: -")
+            self.intercept_label.setText("Ordonnée: -")
             return
 
         slope_text = "-" if slope is None else f"{slope:.12f}"
         intercept_text = "-" if intercept is None else f"{intercept:.6f}"
-        self.min_label.setText(f"Min: {min_val:.3f}")
-        self.max_label.setText(f"Max: {max_val:.3f}")
-        self.mean_label.setText(f"Moyenne: {mean_val:.3f}")
-        self.amplitude_label.setText(f"Amplitude: {amplitude:.3f}")
-        self.slope_label.setText(f"Pente regression: {slope_text}")
-        self.intercept_label.setText(f"Ordonnee origine: {intercept_text}")
+        self.min_label.setText(f"Min: {min_val:.3f} mm")
+        self.max_label.setText(f"Max: {max_val:.3f} mm")
+        self.mean_label.setText(f"Moy: {mean_val:.3f} mm")
+        self.amplitude_label.setText(f"Ampl: {amplitude:.3f} mm")
+        self.slope_label.setText(f"Pente: {slope_text}")
+        self.intercept_label.setText(f"Ordonnée: {intercept_text}")
 
     def _add_tolerance_lines(self) -> None:
         min_tolerance = self.tolerance_min_input.value()

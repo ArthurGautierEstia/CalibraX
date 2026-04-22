@@ -14,7 +14,7 @@ class JointsControlWidget(QWidget):
     joint_value_changed = pyqtSignal(int, float)  # index, value
     home_position_requested = pyqtSignal()
     position_zero_requested = pyqtSignal()
-    position_transport_requested = pyqtSignal()
+    position_calibration_requested = pyqtSignal()
     
     def __init__(self, parent: QWidget = None, compact: bool = False) -> None:
         super().__init__(parent)
@@ -91,9 +91,9 @@ class JointsControlWidget(QWidget):
         self.btn_position_zero.clicked.connect(self.position_zero_requested.emit)
         btn_grid.addWidget(self.btn_position_zero, 0, 0)
 
-        self.btn_position_transport = QPushButton("Position transport")
-        self.btn_position_transport.clicked.connect(self.position_transport_requested.emit)
-        btn_grid.addWidget(self.btn_position_transport, 0, 1)
+        self.btn_position_calibration = QPushButton("Position calibration")
+        self.btn_position_calibration.clicked.connect(self.position_calibration_requested.emit)
+        btn_grid.addWidget(self.btn_position_calibration, 0, 1)
         
         self.btn_home_position = QPushButton("Position home")
         self.btn_home_position.clicked.connect(self.home_position_requested.emit)
@@ -102,7 +102,7 @@ class JointsControlWidget(QWidget):
         layout.addLayout(btn_layout)
         if self._compact:
             self.btn_position_zero.hide()
-            self.btn_position_transport.hide()
+            self.btn_position_calibration.hide()
             self.btn_home_position.hide()
 
         self.setLayout(layout)

@@ -37,7 +37,7 @@ class RobotModel(QObject):
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [f"./robots_stl/rocky{i}.stl" for i in range(7)]
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
-    POSITION_TRANSPORT: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
+    POSITION_CALIBRATION: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
     
     # ============================================================================
     # SIGNAUX
@@ -105,7 +105,7 @@ class RobotModel(QObject):
         # Position home du robot
         self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
         self.position_zero: List[float] = list(RobotModel.POSITION_ZERO)
-        self.position_transport: List[float] = list(RobotModel.POSITION_TRANSPORT)
+        self.position_calibration: List[float] = list(RobotModel.POSITION_CALIBRATION)
         
         # Valeurs actuelles des joints (en degrés)
         self.joint_values: List[float] = [0, 0, 0, 0, 0, 0]
@@ -585,18 +585,18 @@ class RobotModel(QObject):
         """Déplace les joints à la position 0 (fixe)"""
         self.set_joints(self.position_zero)
 
-    def get_position_transport(self):
-        """Retourne la position transport (fixe)"""
-        return self.position_transport.copy()
+    def get_position_calibration(self):
+        """Retourne la position calibration (fixe)"""
+        return self.position_calibration.copy()
 
-    def set_position_transport(self, position_transport: list[float]):
-        """Définit la position transport"""
-        if len(position_transport) >= 6:
-            self.position_transport = list(position_transport[:6])
+    def set_position_calibration(self, position_calibration: list[float]):
+        """Définit la position calibration"""
+        if len(position_calibration) >= 6:
+            self.position_calibration = list(position_calibration[:6])
 
-    def go_to_position_transport(self):
-        """Déplace les joints à la position transport (fixe)"""
-        self.set_joints(self.position_transport)
+    def go_to_position_calibration(self):
+        """Déplace les joints à la position de calibration (fixe)"""
+        self.set_joints(self.position_calibration)
 
     # ============================================================================
     # RÉGION: Getters - Joints et axes

@@ -41,7 +41,7 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.axis_colliders_config_changed.connect(self._on_view_axis_colliders_config_changed)
         self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
         self.robot_configuration_widget.position_zero_requested.connect(self._on_view_position_zero_requested)
-        self.robot_configuration_widget.position_transport_requested.connect(self._on_view_position_transport_requested)
+        self.robot_configuration_widget.position_calibration_requested.connect(self._on_view_position_calibration_requested)
         self.robot_configuration_widget.home_position_requested.connect(self._on_view_home_position_requested)
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
@@ -114,26 +114,26 @@ class RobotConfigurationController(QObject):
         self,
         home_position: list[float],
         position_zero: list[float],
-        position_transport: list[float],
+        position_calibration: list[float],
     ) -> None:
         self.robot_model.set_position_zero(position_zero)
-        self.robot_model.set_position_transport(position_transport)
+        self.robot_model.set_position_calibration(position_calibration)
         self.robot_model.set_home_position(home_position)
 
     def _sync_positions_from_view(self) -> None:
         self._on_view_positions_config_changed(
             self.robot_configuration_widget.get_home_position(),
             self.robot_configuration_widget.get_position_zero(),
-            self.robot_configuration_widget.get_position_transport(),
+            self.robot_configuration_widget.get_position_calibration(),
         )
 
     def _on_view_position_zero_requested(self) -> None:
         self._sync_positions_from_view()
         self.robot_model.go_to_position_zero()
 
-    def _on_view_position_transport_requested(self) -> None:
+    def _on_view_position_calibration_requested(self) -> None:
         self._sync_positions_from_view()
-        self.robot_model.go_to_position_transport()
+        self.robot_model.go_to_position_calibration()
 
     def _on_view_home_position_requested(self) -> None:
         self._sync_positions_from_view()
@@ -184,7 +184,7 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.set_positions_config(
             self.robot_model.get_home_position(),
             self.robot_model.get_position_zero(),
-            self.robot_model.get_position_transport(),
+            self.robot_model.get_position_calibration(),
         )
 
     def update_cad_view(self) -> None:

@@ -52,7 +52,7 @@ class RobotConfigurationWidget(QWidget):
     axis_config_changed = pyqtSignal(list, list, list, list, list, list)
     positions_config_changed = pyqtSignal(list, list, list)
     position_zero_requested = pyqtSignal()
-    position_transport_requested = pyqtSignal()
+    position_calibration_requested = pyqtSignal()
     home_position_requested = pyqtSignal()
 
     robot_cad_models_changed = pyqtSignal(list)
@@ -70,7 +70,7 @@ class RobotConfigurationWidget(QWidget):
     COL_AXIS_REVERSED = 5
 
     COL_POS_ZERO = 0
-    COL_POS_TRANSPORT = 1
+    COL_POS_CALIBRATION = 1
     COL_POS_HOME = 2
 
     COL_AXIS_COLLIDER_ENABLED = 0
@@ -318,7 +318,7 @@ class RobotConfigurationWidget(QWidget):
         self.table_positions.setHorizontalHeaderLabels(
             [
                 "Position 0 (deg)",
-                "Position transport (deg)",
+                "Position calibration (deg)",
                 "Position home (deg)",
             ]
         )
@@ -332,9 +332,9 @@ class RobotConfigurationWidget(QWidget):
         self.btn_go_position_zero.clicked.connect(self.position_zero_requested.emit)
         positions_btn_layout.addWidget(self.btn_go_position_zero)
 
-        self.btn_go_position_transport = QPushButton("Aller Position transport")
-        self.btn_go_position_transport.clicked.connect(self.position_transport_requested.emit)
-        positions_btn_layout.addWidget(self.btn_go_position_transport)
+        self.btn_go_position_calibration = QPushButton("Aller Position calibration")
+        self.btn_go_position_calibration.clicked.connect(self.position_calibration_requested.emit)
+        positions_btn_layout.addWidget(self.btn_go_position_calibration)
 
         self.btn_go_home_position = QPushButton("Aller Position home")
         self.btn_go_home_position.clicked.connect(self.home_position_requested.emit)
@@ -594,7 +594,7 @@ class RobotConfigurationWidget(QWidget):
         self.positions_config_changed.emit(
             self.get_home_position(),
             self.get_position_zero(),
-            self.get_position_transport(),
+            self.get_position_calibration(),
         )
 
     def _on_pick_robot_cad(self, index: int) -> None:
@@ -1241,17 +1241,17 @@ class RobotConfigurationWidget(QWidget):
         self,
         home_position: list[float],
         position_zero: list[float],
-        position_transport: list[float],
+        position_calibration: list[float],
     ) -> None:
         self.table_positions.blockSignals(True)
         try:
             for row in range(6):
                 zero_value = position_zero[row] if row < len(position_zero) else 0.0
-                transport_value = position_transport[row] if row < len(position_transport) else 0.0
+                calibration_value = position_calibration[row] if row < len(position_calibration) else 0.0
                 home_value = home_position[row] if row < len(home_position) else 0.0
 
                 self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_ZERO, QTableWidgetItem(str(zero_value)))
-                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_TRANSPORT, QTableWidgetItem(str(transport_value)))
+                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_CALIBRATION, QTableWidgetItem(str(calibration_value)))
                 self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_HOME, QTableWidgetItem(str(home_value)))
         finally:
             self.table_positions.blockSignals(False)
@@ -1259,8 +1259,8 @@ class RobotConfigurationWidget(QWidget):
     def get_position_zero(self) -> list[float]:
         return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_ZERO, 0.0) for row in range(6)]
 
-    def get_position_transport(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_TRANSPORT, 0.0) for row in range(6)]
+    def get_position_calibration(self) -> list[float]:
+        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_CALIBRATION, 0.0) for row in range(6)]
 
     def get_home_position(self) -> list[float]:
         return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_HOME, 0.0) for row in range(6)]

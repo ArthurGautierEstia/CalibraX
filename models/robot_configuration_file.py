@@ -54,7 +54,7 @@ class RobotConfigurationFile:
     allowed_configs: set[MgiConfigKey] = field(default_factory=lambda: set(MgiConfigKey))
     home_position: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 90.0, 0.0])
     position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0])
-    position_transport: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
+    position_calibration: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
 
     # Tracks which fields were present when loaded from JSON.
@@ -264,7 +264,7 @@ class RobotConfigurationFile:
             allowed_configs=robot_model.get_allowed_configurations(),
             home_position=robot_model.get_home_position(),
             position_zero=robot_model.get_position_zero(),
-            position_transport=robot_model.get_position_transport(),
+            position_calibration=robot_model.get_position_calibration(),
             robot_cad_models=robot_model.get_robot_cad_models(),
             dh_measured=[row[:] for row in robot_model.get_measured_dh_params()[:6]],
             dh_measured_enabled=robot_model.get_measured_dh_enabled(),
@@ -285,7 +285,7 @@ class RobotConfigurationFile:
                 "allowed_configs",
                 "home_position",
                 "position_zero",
-                "position_transport",
+                "position_calibration",
                 "robot_cad_models",
             },
         )
@@ -341,7 +341,7 @@ class RobotConfigurationFile:
             allowed_configs=allowed_configs,
             home_position=cls._parse_float_list(data.get("home_position"), 6, 0.0),
             position_zero=cls._parse_float_list(data.get("position_zero"), 6, 0.0),
-            position_transport=cls._parse_float_list(data.get("position_transport"), 6, 0.0),
+            position_calibration=cls._parse_float_list(data.get("position_calibration"), 6, 0.0),
             robot_cad_models=cls._parse_string_list(
                 data.get("robot_cad_models", data.get("robot_cad_files")),
                 DEFAULT_ROBOT_CAD_MODELS,
@@ -369,7 +369,7 @@ class RobotConfigurationFile:
             "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],
             "home_position": self.home_position[:6],
             "position_zero": self.position_zero[:6],
-            "position_transport": self.position_transport[:6],
+            "position_calibration": self.position_calibration[:6],
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
         }
 
@@ -402,8 +402,8 @@ class RobotConfigurationFile:
             robot_model.set_home_position(self.home_position)
         if "position_zero" in self.present_fields:
             robot_model.set_position_zero(self.position_zero)
-        if "position_transport" in self.present_fields:
-            robot_model.set_position_transport(self.position_transport)
+        if "position_calibration" in self.present_fields:
+            robot_model.set_position_calibration(self.position_calibration)
         if "robot_cad_models" in self.present_fields:
             robot_model.set_robot_cad_models(self.robot_cad_models)
         if "dh_measured" in self.present_fields:

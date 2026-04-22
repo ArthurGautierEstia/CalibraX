@@ -414,7 +414,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.joint_target_widget.update_axis_limits(self.robot_model.get_axis_limits())
         self.joint_target_widget.btn_home_position.hide()
         self.joint_target_widget.btn_position_zero.hide()
-        self.joint_target_widget.btn_position_transport.hide()
+        self.joint_target_widget.btn_position_calibration.hide()
         layout.addWidget(self.joint_target_widget)
 
         group.setLayout(layout)
