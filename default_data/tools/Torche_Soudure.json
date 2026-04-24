@@ -47,5 +47,13 @@
             "radius": 20.0,
             "height": 140.0
         }
+    ],
+    "evaluated_robot_axis_colliders": [
+        true,
+        true,
+        true,
+        false,
+        false,
+        false
     ]
 }

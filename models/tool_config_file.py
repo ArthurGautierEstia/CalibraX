@@ -16,6 +16,7 @@ class ToolConfigFile:
     tool_cad_model: str = ""
     tool_cad_offset_rz: float = 0.0
     tool_colliders: list[dict[str, Any]] | None = None
+    evaluated_robot_axis_colliders: list[bool] | None = None
 
     def __post_init__(self) -> None:
         if self.tool is None:
@@ -27,6 +28,9 @@ class ToolConfigFile:
         self.tool_cad_model = "" if self.tool_cad_model is None else str(self.tool_cad_model)
         self.tool_cad_offset_rz = float(self.tool_cad_offset_rz)
         self.tool_colliders = parse_primitive_colliders(self.tool_colliders, default_shape="cylinder")
+        self.evaluated_robot_axis_colliders = self._normalize_evaluated_robot_axis_colliders(
+            self.evaluated_robot_axis_colliders
+        )
 
     @staticmethod
     def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -34,6 +38,29 @@ class ToolConfigFile:
             return float(value)
         except (TypeError, ValueError):
             return default
+
+    @staticmethod
+    def _safe_bool(value: Any, default: bool = True) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on", "enabled", "active"}:
+                return True
+            if lowered in {"0", "false", "no", "off", "disabled", "inactive"}:
+                return False
+        return default
+
+    @classmethod
+    def _normalize_evaluated_robot_axis_colliders(cls, values: Any) -> list[bool]:
+        normalized: list[bool] = []
+        raw_values = values if isinstance(values, list) else []
+        for axis in range(6):
+            raw_value = raw_values[axis] if axis < len(raw_values) else True
+            normalized.append(cls._safe_bool(raw_value, True))
+        return normalized
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolConfigFile:
@@ -62,6 +89,9 @@ class ToolConfigFile:
             tool_cad_model="" if data.get("tool_cad_model") is None else str(data.get("tool_cad_model")),
             tool_cad_offset_rz=cls._safe_float(data.get("tool_cad_offset_rz", 0.0), 0.0),
             tool_colliders=parse_primitive_colliders(data.get("tool_colliders"), default_shape="cylinder"),
+            evaluated_robot_axis_colliders=cls._normalize_evaluated_robot_axis_colliders(
+                data.get("evaluated_robot_axis_colliders")
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,6 +108,7 @@ class ToolConfigFile:
             "tool_cad_model": self.tool_cad_model,
             "tool_cad_offset_rz": float(self.tool_cad_offset_rz),
             "tool_colliders": [primitive_collider_to_dict(collider) for collider in self.tool_colliders],
+            "evaluated_robot_axis_colliders": [bool(value) for value in self.evaluated_robot_axis_colliders[:6]],
         }
 
     def to_robot_tool(self) -> RobotTool:
@@ -91,6 +122,7 @@ class ToolConfigFile:
         tool_cad_model: str,
         tool_cad_offset_rz: float,
         tool_colliders: list[dict[str, Any]] | None = None,
+        evaluated_robot_axis_colliders: list[bool] | None = None,
     ) -> ToolConfigFile:
         return cls(
             name=name,
@@ -105,6 +137,9 @@ class ToolConfigFile:
             tool_cad_model=tool_cad_model,
             tool_cad_offset_rz=float(tool_cad_offset_rz),
             tool_colliders=parse_primitive_colliders(tool_colliders, default_shape="cylinder"),
+            evaluated_robot_axis_colliders=cls._normalize_evaluated_robot_axis_colliders(
+                evaluated_robot_axis_colliders
+            ),
         )
 
     def save(self, file_path: str) -> None:

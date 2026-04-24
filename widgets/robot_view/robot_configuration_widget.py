@@ -59,6 +59,7 @@ class RobotConfigurationWidget(QWidget):
     tool_cad_model_changed = pyqtSignal(str)
     tool_cad_offset_rz_changed = pyqtSignal(float)
     tool_colliders_changed = pyqtSignal(list)
+    tool_evaluated_robot_axis_colliders_changed = pyqtSignal(list)
     tool_profiles_directory_changed = pyqtSignal(str)
     selected_tool_profile_changed = pyqtSignal(str)
 
@@ -112,6 +113,7 @@ class RobotConfigurationWidget(QWidget):
         self.table_tool_colliders: QTableWidget | None = None
         self._tool_collider_type_combos: list[QComboBox] = []
         self._tool_collider_enabled_checkboxes: list[QCheckBox] = []
+        self._tool_evaluated_robot_axis_colliders_checkboxes: list[QCheckBox] = []
         self.tool_profiles_dir_line_edit: QLineEdit | None = None
         self.tool_profiles_combo: QComboBox | None = None
         self.tool_name_line_edit: QLineEdit | None = None
@@ -162,6 +164,7 @@ class RobotConfigurationWidget(QWidget):
         self.tool_widget_container_layout.addWidget(self.tool_widget)
         self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)
         self.set_tool_colliders([])
+        self.set_tool_evaluated_robot_axis_colliders(None)
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
 
     def _build_dh_tab(self) -> QWidget:
@@ -390,7 +393,7 @@ class RobotConfigurationWidget(QWidget):
         group = QGroupBox("Configuration tool")
         layout = QVBoxLayout(group)
 
-        description = QLabel("Definition du tool actif: Nom, XYZABC, CAO et offset visuel Rz.")
+        description = QLabel("Définition du tool actif : Nom, XYZABC, CAO et offset visuel Rz.")
         description.setWordWrap(True)
         layout.addWidget(description)
 
@@ -451,7 +454,19 @@ class RobotConfigurationWidget(QWidget):
 
         layout.addLayout(tool_cad_grid)
 
-        colliders_title = QLabel("Colliders tool (repere flange / axe 6)")
+        evaluated_colliders_layout = QHBoxLayout()
+        evaluated_colliders_layout.addWidget(QLabel("Colliders robot à évaluer pour ce tool"))
+        self._tool_evaluated_robot_axis_colliders_checkboxes.clear()
+        for axis in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
+            checkbox = QCheckBox(f"J{axis + 1}")
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._emit_tool_evaluated_robot_axis_colliders_changed)
+            self._tool_evaluated_robot_axis_colliders_checkboxes.append(checkbox)
+            evaluated_colliders_layout.addWidget(checkbox)
+        evaluated_colliders_layout.addStretch()
+        layout.addLayout(evaluated_colliders_layout)
+
+        colliders_title = QLabel("Colliders tool (repère flange / axe 6)")
         colliders_title.setStyleSheet("font-weight: bold;")
         layout.addWidget(colliders_title)
 
@@ -513,6 +528,9 @@ class RobotConfigurationWidget(QWidget):
 
     def _on_tool_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
         self.tool_colliders_changed.emit(self.get_tool_colliders())
+
+    def _emit_tool_evaluated_robot_axis_colliders_changed(self) -> None:
+        self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
 
     def _on_add_tool_collider_clicked(self) -> None:
         self._insert_tool_collider_row(
@@ -751,6 +769,8 @@ class RobotConfigurationWidget(QWidget):
         self.tool_cad_offset_rz_changed.emit(profile.tool_cad_offset_rz)
         self.set_tool_colliders(profile.tool_colliders)
         self.tool_colliders_changed.emit(self.get_tool_colliders())
+        self.set_tool_evaluated_robot_axis_colliders(profile.evaluated_robot_axis_colliders)
+        self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
         return True
 
     def _on_save_tool_profile(self) -> None:
@@ -812,6 +832,7 @@ class RobotConfigurationWidget(QWidget):
             self.get_tool_cad_model(),
             self.get_tool_cad_offset_rz(),
             self.get_tool_colliders(),
+            self.get_tool_evaluated_robot_axis_colliders(),
         )
         try:
             profile.save(output_path)
@@ -842,6 +863,9 @@ class RobotConfigurationWidget(QWidget):
         self.set_tool_colliders([])
         if emit_signals:
             self.tool_colliders_changed.emit([])
+        self.set_tool_evaluated_robot_axis_colliders(None)
+        if emit_signals:
+            self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
 
     @staticmethod
     def _safe_float(value: str, default: float = 0.0) -> float:
@@ -929,7 +953,7 @@ class RobotConfigurationWidget(QWidget):
 
     @staticmethod
     def _default_tools_directory() -> str:
-        return "./configurations/tools"
+        return "./user_data/tools"
 
     @staticmethod
     def _normalize_cad_path(file_path: str) -> str:
@@ -1349,6 +1373,26 @@ class RobotConfigurationWidget(QWidget):
             )
 
         return parse_primitive_colliders(values, default_shape="cylinder")
+
+    @staticmethod
+    def _normalize_tool_evaluated_robot_axis_colliders(values: list[bool] | None) -> list[bool]:
+        raw_values = values if isinstance(values, list) else []
+        normalized: list[bool] = []
+        for axis in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
+            normalized.append(bool(raw_values[axis]) if axis < len(raw_values) else True)
+        return normalized
+
+    def set_tool_evaluated_robot_axis_colliders(self, values: list[bool] | None) -> None:
+        normalized = RobotConfigurationWidget._normalize_tool_evaluated_robot_axis_colliders(values)
+        for axis, checkbox in enumerate(self._tool_evaluated_robot_axis_colliders_checkboxes):
+            checkbox.blockSignals(True)
+            checkbox.setChecked(normalized[axis])
+            checkbox.blockSignals(False)
+
+    def get_tool_evaluated_robot_axis_colliders(self) -> list[bool]:
+        if not self._tool_evaluated_robot_axis_colliders_checkboxes:
+            return [True] * RobotConfigurationWidget.AXIS_COLLIDER_COUNT
+        return [checkbox.isChecked() for checkbox in self._tool_evaluated_robot_axis_colliders_checkboxes[:6]]
 
     def set_tool_profiles_directory(self, directory: str | None, emit_change: bool = False) -> None:
         if self.tool_profiles_dir_line_edit is None:

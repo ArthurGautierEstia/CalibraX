@@ -29,11 +29,15 @@ class ToolController(QObject):
         self.tool_model.tool_visual_changed.connect(self.update_tool_view)
         self.tool_model.tool_profile_changed.connect(self.update_tool_view)
         self.tool_model.tool_colliders_changed.connect(self.update_tool_view)
+        self.tool_model.tool_evaluated_robot_axis_colliders_changed.connect(self.update_tool_view)
 
         self.robot_configuration_widget.tool_changed.connect(self._on_view_tool_changed)
         self.robot_configuration_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
         self.robot_configuration_widget.tool_cad_offset_rz_changed.connect(self._on_view_tool_cad_offset_rz_changed)
         self.robot_configuration_widget.tool_colliders_changed.connect(self._on_view_tool_colliders_changed)
+        self.robot_configuration_widget.tool_evaluated_robot_axis_colliders_changed.connect(
+            self._on_view_tool_evaluated_robot_axis_colliders_changed
+        )
         self.robot_configuration_widget.tool_profiles_directory_changed.connect(self._on_view_tool_profiles_directory_changed)
         self.robot_configuration_widget.selected_tool_profile_changed.connect(self._on_view_selected_tool_profile_changed)
 
@@ -48,6 +52,9 @@ class ToolController(QObject):
 
     def _on_view_tool_colliders_changed(self, tool_colliders: list[dict]) -> None:
         self.tool_model.set_tool_colliders(tool_colliders)
+
+    def _on_view_tool_evaluated_robot_axis_colliders_changed(self, values: list[bool]) -> None:
+        self.tool_model.set_evaluated_robot_axis_colliders(values)
 
     def _on_view_tool_profiles_directory_changed(self, directory: str) -> None:
         self.tool_model.set_tool_profiles_directory(directory)
@@ -64,6 +71,7 @@ class ToolController(QObject):
         self.tool_model.set_tool_cad_model("")
         self.tool_model.set_tool_cad_offset_rz(0.0)
         self.tool_model.set_tool_colliders([])
+        self.tool_model.set_evaluated_robot_axis_colliders(None)
 
     def update_tool_view(self) -> None:
         self.robot_configuration_widget.set_tool_profiles_directory(self.tool_model.get_tool_profiles_directory())
@@ -72,6 +80,9 @@ class ToolController(QObject):
         self.robot_configuration_widget.set_tool_cad_model(self.tool_model.get_tool_cad_model())
         self.robot_configuration_widget.set_tool_cad_offset_rz(self.tool_model.get_tool_cad_offset_rz())
         self.robot_configuration_widget.set_tool_colliders(self.tool_model.get_tool_colliders())
+        self.robot_configuration_widget.set_tool_evaluated_robot_axis_colliders(
+            self.tool_model.get_evaluated_robot_axis_colliders()
+        )
 
     def load_tool_profile_from_path(self, file_path: str, show_errors: bool = False) -> bool:
         try:
@@ -93,4 +104,5 @@ class ToolController(QObject):
         self.tool_model.set_tool_cad_model(profile.tool_cad_model)
         self.tool_model.set_tool_cad_offset_rz(profile.tool_cad_offset_rz)
         self.tool_model.set_tool_colliders(profile.tool_colliders)
+        self.tool_model.set_evaluated_robot_axis_colliders(profile.evaluated_robot_axis_colliders)
         return True

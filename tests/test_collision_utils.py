@@ -9,6 +9,7 @@ from utils.collision_utils import (
     CollisionShape,
     CollisionWorldCache,
     build_tool_collision_shapes,
+    filter_robot_shapes_by_evaluated_axes,
     intersects,
 )
 
@@ -168,6 +169,67 @@ class CollisionWorldCacheTests(unittest.TestCase):
         for shape in shapes:
             self.assertEqual("tool", shape.owner)
             self.assertEqual((4, 4), shape.world_transform.shape)
+
+    def test_robot_tool_filter_keeps_only_selected_robot_axes(self):
+        cache = CollisionWorldCache()
+        cache.robot_shapes_world = [
+            CollisionShape(
+                owner="robot",
+                name="Robot collider J1",
+                shape="sphere",
+                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                radius=1.0,
+                source_index=0,
+            ),
+            CollisionShape(
+                owner="robot",
+                name="Robot collider J2",
+                shape="sphere",
+                world_transform=math_utils.pose_zyx_to_matrix([10.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                radius=1.0,
+                source_index=1,
+            ),
+        ]
+        cache.tool_shapes_world = [
+            CollisionShape(
+                owner="tool",
+                name="Tool collider",
+                shape="sphere",
+                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                radius=1.0,
+                source_index=0,
+            )
+        ]
+
+        filtered_pairs = cache.find_robot_tool_collisions([False, True, True, True, True, True])
+        self.assertEqual([], filtered_pairs)
+
+        unfiltered_pairs = cache.find_robot_tool_collisions([True, False, False, False, False, False])
+        self.assertEqual(1, len(unfiltered_pairs))
+        self.assertEqual("Robot collider J1", unfiltered_pairs[0].name_a)
+
+    def test_filter_robot_shapes_by_evaluated_axes_keeps_shapes_without_axis_index(self):
+        shapes = [
+            CollisionShape(
+                owner="robot",
+                name="No axis",
+                shape="sphere",
+                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                radius=1.0,
+                source_index=None,
+            ),
+            CollisionShape(
+                owner="robot",
+                name="Axis 2",
+                shape="sphere",
+                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                radius=1.0,
+                source_index=1,
+            ),
+        ]
+
+        filtered = filter_robot_shapes_by_evaluated_axes(shapes, [False, False, False, False, False, False])
+        self.assertEqual(["No axis"], [shape.name for shape in filtered])
 
 
 if __name__ == "__main__":

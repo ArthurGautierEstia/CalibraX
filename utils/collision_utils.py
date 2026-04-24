@@ -161,6 +161,16 @@ class CollisionWorldCache:
         moving_shapes = [*self.robot_shapes_world, *self.tool_shapes_world]
         return find_collisions(moving_shapes, self.workspace_shapes_world)
 
+    def find_robot_tool_collisions(
+        self,
+        evaluated_robot_axis_colliders: list[bool] | None = None,
+    ) -> list[CollisionPair]:
+        robot_shapes = filter_robot_shapes_by_evaluated_axes(
+            self.robot_shapes_world,
+            evaluated_robot_axis_colliders,
+        )
+        return find_collisions(robot_shapes, self.tool_shapes_world)
+
     @staticmethod
     def find_collisions(
         shapes_a: list[CollisionShape],
@@ -265,6 +275,22 @@ def find_collisions(
     return pairs
 
 
+def filter_robot_shapes_by_evaluated_axes(
+    robot_shapes: list[CollisionShape],
+    evaluated_robot_axis_colliders: list[bool] | None = None,
+) -> list[CollisionShape]:
+    normalized_flags = _normalize_evaluated_robot_axis_colliders(evaluated_robot_axis_colliders)
+    filtered: list[CollisionShape] = []
+    for shape in robot_shapes:
+        axis_index = shape.source_index
+        if axis_index is None or not (0 <= axis_index < len(normalized_flags)):
+            filtered.append(shape)
+            continue
+        if normalized_flags[axis_index]:
+            filtered.append(shape)
+    return filtered
+
+
 def intersects(shape_a: CollisionShape, shape_b: CollisionShape, max_iters: int = 64) -> bool:
     return _gjk(shape_a, shape_b, max_iters=max_iters)
 
@@ -344,6 +370,14 @@ def _normalize_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
         if normalized.shape == (4, 4):
             out.append(normalized)
     return out
+
+
+def _normalize_evaluated_robot_axis_colliders(values: list[bool] | None) -> list[bool]:
+    raw_values = values if isinstance(values, list) else []
+    normalized: list[bool] = []
+    for axis in range(6):
+        normalized.append(bool(raw_values[axis]) if axis < len(raw_values) else True)
+    return normalized
 
 
 def _cso_support(shape_a: CollisionShape, shape_b: CollisionShape, direction: np.ndarray) -> np.ndarray:
@@ -467,6 +501,7 @@ __all__ = [
     "build_robot_axis_collision_shapes",
     "build_tool_collision_shapes",
     "build_workspace_collision_shapes",
+    "filter_robot_shapes_by_evaluated_axes",
     "find_collisions",
     "intersects",
     "primitive_extrusion_orientation",

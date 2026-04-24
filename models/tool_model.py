@@ -12,6 +12,7 @@ class ToolModel(QObject):
     DEFAULT_TOOL_CAD_MODEL: str = ""
     DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
     DEFAULT_TOOL_COLLIDERS: list[dict[str, Any]] = []
+    DEFAULT_EVALUATED_ROBOT_AXIS_COLLIDERS: list[bool] = [True] * 6
     DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./user_data/tools"
     DEFAULT_SELECTED_TOOL_PROFILE: str = ""
 
@@ -19,6 +20,7 @@ class ToolModel(QObject):
     tool_visual_changed = pyqtSignal()
     tool_profile_changed = pyqtSignal()
     tool_colliders_changed = pyqtSignal()
+    tool_evaluated_robot_axis_colliders_changed = pyqtSignal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -30,6 +32,9 @@ class ToolModel(QObject):
         self.tool_colliders: list[dict[str, Any]] = parse_primitive_colliders(
             ToolModel.DEFAULT_TOOL_COLLIDERS,
             default_shape="cylinder",
+        )
+        self.evaluated_robot_axis_colliders: list[bool] = list(
+            ToolModel.DEFAULT_EVALUATED_ROBOT_AXIS_COLLIDERS
         )
 
     @staticmethod
@@ -43,6 +48,14 @@ class ToolModel(QObject):
             float(source.b),
             float(source.c),
         )
+
+    @staticmethod
+    def _normalize_evaluated_robot_axis_colliders(values: list[bool] | None) -> list[bool]:
+        raw_values = values if isinstance(values, list) else []
+        normalized: list[bool] = []
+        for axis in range(6):
+            normalized.append(bool(raw_values[axis]) if axis < len(raw_values) else True)
+        return normalized
 
     def get_tool(self) -> RobotTool:
         return self._copy_tool(self.tool)
@@ -105,4 +118,14 @@ class ToolModel(QObject):
             return
         self.tool_colliders = normalized
         self.tool_colliders_changed.emit()
+
+    def get_evaluated_robot_axis_colliders(self) -> list[bool]:
+        return ToolModel._normalize_evaluated_robot_axis_colliders(self.evaluated_robot_axis_colliders)
+
+    def set_evaluated_robot_axis_colliders(self, values: list[bool] | None) -> None:
+        normalized = ToolModel._normalize_evaluated_robot_axis_colliders(values)
+        if normalized == self.evaluated_robot_axis_colliders:
+            return
+        self.evaluated_robot_axis_colliders = normalized
+        self.tool_evaluated_robot_axis_colliders_changed.emit()
 
