@@ -152,6 +152,43 @@ class CollisionWorldCacheTests(unittest.TestCase):
         self.assertEqual(workspace_ids, [id(shape) for shape in cache.workspace_shapes_world])
         self.assertEqual(tool_ids, [id(shape) for shape in cache.tool_shapes_world])
 
+    def test_dynamic_refresh_reuses_compiled_templates_and_workspace_shapes(self):
+        cache = CollisionWorldCache()
+        cache.set_workspace_collision_zones(
+            [{"enabled": True, "shape": "box", "pose": [0] * 6, "size_x": 10, "size_y": 10, "size_z": 10}]
+        )
+        cache.set_robot_axis_templates(
+            [
+                {
+                    "enabled": True,
+                    "radius": 1.0,
+                    "height": 2.0,
+                    "direction_axis": "z",
+                    "offset_xyz": [0.0, 0.0, 0.0],
+                }
+            ]
+        )
+        cache.set_tool_templates(
+            [{"enabled": True, "shape": "sphere", "pose": [0] * 6, "radius": 1.0}]
+        )
+
+        workspace_ids = [id(shape) for shape in cache.workspace_shapes_world]
+        robot_template_ids = [id(template) for template in cache.robot_shape_templates]
+        tool_template_ids = [id(template) for template in cache.tool_shape_templates]
+
+        frames_a = [np.eye(4) for _ in range(8)]
+        cache.update_dynamic_world_shapes(frames_a, np.eye(4))
+        first_robot_center = cache.robot_shapes_world[0].center.copy()
+
+        frames_b = [np.eye(4) for _ in range(8)]
+        frames_b[1] = math_utils.pose_zyx_to_matrix([5.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        cache.update_dynamic_world_shapes(frames_b, np.eye(4))
+
+        self.assertEqual(workspace_ids, [id(shape) for shape in cache.workspace_shapes_world])
+        self.assertEqual(robot_template_ids, [id(template) for template in cache.robot_shape_templates])
+        self.assertEqual(tool_template_ids, [id(template) for template in cache.tool_shape_templates])
+        self.assertNotAlmostEqual(first_robot_center[0], cache.robot_shapes_world[0].center[0])
+
     def test_empty_robot_axis_colliders_do_not_create_defaults(self):
         cache = CollisionWorldCache()
         cache.update_robot_axis_colliders([], [np.eye(4) for _ in range(8)])

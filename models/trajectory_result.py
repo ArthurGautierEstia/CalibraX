@@ -10,6 +10,7 @@ class TrajectoryComputationStatus(Enum):
     SPEED_LIMIT_EXCEEDED = "SPEED_LIMIT_EXCEEDED"
     JERK_LIMIT_EXCEEDED = "JERK_LIMIT_EXCEEDED"
     CONFIGURATION_JUMP = "CONFIGURATION_JUMP"
+    COLLISION_DETECTED = "COLLISION_DETECTED"
     NO_COMMON_ALLOWED_CONFIGURATION = "NO_COMMON_ALLOWED_CONFIGURATION"
     FORBIDDEN_CONFIGURATION = "FORBIDDEN_CONFIGURATION"
 
@@ -20,6 +21,7 @@ class TrajectorySampleErrorCode(Enum):
     SPEED_LIMIT_EXCEEDED = "SPEED_LIMIT_EXCEEDED"
     JERK_LIMIT_EXCEEDED = "JERK_LIMIT_EXCEEDED"
     CONFIGURATION_JUMP = "CONFIGURATION_JUMP"
+    COLLISION_DETECTED = "COLLISION_DETECTED"
     FORBIDDEN_CONFIGURATION = "FORBIDDEN_CONFIGURATION"
 
 
@@ -39,6 +41,11 @@ class TrajectoryDynamicViolationSeverity(Enum):
     WARNING = "WARNING"
 
 
+class TrajectoryCollisionDomain(Enum):
+    WORKSPACE = "WORKSPACE"
+    ROBOT_TOOL = "ROBOT_TOOL"
+
+
 class TrajectoryDynamicViolation:
     def __init__(
         self,
@@ -53,6 +60,26 @@ class TrajectoryDynamicViolation:
         self.value = float(value)
         self.limit = float(limit)
         self.severity = severity
+
+
+class TrajectoryCollisionDiagnostic:
+    def __init__(
+        self,
+        domain: TrajectoryCollisionDomain,
+        owner_a: str,
+        name_a: str,
+        source_index_a: int | None,
+        owner_b: str,
+        name_b: str,
+        source_index_b: int | None,
+    ) -> None:
+        self.domain = domain
+        self.owner_a = str(owner_a)
+        self.name_a = str(name_a)
+        self.source_index_a = None if source_index_a is None else int(source_index_a)
+        self.owner_b = str(owner_b)
+        self.name_b = str(name_b)
+        self.source_index_b = None if source_index_b is None else int(source_index_b)
 
 
 class TrajectorySampleMgiSolution:
@@ -96,6 +123,7 @@ class TrajectorySample:
         self.articular_acceleration_valid = False
         self.articular_jerk_valid = False
         self.dynamic_violations: list[TrajectoryDynamicViolation] = []
+        self.collisions: list[TrajectoryCollisionDiagnostic] = []
         self.error_code = TrajectorySampleErrorCode.NONE
         self.error_axis: int | None = None
         self.mgi_solutions: dict[MgiConfigKey, TrajectorySampleMgiSolution] = {}

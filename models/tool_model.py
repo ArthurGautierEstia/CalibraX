@@ -33,6 +33,7 @@ class ToolModel(QObject):
             ToolModel.DEFAULT_TOOL_COLLIDERS,
             default_shape="cylinder",
         )
+        self._tool_colliders_revision: int = 0
         self.evaluated_robot_axis_colliders: list[bool] = list(
             ToolModel.DEFAULT_EVALUATED_ROBOT_AXIS_COLLIDERS
         )
@@ -112,11 +113,15 @@ class ToolModel(QObject):
     def get_tool_colliders(self) -> list[dict[str, Any]]:
         return [dict(collider) for collider in parse_primitive_colliders(self.tool_colliders, default_shape="cylinder")]
 
+    def get_tool_colliders_revision(self) -> int:
+        return int(self._tool_colliders_revision)
+
     def set_tool_colliders(self, tool_colliders: list[dict[str, Any]]) -> None:
         normalized = parse_primitive_colliders(tool_colliders, default_shape="cylinder")
         if normalized == self.tool_colliders:
             return
         self.tool_colliders = normalized
+        self._tool_colliders_revision += 1
         self.tool_colliders_changed.emit()
 
     def get_evaluated_robot_axis_colliders(self) -> list[bool]:

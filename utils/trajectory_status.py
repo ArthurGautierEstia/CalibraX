@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from models.trajectory_result import (
-    TrajectoryDynamicViolationKind,
-    TrajectoryDynamicViolationSeverity,
     SegmentResult,
     TrajectoryComputationStatus,
+    TrajectoryDynamicViolationKind,
+    TrajectoryDynamicViolationSeverity,
     TrajectoryResult,
     TrajectorySampleErrorCode,
 )
@@ -24,11 +24,11 @@ def _axes_label(axes: set[int]) -> str:
 
 def _dynamic_kind_message(kind: TrajectoryDynamicViolationKind) -> str:
     if kind == TrajectoryDynamicViolationKind.SPEED:
-        return "vitesse dépassée"
+        return "vitesse depassee"
     if kind == TrajectoryDynamicViolationKind.ACCELERATION:
-        return "acceleration estimée dépassée"
+        return "acceleration estimee depassee"
     if kind == TrajectoryDynamicViolationKind.JERK:
-        return "jerk dépassé"
+        return "jerk depasse"
     return kind.value
 
 
@@ -52,13 +52,15 @@ def status_to_message(status: TrajectoryComputationStatus, axis: int | None = No
     if status == TrajectoryComputationStatus.POINT_UNREACHABLE:
         return "point inatteignable"
     if status == TrajectoryComputationStatus.CONFIGURATION_JUMP:
-        return f"saut de configuration détecté ({_axis_label(axis)})"
+        return f"saut de configuration detecte ({_axis_label(axis)})"
+    if status == TrajectoryComputationStatus.COLLISION_DETECTED:
+        return "collision detectee"
     if status == TrajectoryComputationStatus.SPEED_LIMIT_EXCEEDED:
-        return f"vitesse dépassée ({_axis_label(axis)})"
+        return f"vitesse depassee ({_axis_label(axis)})"
     if status == TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED:
-        return f"jerk dépassé ({_axis_label(axis)})"
+        return f"jerk depasse ({_axis_label(axis)})"
     if status == TrajectoryComputationStatus.NO_COMMON_ALLOWED_CONFIGURATION:
-        return "aucune configuration autorisée commune"
+        return "aucune configuration autorisee commune"
     if status == TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION:
         return "configuration interdite"
     return status.value
@@ -70,11 +72,13 @@ def sample_error_to_message(error_code: TrajectorySampleErrorCode, axis: int | N
     if error_code == TrajectorySampleErrorCode.POINT_UNREACHABLE:
         return "point inatteignable"
     if error_code == TrajectorySampleErrorCode.CONFIGURATION_JUMP:
-        return f"saut de configuration détecté ({_axis_label(axis)})"
+        return f"saut de configuration detecte ({_axis_label(axis)})"
+    if error_code == TrajectorySampleErrorCode.COLLISION_DETECTED:
+        return "collision detectee"
     if error_code == TrajectorySampleErrorCode.SPEED_LIMIT_EXCEEDED:
-        return f"vitesse dépassée ({_axis_label(axis)})"
+        return f"vitesse depassee ({_axis_label(axis)})"
     if error_code == TrajectorySampleErrorCode.JERK_LIMIT_EXCEEDED:
-        return f"jerk dépassé ({_axis_label(axis)})"
+        return f"jerk depasse ({_axis_label(axis)})"
     if error_code == TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION:
         return "configuration interdite"
     return error_code.value
@@ -135,6 +139,7 @@ def build_segment_issue_messages(segment: SegmentResult, segment_index: int) -> 
         TrajectorySampleErrorCode.POINT_UNREACHABLE,
         TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION,
         TrajectorySampleErrorCode.CONFIGURATION_JUMP,
+        TrajectorySampleErrorCode.COLLISION_DETECTED,
     ]
     for code in ordered_codes:
         if code not in first_axis_by_code:

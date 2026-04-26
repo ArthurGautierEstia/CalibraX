@@ -101,6 +101,7 @@ class RobotModel(QObject):
         self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
         self.axis_colliders: List[dict[str, Any]] = axis_colliders_to_dict(RobotModel.DEFAULT_AXIS_COLLIDERS, 6)
+        self._axis_colliders_revision: int = 0
                
         # Position home du robot
         self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
@@ -523,11 +524,15 @@ class RobotModel(QObject):
     def get_axis_colliders(self) -> list[dict[str, Any]]:
         return axis_colliders_to_dict(self.axis_colliders, 6)
 
+    def get_axis_colliders_revision(self) -> int:
+        return int(self._axis_colliders_revision)
+
     def set_axis_colliders(self, axis_colliders: list[dict[str, Any]]) -> None:
         normalized = parse_axis_colliders(axis_colliders, 6)
         if normalized == self.axis_colliders:
             return
         self.axis_colliders = normalized
+        self._axis_colliders_revision += 1
         self.axis_colliders_changed.emit()
 
     # ============================================================================
