@@ -12,11 +12,17 @@ class JointsControlWidget(QWidget):
     
     # Signaux
     joint_value_changed = pyqtSignal(int, float)  # index, value
+    configuration_changed = pyqtSignal(str)
     home_position_requested = pyqtSignal()
     position_zero_requested = pyqtSignal()
     position_calibration_requested = pyqtSignal()
     
-    def __init__(self, parent: QWidget = None, compact: bool = False) -> None:
+    def __init__(
+        self,
+        parent: QWidget = None,
+        compact: bool = False,
+        show_configuration_in_compact: bool = False,
+    ) -> None:
         super().__init__(parent)
         
         # Données internes
@@ -24,6 +30,7 @@ class JointsControlWidget(QWidget):
         self._axis_limits: List[tuple[float, float]] = [(-180.0, 180.0) for _ in range(6)]
         self._current_axis_config: MgiConfigKey = MgiConfigKey.FUN
         self._compact = bool(compact)
+        self._show_configuration_in_compact = bool(show_configuration_in_compact)
         
         # UI
         self.configuration_label = QLabel("Configuration courante : ")
@@ -49,7 +56,7 @@ class JointsControlWidget(QWidget):
             layout.addWidget(titre)
 
         # Config
-        if not self._compact:
+        if not self._compact or self._show_configuration_in_compact:
             layout.addWidget(self.configuration_label)
         self.set_configuration(self._current_axis_config)
         
@@ -73,7 +80,12 @@ class JointsControlWidget(QWidget):
             spinbox.setSuffix(" °")
             spinbox.setValue(0.0)
             if spinbox_width is None:
-                spinbox_width = spinbox.sizeHint().width()
+                reference_spinbox = QDoubleSpinBox()
+                reference_spinbox.setDecimals(3)
+                reference_spinbox.setSingleStep(0.10)
+                reference_spinbox.setSuffix(" mm")
+                reference_spinbox.setValue(0.0)
+                spinbox_width = max(spinbox.sizeHint().width(), reference_spinbox.sizeHint().width())
             spinbox.setFixedWidth(spinbox_width)
 
             # Connexions
@@ -218,6 +230,8 @@ class JointsControlWidget(QWidget):
     
     def set_configuration(self, config: MgiConfigKey) -> None:
         """Met à jour le texte de configuration"""
+        self._current_axis_config = config
         self.configuration_label.setText(f"Configuration courante : {config.name}")
+        self.configuration_changed.emit(config.name)
 
 

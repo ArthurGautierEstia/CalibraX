@@ -166,6 +166,8 @@ class Viewer3DWidget(QWidget):
         self._tool_colliders_visible = True
         self.transparency_enabled = False
         self._loading_feedback_depth = 0
+        self._position_match_tolerance_deg = 0.05
+        self._robot_controls_collapsed = False
         self.setup_ui()
 
     def setup_ui(self):
@@ -188,6 +190,32 @@ class Viewer3DWidget(QWidget):
         self.workspace_frame_overlay = FrameVisibilityOverlayWidget(self.viewer)
         self.workspace_frame_overlay.set_title("Frames scene")
         self.viewer_control_overlay = ViewerControlOverlayWidget(self.viewer)
+        self.robot_controls_toggle_button = QPushButton(self.viewer)
+        self.robot_controls_toggle_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: rgba(25, 25, 28, 160);
+                color: lightgray;
+                border: 1px solid rgba(255, 255, 255, 35);
+                border-radius: 6px;
+                padding: 6px 10px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: rgba(40, 40, 45, 185);
+            }
+            """
+        )
+        self.position_buttons_overlay = QWidget(self.viewer)
+        self.position_buttons_overlay.setObjectName("viewerPositionOverlay")
+        self.position_buttons_overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.position_buttons_overlay.setStyleSheet("""
+            QWidget#viewerPositionOverlay {
+                background-color: rgba(0, 0, 0, 18);
+                border: 1px solid rgba(255, 255, 255, 20);
+                border-radius: 10px;
+            }
+        """)
 
         # --- LABEL EN HAUT A GAUCHE ---
         self.msg_label = QLabel("", self.viewer)  # Parent = viewer pour l'overlay
@@ -238,6 +266,35 @@ class Viewer3DWidget(QWidget):
         ):
             toolbar_layout.addWidget(button)
         self.toolbar_overlay.adjustSize()
+
+        position_layout = QVBoxLayout(self.position_buttons_overlay)
+        position_layout.setContentsMargins(6, 6, 6, 6)
+        position_layout.setSpacing(6)
+        self.btn_go_position_calibration_overlay = self._create_overlay_button(
+            "Position calibration",
+            "calibration_pose",
+            checkable=True,
+            parent=self.position_buttons_overlay,
+        )
+        self.btn_go_position_zero_overlay = self._create_overlay_button(
+            "Position zéro",
+            "zero_pose",
+            checkable=True,
+            parent=self.position_buttons_overlay,
+        )
+        self.btn_go_home_position_overlay = self._create_overlay_button(
+            "Position home",
+            "home_pose",
+            checkable=True,
+            parent=self.position_buttons_overlay,
+        )
+        for button in (
+            self.btn_go_position_calibration_overlay,
+            self.btn_go_position_zero_overlay,
+            self.btn_go_home_position_overlay,
+        ):
+            position_layout.addWidget(button)
+        self.position_buttons_overlay.adjustSize()
         
         self.setLayout(layout)
         self.add_grid()
@@ -246,6 +303,7 @@ class Viewer3DWidget(QWidget):
         self.frame_overlay.geometry_changed.connect(self._position_overlays)
         self.workspace_frame_overlay.frame_clicked.connect(self.on_workspace_frame_clicked)
         self.workspace_frame_overlay.geometry_changed.connect(self._position_overlays)
+        self.robot_controls_toggle_button.clicked.connect(self._toggle_robot_controls_overlay)
         self.btn_toggle_cad.clicked.connect(self._on_cad_button_clicked)
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
@@ -254,7 +312,14 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_workspace_collision_zones.clicked.connect(self._on_workspace_collision_zones_button_clicked)
         self.btn_toggle_robot_colliders.clicked.connect(self._on_robot_colliders_button_clicked)
         self.btn_toggle_tool_colliders.clicked.connect(self._on_tool_colliders_button_clicked)
+        self.btn_go_position_zero_overlay.clicked.connect(self.get_overlay_joints_widget().position_zero_requested.emit)
+        self.btn_go_position_calibration_overlay.clicked.connect(
+            self.get_overlay_joints_widget().position_calibration_requested.emit
+        )
+        self.btn_go_home_position_overlay.clicked.connect(self.get_overlay_joints_widget().home_position_requested.emit)
         self._refresh_toolbar_buttons()
+        self._refresh_position_buttons()
+        self._refresh_robot_controls_overlay()
 
     def _position_overlays(self):
         """Positionne la liste en haut a droite et le label en haut a gauche"""
@@ -275,11 +340,29 @@ class Viewer3DWidget(QWidget):
             self.viewer_control_overlay.adjustSize()
             overlay_width = max(0, self.viewer.width() - (2 * margin))
             self.viewer_control_overlay.resize(overlay_width, self.viewer_control_overlay.sizeHint().height())
+            control_height = self.viewer_control_overlay.height() if self.viewer_control_overlay.isVisible() else 0
+        else:
+            control_height = 0
+        if hasattr(self, "robot_controls_toggle_button"):
+            self.robot_controls_toggle_button.adjustSize()
+            toggle_y = max(
+                margin,
+                self.viewer.height() - self.robot_controls_toggle_button.height() - margin,
+            )
+            self.robot_controls_toggle_button.move(margin, toggle_y)
+        else:
+            toggle_y = self.viewer.height() - margin
+        if hasattr(self, "viewer_control_overlay"):
             control_y = max(
                 margin,
-                self.viewer.height() - self.viewer_control_overlay.height() - margin,
+                toggle_y - control_height - 6,
             )
             self.viewer_control_overlay.move(margin, control_y)
+        if hasattr(self, "position_buttons_overlay"):
+            self.position_buttons_overlay.adjustSize()
+            positions_x = max(margin, self.viewer.width() - self.position_buttons_overlay.width() - margin)
+            positions_y = max(margin, (self.viewer.height() - self.position_buttons_overlay.height()) // 2)
+            self.position_buttons_overlay.move(positions_x, positions_y)
 
     def resizeEvent(self, event):
         """Repositionne les overlays lors du redimensionnement"""
@@ -295,6 +378,22 @@ class Viewer3DWidget(QWidget):
         self.msg_label.clear()
         self.msg_label.adjustSize()
         self._position_overlays()
+
+    def _toggle_robot_controls_overlay(self) -> None:
+        self._robot_controls_collapsed = not self._robot_controls_collapsed
+        self._refresh_robot_controls_overlay()
+        self._position_overlays()
+
+    def _refresh_robot_controls_overlay(self) -> None:
+        controls_visible = not self._robot_controls_collapsed
+        if hasattr(self, "viewer_control_overlay"):
+            self.viewer_control_overlay.setVisible(controls_visible)
+        if hasattr(self, "position_buttons_overlay"):
+            self.position_buttons_overlay.setVisible(controls_visible)
+        if hasattr(self, "robot_controls_toggle_button"):
+            arrow = "▸" if self._robot_controls_collapsed else "▾"
+            self.robot_controls_toggle_button.setText(f"Contrôles robot {arrow}")
+            self.robot_controls_toggle_button.adjustSize()
 
     def begin_loading_feedback(self, message: str) -> None:
         self._loading_feedback_depth += 1
@@ -353,14 +452,21 @@ class Viewer3DWidget(QWidget):
     def _emit_display_state_changed(self) -> None:
         self.display_state_changed.emit(self.get_display_state())
 
-    def _create_overlay_button(self, tooltip: str, icon_kind: str) -> QPushButton:
-        button = QPushButton("", self.toolbar_overlay)
+    def _create_overlay_button(
+        self,
+        tooltip: str,
+        icon_kind: str,
+        checkable: bool = True,
+        parent: QWidget | None = None,
+    ) -> QPushButton:
+        button = QPushButton("", parent if parent is not None else self.toolbar_overlay)
         button.setToolTip(tooltip)
         button.setProperty("icon_kind", icon_kind)
-        button.setCheckable(True)
+        button.setCheckable(checkable)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setFixedSize(36, 36)
         button.setIconSize(QSize(20, 20))
+        button.setIcon(self._build_toolbar_icon(icon_kind, False))
         button.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -392,6 +498,20 @@ class Viewer3DWidget(QWidget):
         self._set_overlay_button_state(self.btn_toggle_robot_colliders, self._robot_colliders_visible)
         self._set_overlay_button_state(self.btn_toggle_tool_colliders, self._tool_colliders_visible)
 
+    def _refresh_position_buttons(self) -> None:
+        self._set_overlay_button_state(
+            self.btn_go_position_calibration_overlay,
+            self._is_robot_at_reference_position("calibration"),
+        )
+        self._set_overlay_button_state(
+            self.btn_go_position_zero_overlay,
+            self._is_robot_at_reference_position("zero"),
+        )
+        self._set_overlay_button_state(
+            self.btn_go_home_position_overlay,
+            self._is_robot_at_reference_position("home"),
+        )
+
     def _set_overlay_button_state(self, button: QPushButton, active: bool) -> None:
         button.blockSignals(True)
         button.setChecked(bool(active))
@@ -404,6 +524,28 @@ class Viewer3DWidget(QWidget):
             return False
         last = size - 1
         return all(visible == (idx == 0 or idx == last) for idx, visible in enumerate(self.frames_visibility))
+
+    def _is_robot_at_reference_position(self, position_kind: str) -> bool:
+        if self._robot_model is None:
+            return False
+
+        current_joints = list(self._robot_model.get_joints())
+        if position_kind == "calibration":
+            reference_joints = list(self._robot_model.get_position_calibration())
+        elif position_kind == "zero":
+            reference_joints = list(self._robot_model.get_position_zero())
+        elif position_kind == "home":
+            reference_joints = list(self._robot_model.get_home_position())
+        else:
+            return False
+
+        if len(current_joints) < 6 or len(reference_joints) < 6:
+            return False
+
+        return all(
+            abs(float(current_joints[idx]) - float(reference_joints[idx])) <= self._position_match_tolerance_deg
+            for idx in range(6)
+        )
 
     def _build_toolbar_icon(self, icon_kind: str, active: bool) -> QIcon:
         size = 20
@@ -455,6 +597,23 @@ class Viewer3DWidget(QWidget):
             painter.drawLine(9, 4, 15, 4)
             painter.drawLine(15, 4, 15, 10)
             painter.drawEllipse(2, 13, 4, 4)
+        elif icon_kind == "calibration_pose":
+            painter.drawEllipse(4, 4, 12, 12)
+            painter.drawEllipse(8, 8, 4, 4)
+        elif icon_kind == "zero_pose":
+            font = QFont("Arial", 12)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(0, 0, size, size, int(Qt.AlignmentFlag.AlignCenter), "0")
+        elif icon_kind == "home_pose":
+            painter.drawLine(4, 10, 10, 4)
+            painter.drawLine(10, 4, 16, 10)
+            painter.drawLine(6, 9, 6, 16)
+            painter.drawLine(14, 9, 14, 16)
+            painter.drawLine(6, 16, 14, 16)
+            painter.drawLine(9, 16, 9, 12)
+            painter.drawLine(9, 12, 11, 12)
+            painter.drawLine(11, 12, 11, 16)
         painter.end()
         return QIcon(pixmap)
 
@@ -1062,6 +1221,7 @@ class Viewer3DWidget(QWidget):
         self.last_corrected_matrices = corrected_matrices
 
         self._refresh_robot_state_items()
+        self._refresh_position_buttons()
 
     def update_workspace(self, workspace_model: WorkspaceModel | None) -> None:
         previous_model = self._workspace_model

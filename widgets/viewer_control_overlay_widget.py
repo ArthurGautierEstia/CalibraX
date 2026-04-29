@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
+    QLabel,
     QRadioButton,
     QStackedWidget,
     QVBoxLayout,
@@ -24,6 +25,7 @@ class ViewerControlOverlayWidget(QWidget):
 
         self.joints_widget = JointsControlWidget(compact=True)
         self.cartesian_widget = CartesianControlWidget(compact=True)
+        self.configuration_label = QLabel("Configuration courante : FUN")
 
         self.mode_stack = QStackedWidget()
         self.mode_stack.addWidget(self.joints_widget)
@@ -78,6 +80,25 @@ class ViewerControlOverlayWidget(QWidget):
                 border-radius: 6px;
                 padding: 4px 6px;
             }
+            QWidget#viewerControlOverlay QDoubleSpinBox {
+                padding-right: 20px;
+            }
+            QWidget#viewerControlOverlay QDoubleSpinBox::up-button,
+            QWidget#viewerControlOverlay QDoubleSpinBox::down-button {
+                width: 18px;
+                subcontrol-origin: border;
+                background-color: rgba(255, 255, 255, 10);
+                border-left: 1px solid rgba(255, 255, 255, 24);
+            }
+            QWidget#viewerControlOverlay QDoubleSpinBox::up-button {
+                subcontrol-position: top right;
+                border-top-right-radius: 6px;
+            }
+            QWidget#viewerControlOverlay QDoubleSpinBox::down-button {
+                subcontrol-position: bottom right;
+                border-bottom-right-radius: 6px;
+                border-top: 1px solid rgba(255, 255, 255, 18);
+            }
         """)
 
         layout = QVBoxLayout(self)
@@ -90,17 +111,22 @@ class ViewerControlOverlayWidget(QWidget):
         mode_layout.addWidget(self.mode_articular_radio)
         mode_layout.addWidget(self.mode_cartesian_radio)
         mode_layout.addStretch()
+        mode_layout.addWidget(self.configuration_label, 0)
         layout.addLayout(mode_layout)
         layout.addWidget(self.mode_stack)
 
         self.mode_articular_radio.toggled.connect(self._on_mode_changed)
         self.mode_cartesian_radio.toggled.connect(self._on_mode_changed)
+        self.joints_widget.configuration_changed.connect(self._on_configuration_changed)
 
     def _on_mode_changed(self) -> None:
         if self.mode_cartesian_radio.isChecked():
             self.mode_stack.setCurrentWidget(self.cartesian_widget)
             return
         self.mode_stack.setCurrentWidget(self.joints_widget)
+
+    def _on_configuration_changed(self, config_name: str) -> None:
+        self.configuration_label.setText(f"Configuration courante : {config_name}")
 
     def get_joints_widget(self) -> JointsControlWidget:
         return self.joints_widget
