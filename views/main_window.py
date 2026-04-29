@@ -48,7 +48,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.robot_view, "Robot")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.calibration_view, "Calibration")
-        self.tabs.addTab(self.joint_control_view, "Controle articulaire")
         self.tabs.addTab(self.cartesian_control_view, "Controle cartesien")
         self.tabs.addTab(self.jog_view, "Jog")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
@@ -125,7 +124,11 @@ class MainWindow(QMainWindow):
 
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
-        self.tabs.setTabEnabled(3, robot_has_configuration)
-        self.tabs.setTabEnabled(4, robot_has_configuration)
-        self.tabs.setTabEnabled(5, robot_has_configuration)
-        self.tabs.setTabEnabled(6, robot_has_configuration)
+        for control_view in (
+            self.cartesian_control_view,
+            self.jog_view,
+            self.trajectory_view,
+        ):
+            tab_index = self.tabs.indexOf(control_view)
+            if tab_index >= 0:
+                self.tabs.setTabEnabled(tab_index, robot_has_configuration)

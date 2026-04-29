@@ -54,31 +54,6 @@ class ViewerControlOverlayWidget(QWidget):
                 border: 1px solid rgba(255, 255, 255, 32);
                 border-radius: 6px;
             }
-            QWidget#viewerControlOverlay QRadioButton::indicator {
-                width: 14px;
-                height: 14px;
-            }
-            QWidget#viewerControlOverlay QRadioButton::indicator:unchecked {
-                border: 1px solid rgba(255, 255, 255, 80);
-                border-radius: 7px;
-                background-color: rgba(255, 255, 255, 18);
-            }
-            QWidget#viewerControlOverlay QRadioButton::indicator:checked {
-                border: 1px solid #ff8c00;
-                border-radius: 7px;
-                background-color: #ff8c00;
-            }
-            QWidget#viewerControlOverlay QSlider::groove:horizontal {
-                height: 6px;
-                border-radius: 3px;
-                background-color: rgba(255, 255, 255, 36);
-            }
-            QWidget#viewerControlOverlay QSlider::handle:horizontal {
-                width: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
-                background-color: #ff8c00;
-            }
             QWidget#viewerControlOverlay QComboBox,
             QWidget#viewerControlOverlay QPushButton {
                 color: white;

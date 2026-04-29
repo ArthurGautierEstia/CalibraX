@@ -64,6 +64,25 @@ class JointsControlWidget(QWidget):
         
         # Sliders et spinboxes pour les 6 joints
         spinbox_width: int | None = None
+        if spinbox_width is None:
+            translation_reference_spinbox = QDoubleSpinBox()
+            translation_reference_spinbox.setRange(-2000.0, 2000.0)
+            translation_reference_spinbox.setDecimals(3)
+            translation_reference_spinbox.setSingleStep(0.10)
+            translation_reference_spinbox.setSuffix(" mm")
+            translation_reference_spinbox.setValue(0.0)
+
+            rotation_reference_spinbox = QDoubleSpinBox()
+            rotation_reference_spinbox.setRange(-180.0, 180.0)
+            rotation_reference_spinbox.setDecimals(3)
+            rotation_reference_spinbox.setSingleStep(0.10)
+            rotation_reference_spinbox.setSuffix(" °")
+            rotation_reference_spinbox.setValue(0.0)
+
+            spinbox_width = max(
+                translation_reference_spinbox.sizeHint().width(),
+                rotation_reference_spinbox.sizeHint().width(),
+            )
         for i in range(6):
             row_layout = QHBoxLayout()
             if self._compact:
@@ -90,13 +109,6 @@ class JointsControlWidget(QWidget):
             spinbox.setValue(0.0)
             if self._compact:
                 spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
-            if spinbox_width is None:
-                reference_spinbox = QDoubleSpinBox()
-                reference_spinbox.setDecimals(3)
-                reference_spinbox.setSingleStep(0.10)
-                reference_spinbox.setSuffix(" mm")
-                reference_spinbox.setValue(0.0)
-                spinbox_width = max(spinbox.sizeHint().width(), reference_spinbox.sizeHint().width())
             spinbox.setFixedWidth(spinbox_width)
 
             # Connexions
