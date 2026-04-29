@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from PyQt6.QtWidgets import (
@@ -21,12 +20,12 @@ from stl import mesh
 
 import utils.math_utils as math_utils
 from models.app_session_file import ViewerDisplayState
-from models.collider_models import parse_axis_colliders, parse_primitive_colliders
+from models.collision_scene_model import CollisionSceneModel
+from models.primitive_collider_models import PrimitiveCollider
 from models.robot_model import RobotModel
 from models.reference_frame import ReferenceFrame
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
-from models.workspace_primitive_zone_models import workspace_primitive_zones_to_dict
 from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
@@ -152,10 +151,10 @@ class Viewer3DWidget(QWidget):
         self._workspace_elements: list[WorkspaceElementState] = []
         self._workspace_frame_matrices: list[np.ndarray] = []
         self._workspace_frame_labels: list[str] = []
-        self._workspace_tcp_zones: list[PrimitiveColliderState] = []
-        self._workspace_collision_zones: list[PrimitiveColliderState] = []
-        self._axis_colliders: list[dict] = []
-        self._tool_colliders: list[dict] = []
+        self._workspace_tcp_zones: list[PrimitiveCollider] = []
+        self._workspace_collision_zones: list[PrimitiveCollider] = []
+        self._robot_colliders: list[PrimitiveCollider] = []
+        self._tool_colliders: list[PrimitiveCollider] = []
         self._workspace_element_items: list[gl.GLMeshItem] = []
         self._workspace_tcp_zone_items: list[gl.GLMeshItem] = []
         self._workspace_collision_zone_items: list[gl.GLMeshItem] = []
@@ -1089,25 +1088,9 @@ class Viewer3DWidget(QWidget):
             return
 
         raw_elements = [] if workspace_model is None else workspace_model.get_workspace_cad_elements()
-        raw_tcp_zones = parse_primitive_colliders(
-            [] if workspace_model is None else workspace_primitive_zones_to_dict(workspace_model.get_workspace_tcp_zones()),
-            default_shape="box",
-        )
-        raw_collision_zones = parse_primitive_colliders(
-            [] if workspace_model is None else workspace_model.get_workspace_collision_zones(),
-            default_shape="box",
-        )
         self._workspace_elements = [
             WorkspaceElementState.from_dict(element, index)
             for index, element in enumerate(raw_elements)
-        ]
-        self._workspace_tcp_zones = [
-            PrimitiveColliderState.from_dict(zone, index)
-            for index, zone in enumerate(raw_tcp_zones)
-        ]
-        self._workspace_collision_zones = [
-            PrimitiveColliderState.from_dict(zone, index)
-            for index, zone in enumerate(raw_collision_zones)
         ]
         self.begin_loading_feedback("Chargement scene workspace...")
         try:
@@ -1115,14 +1098,22 @@ class Viewer3DWidget(QWidget):
         finally:
             self.end_loading_feedback()
 
-    def update_collision_models(self, robot_model: RobotModel, tool_model: ToolModel | None = None) -> None:
-        self._robot_model = robot_model
-        self._tool_model = tool_model
-        self._axis_colliders = parse_axis_colliders(robot_model.get_axis_colliders(), 6)
-        self._tool_colliders = parse_primitive_colliders(
-            [] if tool_model is None else tool_model.get_tool_colliders(),
-            default_shape="cylinder",
-        )
+    def update_collision_scene(self, collision_scene_model: CollisionSceneModel | None) -> None:
+        if collision_scene_model is None:
+            self._workspace_tcp_zones = []
+            self._workspace_collision_zones = []
+            self._robot_colliders = []
+            self._tool_colliders = []
+            self._render_workspace_zones()
+            self._render_robot_axis_colliders()
+            self._render_tool_colliders()
+            return
+
+        self._workspace_tcp_zones = collision_scene_model.get_workspace_tcp_colliders()
+        self._workspace_collision_zones = collision_scene_model.get_workspace_collision_colliders()
+        self._robot_colliders = collision_scene_model.get_robot_colliders()
+        self._tool_colliders = collision_scene_model.get_tool_colliders()
+        self._render_workspace_zones()
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
 
@@ -1185,55 +1176,10 @@ class Viewer3DWidget(QWidget):
 
     def _render_robot_axis_colliders(self) -> None:
         self._clear_viewer_items(self._robot_collider_items)
-        if len(self.last_corrected_matrices) < 1:
-            return
-
-        for frame_index, collider in enumerate(self._axis_colliders[:6]):
-            if not bool(collider.get("enabled", True)):
+        for collider in self._robot_colliders:
+            if not collider.enabled:
                 continue
-            radius = max(0.0, float(collider.get("radius", 40.0)))
-            signed_height = float(collider.get("height", 200.0))
-            height = abs(signed_height)
-            if radius <= 0.0 or height <= 0.0:
-                continue
-
-            # Colliders robot: q1..q6 attaches to DH frames 1..6.
-            matrix_index = frame_index + 1
-            if matrix_index >= len(self.last_corrected_matrices):
-                continue
-
-            base_transform = np.array(self.last_corrected_matrices[matrix_index], dtype=float)
-            direction_axis = str(collider.get("direction_axis", "z")).strip().lower()
-            direction_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-            offset_xyz = collider.get("offset_xyz", [0.0, 0.0, 0.0])
-            if not isinstance(offset_xyz, (list, tuple)):
-                offset_xyz = [0.0, 0.0, 0.0]
-
-            orientation = self._primitive_extrusion_orientation(direction_axis, signed_height >= 0.0)
-
-            local_offset = np.array(
-                [
-                    float(offset_xyz[0] if len(offset_xyz) > 0 else 0.0),
-                    float(offset_xyz[1] if len(offset_xyz) > 1 else 0.0),
-                    float(offset_xyz[2] if len(offset_xyz) > 2 else 0.0),
-                ],
-                dtype=float,
-            )
-
-            translation = np.eye(4, dtype=float)
-            translation[:3, 3] = local_offset
-            transform = self._transform_robot_matrix_to_world(base_transform @ translation @ orientation)
-            item = self._build_primitive_item(
-                {
-                    "shape": "cylinder",
-                    "radius": radius,
-                    "height": height,
-                    "pose": [0.0] * 6,
-                },
-                (0.2, 0.55, 1.0, 0.18),
-                base_transform=transform,
-                skip_pose=True,
-            )
+            item = self._build_primitive_item(collider, (0.2, 0.55, 1.0, 0.18))
             if item is None:
                 continue
             self.viewer.addItem(item)
@@ -1243,23 +1189,10 @@ class Viewer3DWidget(QWidget):
 
     def _render_tool_colliders(self) -> None:
         self._clear_viewer_items(self._tool_collider_items)
-        if len(self.last_corrected_matrices) == 0:
-            return
-
-        matrix_index = self._resolve_tool_attachment_matrix_index(self.last_corrected_matrices)
-        if matrix_index is None:
-            matrix_index = len(self.last_corrected_matrices) - 1
-        flange_transform = self._transform_robot_matrix_to_world(
-            np.array(self.last_corrected_matrices[matrix_index], dtype=float)
-        )
         for collider in self._tool_colliders:
-            if not bool(collider.get("enabled", True)):
+            if not collider.enabled:
                 continue
-            item = self._build_primitive_item(
-                collider,
-                (0.85, 0.35, 1.0, 0.24),
-                base_transform=flange_transform,
-            )
+            item = self._build_primitive_item(collider, (0.85, 0.35, 1.0, 0.24))
             if item is None:
                 continue
             self.viewer.addItem(item)
@@ -1357,12 +1290,20 @@ class Viewer3DWidget(QWidget):
 
     def _build_primitive_item(
         self,
-        primitive: PrimitiveColliderState | dict,
+        primitive: PrimitiveCollider | PrimitiveColliderState | dict,
         color: tuple[float, float, float, float],
         base_transform: np.ndarray | None = None,
         skip_pose: bool = False,
     ) -> gl.GLMeshItem | None:
-        if isinstance(primitive, PrimitiveColliderState):
+        if isinstance(primitive, PrimitiveCollider):
+            shape = primitive.shape
+            size_x = primitive.size_x
+            size_y = primitive.size_y
+            size_z = primitive.size_z
+            radius = primitive.radius
+            height = primitive.height
+            transform = np.array(primitive.world_transform, dtype=float)
+        elif isinstance(primitive, PrimitiveColliderState):
             shape = primitive.shape
             size_x = primitive.size_x
             size_y = primitive.size_y
@@ -1383,9 +1324,10 @@ class Viewer3DWidget(QWidget):
         if mesh_data is None:
             return None
 
-        transform = np.array(base_transform if base_transform is not None else np.eye(4), dtype=float)
-        if not skip_pose:
-            transform = transform @ primitive_transform
+        if not isinstance(primitive, PrimitiveCollider):
+            transform = np.array(base_transform if base_transform is not None else np.eye(4), dtype=float)
+            if not skip_pose:
+                transform = transform @ primitive_transform
 
         item = gl.GLMeshItem(meshdata=mesh_data, smooth=True, color=color, shader='shaded')
         item.setTransform(
@@ -1398,23 +1340,6 @@ class Viewer3DWidget(QWidget):
         )
         item.setGLOptions('translucent')
         return item
-
-    @staticmethod
-    @lru_cache(maxsize=6)
-    def _primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
-        rotation = np.eye(4, dtype=float)
-        normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-        if normalized_axis == "x":
-            rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-        elif normalized_axis == "y":
-            rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
-
-        if positive_direction:
-            return rotation
-
-        flip = np.eye(4, dtype=float)
-        flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
-        return rotation @ flip
 
     def _build_primitive_mesh_data(
         self,

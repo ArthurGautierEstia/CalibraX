@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from utils.math_utils import safe_float
 
 from models.workspace_file import parse_workspace_cad_elements
 from models.workspace_primitive_zone_models import WorkspacePrimitiveZoneData
@@ -265,17 +266,9 @@ class WorkspaceConfigurationWidget(QWidget):
         status_item.setText("STL introuvable")
         status_item.setForeground(QColor("#eb5757"))
 
-    @staticmethod
-    def _safe_float(value: str, default: float = 0.0) -> float:
-        try:
-            stripped = str(value).strip()
-            return default if stripped == "" else float(stripped)
-        except (TypeError, ValueError):
-            return default
-
     def _cell_to_float(self, table: QTableWidget, row: int, col: int, default: float = 0.0) -> float:
         item = table.item(row, col)
-        return self._safe_float(item.text() if item is not None else "", default)
+        return safe_float(item.text() if item is not None else "", default)
 
     def _on_robot_base_pose_world_value_changed(self, _value: float) -> None:
         self.robot_base_pose_world_changed.emit(self.get_robot_base_pose_world())
@@ -301,7 +294,7 @@ class WorkspaceConfigurationWidget(QWidget):
         self._refresh_scene_name_tooltip()
 
     def set_robot_base_pose_world(self, pose: list[float]) -> None:
-        values = [self._safe_float(pose[idx] if idx < len(pose) else 0.0, 0.0) for idx in range(6)]
+        values = [safe_float(pose[idx] if idx < len(pose) else 0.0, 0.0) for idx in range(6)]
         for idx, spinbox in enumerate(self.robot_base_pose_spinboxes):
             spinbox.blockSignals(True)
             spinbox.setValue(values[idx])

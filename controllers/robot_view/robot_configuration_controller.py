@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject
 from PyQt6.QtCore import pyqtSignal
 import os
 
+from models.primitive_collider_models import RobotAxisColliderData
 from models.robot_model import RobotModel
 from models.robot_configuration_file import RobotConfigurationFile
 from utils.file_io import FileIOHandler
@@ -107,7 +108,7 @@ class RobotConfigurationController(QObject):
         self.robot_model.inhibit_auto_compute_fk_tcp(False)
         self.robot_model.compute_fk_tcp()
 
-    def _on_view_axis_colliders_config_changed(self, axis_colliders: list[dict]) -> None:
+    def _on_view_axis_colliders_config_changed(self, axis_colliders: list[RobotAxisColliderData]) -> None:
         self.robot_model.set_axis_colliders(axis_colliders)
 
     def _on_view_positions_config_changed(

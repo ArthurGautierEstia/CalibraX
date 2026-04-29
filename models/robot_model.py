@@ -4,9 +4,12 @@ import math
 from utils.mgi import *
 import utils.math_utils as math_utils
 from models.collider_models import (
-    axis_colliders_to_dict,
     default_axis_colliders,
-    parse_axis_colliders,
+)
+from models.primitive_collider_models import (
+    RobotAxisColliderData,
+    parse_robot_axis_colliders,
+    robot_axis_colliders_to_dicts,
 )
 from models.robot_configuration_file import RobotConfigurationFile
 
@@ -28,7 +31,7 @@ class RobotModel(QObject):
         round(math.sqrt(speed * jerk), 3)
         for speed, jerk in zip(DEFAULT_AXIS_SPEED_LIMITS, DEFAULT_AXIS_JERK_LIMITS)
     ]
-    DEFAULT_AXIS_COLLIDERS: List[dict[str, Any]] = default_axis_colliders(6)
+    DEFAULT_AXIS_COLLIDERS: List[RobotAxisColliderData] = default_axis_colliders(6)
     DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = [
         (-1000.0, 1000.0),
         (-1000.0, 1000.0),
@@ -100,7 +103,9 @@ class RobotModel(QObject):
         self.axis_accel_limits: List[float] = list(RobotModel.DEFAULT_AXIS_ACCEL_LIMITS)
         self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
-        self.axis_colliders: List[dict[str, Any]] = axis_colliders_to_dict(RobotModel.DEFAULT_AXIS_COLLIDERS, 6)
+        self.axis_colliders: List[RobotAxisColliderData] = [
+            collider.copy() for collider in RobotModel.DEFAULT_AXIS_COLLIDERS
+        ]
         self._axis_colliders_revision: int = 0
                
         # Position home du robot
@@ -523,13 +528,19 @@ class RobotModel(QObject):
         self.cad_models_changed.emit()
 
     def get_axis_colliders(self) -> list[dict[str, Any]]:
-        return axis_colliders_to_dict(self.axis_colliders, 6)
+        return robot_axis_colliders_to_dicts(self.axis_colliders, 6)
+
+    def get_axis_collider_data(self) -> list[RobotAxisColliderData]:
+        return [collider.copy() for collider in self.axis_colliders]
 
     def get_axis_colliders_revision(self) -> int:
         return int(self._axis_colliders_revision)
 
-    def set_axis_colliders(self, axis_colliders: list[dict[str, Any]]) -> None:
-        normalized = parse_axis_colliders(axis_colliders, 6)
+    def set_axis_colliders(
+        self,
+        axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+    ) -> None:
+        normalized = parse_robot_axis_colliders(axis_colliders, 6)
         if normalized == self.axis_colliders:
             return
         self.axis_colliders = normalized

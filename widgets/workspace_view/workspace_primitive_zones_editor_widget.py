@@ -17,6 +17,7 @@ from models.workspace_primitive_zone_models import (
     WorkspacePrimitiveZoneData,
     parse_workspace_primitive_zones,
 )
+from utils.math_utils import safe_float
 
 
 class WorkspacePrimitiveZonesEditorWidget(QWidget):
@@ -262,12 +263,4 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
         if self.table is None:
             return default
         item = self.table.item(row, col)
-        return self._safe_float(item.text() if item is not None else "", default)
-
-    @staticmethod
-    def _safe_float(value: str, default: float = 0.0) -> float:
-        try:
-            stripped = str(value).strip()
-            return default if stripped == "" else float(stripped)
-        except (TypeError, ValueError):
-            return default
+        return safe_float(item.text() if item is not None else "", default)

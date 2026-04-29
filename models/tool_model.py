@@ -4,14 +4,18 @@ from typing import Any
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from models.collider_models import parse_primitive_colliders
+from models.primitive_collider_models import (
+    PrimitiveColliderData,
+    parse_primitive_collider_data,
+    primitive_collider_data_to_dicts,
+)
 from utils.mgi import RobotTool
 
 
 class ToolModel(QObject):
     DEFAULT_TOOL_CAD_MODEL: str = ""
     DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
-    DEFAULT_TOOL_COLLIDERS: list[dict[str, Any]] = []
+    DEFAULT_TOOL_COLLIDERS: list[PrimitiveColliderData] = []
     DEFAULT_EVALUATED_ROBOT_AXIS_COLLIDERS: list[bool] = [True] * 6
     DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./user_data/tools"
     DEFAULT_SELECTED_TOOL_PROFILE: str = ""
@@ -29,9 +33,10 @@ class ToolModel(QObject):
         self.selected_tool_profile: str = ToolModel.DEFAULT_SELECTED_TOOL_PROFILE
         self.tool_cad_model: str = ToolModel.DEFAULT_TOOL_CAD_MODEL
         self.tool_cad_offset_rz: float = ToolModel.DEFAULT_TOOL_CAD_OFFSET_RZ
-        self.tool_colliders: list[dict[str, Any]] = parse_primitive_colliders(
+        self.tool_colliders: list[PrimitiveColliderData] = parse_primitive_collider_data(
             ToolModel.DEFAULT_TOOL_COLLIDERS,
             default_shape="cylinder",
+            default_name_prefix="Tool collider",
         )
         self._tool_colliders_revision: int = 0
         self.evaluated_robot_axis_colliders: list[bool] = list(
@@ -111,13 +116,27 @@ class ToolModel(QObject):
         self.tool_visual_changed.emit()
 
     def get_tool_colliders(self) -> list[dict[str, Any]]:
-        return [dict(collider) for collider in parse_primitive_colliders(self.tool_colliders, default_shape="cylinder")]
+        return primitive_collider_data_to_dicts(
+            self.tool_colliders,
+            default_shape="cylinder",
+            default_name_prefix="Tool collider",
+        )
+
+    def get_tool_collider_data(self) -> list[PrimitiveColliderData]:
+        return [collider.copy() for collider in self.tool_colliders]
 
     def get_tool_colliders_revision(self) -> int:
         return int(self._tool_colliders_revision)
 
-    def set_tool_colliders(self, tool_colliders: list[dict[str, Any]]) -> None:
-        normalized = parse_primitive_colliders(tool_colliders, default_shape="cylinder")
+    def set_tool_colliders(
+        self,
+        tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
+    ) -> None:
+        normalized = parse_primitive_collider_data(
+            tool_colliders,
+            default_shape="cylinder",
+            default_name_prefix="Tool collider",
+        )
         if normalized == self.tool_colliders:
             return
         self.tool_colliders = normalized

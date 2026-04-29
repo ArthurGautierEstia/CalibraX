@@ -14,6 +14,7 @@ from controllers.trajectory_controller import TrajectoryController
 from controllers.viewer3d_controller import Viewer3DController
 from controllers.workspace_controller import WorkspaceController
 from models.app_session_file import AppSessionFile, ViewerDisplayState
+from models.collision_scene_model import CollisionSceneModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
@@ -51,6 +52,12 @@ class MainController(QObject):
         self._startup_completed = False
 
         self.robot_model.set_tool(self.tool_model.get_tool())
+        self.collision_scene_model = CollisionSceneModel(
+            self.robot_model,
+            self.tool_model,
+            self.workspace_model,
+            self,
+        )
 
         self.robot_controller = RobotController(robot_model, tool_model, main_window.get_robot_view())
         self.calibration_controller = CalibrationController(robot_model, tool_model, main_window.get_calibration_view())
@@ -66,6 +73,7 @@ class MainController(QObject):
             robot_model,
             tool_model,
             workspace_model,
+            self.collision_scene_model,
             main_window.get_viewer3d(),
         )
         self.trajectory_controller = TrajectoryController(

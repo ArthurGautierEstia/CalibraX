@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject
 
 from controllers.cartesian_control_view.cartesian_wdiget_controller import CartesianWidgetController
 from controllers.joint_control_view.joints_controller import JointsController
+from models.collision_scene_model import CollisionSceneModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
@@ -14,6 +15,7 @@ class Viewer3DController(QObject):
         robot_model: RobotModel,
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
+        collision_scene_model: CollisionSceneModel,
         viewer_3d_widget: Viewer3DWidget,
         parent: QObject = None,
     ):
@@ -21,6 +23,7 @@ class Viewer3DController(QObject):
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self.collision_scene_model = collision_scene_model
         self.viewer_3d_widget = viewer_3d_widget
         self._ghost_visible = False
         self._ghost_joints: list[float] = [0.0] * 6
@@ -39,18 +42,17 @@ class Viewer3DController(QObject):
         self._setup_connections()
         self._initialize_overlay_controls()
         self.viewer_3d_widget.update_workspace(self.workspace_model)
-        self.viewer_3d_widget.update_collision_models(self.robot_model, self.tool_model)
+        self.viewer_3d_widget.update_collision_scene(self.collision_scene_model)
 
     def _setup_connections(self) -> None:
         self.robot_model.tcp_pose_changed.connect(self._update_tcp_pose)
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
-        self.robot_model.axis_colliders_changed.connect(self._on_colliders_changed)
 
         self.tool_model.tool_changed.connect(self._on_tool_state_changed)
         self.tool_model.tool_visual_changed.connect(self._on_tool_visual_changed)
-        self.tool_model.tool_colliders_changed.connect(self._on_colliders_changed)
 
         self.workspace_model.workspace_changed.connect(self._on_workspace_changed)
+        self.collision_scene_model.scene_changed.connect(self._on_collision_scene_changed)
         self._overlay_cartesian_controller.new_target_computed.connect(self._on_overlay_cartesian_target_computed)
 
     def _update_tcp_pose(self) -> None:
@@ -64,10 +66,10 @@ class Viewer3DController(QObject):
 
     def _on_tool_visual_changed(self) -> None:
         self.viewer_3d_widget.reload_tool_cad(self.robot_model, self.tool_model)
-        self.viewer_3d_widget.update_collision_models(self.robot_model, self.tool_model)
+        self.viewer_3d_widget.update_collision_scene(self.collision_scene_model)
 
-    def _on_colliders_changed(self) -> None:
-        self.viewer_3d_widget.update_collision_models(self.robot_model, self.tool_model)
+    def _on_collision_scene_changed(self) -> None:
+        self.viewer_3d_widget.update_collision_scene(self.collision_scene_model)
 
     def _on_workspace_changed(self) -> None:
         self.viewer_3d_widget.update_workspace(self.workspace_model)
