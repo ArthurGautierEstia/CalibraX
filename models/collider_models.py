@@ -3,20 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 import models.primitive_collider_models as primitive_collider_models
-from utils.math_utils import safe_float
+
 
 def normalize_xyz3(raw_xyz: Any) -> list[float]:
-    if isinstance(raw_xyz, dict):
-        return [
-            safe_float(raw_xyz.get("x", 0.0), 0.0),
-            safe_float(raw_xyz.get("y", 0.0), 0.0),
-            safe_float(raw_xyz.get("z", 0.0), 0.0),
-        ]
-    if isinstance(raw_xyz, (list, tuple)):
-        values = [safe_float(raw_xyz[idx] if idx < len(raw_xyz) else 0.0, 0.0) for idx in range(3)]
-    else:
-        values = [0.0, 0.0, 0.0]
-    return values[:3]
+    return primitive_collider_models.normalize_xyz3(raw_xyz)
 
 
 def parse_primitive_colliders(
@@ -43,30 +33,7 @@ def primitive_collider_to_dict(
 
 
 def default_axis_colliders(axis_count: int = 6) -> list["primitive_collider_models.RobotAxisColliderData"]:
-    axis_total = max(0, axis_count)
-    default_directions = (
-        primitive_collider_models.AxisDirection.Z,
-        primitive_collider_models.AxisDirection.X,
-        primitive_collider_models.AxisDirection.Y,
-        primitive_collider_models.AxisDirection.Y,
-        primitive_collider_models.AxisDirection.Y,
-        primitive_collider_models.AxisDirection.Z,
-    )
-    return [
-        primitive_collider_models.RobotAxisColliderData(
-            axis_index=index,
-            enabled=True,
-            radius=40.0,
-            height=200.0,
-            direction_axis=(
-                default_directions[index]
-                if index < 6
-                else primitive_collider_models.AxisDirection.Z
-            ),
-            offset_xyz=(0.0, 0.0, 0.0),
-        )
-        for index in range(axis_total)
-    ]
+    return primitive_collider_models.default_axis_colliders(axis_count)
 
 
 def parse_axis_colliders(

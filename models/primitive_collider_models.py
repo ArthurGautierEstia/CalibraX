@@ -8,10 +8,6 @@ import numpy as np
 import utils.math_utils as math_utils
 from models.pose6 import Pose6
 from utils.math_utils import safe_float
-from models.collider_models import (
-    default_axis_colliders,
-    normalize_xyz3,
-)
 
 
 class PrimitiveColliderShape(str, Enum):
@@ -28,6 +24,20 @@ class AxisDirection(str, Enum):
 
 SUPPORTED_PRIMITIVE_COLLIDER_SHAPES = tuple(PrimitiveColliderShape)
 SUPPORTED_AXIS_DIRECTIONS = tuple(AxisDirection)
+
+
+def normalize_xyz3(raw_xyz: Any) -> list[float]:
+    if isinstance(raw_xyz, dict):
+        return [
+            safe_float(raw_xyz.get("x", 0.0), 0.0),
+            safe_float(raw_xyz.get("y", 0.0), 0.0),
+            safe_float(raw_xyz.get("z", 0.0), 0.0),
+        ]
+    if isinstance(raw_xyz, (list, tuple)):
+        values = [safe_float(raw_xyz[idx] if idx < len(raw_xyz) else 0.0, 0.0) for idx in range(3)]
+    else:
+        values = [0.0, 0.0, 0.0]
+    return values[:3]
 
 def _safe_bool(value: Any, default: bool = True) -> bool:
     if isinstance(value, bool):
@@ -416,6 +426,29 @@ class RobotAxisColliderData:
             and self.direction_axis == other.direction_axis
             and self.offset_xyz == other.offset_xyz
         )
+
+
+def default_axis_colliders(axis_count: int = 6) -> list[RobotAxisColliderData]:
+    axis_total = max(0, axis_count)
+    default_directions = (
+        AxisDirection.Z,
+        AxisDirection.X,
+        AxisDirection.Y,
+        AxisDirection.Y,
+        AxisDirection.Y,
+        AxisDirection.Z,
+    )
+    return [
+        RobotAxisColliderData(
+            axis_index=index,
+            enabled=True,
+            radius=40.0,
+            height=200.0,
+            direction_axis=default_directions[index] if index < 6 else AxisDirection.Z,
+            offset_xyz=(0.0, 0.0, 0.0),
+        )
+        for index in range(axis_total)
+    ]
 
 
 def parse_primitive_collider_data(
