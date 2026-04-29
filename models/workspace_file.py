@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, TYPE_CHECKING
 
-from models.collider_models import parse_primitive_colliders, primitive_collider_to_dict
+from models.workspace_primitive_zone_models import (
+    parse_workspace_primitive_zones,
+    workspace_primitive_zones_to_dict,
+)
 from utils.reference_frame_utils import normalize_pose6
 
 if TYPE_CHECKING:
@@ -69,11 +72,8 @@ class WorkspaceFile:
             scene_name=workspace_model.get_workspace_scene_name(),
             robot_base_pose_world=normalize_pose6(workspace_model.get_robot_base_pose_world()),
             cad_elements=[normalize_workspace_cad_element(v) for v in workspace_model.get_workspace_cad_elements()],
-            tcp_zones=parse_primitive_colliders(workspace_model.get_workspace_tcp_zones(), default_shape="box"),
-            collision_zones=parse_primitive_colliders(
-                workspace_model.get_workspace_collision_zones(),
-                default_shape="box",
-            ),
+            tcp_zones=workspace_primitive_zones_to_dict(workspace_model.get_workspace_tcp_zones()),
+            collision_zones=workspace_primitive_zones_to_dict(workspace_model.get_workspace_collision_zones()),
         )
 
     @classmethod
@@ -91,10 +91,11 @@ class WorkspaceFile:
                 data.get("robot_base_pose_world", data.get("robot_pose", data.get("base_pose")))
             ),
             cad_elements=parse_workspace_cad_elements(data.get("cad_elements", data.get("elements"))),
-            tcp_zones=parse_primitive_colliders(data.get("tcp_zones", data.get("zones_tcp")), default_shape="box"),
-            collision_zones=parse_primitive_colliders(
-                data.get("collision_zones", data.get("zones_collision")),
-                default_shape="box",
+            tcp_zones=workspace_primitive_zones_to_dict(
+                parse_workspace_primitive_zones(data.get("tcp_zones", data.get("zones_tcp")))
+            ),
+            collision_zones=workspace_primitive_zones_to_dict(
+                parse_workspace_primitive_zones(data.get("collision_zones", data.get("zones_collision")))
             ),
         )
 
@@ -103,8 +104,8 @@ class WorkspaceFile:
             "scene_name": self.scene_name,
             "robot_base_pose_world": normalize_pose6(self.robot_base_pose_world),
             "cad_elements": [normalize_workspace_cad_element(v) for v in self.cad_elements],
-            "tcp_zones": [primitive_collider_to_dict(v) for v in self.tcp_zones],
-            "collision_zones": [primitive_collider_to_dict(v) for v in self.collision_zones],
+            "tcp_zones": workspace_primitive_zones_to_dict(self.tcp_zones),
+            "collision_zones": workspace_primitive_zones_to_dict(self.collision_zones),
         }
 
     def apply_to_workspace_model(self, workspace_model: "WorkspaceModel", file_path: str | None = None) -> None:

@@ -26,6 +26,7 @@ from models.robot_model import RobotModel
 from models.reference_frame import ReferenceFrame
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
+from models.workspace_primitive_zone_models import workspace_primitive_zones_to_dict
 from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
@@ -1089,7 +1090,7 @@ class Viewer3DWidget(QWidget):
 
         raw_elements = [] if workspace_model is None else workspace_model.get_workspace_cad_elements()
         raw_tcp_zones = parse_primitive_colliders(
-            [] if workspace_model is None else workspace_model.get_workspace_tcp_zones(),
+            [] if workspace_model is None else workspace_primitive_zones_to_dict(workspace_model.get_workspace_tcp_zones()),
             default_shape="box",
         )
         raw_collision_zones = parse_primitive_colliders(
@@ -1408,46 +1409,12 @@ class Viewer3DWidget(QWidget):
         elif normalized_axis == "y":
             rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
 
-
-
         if positive_direction:
             return rotation
 
         flip = np.eye(4, dtype=float)
         flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
         return rotation @ flip
-
-    #@staticmethod
-    #def _primitive_extrusion_orientation(
-    #    direction_axis: str,
-    #    positive_direction: bool = True,
-    #    _cache: dict[tuple[str, bool], np.ndarray] = {},
-    #) -> np.ndarray:
-    #    if not _cache:
-    #        z_rotation = np.eye(4, dtype=float)
-    #
-    #        x_rotation = np.eye(4, dtype=float)
-    #        x_rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-    #
-    #        y_rotation = np.eye(4, dtype=float)
-    #        y_rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
-    #
-    #        flip = np.eye(4, dtype=float)
-    #        flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
-    #
-    #        _cache.update(
-    #            {
-    #                ("z", True): z_rotation,
-    #                ("z", False): z_rotation @ flip,
-    #                ("x", True): x_rotation,
-    #                ("x", False): x_rotation @ flip,
-    #                ("y", True): y_rotation,
-    #                ("y", False): y_rotation @ flip,
-    #            }
-    #        )
-    ##
-    #    normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-    #    return _cache[(normalized_axis, bool(positive_direction))]
 
     def _build_primitive_mesh_data(
         self,

@@ -1,12 +1,5 @@
-# Etat global
-- Gestion de scène plutot OK.
-- Gestion des valeurs des sliders en jog cartesien 
-
-# Problèmes connus
-- Bug après avoir joué entre le jog articulaire puis cartesien
-- Zones de collisions / TCP cache le robot fantome
-
 # A faire
-- Changer les valeurs des sliders en jog cartesien selon si on est en base ou en world
 - Evaluation des collisions
-- Protections des sauts quand on fait du jogging (on pourrait également faire la détection de collisions)
+- Evaluation des zones de travail
+- Protections des sauts quand on fait du jogging (on pourrait également faire la détection de collisions / zone de travail)
+- Dissocier
