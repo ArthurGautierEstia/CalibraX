@@ -1,5 +1,3 @@
-from collections.abc import Iterable
-
 import numpy as np
 
 # ============================================================================
@@ -49,25 +47,12 @@ def is_near_zero_vector_xyz(vector_xyz: list[float], epsilon: float = 1e-9) -> b
     )
 
 
-def normalize_pose6(values: object) -> list[float]:
-    """Normalize a project XYZABC pose to six floats."""
-    if isinstance(values, dict):
-        out = [
-            safe_float(values.get("x", 0.0), 0.0),
-            safe_float(values.get("y", 0.0), 0.0),
-            safe_float(values.get("z", 0.0), 0.0),
-            safe_float(values.get("a", 0.0), 0.0),
-            safe_float(values.get("b", 0.0), 0.0),
-            safe_float(values.get("c", 0.0), 0.0),
-        ]
-    elif isinstance(values, Iterable) and not isinstance(values, (str, bytes)):
-        seq = list(values)
-        out = []
-        for idx in range(6):
-            out.append(safe_float(seq[idx] if idx < len(seq) else 0.0, 0.0))
-    else:
-        out = [0.0] * 6
-    return out[:6]
+def _pose6_values(pose: list[float] | tuple[float, ...]) -> list[float]:
+    if not isinstance(pose, (list, tuple)):
+        raise TypeError("pose must be a list or tuple of 6 values")
+    if len(pose) < 6:
+        raise ValueError("pose must contain at least 6 values")
+    return [safe_float(pose[idx], 0.0) for idx in range(6)]
 
 # ============================================================================
 # RÉGION: Transformations Denavit-Hartenberg
@@ -275,9 +260,9 @@ def rotation_matrix_to_fixed_zyx(R):
 # RÉGION: Transitions
 # ============================================================================
 
-def pose_zyx_to_matrix(pose: object) -> np.ndarray:
+def pose_zyx_to_matrix(pose: list[float] | tuple[float, ...]) -> np.ndarray:
     """Build a 4x4 matrix from a project pose [X, Y, Z, A, B, C]."""
-    values = normalize_pose6(pose)
+    values = _pose6_values(pose)
     transform = np.eye(4, dtype=float)
     transform[:3, :3] = euler_to_rotation_matrix(values[3], values[4], values[5], degrees=True)
     transform[:3, 3] = [values[0], values[1], values[2]]
@@ -368,10 +353,10 @@ def homogeneous_rotation_z(angle: float, degrees: bool = True) -> np.ndarray:
 
 def transform_xyz_limits_yaw_only(
     limits_xyz: list[tuple[float, float]],
-    pose_world: object,
+    pose_world: list[float] | tuple[float, ...],
 ) -> list[tuple[float, float]]:
     """Transform base XYZ slider limits into world using translation and A/Rz only."""
-    pose = normalize_pose6(pose_world)
+    pose = _pose6_values(pose_world)
     tx, ty, tz = pose[:3]
     rz_rad = np.radians(pose[3])
     cos_rz = float(np.cos(rz_rad))

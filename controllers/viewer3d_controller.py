@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QObject
 
-from controllers.cartesian_control_view.cartesian_wdiget_controller import CartesianWidgetController
+from controllers.cartesian_control_view.cartesian_widget_controller import CartesianWidgetController
 from controllers.joint_control_view.joints_controller import JointsController
 from models.collision_scene_model import CollisionSceneModel
 from models.robot_model import RobotModel

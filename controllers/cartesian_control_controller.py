@@ -4,7 +4,7 @@ from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from views.cartesian_control_view import CartesianControlView
-from controllers.cartesian_control_view.cartesian_wdiget_controller import CartesianWidgetController
+from controllers.cartesian_control_view.cartesian_widget_controller import CartesianWidgetController
 from controllers.cartesian_control_view.mgi_solutions_controller import MgiSolutionsController
 
 

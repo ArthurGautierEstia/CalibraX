@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterable
 
 import numpy as np
 
 import utils.math_utils as math_utils
+from utils.math_utils import safe_float
 from models.reference_frame import ReferenceFrame
 
 
@@ -22,7 +24,7 @@ class FrameTransform:
 
     @classmethod
     def from_pose(cls, pose: object, revision: int = 0) -> "FrameTransform":
-        values = tuple(math_utils.normalize_pose6(pose))
+        values = tuple(normalize_pose6(pose))
         matrix = math_utils.pose_zyx_to_matrix(values)
         inverse_matrix = math_utils.invert_homogeneous_transform(matrix)
         rotation = matrix[:3, :3].copy()
@@ -51,11 +53,24 @@ def _as_frame_transform(value: object) -> FrameTransform:
 
 
 def normalize_pose6(values: object) -> list[float]:
-    return math_utils.normalize_pose6(values)
+    if isinstance(values, dict):
+        return [
+            safe_float(values.get("x", 0.0), 0.0),
+            safe_float(values.get("y", 0.0), 0.0),
+            safe_float(values.get("z", 0.0), 0.0),
+            safe_float(values.get("a", 0.0), 0.0),
+            safe_float(values.get("b", 0.0), 0.0),
+            safe_float(values.get("c", 0.0), 0.0),
+        ]
+    if isinstance(values, Iterable) and not isinstance(values, (str, bytes)):
+        seq = list(values)
+        normalized = [safe_float(seq[idx] if idx < len(seq) else 0.0, 0.0) for idx in range(6)]
+        return normalized[:6]
+    return [0.0] * 6
 
 
 def pose_to_matrix(pose: object) -> np.ndarray:
-    return math_utils.pose_zyx_to_matrix(pose)
+    return math_utils.pose_zyx_to_matrix(normalize_pose6(pose))
 
 
 def matrix_to_pose(transform: np.ndarray) -> list[float]:
