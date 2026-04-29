@@ -300,8 +300,8 @@ class RobotAxisColliderData:
             return raw.copy()
 
         defaults = default_axis_colliders(max(axis_index + 1, 6))
-        base_value = defaults[axis_index] if axis_index < len(defaults) else {}
-        data = dict(base_value)
+        base_value = defaults[axis_index] if axis_index < len(defaults) else None
+        data = base_value.to_dict() if isinstance(base_value, RobotAxisColliderData) else {}
         if isinstance(raw, dict):
             data.update(raw)
 

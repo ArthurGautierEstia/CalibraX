@@ -121,8 +121,8 @@ class TrajectoryBuilder:
             self._collision_world_cache.set_workspace_collision_zones(
                 self.workspace_model.get_workspace_collision_zones()
             )
-            self._collision_world_cache.set_robot_axis_templates(self.robot_model.get_axis_colliders())
-            self._collision_world_cache.set_tool_templates(self.tool_model.get_tool_colliders())
+            self._collision_world_cache.set_robot_axis_templates(self.robot_model.get_axis_collider_data())
+            self._collision_world_cache.set_tool_templates(self.tool_model.get_tool_collider_data())
             self._collision_cache_revisions = revisions
 
         return self._collision_world_cache

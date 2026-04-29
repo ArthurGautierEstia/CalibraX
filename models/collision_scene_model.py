@@ -139,14 +139,14 @@ class CollisionSceneModel(QObject):
             return []
 
         if len(corrected_matrices) >= 2:
-            flange_matrix_index = len(corrected_matrices) - 2
+            tool_matrix_index = len(corrected_matrices) - 2
         else:
-            flange_matrix_index = len(corrected_matrices) - 1
+            tool_matrix_index = len(corrected_matrices) - 1
 
-        if flange_matrix_index < 0 or flange_matrix_index >= len(corrected_matrices):
+        if tool_matrix_index < 0 or tool_matrix_index >= len(corrected_matrices):
             return []
 
-        base_transform = robot_base_world @ corrected_matrices[flange_matrix_index]
+        base_transform = robot_base_world @ corrected_matrices[tool_matrix_index]
         colliders: list[PrimitiveCollider] = []
         for data in self._tool_collider_data:
             colliders.append(
@@ -154,7 +154,7 @@ class CollisionSceneModel(QObject):
                     owner="tool",
                     base_transform=base_transform,
                     attachment_key="tool_flange",
-                    attachment_index=flange_matrix_index,
+                    attachment_index=tool_matrix_index,
                 )
             )
         return colliders

@@ -80,7 +80,7 @@ class ToolController(QObject):
         self.robot_configuration_widget.set_tool(self.tool_model.get_tool())
         self.robot_configuration_widget.set_tool_cad_model(self.tool_model.get_tool_cad_model())
         self.robot_configuration_widget.set_tool_cad_offset_rz(self.tool_model.get_tool_cad_offset_rz())
-        self.robot_configuration_widget.set_tool_colliders(self.tool_model.get_tool_colliders())
+        self.robot_configuration_widget.set_tool_colliders(self.tool_model.get_tool_collider_data())
         self.robot_configuration_widget.set_tool_evaluated_robot_axis_colliders(
             self.tool_model.get_evaluated_robot_axis_colliders()
         )

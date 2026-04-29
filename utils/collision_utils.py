@@ -370,7 +370,9 @@ def build_world_frame_transforms(
 def resolve_flange_world_transform(frame_world_transforms: list[np.ndarray]) -> np.ndarray | None:
     matrices = _normalize_matrices(frame_world_transforms)
     if len(matrices) < 2:
-        return None
+        if not matrices:
+            return None
+        return matrices[-1]
     return matrices[-2]
 
 

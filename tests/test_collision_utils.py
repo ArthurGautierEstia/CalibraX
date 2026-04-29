@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 import utils.math_utils as math_utils
+from models.primitive_collider_models import parse_robot_axis_colliders
 from utils.collision_utils import (
     CollisionShape,
     CollisionWorldCache,
@@ -77,6 +78,27 @@ class CollisionUtilsGeometryTests(unittest.TestCase):
 
 
 class CollisionWorldCacheTests(unittest.TestCase):
+    def test_robot_axis_collider_parsing_accepts_dict_inputs(self):
+        parsed = parse_robot_axis_colliders(
+            [
+                {
+                    "enabled": True,
+                    "radius": 12.0,
+                    "height": 34.0,
+                    "direction_axis": "x",
+                    "offset_xyz": [1.0, 2.0, 3.0],
+                }
+            ],
+            axis_count=1,
+        )
+
+        self.assertEqual(1, len(parsed))
+        self.assertEqual(0, parsed[0].axis_index)
+        self.assertEqual(12.0, parsed[0].radius)
+        self.assertEqual(34.0, parsed[0].height)
+        self.assertEqual("x", parsed[0].direction_axis)
+        self.assertEqual((1.0, 2.0, 3.0), parsed[0].offset_xyz)
+
     def test_workspace_collision_queries_do_not_rebuild_shapes(self):
         cache = CollisionWorldCache()
         cache.set_workspace_collision_zones(
@@ -206,6 +228,19 @@ class CollisionWorldCacheTests(unittest.TestCase):
         for shape in shapes:
             self.assertEqual("tool", shape.owner)
             self.assertEqual((4, 4), shape.world_transform.shape)
+
+    def test_tool_collision_shapes_use_flange_frame(self):
+        matrices = [np.eye(4) for _ in range(8)]
+        matrices[-2] = math_utils.pose_zyx_to_matrix([10.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        matrices[-1] = math_utils.pose_zyx_to_matrix([20.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+        shapes = build_tool_collision_shapes(
+            [{"enabled": True, "shape": "sphere", "pose": [0.0] * 6, "radius": 1.0}],
+            matrices,
+        )
+
+        self.assertEqual(1, len(shapes))
+        np.testing.assert_allclose(shapes[0].translation, np.array([10.0, 0.0, 0.0]))
 
     def test_robot_tool_filter_keeps_only_selected_robot_axes(self):
         cache = CollisionWorldCache()

@@ -179,7 +179,7 @@ class RobotConfigurationController(QObject):
         )
 
     def update_axis_colliders_view(self) -> None:
-        self.robot_configuration_widget.set_axis_colliders(self.robot_model.get_axis_colliders())
+        self.robot_configuration_widget.set_axis_colliders(self.robot_model.get_axis_collider_data())
 
     def update_positions_config_view(self) -> None:
         self.robot_configuration_widget.set_positions_config(
