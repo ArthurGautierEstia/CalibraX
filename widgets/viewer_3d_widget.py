@@ -359,8 +359,8 @@ class Viewer3DWidget(QWidget):
                 background-color: rgba(255, 255, 255, 28);
             }
             QPushButton:checked {
-                background-color: rgba(95, 170, 255, 48);
-                border-color: rgba(150, 210, 255, 120);
+                background-color: rgba(255, 140, 0, 48);
+                border-color: rgba(255, 140, 0, 120);
             }
         """)
         return button
@@ -395,7 +395,7 @@ class Viewer3DWidget(QWidget):
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        color = QColor(210, 220, 230) if not active else QColor(140, 210, 255)
+        color = QColor(210, 220, 230) if not active else QColor("#ff8c00")
         pen = QPen(color, 1.8)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
