@@ -27,6 +27,7 @@ from models.reference_frame import ReferenceFrame
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
+from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
     FrameTransform,
     normalize_pose6,
@@ -186,6 +187,7 @@ class Viewer3DWidget(QWidget):
         self.frame_list = self.frame_overlay.list_widget
         self.workspace_frame_overlay = FrameVisibilityOverlayWidget(self.viewer)
         self.workspace_frame_overlay.set_title("Frames scene")
+        self.viewer_control_overlay = ViewerControlOverlayWidget(self.viewer)
 
         # --- LABEL EN HAUT A GAUCHE ---
         self.msg_label = QLabel("", self.viewer)  # Parent = viewer pour l'overlay
@@ -269,6 +271,15 @@ class Viewer3DWidget(QWidget):
         if hasattr(self, "toolbar_overlay"):
             message_y = self.toolbar_overlay.y() + self.toolbar_overlay.height() + 6
         self.msg_label.move(margin, message_y)
+        if hasattr(self, "viewer_control_overlay"):
+            self.viewer_control_overlay.adjustSize()
+            overlay_width = max(0, self.viewer.width() - (2 * margin))
+            self.viewer_control_overlay.resize(overlay_width, self.viewer_control_overlay.sizeHint().height())
+            control_y = max(
+                margin,
+                self.viewer.height() - self.viewer_control_overlay.height() - margin,
+            )
+            self.viewer_control_overlay.move(margin, control_y)
 
     def resizeEvent(self, event):
         """Repositionne les overlays lors du redimensionnement"""
@@ -302,6 +313,12 @@ class Viewer3DWidget(QWidget):
             except Exception:
                 pass
         QApplication.processEvents()
+
+    def get_overlay_joints_widget(self):
+        return self.viewer_control_overlay.get_joints_widget()
+
+    def get_overlay_cartesian_widget(self):
+        return self.viewer_control_overlay.get_cartesian_widget()
 
     def get_display_state(self) -> ViewerDisplayState:
         return ViewerDisplayState(

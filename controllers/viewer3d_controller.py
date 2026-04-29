@@ -1,5 +1,7 @@
 from PyQt6.QtCore import QObject
 
+from controllers.cartesian_control_view.cartesian_wdiget_controller import CartesianWidgetController
+from controllers.joint_control_view.joints_controller import JointsController
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
@@ -22,8 +24,20 @@ class Viewer3DController(QObject):
         self.viewer_3d_widget = viewer_3d_widget
         self._ghost_visible = False
         self._ghost_joints: list[float] = [0.0] * 6
+        self._overlay_joints_controller = JointsController(
+            self.robot_model,
+            self.viewer_3d_widget.get_overlay_joints_widget(),
+            self,
+        )
+        self._overlay_cartesian_controller = CartesianWidgetController(
+            self.robot_model,
+            self.workspace_model,
+            self.viewer_3d_widget.get_overlay_cartesian_widget(),
+            self,
+        )
 
         self._setup_connections()
+        self._initialize_overlay_controls()
         self.viewer_3d_widget.update_workspace(self.workspace_model)
         self.viewer_3d_widget.update_collision_models(self.robot_model, self.tool_model)
 
@@ -37,6 +51,7 @@ class Viewer3DController(QObject):
         self.tool_model.tool_colliders_changed.connect(self._on_colliders_changed)
 
         self.workspace_model.workspace_changed.connect(self._on_workspace_changed)
+        self._overlay_cartesian_controller.new_target_computed.connect(self._on_overlay_cartesian_target_computed)
 
     def _update_tcp_pose(self) -> None:
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
@@ -56,6 +71,24 @@ class Viewer3DController(QObject):
 
     def _on_workspace_changed(self) -> None:
         self.viewer_3d_widget.update_workspace(self.workspace_model)
+
+    def _on_overlay_cartesian_target_computed(self) -> None:
+        target = self._overlay_cartesian_controller.get_new_target()
+        mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
+        best_sol = self.robot_model.get_best_mgi_solution(mgi_result)
+        if not best_sol:
+            return
+        _config_key, solution = best_sol
+        self.robot_model.set_joints(solution.joints)
+
+    def _initialize_overlay_controls(self) -> None:
+        overlay_joints_widget = self.viewer_3d_widget.get_overlay_joints_widget()
+        overlay_joints_widget.update_axis_limits(self.robot_model.get_axis_limits())
+        overlay_joints_widget.set_all_joints(self.robot_model.get_joints())
+        overlay_joints_widget.set_configuration(self.robot_model.get_current_axis_config())
+
+        self._overlay_cartesian_controller._apply_cartesian_slider_limits()
+        self._overlay_cartesian_controller._on_model_tcp_changed()
 
     def show_robot_ghost(self) -> None:
         self._ghost_visible = True

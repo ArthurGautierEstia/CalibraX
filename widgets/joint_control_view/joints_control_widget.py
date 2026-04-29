@@ -1,4 +1,4 @@
-from typing import List
+﻿from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QSizePolicy
@@ -8,7 +8,7 @@ from utils.mgi import MgiConfigKey
 
 
 class JointsControlWidget(QWidget):
-    """Widget pour le contrôle des coordonnées articulaires"""
+    """Widget pour le contrÃ´le des coordonnÃ©es articulaires"""
     
     # Signaux
     joint_value_changed = pyqtSignal(int, float)  # index, value
@@ -19,8 +19,8 @@ class JointsControlWidget(QWidget):
     def __init__(self, parent: QWidget = None, compact: bool = False) -> None:
         super().__init__(parent)
         
-        # Données internes
-        self._joint_values: List[float] = [0.0] * 6  # Valeurs réelles (précision complète)
+        # DonnÃ©es internes
+        self._joint_values: List[float] = [0.0] * 6  # Valeurs rÃ©elles (prÃ©cision complÃ¨te)
         self._axis_limits: List[tuple[float, float]] = [(-180.0, 180.0) for _ in range(6)]
         self._current_axis_config: MgiConfigKey = MgiConfigKey.FUN
         self._compact = bool(compact)
@@ -44,7 +44,7 @@ class JointsControlWidget(QWidget):
         
         # Titre
         if not self._compact:
-            titre = QLabel("Coordonnées articulaires")
+            titre = QLabel("Coordonnees articulaires")
             titre.setStyleSheet("font-size: 14px; font-weight: bold;")
             layout.addWidget(titre)
 
@@ -54,22 +54,27 @@ class JointsControlWidget(QWidget):
         self.set_configuration(self._current_axis_config)
         
         # Sliders et spinboxes pour les 6 joints
+        spinbox_width: int | None = None
         for i in range(6):
             row_layout = QHBoxLayout()
-            label = QLabel(f"q{i+1} (°)")
+            label = QLabel(f"q{i+1}")
             label.setMinimumWidth(58 if self._compact else 72)
 
-            # Slider (0-100 représente min-max)
+            # Slider (0-100 reprÃ©sente min-max)
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
-            slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par défaut
+            slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par dÃ©faut
 
-            # SpinBox (valeur réelle)
+            # SpinBox (valeur rÃ©elle)
             spinbox = QDoubleSpinBox()
             spinbox.setRange(self._axis_limits[i][0], self._axis_limits[i][1])
-            spinbox.setDecimals(2)
+            spinbox.setDecimals(3)
             spinbox.setSingleStep(0.10)
+            spinbox.setSuffix(" °")
             spinbox.setValue(0.0)
+            if spinbox_width is None:
+                spinbox_width = spinbox.sizeHint().width()
+            spinbox.setFixedWidth(spinbox_width)
 
             # Connexions
             slider.valueChanged.connect(lambda value, idx=i: self._on_slider_changed(idx, value))
@@ -108,12 +113,12 @@ class JointsControlWidget(QWidget):
         self.setLayout(layout)
     
     def _slider_to_value(self, index: int, slider_pos: int) -> float:
-        """Convertit une position de slider (0-100) en valeur réelle"""
+        """Convertit une position de slider (0-100) en valeur rÃ©elle"""
         min_val, max_val = self._axis_limits[index]
         return min_val + (slider_pos / float(self._SLIDER_MAX)) * (max_val - min_val)
     
     def _value_to_slider(self, index: int, value: float) -> int:
-        """Convertit une valeur réelle en position de slider (0-100)"""
+        """Convertit une valeur rÃ©elle en position de slider (0-100)"""
         min_val, max_val = self._axis_limits[index]
         if max_val == min_val:
             return int(self._SLIDER_MAX / 2)
@@ -122,36 +127,36 @@ class JointsControlWidget(QWidget):
     
     def _on_slider_changed(self, index: int, slider_pos: int) -> None:
         """Callback quand le slider change"""
-        # Calculer la valeur réelle depuis le slider
+        # Calculer la valeur rÃ©elle depuis le slider
         value = self._slider_to_value(index, slider_pos)
         
-        # Mettre à jour la valeur interne
+        # Mettre Ã  jour la valeur interne
         self._joint_values[index] = value
         
-        # Mettre à jour le spinbox sans déclencher son signal
+        # Mettre Ã  jour le spinbox sans dÃ©clencher son signal
         self.spinboxes_q[index].blockSignals(True)
         self.spinboxes_q[index].setValue(value)
         self.spinboxes_q[index].blockSignals(False)
         
-        # Émettre le signal de changement
+        # Ã‰mettre le signal de changement
         self.joint_value_changed.emit(index, value)
     
     def _on_spinbox_changed(self, index: int, value: float) -> None:
         """Callback quand le spinbox change"""
-        # Mettre à jour la valeur interne
+        # Mettre Ã  jour la valeur interne
         self._joint_values[index] = value
         
-        # Mettre à jour le slider sans déclencher son signal
+        # Mettre Ã  jour le slider sans dÃ©clencher son signal
         slider_pos = self._value_to_slider(index, value)
         self.sliders_q[index].blockSignals(True)
         self.sliders_q[index].setValue(slider_pos)
         self.sliders_q[index].blockSignals(False)
         
-        # Émettre le signal de changement
+        # Ã‰mettre le signal de changement
         self.joint_value_changed.emit(index, value)
     
     def set_joint_value(self, index: int, value: float) -> None:
-        """Définit la valeur d'un joint (mise à jour externe)"""
+        """DÃ©finit la valeur d'un joint (mise Ã  jour externe)"""
         if not (0 <= index < 6):
             return
         
@@ -159,10 +164,10 @@ class JointsControlWidget(QWidget):
         min_val, max_val = self._axis_limits[index]
         value = max(min_val, min(max_val, value))
         
-        # Mettre à jour la valeur interne
+        # Mettre Ã  jour la valeur interne
         self._joint_values[index] = value
         
-        # Mettre à jour les widgets sans déclencher les signaux
+        # Mettre Ã  jour les widgets sans dÃ©clencher les signaux
         self.spinboxes_q[index].blockSignals(True)
         self.sliders_q[index].blockSignals(True)
         
@@ -173,44 +178,46 @@ class JointsControlWidget(QWidget):
         self.sliders_q[index].blockSignals(False)
     
     def set_all_joints(self, values: List[float]) -> None:
-        """Définit toutes les valeurs de joints"""
+        """DÃ©finit toutes les valeurs de joints"""
         for i, val in enumerate(values[:6]):
             self.set_joint_value(i, val)
     
     def get_joint_value(self, index: int) -> float:
-        """Récupère la valeur réelle d'un joint"""
+        """RÃ©cupÃ¨re la valeur rÃ©elle d'un joint"""
         if 0 <= index < 6:
             return self._joint_values[index]
         return 0.0
     
     def get_all_joints(self) -> List[float]:
-        """Récupère toutes les valeurs de joints"""
+        """RÃ©cupÃ¨re toutes les valeurs de joints"""
         return self._joint_values.copy()
     
     def update_axis_limits(self, limits: List[tuple[float, float]]) -> None:
-        """Met à jour les limites des axes"""
+        """Met Ã  jour les limites des axes"""
         for i in range(min(6, len(limits))):
             min_val, max_val = limits[i]
             self._axis_limits[i] = (min_val, max_val)
             
-            # Mettre à jour la range du spinbox
+            # Mettre Ã  jour la range du spinbox
             self.spinboxes_q[i].setRange(min_val, max_val)
             
-            # Clamper la valeur actuelle si nécessaire
+            # Clamper la valeur actuelle si nÃ©cessaire
             current_value = self._joint_values[i]
             if current_value < min_val or current_value > max_val:
                 clamped_value = max(min_val, min(max_val, current_value))
                 self.set_joint_value(i, clamped_value)
             else:
-                # Juste mettre à jour le slider (les limites ont changé)
+                # Juste mettre Ã  jour le slider (les limites ont changÃ©)
                 self.sliders_q[i].blockSignals(True)
                 self.sliders_q[i].setValue(self._value_to_slider(i, current_value))
                 self.sliders_q[i].blockSignals(False)
     
     def get_axis_limits(self) -> List[tuple[float, float]]:
-        """Récupère les limites des axes"""
+        """RÃ©cupÃ¨re les limites des axes"""
         return self._axis_limits.copy()
     
     def set_configuration(self, config: MgiConfigKey) -> None:
-        """Met à jour le texte de configuration"""
+        """Met Ã  jour le texte de configuration"""
         self.configuration_label.setText(f"Configuration courante : {config.name}")
+
+

@@ -147,6 +147,7 @@ class RobotModel(QObject):
         self.MGI_solver = MGI(self.mgi_params, RobotTool())
 
         self.current_tcp_mgi_result: MgiResult = MgiResult()
+        self.current_axis_config: MgiConfigKey = MgiConfigKey.FUN
 
         # ====================================================================
         # RÉGION: Résultats cinématique
