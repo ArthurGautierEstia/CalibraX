@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 import utils.math_utils as math_utils
+from models.pose6 import Pose6
 from models.primitive_collider_models import (
     PrimitiveColliderData,
     RobotAxisColliderData,
@@ -493,7 +494,7 @@ def _as_transform_matrix(value: object | None) -> np.ndarray:
     if matrix.shape == (4, 4):
         return matrix
     if matrix.shape == (6,):
-        return math_utils.pose_zyx_to_matrix(matrix.tolist())
+        return math_utils.pose_zyx_to_matrix(Pose6.from_sequence(matrix.tolist(), fill_missing=False))
     raise ValueError("Expected a 4x4 transform matrix, a FrameTransform, or a pose6")
 
 

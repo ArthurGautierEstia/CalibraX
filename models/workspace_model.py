@@ -11,6 +11,7 @@ from models.primitive_collider_models import (
     parse_primitive_collider_data,
     primitive_collider_data_to_dicts,
 )
+from models.pose6 import Pose6
 from models.workspace_file import parse_workspace_cad_elements
 from utils.reference_frame_utils import FrameTransform, normalize_pose6
 
@@ -31,7 +32,7 @@ class WorkspaceModel(QObject):
         super().__init__(parent)
         self.workspace_scene_name: str = WorkspaceModel.DEFAULT_WORKSPACE_SCENE_NAME
         self.workspace_file_path: str = ""
-        self.robot_base_pose_world: list[float] = [0.0] * 6
+        self.robot_base_pose_world: Pose6 = Pose6.zeros()
         self._robot_base_revision: int = 0
         self._workspace_structure_revision: int = 0
         self._robot_base_transform_world: FrameTransform = FrameTransform.from_pose(
@@ -66,8 +67,8 @@ class WorkspaceModel(QObject):
         self.workspace_file_path = normalized
         self.workspace_changed.emit()
 
-    def get_robot_base_pose_world(self) -> list[float]:
-        return [float(v) for v in self.robot_base_pose_world[:6]]
+    def get_robot_base_pose_world(self) -> Pose6:
+        return self.robot_base_pose_world.copy()
 
     def get_robot_base_revision(self) -> int:
         return int(self._robot_base_revision)
@@ -78,8 +79,8 @@ class WorkspaceModel(QObject):
     def get_robot_base_transform_world(self) -> FrameTransform:
         return self._robot_base_transform_world
 
-    def _set_robot_base_pose_world_cached(self, pose: list[float]) -> None:
-        self.robot_base_pose_world = [float(v) for v in pose[:6]]
+    def _set_robot_base_pose_world_cached(self, pose: Pose6) -> None:
+        self.robot_base_pose_world = pose.copy()
         self._robot_base_revision += 1
         self._robot_base_transform_world = FrameTransform.from_pose(
             self.robot_base_pose_world,
@@ -89,7 +90,7 @@ class WorkspaceModel(QObject):
     def _touch_workspace_structure(self) -> None:
         self._workspace_structure_revision += 1
 
-    def set_robot_base_pose_world(self, pose: list[float], emit: bool = True) -> None:
+    def set_robot_base_pose_world(self, pose: Pose6 | list[float], emit: bool = True) -> None:
         normalized = normalize_pose6(pose)
         if normalized == self.robot_base_pose_world:
             return
@@ -267,7 +268,7 @@ class WorkspaceModel(QObject):
     def set_workspace_data(
         self,
         scene_name: str,
-        robot_base_pose_world: list[float],
+        robot_base_pose_world: Pose6 | list[float],
         cad_elements: list[dict[str, Any]],
         tcp_zones: list[PrimitiveColliderData] | list[dict[str, Any]],
         collision_zones: list[PrimitiveColliderData] | list[dict[str, Any]],
@@ -316,7 +317,7 @@ class WorkspaceModel(QObject):
     def clear_workspace(self) -> None:
         self.set_workspace_data(
             WorkspaceModel.DEFAULT_WORKSPACE_SCENE_NAME,
-            [0.0] * 6,
+            Pose6.zeros(),
             [],
             [],
             [],

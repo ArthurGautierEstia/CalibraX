@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 import utils.math_utils as math_utils
+from models.pose6 import Pose6
 from models.primitive_collider_models import parse_robot_axis_colliders
 from utils.collision_utils import (
     CollisionShape,
@@ -24,11 +25,12 @@ def _shape(
     radius=0.0,
     height=0.0,
 ) -> CollisionShape:
+    pose_value = Pose6.zeros() if pose is None else Pose6.from_sequence(pose, fill_missing=False)
     return CollisionShape(
         owner="test",
         name=shape,
         shape=shape,
-        world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6 if pose is None else pose),
+        world_transform=math_utils.pose_zyx_to_matrix(pose_value),
         size_x=size_x,
         size_y=size_y,
         size_z=size_z,
@@ -203,7 +205,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
         first_robot_center = cache.robot_shapes_world[0].center.copy()
 
         frames_b = [np.eye(4) for _ in range(8)]
-        frames_b[1] = math_utils.pose_zyx_to_matrix([5.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        frames_b[1] = math_utils.pose_zyx_to_matrix(Pose6.from_values(5.0, 0.0, 0.0, 0.0, 0.0, 0.0))
         cache.update_dynamic_world_shapes(frames_b, np.eye(4))
 
         self.assertEqual(workspace_ids, [id(shape) for shape in cache.workspace_shapes_world])
@@ -231,8 +233,8 @@ class CollisionWorldCacheTests(unittest.TestCase):
 
     def test_tool_collision_shapes_use_flange_frame(self):
         matrices = [np.eye(4) for _ in range(8)]
-        matrices[-2] = math_utils.pose_zyx_to_matrix([10.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        matrices[-1] = math_utils.pose_zyx_to_matrix([20.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        matrices[-2] = math_utils.pose_zyx_to_matrix(Pose6.from_values(10.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        matrices[-1] = math_utils.pose_zyx_to_matrix(Pose6.from_values(20.0, 0.0, 0.0, 0.0, 0.0, 0.0))
 
         shapes = build_tool_collision_shapes(
             [{"enabled": True, "shape": "sphere", "pose": [0.0] * 6, "radius": 1.0}],
@@ -249,7 +251,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
                 owner="robot",
                 name="Robot collider J1",
                 shape="sphere",
-                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=0,
             ),
@@ -257,7 +259,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
                 owner="robot",
                 name="Robot collider J2",
                 shape="sphere",
-                world_transform=math_utils.pose_zyx_to_matrix([10.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                world_transform=math_utils.pose_zyx_to_matrix(Pose6.from_values(10.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
                 radius=1.0,
                 source_index=1,
             ),
@@ -267,7 +269,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
                 owner="tool",
                 name="Tool collider",
                 shape="sphere",
-                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=0,
             )
@@ -286,7 +288,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
                 owner="robot",
                 name="No axis",
                 shape="sphere",
-                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=None,
             ),
@@ -294,7 +296,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
                 owner="robot",
                 name="Axis 2",
                 shape="sphere",
-                world_transform=math_utils.pose_zyx_to_matrix([0.0] * 6),
+                world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=1,
             ),

@@ -9,6 +9,7 @@ from models.primitive_collider_models import (
     parse_primitive_collider_data,
     primitive_collider_data_to_dicts,
 )
+from models.pose6 import Pose6
 from utils.mgi import RobotTool
 
 
@@ -56,6 +57,23 @@ class ToolModel(QObject):
         )
 
     @staticmethod
+    def _tool_to_pose(tool: RobotTool | None = None) -> Pose6:
+        source = tool if tool is not None else RobotTool()
+        return Pose6.from_values(
+            source.x,
+            source.y,
+            source.z,
+            source.a,
+            source.b,
+            source.c,
+        )
+
+    @staticmethod
+    def _pose_to_tool(pose: Pose6 | list[float] | tuple[float, ...]) -> RobotTool:
+        values = Pose6.from_sequence(pose, fill_missing=False)
+        return RobotTool(*values.to_tuple())
+
+    @staticmethod
     def _normalize_evaluated_robot_axis_colliders(values: list[bool] | None) -> list[bool]:
         raw_values = values if isinstance(values, list) else []
         normalized: list[bool] = []
@@ -66,12 +84,18 @@ class ToolModel(QObject):
     def get_tool(self) -> RobotTool:
         return self._copy_tool(self.tool)
 
+    def get_tool_pose(self) -> Pose6:
+        return self._tool_to_pose(self.tool)
+
     def set_tool(self, tool: RobotTool) -> None:
         normalized = self._copy_tool(tool)
         if vars(normalized) == vars(self.tool):
             return
         self.tool = normalized
         self.tool_changed.emit()
+
+    def set_tool_pose(self, pose: Pose6 | list[float] | tuple[float, ...]) -> None:
+        self.set_tool(self._pose_to_tool(pose))
 
     def get_tool_profiles_directory(self) -> str:
         return str(self.tool_profiles_directory)

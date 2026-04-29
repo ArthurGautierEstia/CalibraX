@@ -7,22 +7,6 @@ from utils.math_utils import safe_float
 if TYPE_CHECKING:
     from models.primitive_collider_models import PrimitiveColliderData, RobotAxisColliderData
 
-def normalize_pose6(raw_pose: Any) -> list[float]:
-    if isinstance(raw_pose, dict):
-        return [
-            safe_float(raw_pose.get("x", 0.0), 0.0),
-            safe_float(raw_pose.get("y", 0.0), 0.0),
-            safe_float(raw_pose.get("z", 0.0), 0.0),
-            safe_float(raw_pose.get("a", 0.0), 0.0),
-            safe_float(raw_pose.get("b", 0.0), 0.0),
-            safe_float(raw_pose.get("c", 0.0), 0.0),
-        ]
-    if isinstance(raw_pose, (list, tuple)):
-        values = [safe_float(raw_pose[idx] if idx < len(raw_pose) else 0.0, 0.0) for idx in range(6)]
-        return values[:6]
-    return [0.0] * 6
-
-
 def normalize_xyz3(raw_xyz: Any) -> list[float]:
     if isinstance(raw_xyz, dict):
         return [

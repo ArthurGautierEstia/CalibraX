@@ -7,6 +7,7 @@ import numpy as np
 
 import utils.math_utils as math_utils
 from utils.math_utils import safe_float
+from models.pose6 import Pose6
 from models.reference_frame import ReferenceFrame
 
 
@@ -14,7 +15,7 @@ from models.reference_frame import ReferenceFrame
 class FrameTransform:
     """Cached transform context for a frame pose expressed in world."""
 
-    pose: tuple[float, float, float, float, float, float]
+    pose: Pose6
     matrix: np.ndarray
     inverse_matrix: np.ndarray
     rotation: np.ndarray
@@ -24,7 +25,7 @@ class FrameTransform:
 
     @classmethod
     def from_pose(cls, pose: object, revision: int = 0) -> "FrameTransform":
-        values = tuple(normalize_pose6(pose))
+        values = normalize_pose6(pose)
         matrix = math_utils.pose_zyx_to_matrix(values)
         inverse_matrix = math_utils.invert_homogeneous_transform(matrix)
         rotation = matrix[:3, :3].copy()
@@ -43,7 +44,7 @@ class FrameTransform:
         )
 
     def pose_list(self) -> list[float]:
-        return [float(v) for v in self.pose]
+        return self.pose.to_list()
 
 
 def _as_frame_transform(value: object) -> FrameTransform:
@@ -52,28 +53,23 @@ def _as_frame_transform(value: object) -> FrameTransform:
     return FrameTransform.from_pose(value)
 
 
-def normalize_pose6(values: object) -> list[float]:
+def normalize_pose6(values: object) -> Pose6:
+    if isinstance(values, Pose6):
+        return values.copy()
     if isinstance(values, dict):
-        return [
-            safe_float(values.get("x", 0.0), 0.0),
-            safe_float(values.get("y", 0.0), 0.0),
-            safe_float(values.get("z", 0.0), 0.0),
-            safe_float(values.get("a", 0.0), 0.0),
-            safe_float(values.get("b", 0.0), 0.0),
-            safe_float(values.get("c", 0.0), 0.0),
-        ]
+        return Pose6.from_mapping(values)
     if isinstance(values, Iterable) and not isinstance(values, (str, bytes)):
         seq = list(values)
         normalized = [safe_float(seq[idx] if idx < len(seq) else 0.0, 0.0) for idx in range(6)]
-        return normalized[:6]
-    return [0.0] * 6
+        return Pose6.from_sequence(normalized, fill_missing=True)
+    return Pose6.zeros()
 
 
 def pose_to_matrix(pose: object) -> np.ndarray:
     return math_utils.pose_zyx_to_matrix(normalize_pose6(pose))
 
 
-def matrix_to_pose(transform: np.ndarray) -> list[float]:
+def matrix_to_pose(transform: np.ndarray) -> Pose6:
     return math_utils.matrix_to_pose_zyx(transform)
 
 
@@ -81,13 +77,13 @@ def base_pose_world_to_matrix(robot_base_pose_world: object) -> np.ndarray:
     return _as_frame_transform(robot_base_pose_world).matrix.copy()
 
 
-def pose_base_to_world(pose_base: object, robot_base_pose_world: object) -> list[float]:
+def pose_base_to_world(pose_base: object, robot_base_pose_world: object) -> Pose6:
     frame = _as_frame_transform(robot_base_pose_world)
     transform = frame.matrix @ pose_to_matrix(pose_base)
     return matrix_to_pose(transform)
 
 
-def pose_world_to_base(pose_world: object, robot_base_pose_world: object) -> list[float]:
+def pose_world_to_base(pose_world: object, robot_base_pose_world: object) -> Pose6:
     frame = _as_frame_transform(robot_base_pose_world)
     return matrix_to_pose(frame.inverse_matrix @ pose_to_matrix(pose_world))
 
@@ -106,20 +102,20 @@ def xyz_world_to_base(xyz_world: object, robot_base_pose_world: object) -> list[
     return [float(point[0]), float(point[1]), float(point[2])]
 
 
-def twist_base_to_world(twist_base: object, robot_base_pose_world: object) -> list[float]:
+def twist_base_to_world(twist_base: object, robot_base_pose_world: object) -> Pose6:
     values = normalize_pose6(twist_base)
     frame = _as_frame_transform(robot_base_pose_world)
     linear = frame.rotation @ np.array(values[:3], dtype=float)
     angular = frame.rotation @ np.array(values[3:6], dtype=float)
-    return [float(v) for v in np.concatenate([linear, angular])]
+    return Pose6.from_sequence(np.concatenate([linear, angular]).tolist())
 
 
-def twist_world_to_base(twist_world: object, robot_base_pose_world: object) -> list[float]:
+def twist_world_to_base(twist_world: object, robot_base_pose_world: object) -> Pose6:
     values = normalize_pose6(twist_world)
     frame = _as_frame_transform(robot_base_pose_world)
     linear = frame.inverse_rotation @ np.array(values[:3], dtype=float)
     angular = frame.inverse_rotation @ np.array(values[3:6], dtype=float)
-    return [float(v) for v in np.concatenate([linear, angular])]
+    return Pose6.from_sequence(np.concatenate([linear, angular]).tolist())
 
 
 def transform_matrix_base_to_world(transform: np.ndarray, robot_base_pose_world: object) -> np.ndarray:
@@ -139,7 +135,7 @@ def convert_pose_to_base_frame(
     pose: object,
     reference_frame: ReferenceFrame | str,
     robot_base_pose_world: object,
-) -> list[float]:
+) -> Pose6:
     frame = ReferenceFrame.from_value(reference_frame)
     if frame == ReferenceFrame.WORLD:
         return pose_world_to_base(pose, robot_base_pose_world)
@@ -150,7 +146,7 @@ def convert_pose_from_base_frame(
     pose_base: object,
     reference_frame: ReferenceFrame | str,
     robot_base_pose_world: object,
-) -> list[float]:
+) -> Pose6:
     frame = ReferenceFrame.from_value(reference_frame)
     if frame == ReferenceFrame.WORLD:
         return pose_base_to_world(pose_base, robot_base_pose_world)

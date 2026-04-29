@@ -3,6 +3,7 @@ from typing import Any, List, Tuple
 import math
 from utils.mgi import *
 import utils.math_utils as math_utils
+from models.pose6 import Pose6
 from models.collider_models import (
     default_axis_colliders,
 )
@@ -158,13 +159,13 @@ class RobotModel(QObject):
         # RÉGION: Résultats cinématique
         # ====================================================================
         # Pose TCP non corrigée [X, Y, Z, Rx, Ry, Rz]
-        self.tcp_pose: List[float] = [0, 0, 0, 0, 0, 0]
+        self.tcp_pose: Pose6 = Pose6.zeros()
         
         # Pose TCP corrigée (appliquant les corrections)
-        self.corrected_tcp_pose: List[float] = [0, 0, 0, 0, 0, 0]
+        self.corrected_tcp_pose: Pose6 = Pose6.zeros()
         
         # Déviation entre TCP et TCP corrigé
-        self.pose_deviation: List[float] = [0, 0, 0, 0, 0, 0]
+        self.pose_deviation: Pose6 = Pose6.zeros()
         
         self._tcp_rotation_matrix: list[list[float]] = []
 
@@ -336,7 +337,14 @@ class RobotModel(QObject):
     def build_tool_transform(tool: RobotTool | None = None):
         current_tool = tool if tool is not None else RobotTool()
         return math_utils.pose_zyx_to_matrix(
-            [current_tool.x, current_tool.y, current_tool.z, current_tool.a, current_tool.b, current_tool.c]
+            Pose6.from_values(
+                current_tool.x,
+                current_tool.y,
+                current_tool.z,
+                current_tool.a,
+                current_tool.b,
+                current_tool.c,
+            )
         )
 
     @staticmethod
@@ -938,43 +946,46 @@ class RobotModel(QObject):
     # RÉGION: Getters - Résultats cinématique
     # ============================================================================
     
-    def get_tcp_pose(self):
+    def get_tcp_pose(self) -> Pose6:
         """Retourne la pose TCP non corrigée"""
         return self.tcp_pose.copy()
     
-    def get_corrected_tcp_pose(self):
+    def get_corrected_tcp_pose(self) -> Pose6:
         """Retourne la pose TCP corrigée"""
         return self.corrected_tcp_pose.copy()
     
-    def get_tcp_deviation(self):
+    def get_tcp_deviation(self) -> Pose6:
         """Retourne la déviation entre TCP et TCP corrigé"""
         return self.pose_deviation.copy()
     
     def get_tcp_position(self):
         """Retourne la position (X, Y, Z) du TCP"""
-        return self.tcp_pose[:3]
+        return list(self.tcp_pose[:3])
     
     def get_tcp_rotation(self):
         """Retourne la rotation (Rx, Ry, Rz) du TCP"""
-        return self.tcp_pose[3:6]
+        return list(self.tcp_pose[3:6])
     
     # ============================================================================
     # RÉGION: Setters - Résultats cinématique
     # ============================================================================
     
-    def _set_tcp_pose(self, pose: list[float]):
+    def _set_tcp_pose(self, pose: Pose6 | list[float] | np.ndarray):
         """Définit la pose TCP non corrigée"""
-        self.tcp_pose = pose
+        self.tcp_pose = Pose6.from_sequence(list(pose), fill_missing=False)
     
-    def _set_corrected_tcp_pose(self, pose: list[float], compute_deviation: bool=True):
+    def _set_corrected_tcp_pose(self, pose: Pose6 | list[float] | np.ndarray, compute_deviation: bool=True):
         """Définit la pose TCP non corrigée"""
-        self.corrected_tcp_pose = pose
+        self.corrected_tcp_pose = Pose6.from_sequence(list(pose), fill_missing=False)
         if compute_deviation:
             self._compute_deviation()
 
     def _compute_deviation(self):
         """Calcule la déviation entre TCP et TCP corrigé"""
-        self.pose_deviation = [self.corrected_tcp_pose[i] - self.tcp_pose[i] for i in range(6)]
+        self.pose_deviation = Pose6.from_sequence(
+            [self.corrected_tcp_pose[i] - self.tcp_pose[i] for i in range(6)],
+            fill_missing=False,
+        )
     
     # ============================================================================
     # RÉGION: Getters - Mesures

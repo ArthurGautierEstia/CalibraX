@@ -5,6 +5,7 @@ from enum import Enum
 from itertools import product
 from typing import Set, override
 
+from models.pose6 import Pose6
 import utils.math_utils as math_utils
 
 EPSILON = 1e-6
@@ -594,10 +595,12 @@ class MGI():
             return x, y, z, a_deg, b_deg, c_deg
 
         # 1. Matrice de transformation TCP (pose demandée)
-        T_tcp = math_utils.pose_zyx_to_matrix([x, y, z, a_deg, b_deg, c_deg])
+        T_tcp = math_utils.pose_zyx_to_matrix(Pose6.from_values(x, y, z, a_deg, b_deg, c_deg))
         
         # 2. Matrice de transformation du Tool (offset par rapport au flange)
-        T_tool = math_utils.pose_zyx_to_matrix([tool.x, tool.y, tool.z, tool.a, tool.b, tool.c])
+        T_tool = math_utils.pose_zyx_to_matrix(
+            Pose6.from_values(tool.x, tool.y, tool.z, tool.a, tool.b, tool.c)
+        )
         
         # 3. Calcul de la pose du flange : T_flange = T_tcp * T_tool^(-1)
         T_tool_inv = math_utils.invert_homogeneous_transform(T_tool)

@@ -1,4 +1,5 @@
 import numpy as np
+from models.pose6 import Pose6
 
 # ============================================================================
 # RÉGION: Parsing et utilitaires
@@ -46,13 +47,6 @@ def is_near_zero_vector_xyz(vector_xyz: list[float], epsilon: float = 1e-9) -> b
         and abs(float(vector_xyz[2])) <= epsilon
     )
 
-
-def _pose6_values(pose: list[float] | tuple[float, ...]) -> list[float]:
-    if not isinstance(pose, (list, tuple)):
-        raise TypeError("pose must be a list or tuple of 6 values")
-    if len(pose) < 6:
-        raise ValueError("pose must contain at least 6 values")
-    return [safe_float(pose[idx], 0.0) for idx in range(6)]
 
 # ============================================================================
 # RÉGION: Transformations Denavit-Hartenberg
@@ -260,29 +254,28 @@ def rotation_matrix_to_fixed_zyx(R):
 # RÉGION: Transitions
 # ============================================================================
 
-def pose_zyx_to_matrix(pose: list[float] | tuple[float, ...]) -> np.ndarray:
+def pose_zyx_to_matrix(pose: Pose6) -> np.ndarray:
     """Build a 4x4 matrix from a project pose [X, Y, Z, A, B, C]."""
-    values = _pose6_values(pose)
     transform = np.eye(4, dtype=float)
-    transform[:3, :3] = euler_to_rotation_matrix(values[3], values[4], values[5], degrees=True)
-    transform[:3, 3] = [values[0], values[1], values[2]]
+    transform[:3, :3] = euler_to_rotation_matrix(pose.a, pose.b, pose.c, degrees=True)
+    transform[:3, 3] = [pose.x, pose.y, pose.z]
     return transform
 
 
-def matrix_to_pose_zyx(transform: np.ndarray) -> list[float]:
+def matrix_to_pose_zyx(transform: np.ndarray) -> Pose6:
     """Extract a project pose [X, Y, Z, A, B, C] from a 4x4 matrix."""
     matrix = np.array(transform, dtype=float)
     if matrix.shape != (4, 4):
         raise ValueError("La matrice doit etre de taille 4x4")
     angles = rotation_matrix_to_euler_zyx(matrix[:3, :3])
-    return [
-        float(matrix[0, 3]),
-        float(matrix[1, 3]),
-        float(matrix[2, 3]),
-        float(angles[0]),
-        float(angles[1]),
-        float(angles[2]),
-    ]
+    return Pose6.from_values(
+        matrix[0, 3],
+        matrix[1, 3],
+        matrix[2, 3],
+        angles[0],
+        angles[1],
+        angles[2],
+    )
 
 
 def invert_homogeneous_transform(transform: np.ndarray, validate: bool = False) -> np.ndarray:
@@ -353,12 +346,11 @@ def homogeneous_rotation_z(angle: float, degrees: bool = True) -> np.ndarray:
 
 def transform_xyz_limits_yaw_only(
     limits_xyz: list[tuple[float, float]],
-    pose_world: list[float] | tuple[float, ...],
+    pose_world: Pose6,
 ) -> list[tuple[float, float]]:
     """Transform base XYZ slider limits into world using translation and A/Rz only."""
-    pose = _pose6_values(pose_world)
-    tx, ty, tz = pose[:3]
-    rz_rad = np.radians(pose[3])
+    tx, ty, tz = pose_world.x, pose_world.y, pose_world.z
+    rz_rad = np.radians(pose_world.a)
     cos_rz = float(np.cos(rz_rad))
     sin_rz = float(np.sin(rz_rad))
 

@@ -5,10 +5,10 @@ from typing import Any
 import numpy as np
 
 import utils.math_utils as math_utils
+from models.pose6 import Pose6
 from utils.math_utils import safe_float
 from models.collider_models import (
     default_axis_colliders,
-    normalize_pose6,
     normalize_xyz3,
 )
 
@@ -163,19 +163,18 @@ class PrimitiveColliderData:
         name: str,
         enabled: bool = True,
         shape: str = "box",
-        pose: list[float] | tuple[float, ...] | None = None,
+        pose: Pose6 | None = None,
         size_x: float = 200.0,
         size_y: float = 200.0,
         size_z: float = 200.0,
         radius: float = 100.0,
         height: float = 200.0,
     ) -> None:
-        normalized_pose = normalize_pose6([0.0] * 6 if pose is None else pose)
         normalized_name = str(name).strip()
         self.name = normalized_name if normalized_name != "" else "Zone"
         self.enabled = bool(enabled)
         self.shape = _normalize_shape(shape, "box")
-        self.pose = tuple(float(value) for value in normalized_pose[:6])
+        self.pose = Pose6.zeros() if pose is None else pose.copy()
         self.size_x = max(0.0, float(size_x))
         self.size_y = max(0.0, float(size_y))
         self.size_z = max(0.0, float(size_z))
@@ -195,7 +194,25 @@ class PrimitiveColliderData:
 
         data = raw if isinstance(raw, dict) else {}
         resolved_default_name = default_name if default_name is not None else f"Zone {index + 1}"
-        pose = data.get("pose", data.get("xyzabc", data.get("transform")))
+        raw_pose = data.get("pose", data.get("xyzabc", data.get("transform")))
+        if isinstance(raw_pose, Pose6):
+            pose = raw_pose.copy()
+        elif isinstance(raw_pose, dict):
+            pose = Pose6.from_values(
+                safe_float(raw_pose.get("x", 0.0), 0.0),
+                safe_float(raw_pose.get("y", 0.0), 0.0),
+                safe_float(raw_pose.get("z", 0.0), 0.0),
+                safe_float(raw_pose.get("a", 0.0), 0.0),
+                safe_float(raw_pose.get("b", 0.0), 0.0),
+                safe_float(raw_pose.get("c", 0.0), 0.0),
+            )
+        elif isinstance(raw_pose, (list, tuple)):
+            pose = Pose6.from_sequence(
+                [safe_float(raw_pose[idx] if idx < len(raw_pose) else 0.0, 0.0) for idx in range(6)],
+                fill_missing=True,
+            )
+        else:
+            pose = Pose6.zeros()
         return cls(
             name=str(data.get("name", resolved_default_name)),
             enabled=_safe_bool(data.get("enabled", data.get("active", True)), True),
@@ -213,7 +230,7 @@ class PrimitiveColliderData:
             name=self.name,
             enabled=self.enabled,
             shape=self.shape,
-            pose=list(self.pose),
+            pose=self.pose,
             size_x=self.size_x,
             size_y=self.size_y,
             size_z=self.size_z,
@@ -226,7 +243,7 @@ class PrimitiveColliderData:
             "name": self.name,
             "enabled": self.enabled,
             "shape": self.shape,
-            "pose": [float(value) for value in self.pose],
+            "pose": self.pose.to_list(),
             "size_x": float(self.size_x),
             "size_y": float(self.size_y),
             "size_z": float(self.size_z),

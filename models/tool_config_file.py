@@ -10,6 +10,7 @@ from models.primitive_collider_models import (
     parse_primitive_collider_data,
     primitive_collider_data_to_dicts,
 )
+from models.pose6 import Pose6
 from utils.math_utils import safe_float
 from utils.mgi import RobotTool
 
@@ -17,19 +18,14 @@ from utils.mgi import RobotTool
 @dataclass
 class ToolConfigFile:
     name: str = ""
-    tool: list[float] | None = None
+    tool: Pose6 = field(default_factory=Pose6.zeros)
     tool_cad_model: str = ""
     tool_cad_offset_rz: float = 0.0
     tool_colliders: list[PrimitiveColliderData] = field(default_factory=list)
     evaluated_robot_axis_colliders: list[bool] | None = None
 
     def __post_init__(self) -> None:
-        if self.tool is None:
-            self.tool = [0.0] * 6
-        values = [float(value) for value in self.tool[:6]]
-        while len(values) < 6:
-            values.append(0.0)
-        self.tool = values
+        self.tool = Pose6.from_any(self.tool, fill_missing=True)
         self.tool_cad_model = "" if self.tool_cad_model is None else str(self.tool_cad_model)
         self.tool_cad_offset_rz = float(self.tool_cad_offset_rz)
         self.tool_colliders = parse_primitive_collider_data(
@@ -72,18 +68,21 @@ class ToolConfigFile:
         name = "" if data.get("name") is None else str(data.get("name"))
         tool_raw = data.get("tool", data.get("xyzabc", {}))
         if isinstance(tool_raw, list):
-            values = [safe_float(tool_raw[idx] if idx < len(tool_raw) else 0.0) for idx in range(6)]
+            values = Pose6.from_sequence(
+                [safe_float(tool_raw[idx] if idx < len(tool_raw) else 0.0) for idx in range(6)],
+                fill_missing=True,
+            )
         elif isinstance(tool_raw, dict):
-            values = [
+            values = Pose6.from_values(
                 safe_float(tool_raw.get("x", 0.0)),
                 safe_float(tool_raw.get("y", 0.0)),
                 safe_float(tool_raw.get("z", 0.0)),
                 safe_float(tool_raw.get("a", 0.0)),
                 safe_float(tool_raw.get("b", 0.0)),
                 safe_float(tool_raw.get("c", 0.0)),
-            ]
+            )
         else:
-            values = [0.0] * 6
+            values = Pose6.zeros()
 
         return cls(
             name=name,
@@ -98,12 +97,12 @@ class ToolConfigFile:
         return {
             "name": self.name,
             "tool": {
-                "x": float(self.tool[0]),
-                "y": float(self.tool[1]),
-                "z": float(self.tool[2]),
-                "a": float(self.tool[3]),
-                "b": float(self.tool[4]),
-                "c": float(self.tool[5]),
+                "x": float(self.tool.x),
+                "y": float(self.tool.y),
+                "z": float(self.tool.z),
+                "a": float(self.tool.a),
+                "b": float(self.tool.b),
+                "c": float(self.tool.c),
             },
             "tool_cad_model": self.tool_cad_model,
             "tool_cad_offset_rz": float(self.tool_cad_offset_rz),
@@ -116,7 +115,7 @@ class ToolConfigFile:
         }
 
     def to_robot_tool(self) -> RobotTool:
-        return RobotTool(*self.tool[:6])
+        return RobotTool(*self.tool.to_tuple())
 
     @classmethod
     def from_robot_tool(
@@ -130,14 +129,14 @@ class ToolConfigFile:
     ) -> ToolConfigFile:
         return cls(
             name=name,
-            tool=[
-                float(robot_tool.x),
-                float(robot_tool.y),
-                float(robot_tool.z),
-                float(robot_tool.a),
-                float(robot_tool.b),
-                float(robot_tool.c),
-            ],
+            tool=Pose6.from_values(
+                robot_tool.x,
+                robot_tool.y,
+                robot_tool.z,
+                robot_tool.a,
+                robot_tool.b,
+                robot_tool.c,
+            ),
             tool_cad_model=tool_cad_model,
             tool_cad_offset_rz=float(tool_cad_offset_rz),
             tool_colliders=[] if tool_colliders is None else tool_colliders,

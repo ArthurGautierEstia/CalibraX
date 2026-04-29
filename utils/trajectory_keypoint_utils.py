@@ -1,4 +1,5 @@
 from models.robot_model import RobotModel
+from models.pose6 import Pose6
 from utils.reference_frame_utils import FrameTransform, convert_pose_to_base_frame
 from models.trajectory_keypoint import KeypointTargetType, TrajectoryKeypoint
 from utils.mgi import RobotTool
@@ -8,13 +9,13 @@ def resolve_keypoint_xyz(
     robot_model: RobotModel,
     keypoint: TrajectoryKeypoint,
     tool: RobotTool | None = None,
-    robot_base_pose_world: FrameTransform | list[float] | None = None,
+    robot_base_pose_world: FrameTransform | Pose6 | list[float] | None = None,
 ) -> list[float] | None:
     if keypoint.target_type == KeypointTargetType.CARTESIAN:
         target = convert_pose_to_base_frame(
             keypoint.cartesian_target,
             keypoint.cartesian_frame,
-            [0.0] * 6 if robot_base_pose_world is None else robot_base_pose_world,
+            Pose6.zeros() if robot_base_pose_world is None else robot_base_pose_world,
         )
         if len(target) < 3:
             return None

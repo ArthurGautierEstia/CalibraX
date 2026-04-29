@@ -8,6 +8,7 @@ from models.primitive_collider_models import (
     parse_primitive_collider_data,
     primitive_collider_data_to_dicts,
 )
+from models.pose6 import Pose6
 from utils.math_utils import safe_float
 from utils.reference_frame_utils import normalize_pose6
 
@@ -55,7 +56,7 @@ def parse_workspace_cad_elements(raw_values: Any) -> list[dict[str, Any]]:
 @dataclass
 class WorkspaceFile:
     scene_name: str = ""
-    robot_base_pose_world: list[float] = field(default_factory=lambda: [0.0] * 6)
+    robot_base_pose_world: Pose6 = field(default_factory=Pose6.zeros)
     cad_elements: list[dict[str, Any]] = field(default_factory=list)
     tcp_zones: list[dict[str, Any]] = field(default_factory=list)
     collision_zones: list[dict[str, Any]] = field(default_factory=list)
@@ -96,7 +97,7 @@ class WorkspaceFile:
     def to_dict(self) -> dict[str, Any]:
         return {
             "scene_name": self.scene_name,
-            "robot_base_pose_world": normalize_pose6(self.robot_base_pose_world),
+            "robot_base_pose_world": normalize_pose6(self.robot_base_pose_world).to_list(),
             "cad_elements": [normalize_workspace_cad_element(v) for v in self.cad_elements],
             "tcp_zones": primitive_collider_data_to_dicts(self.tcp_zones),
             "collision_zones": primitive_collider_data_to_dicts(self.collision_zones),

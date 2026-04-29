@@ -23,6 +23,7 @@ gimbal lock inhérentes à la différence d'angles d'Euler.
 import numpy as np
 from dataclasses import dataclass, field
 
+from models.pose6 import Pose6
 import utils.math_utils as math_utils
 from utils.mgi import RobotTool
 
@@ -94,7 +95,7 @@ def _build_T_cible(x: float, y: float, z: float,
     Returns:
         Matrice homogène 4×4
     """
-    return math_utils.pose_zyx_to_matrix([x, y, z, a, b, c])
+    return math_utils.pose_zyx_to_matrix(Pose6.from_values(x, y, z, a, b, c))
 
 
 def _compute_erreur_pose(T_cible: np.ndarray, T_actuel: np.ndarray) -> np.ndarray:
