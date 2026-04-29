@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 import numpy as np
@@ -13,8 +14,20 @@ from models.collider_models import (
 )
 
 
-SUPPORTED_PRIMITIVE_COLLIDER_SHAPES = {"box", "cylinder", "sphere"}
-SUPPORTED_AXIS_DIRECTIONS = {"x", "y", "z"}
+class PrimitiveColliderShape(str, Enum):
+    BOX = "box"
+    CYLINDER = "cylinder"
+    SPHERE = "sphere"
+
+
+class AxisDirection(str, Enum):
+    X = "x"
+    Y = "y"
+    Z = "z"
+
+
+SUPPORTED_PRIMITIVE_COLLIDER_SHAPES = tuple(PrimitiveColliderShape)
+SUPPORTED_AXIS_DIRECTIONS = tuple(AxisDirection)
 
 def _safe_bool(value: Any, default: bool = True) -> bool:
     if isinstance(value, bool):
@@ -30,44 +43,56 @@ def _safe_bool(value: Any, default: bool = True) -> bool:
     return default
 
 
-def _normalize_shape(value: Any, default: str = "box") -> str:
+def _normalize_shape(
+    value: Any,
+    default: PrimitiveColliderShape | str = PrimitiveColliderShape.BOX,
+) -> PrimitiveColliderShape:
+    default_shape = default if isinstance(default, PrimitiveColliderShape) else PrimitiveColliderShape(str(default))
     if value is None:
-        return default
+        return default_shape
+    if isinstance(value, PrimitiveColliderShape):
+        return value
     raw = str(value).strip().lower()
     mapping = {
-        "pave": "box",
-        "pave_droit": "box",
-        "cuboid": "box",
-        "cube": "box",
-        "cylindre": "cylinder",
-        "cylinder": "cylinder",
-        "sphere": "sphere",
-        "box": "box",
+        "pave": PrimitiveColliderShape.BOX,
+        "pave_droit": PrimitiveColliderShape.BOX,
+        "cuboid": PrimitiveColliderShape.BOX,
+        "cube": PrimitiveColliderShape.BOX,
+        "cylindre": PrimitiveColliderShape.CYLINDER,
+        "cylinder": PrimitiveColliderShape.CYLINDER,
+        "sphere": PrimitiveColliderShape.SPHERE,
+        "box": PrimitiveColliderShape.BOX,
     }
-    normalized = mapping.get(raw, raw)
-    if normalized not in SUPPORTED_PRIMITIVE_COLLIDER_SHAPES:
-        return default
+    normalized = mapping.get(raw)
+    if normalized is None:
+        return default_shape
     return normalized
 
 
-def _normalize_axis_direction(value: Any, default: str = "z") -> str:
+def _normalize_axis_direction(
+    value: Any,
+    default: AxisDirection | str = AxisDirection.Z,
+) -> AxisDirection:
+    default_axis = default if isinstance(default, AxisDirection) else AxisDirection(str(default))
     if value is None:
-        return default
+        return default_axis
+    if isinstance(value, AxisDirection):
+        return value
     raw = str(value).strip().lower()
     mapping = {
-        "x": "x",
-        "axe_x": "x",
-        "axis_x": "x",
-        "y": "y",
-        "axe_y": "y",
-        "axis_y": "y",
-        "z": "z",
-        "axe_z": "z",
-        "axis_z": "z",
+        "x": AxisDirection.X,
+        "axe_x": AxisDirection.X,
+        "axis_x": AxisDirection.X,
+        "y": AxisDirection.Y,
+        "axe_y": AxisDirection.Y,
+        "axis_y": AxisDirection.Y,
+        "z": AxisDirection.Z,
+        "axe_z": AxisDirection.Z,
+        "axis_z": AxisDirection.Z,
     }
-    normalized = mapping.get(raw, raw)
-    if normalized not in SUPPORTED_AXIS_DIRECTIONS:
-        return default
+    normalized = mapping.get(raw)
+    if normalized is None:
+        return default_axis
     return normalized
 
 
@@ -77,12 +102,12 @@ def _freeze_matrix(matrix: np.ndarray | list[list[float]]) -> np.ndarray:
     return normalized
 
 
-def _build_orientation_matrix(direction_axis: str, positive_direction: bool) -> np.ndarray:
+def _build_orientation_matrix(direction_axis: AxisDirection | str, positive_direction: bool) -> np.ndarray:
     rotation = np.eye(4, dtype=float)
-    normalized_axis = _normalize_axis_direction(direction_axis, "z")
-    if normalized_axis == "x":
+    normalized_axis = _normalize_axis_direction(direction_axis, AxisDirection.Z)
+    if normalized_axis == AxisDirection.X:
         rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-    elif normalized_axis == "y":
+    elif normalized_axis == AxisDirection.Y:
         rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
 
     if positive_direction:
@@ -93,15 +118,18 @@ def _build_orientation_matrix(direction_axis: str, positive_direction: bool) -> 
     return _freeze_matrix(rotation @ flip)
 
 
-_PRIMITIVE_EXTRUSION_ORIENTATIONS: dict[tuple[str, bool], np.ndarray] = {
+_PRIMITIVE_EXTRUSION_ORIENTATIONS: dict[tuple[AxisDirection, bool], np.ndarray] = {
     (axis_name, positive): _build_orientation_matrix(axis_name, positive)
-    for axis_name in ("x", "y", "z")
+    for axis_name in AxisDirection
     for positive in (False, True)
 }
 
 
-def primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
-    key = (_normalize_axis_direction(direction_axis, "z"), bool(positive_direction))
+def primitive_extrusion_orientation(
+    direction_axis: AxisDirection | str,
+    positive_direction: bool = True,
+) -> np.ndarray:
+    key = (_normalize_axis_direction(direction_axis, AxisDirection.Z), bool(positive_direction))
     return _PRIMITIVE_EXTRUSION_ORIENTATIONS[key]
 
 
@@ -111,7 +139,7 @@ class PrimitiveCollider:
         owner: str,
         name: str,
         enabled: bool,
-        shape: str,
+        shape: PrimitiveColliderShape | str,
         size_x: float,
         size_y: float,
         size_z: float,
@@ -126,7 +154,7 @@ class PrimitiveCollider:
         normalized_name = str(name).strip()
         self.name = normalized_name if normalized_name != "" else "Collider"
         self.enabled = bool(enabled)
-        self.shape = _normalize_shape(shape, "box")
+        self.shape = _normalize_shape(shape, PrimitiveColliderShape.BOX)
         self.size_x = max(0.0, float(size_x))
         self.size_y = max(0.0, float(size_y))
         self.size_z = max(0.0, float(size_z))
@@ -162,7 +190,7 @@ class PrimitiveColliderData:
         self,
         name: str,
         enabled: bool = True,
-        shape: str = "box",
+        shape: PrimitiveColliderShape | str = PrimitiveColliderShape.BOX,
         pose: Pose6 | None = None,
         size_x: float = 200.0,
         size_y: float = 200.0,
@@ -173,7 +201,7 @@ class PrimitiveColliderData:
         normalized_name = str(name).strip()
         self.name = normalized_name if normalized_name != "" else "Zone"
         self.enabled = bool(enabled)
-        self.shape = _normalize_shape(shape, "box")
+        self.shape = _normalize_shape(shape, PrimitiveColliderShape.BOX)
         self.pose = Pose6.zeros() if pose is None else pose.copy()
         self.size_x = max(0.0, float(size_x))
         self.size_y = max(0.0, float(size_y))
@@ -187,7 +215,7 @@ class PrimitiveColliderData:
         raw: object,
         index: int = 0,
         default_name: str | None = None,
-        default_shape: str = "box",
+        default_shape: PrimitiveColliderShape | str = PrimitiveColliderShape.BOX,
     ) -> "PrimitiveColliderData":
         if isinstance(raw, PrimitiveColliderData):
             return raw.copy()
@@ -242,7 +270,7 @@ class PrimitiveColliderData:
         return {
             "name": self.name,
             "enabled": self.enabled,
-            "shape": self.shape,
+            "shape": self.shape.value,
             "pose": self.pose.to_list(),
             "size_x": float(self.size_x),
             "size_y": float(self.size_y),
@@ -300,14 +328,14 @@ class RobotAxisColliderData:
         enabled: bool = True,
         radius: float = 40.0,
         height: float = 200.0,
-        direction_axis: str = "z",
+        direction_axis: AxisDirection | str = AxisDirection.Z,
         offset_xyz: list[float] | tuple[float, ...] | None = None,
     ) -> None:
         self.axis_index = max(0, int(axis_index))
         self.enabled = bool(enabled)
         self.radius = max(0.0, float(radius))
         self.height = float(height)
-        self.direction_axis = _normalize_axis_direction(direction_axis, "z")
+        self.direction_axis = _normalize_axis_direction(direction_axis, AxisDirection.Z)
         normalized_offset = normalize_xyz3([0.0, 0.0, 0.0] if offset_xyz is None else offset_xyz)
         self.offset_xyz = tuple(float(value) for value in normalized_offset[:3])
 
@@ -328,8 +356,8 @@ class RobotAxisColliderData:
             radius=max(0.0, safe_float(data.get("radius", data.get("r", 40.0)), 40.0)),
             height=float(safe_float(data.get("height", 200.0), 200.0)),
             direction_axis=_normalize_axis_direction(
-                data.get("direction_axis", data.get("axis_direction", data.get("orientation_axis", "z"))),
-                "z",
+                data.get("direction_axis", data.get("axis_direction", data.get("orientation_axis", AxisDirection.Z))),
+                AxisDirection.Z,
             ),
             offset_xyz=normalize_xyz3(data.get("offset_xyz")),
         )
@@ -350,7 +378,7 @@ class RobotAxisColliderData:
             "enabled": self.enabled,
             "radius": float(self.radius),
             "height": float(self.height),
-            "direction_axis": self.direction_axis,
+            "direction_axis": self.direction_axis.value,
             "offset_xyz": [float(value) for value in self.offset_xyz],
         }
 
@@ -365,7 +393,7 @@ class RobotAxisColliderData:
             owner="robot",
             name=f"Axis {self.axis_index + 1}",
             enabled=self.enabled,
-            shape="cylinder",
+            shape=PrimitiveColliderShape.CYLINDER,
             size_x=0.0,
             size_y=0.0,
             size_z=0.0,
@@ -392,7 +420,7 @@ class RobotAxisColliderData:
 
 def parse_primitive_collider_data(
     raw_values: object,
-    default_shape: str = "box",
+    default_shape: PrimitiveColliderShape | str = PrimitiveColliderShape.BOX,
     default_name_prefix: str = "Zone",
 ) -> list[PrimitiveColliderData]:
     values = raw_values if isinstance(raw_values, list) else []
@@ -411,7 +439,7 @@ def parse_primitive_collider_data(
 
 def primitive_collider_data_to_dicts(
     values: list[PrimitiveColliderData] | list[dict[str, Any]],
-    default_shape: str = "box",
+    default_shape: PrimitiveColliderShape | str = PrimitiveColliderShape.BOX,
     default_name_prefix: str = "Zone",
 ) -> list[dict[str, Any]]:
     normalized = parse_primitive_collider_data(
@@ -428,7 +456,7 @@ def build_primitive_colliders(
     base_transform: np.ndarray | None = None,
     attachment_key: str = "world",
     attachment_index: int = -1,
-    default_shape: str = "box",
+    default_shape: PrimitiveColliderShape | str = PrimitiveColliderShape.BOX,
     default_name_prefix: str = "Zone",
 ) -> list[PrimitiveCollider]:
     normalized = parse_primitive_collider_data(
