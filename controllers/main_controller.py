@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import QMessageBox
 
 from controllers.calibration_controller import CalibrationController
 from controllers.cartesian_control_controller import CartesianControlController
-from controllers.jog_controller import JogController
 from controllers.joint_control_controller import JointControlController
 from controllers.robot_controller import RobotController
 from controllers.trajectory_controller import TrajectoryController
@@ -68,7 +67,6 @@ class MainController(QObject):
             workspace_model,
             main_window.get_cartesian_control_view(),
         )
-        self.jog_controller = JogController(robot_model, tool_model, workspace_model, main_window.get_jog_view())
         self.viewer3d_controller = Viewer3DController(
             robot_model,
             tool_model,
@@ -105,9 +103,6 @@ class MainController(QObject):
         self.workspace_model.workspace_changed.connect(self._schedule_session_save)
         self.main_window.get_viewer3d().display_state_changed.connect(self._schedule_session_save)
         self.main_window.get_cartesian_control_view().get_cartesian_control_widget().reference_frame_changed.connect(
-            self._schedule_session_save
-        )
-        self.main_window.get_jog_view().get_jog_tcp_visualization_widget().display_frame_changed.connect(
             self._schedule_session_save
         )
         self.main_window.get_trajectory_view().get_config_widget().cartesianDisplayFrameChanged.connect(

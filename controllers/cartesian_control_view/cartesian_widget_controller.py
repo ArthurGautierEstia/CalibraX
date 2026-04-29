@@ -27,6 +27,10 @@ class CartesianWidgetController(QObject):
         self.new_target = [0.0] * 6
         self._limits_cache_key: tuple | None = None
         self._limits_cache_value: list[tuple[float, float]] | None = None
+        self._last_display_pose: list[float] = [0.0] * 6
+        self._last_reference_frame: str = self.cartesian_control_widget.get_reference_frame()
+        self._tool_anchor_display_pose: list[float] = [0.0] * 6
+        self._tool_anchor_tcp_pose: list[float] = [0.0] * 6
         self._setup_connections()
         self._apply_cartesian_slider_limits()
 
@@ -45,24 +49,26 @@ class CartesianWidgetController(QObject):
     def _on_model_tcp_changed(self):
         tcp_pose_base = self.robot_model.get_tcp_pose()
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
-        display_pose = convert_pose_from_base_frame(
+        display_pose = self._convert_pose_from_base_frame(
             tcp_pose_base,
             self.cartesian_control_widget.get_reference_frame(),
             robot_base_transform,
         )
+        self._last_display_pose = list(display_pose)
+        self._last_reference_frame = self.cartesian_control_widget.get_reference_frame()
         self.cartesian_control_widget.set_all_cartesian(display_pose)
 
     def _on_view_cartesian_value_changed(self, idx: int, value: float):
         if idx < 0 or idx >= 6:
             return
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
-        displayed_pose = convert_pose_from_base_frame(
+        displayed_pose = self._convert_pose_from_base_frame(
             self.robot_model.get_tcp_pose(),
             self.cartesian_control_widget.get_reference_frame(),
             robot_base_transform,
         )
         displayed_pose[idx] = value
-        self.new_target = convert_pose_to_base_frame(
+        self.new_target = self._convert_pose_to_base_frame(
             displayed_pose,
             self.cartesian_control_widget.get_reference_frame(),
             robot_base_transform,
@@ -70,6 +76,12 @@ class CartesianWidgetController(QObject):
         self.new_target_computed.emit()
 
     def _on_reference_frame_changed(self, _reference_frame: str) -> None:
+        next_frame = ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame())
+        previous_frame = ReferenceFrame.from_value(self._last_reference_frame)
+        if next_frame == ReferenceFrame.TOOL and previous_frame != ReferenceFrame.TOOL:
+            tcp_pose_base = list(self.robot_model.get_tcp_pose())
+            self._tool_anchor_display_pose = tcp_pose_base
+            self._tool_anchor_tcp_pose = tcp_pose_base
         self._apply_cartesian_slider_limits()
         self._on_model_tcp_changed()
 
@@ -97,6 +109,50 @@ class CartesianWidgetController(QObject):
         self._limits_cache_key = cache_key
         self._limits_cache_value = limits
         return limits
+
+    def _convert_pose_from_base_frame(
+        self,
+        pose_base: object,
+        reference_frame: ReferenceFrame | str,
+        robot_base_transform: object,
+    ) -> list[float]:
+        frame = ReferenceFrame.from_value(reference_frame)
+        if frame == ReferenceFrame.TOOL:
+            return list(self._tool_anchor_display_pose)
+        return list(
+            convert_pose_from_base_frame(
+                pose_base,
+                frame,
+                robot_base_transform,
+            )
+        )
+
+    def _convert_pose_to_base_frame(
+        self,
+        pose: object,
+        reference_frame: ReferenceFrame | str,
+        robot_base_transform: object,
+    ) -> list[float]:
+        frame = ReferenceFrame.from_value(reference_frame)
+        if frame == ReferenceFrame.TOOL:
+            relative_pose = [
+                float(pose[idx]) - float(self._tool_anchor_display_pose[idx])
+                for idx in range(6)
+            ]
+            return self.compose_tool_relative_target(relative_pose)
+        return list(
+            convert_pose_to_base_frame(
+                pose,
+                frame,
+                robot_base_transform,
+            )
+        )
+
+    def compose_tool_relative_target(self, relative_pose: object) -> list[float]:
+        current_tcp_transform = math_utils.pose_zyx_to_matrix(self._tool_anchor_tcp_pose)
+        relative_tool_transform = math_utils.pose_zyx_to_matrix(relative_pose)
+        target_transform = current_tcp_transform @ relative_tool_transform
+        return list(math_utils.matrix_to_pose_zyx(target_transform))
     
     def get_new_target(self) -> list[float]:
         return self.new_target

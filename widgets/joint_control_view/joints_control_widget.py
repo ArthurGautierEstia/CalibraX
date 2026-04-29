@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from utils.mgi import MgiConfigKey
+from widgets.jog_spin_box import JogSpinBox
 
 
 class JointsControlWidget(QWidget):
@@ -18,12 +19,15 @@ class JointsControlWidget(QWidget):
     home_position_requested = pyqtSignal()
     position_zero_requested = pyqtSignal()
     position_calibration_requested = pyqtSignal()
+    spinbox_jog_pressed = pyqtSignal(int, int)
+    spinbox_jog_released = pyqtSignal(int, int)
     
     def __init__(
         self,
         parent: QWidget = None,
         compact: bool = False,
         show_configuration_in_compact: bool = False,
+        enable_jog_spin_buttons: bool = False,
     ) -> None:
         super().__init__(parent)
         
@@ -33,6 +37,7 @@ class JointsControlWidget(QWidget):
         self._current_axis_config: MgiConfigKey = MgiConfigKey.FUN
         self._compact = bool(compact)
         self._show_configuration_in_compact = bool(show_configuration_in_compact)
+        self._enable_jog_spin_buttons = bool(enable_jog_spin_buttons)
         
         # UI
         self.configuration_label = QLabel("Configuration courante : ")
@@ -101,7 +106,7 @@ class JointsControlWidget(QWidget):
                 slider.setFixedHeight(self._COMPACT_ROW_HEIGHT)
 
             # SpinBox (valeur réelle)
-            spinbox = QDoubleSpinBox()
+            spinbox = JogSpinBox() if self._enable_jog_spin_buttons else QDoubleSpinBox()
             spinbox.setRange(self._axis_limits[i][0], self._axis_limits[i][1])
             spinbox.setDecimals(3)
             spinbox.setSingleStep(0.10)
@@ -110,6 +115,13 @@ class JointsControlWidget(QWidget):
             if self._compact:
                 spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             spinbox.setFixedWidth(spinbox_width)
+            if isinstance(spinbox, JogSpinBox):
+                spinbox.jog_button_pressed.connect(
+                    lambda direction, idx=i: self.spinbox_jog_pressed.emit(idx, direction)
+                )
+                spinbox.jog_button_released.connect(
+                    lambda direction, idx=i: self.spinbox_jog_released.emit(idx, direction)
+                )
 
             # Connexions
             slider.valueChanged.connect(lambda value, idx=i: self._on_slider_changed(idx, value))
@@ -256,5 +268,13 @@ class JointsControlWidget(QWidget):
         self._current_axis_config = config
         self.configuration_label.setText(f"Configuration courante : {config.name}")
         self.configuration_changed.emit(config.name)
+
+    def set_spinbox_single_step(self, step: float) -> None:
+        normalized_step = max(0.001, float(step))
+        for spinbox in self.spinboxes_q:
+            spinbox.setSingleStep(normalized_step)
+
+    def set_jog_increment(self, value: float) -> None:
+        self.set_spinbox_single_step(max(0.001, float(value)) * 0.1)
 
 
