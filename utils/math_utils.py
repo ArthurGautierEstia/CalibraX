@@ -6,6 +6,20 @@ import numpy as np
 # RÉGION: Parsing et utilitaires
 # ============================================================================
 
+def safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "":
+                return default
+            return float(stripped)
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def norm3(x: float, y: float, z: float) -> float:
     """Euclidean norm in 3D."""
     return float(np.sqrt(x * x + y * y + z * z))
@@ -39,21 +53,18 @@ def normalize_pose6(values: object) -> list[float]:
     """Normalize a project XYZABC pose to six floats."""
     if isinstance(values, dict):
         out = [
-            float(values.get("x", 0.0)),
-            float(values.get("y", 0.0)),
-            float(values.get("z", 0.0)),
-            float(values.get("a", 0.0)),
-            float(values.get("b", 0.0)),
-            float(values.get("c", 0.0)),
+            safe_float(values.get("x", 0.0), 0.0),
+            safe_float(values.get("y", 0.0), 0.0),
+            safe_float(values.get("z", 0.0), 0.0),
+            safe_float(values.get("a", 0.0), 0.0),
+            safe_float(values.get("b", 0.0), 0.0),
+            safe_float(values.get("c", 0.0), 0.0),
         ]
     elif isinstance(values, Iterable) and not isinstance(values, (str, bytes)):
         seq = list(values)
         out = []
         for idx in range(6):
-            try:
-                out.append(float(seq[idx] if idx < len(seq) else 0.0))
-            except (TypeError, ValueError):
-                out.append(0.0)
+            out.append(safe_float(seq[idx] if idx < len(seq) else 0.0, 0.0))
     else:
         out = [0.0] * 6
     return out[:6]

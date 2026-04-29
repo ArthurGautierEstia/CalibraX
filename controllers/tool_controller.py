@@ -5,6 +5,7 @@ import os
 from PyQt6.QtCore import QObject
 from PyQt6.QtWidgets import QMessageBox
 
+from models.primitive_collider_models import PrimitiveColliderData
 from models.tool_config_file import ToolConfigFile
 from models.tool_model import ToolModel
 from utils.mgi import RobotTool
@@ -50,7 +51,7 @@ class ToolController(QObject):
     def _on_view_tool_cad_offset_rz_changed(self, offset_deg: float) -> None:
         self.tool_model.set_tool_cad_offset_rz(offset_deg)
 
-    def _on_view_tool_colliders_changed(self, tool_colliders: list[dict]) -> None:
+    def _on_view_tool_colliders_changed(self, tool_colliders: list[PrimitiveColliderData]) -> None:
         self.tool_model.set_tool_colliders(tool_colliders)
 
     def _on_view_tool_evaluated_robot_axis_colliders_changed(self, values: list[bool]) -> None:
@@ -79,7 +80,7 @@ class ToolController(QObject):
         self.robot_configuration_widget.set_tool(self.tool_model.get_tool())
         self.robot_configuration_widget.set_tool_cad_model(self.tool_model.get_tool_cad_model())
         self.robot_configuration_widget.set_tool_cad_offset_rz(self.tool_model.get_tool_cad_offset_rz())
-        self.robot_configuration_widget.set_tool_colliders(self.tool_model.get_tool_colliders())
+        self.robot_configuration_widget.set_tool_colliders(self.tool_model.get_tool_collider_data())
         self.robot_configuration_widget.set_tool_evaluated_robot_axis_colliders(
             self.tool_model.get_evaluated_robot_axis_colliders()
         )

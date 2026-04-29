@@ -6,10 +6,11 @@ from typing import Any
 import numpy as np
 
 import utils.math_utils as math_utils
-from models.collider_models import (
-    normalize_xyz3,
-    parse_axis_colliders,
-    parse_primitive_colliders,
+from models.primitive_collider_models import (
+    PrimitiveColliderData,
+    RobotAxisColliderData,
+    parse_primitive_collider_data,
+    parse_robot_axis_colliders,
 )
 
 
@@ -176,14 +177,17 @@ class CollisionWorldCache:
         self.robot_shapes_world: list[CollisionShape] = []
         self.tool_shapes_world: list[CollisionShape] = []
 
-    def set_workspace_collision_zones(self, zones: list[dict[str, Any]]) -> None:
+    def set_workspace_collision_zones(self, zones: list[PrimitiveColliderData] | list[dict[str, Any]]) -> None:
         self.workspace_shapes_world = build_workspace_collision_shapes(zones)
 
-    def set_robot_axis_templates(self, axis_colliders: list[dict[str, Any]]) -> None:
+    def set_robot_axis_templates(
+        self,
+        axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+    ) -> None:
         self.robot_shape_templates = build_robot_axis_collision_shape_templates(axis_colliders)
         self.robot_shapes_world = []
 
-    def set_tool_templates(self, tool_colliders: list[dict[str, Any]]) -> None:
+    def set_tool_templates(self, tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]]) -> None:
         self.tool_shape_templates = build_tool_collision_shape_templates(tool_colliders)
         self.tool_shapes_world = []
 
@@ -212,7 +216,7 @@ class CollisionWorldCache:
 
     def update_robot_axis_colliders(
         self,
-        axis_colliders: list[dict[str, Any]],
+        axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
         corrected_matrices: list[np.ndarray],
         robot_base_world: object | None = None,
     ) -> None:
@@ -222,7 +226,7 @@ class CollisionWorldCache:
 
     def update_tool_colliders(
         self,
-        tool_colliders: list[dict[str, Any]],
+        tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
         corrected_matrices: list[np.ndarray],
         robot_base_world: object | None = None,
     ) -> None:
@@ -252,34 +256,40 @@ class CollisionWorldCache:
         return find_collisions(shapes_a, shapes_b)
 
 
-def build_workspace_collision_shapes(zones: list[dict[str, Any]]) -> list[CollisionShape]:
+def build_workspace_collision_shapes(
+    zones: list[PrimitiveColliderData] | list[dict[str, Any]],
+) -> list[CollisionShape]:
     shapes: list[CollisionShape] = []
-    for index, zone in enumerate(parse_primitive_colliders(zones, default_shape="box")):
+    for index, zone in enumerate(
+        parse_primitive_collider_data(zones, default_shape="box", default_name_prefix="Workspace zone")
+    ):
         if not _is_enabled_valid_primitive(zone):
             continue
-        shapes.append(_primitive_to_shape(zone, "workspace", zone.get("name", f"Workspace zone {index + 1}"), index))
+        shapes.append(_primitive_to_shape(zone, "workspace", zone.name, index))
     return shapes
 
 
-def build_robot_axis_collision_shape_templates(axis_colliders: list[dict[str, Any]]) -> list[CollisionShapeTemplate]:
+def build_robot_axis_collision_shape_templates(
+    axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+) -> list[CollisionShapeTemplate]:
     if not axis_colliders:
         return []
 
     templates: list[CollisionShapeTemplate] = []
-    for axis_index, collider in enumerate(parse_axis_colliders(axis_colliders, 6)[:6]):
-        if not bool(collider.get("enabled", True)):
+    for axis_index, collider in enumerate(parse_robot_axis_colliders(axis_colliders, 6)[:6]):
+        if not collider.enabled:
             continue
 
-        radius = max(0.0, float(collider.get("radius", 40.0)))
-        signed_height = float(collider.get("height", 200.0))
+        radius = max(0.0, float(collider.radius))
+        signed_height = float(collider.height)
         height = abs(signed_height)
         if radius <= EPSILON or height <= EPSILON:
             continue
 
         translation = np.eye(4, dtype=float)
-        translation[:3, 3] = normalize_xyz3(collider.get("offset_xyz"))
+        translation[:3, 3] = np.array(collider.offset_xyz, dtype=float)
         orientation = primitive_extrusion_orientation(
-            str(collider.get("direction_axis", "z")).strip().lower(),
+            collider.direction_axis,
             signed_height >= 0.0,
         )
         templates.append(
@@ -291,29 +301,37 @@ def build_robot_axis_collision_shape_templates(axis_colliders: list[dict[str, An
                 radius=radius,
                 height=height,
                 source_index=axis_index,
-                metadata={"axis": axis_index, "direction_axis": collider.get("direction_axis", "z")},
+                metadata={"axis": axis_index, "direction_axis": collider.direction_axis},
                 attached_frame_index=axis_index + 1,
             )
         )
     return templates
 
 
-def build_tool_collision_shape_templates(tool_colliders: list[dict[str, Any]]) -> list[CollisionShapeTemplate]:
+def build_tool_collision_shape_templates(
+    tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
+) -> list[CollisionShapeTemplate]:
     templates: list[CollisionShapeTemplate] = []
-    for index, collider in enumerate(parse_primitive_colliders(tool_colliders, default_shape="cylinder")):
+    for index, collider in enumerate(
+        parse_primitive_collider_data(
+            tool_colliders,
+            default_shape="cylinder",
+            default_name_prefix="Tool collider",
+        )
+    ):
         if not _is_enabled_valid_primitive(collider):
             continue
         templates.append(
             CollisionShapeTemplate(
                 owner="tool",
-                name=str(collider.get("name", f"Tool collider {index + 1}")),
-                shape=str(collider.get("shape", "box")).strip().lower(),
-                local_transform=math_utils.pose_zyx_to_matrix(collider.get("pose", [0.0] * 6)),
-                size_x=float(collider.get("size_x", 0.0)),
-                size_y=float(collider.get("size_y", 0.0)),
-                size_z=float(collider.get("size_z", 0.0)),
-                radius=float(collider.get("radius", 0.0)),
-                height=float(collider.get("height", 0.0)),
+                name=collider.name,
+                shape=collider.shape,
+                local_transform=collider.build_local_transform(),
+                size_x=collider.size_x,
+                size_y=collider.size_y,
+                size_z=collider.size_z,
+                radius=collider.radius,
+                height=collider.height,
                 source_index=index,
             )
         )
@@ -352,12 +370,14 @@ def build_world_frame_transforms(
 def resolve_flange_world_transform(frame_world_transforms: list[np.ndarray]) -> np.ndarray | None:
     matrices = _normalize_matrices(frame_world_transforms)
     if len(matrices) < 2:
-        return None
+        if not matrices:
+            return None
+        return matrices[-1]
     return matrices[-2]
 
 
 def build_robot_axis_collision_shapes(
-    axis_colliders: list[dict[str, Any]],
+    axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
     corrected_matrices: list[np.ndarray],
     robot_base_world: object | None = None,
 ) -> list[CollisionShape]:
@@ -367,7 +387,7 @@ def build_robot_axis_collision_shapes(
 
 
 def build_tool_collision_shapes(
-    tool_colliders: list[dict[str, Any]],
+    tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
     corrected_matrices: list[np.ndarray],
     robot_base_world: object | None = None,
 ) -> list[CollisionShape]:
@@ -430,41 +450,37 @@ def primitive_extrusion_orientation(direction_axis: str, positive_direction: boo
 
 
 def _primitive_to_shape(
-    collider: dict[str, Any],
+    collider: PrimitiveColliderData,
     owner: str,
     name: str,
     source_index: int,
     world_transform: np.ndarray | None = None,
 ) -> CollisionShape:
-    transform = math_utils.pose_zyx_to_matrix(collider.get("pose", [0.0] * 6)) if world_transform is None else world_transform
+    transform = collider.build_local_transform() if world_transform is None else world_transform
     return CollisionShape(
         owner=owner,
         name=str(name),
-        shape=str(collider.get("shape", "box")).strip().lower(),
+        shape=collider.shape,
         world_transform=transform,
-        size_x=float(collider.get("size_x", 0.0)),
-        size_y=float(collider.get("size_y", 0.0)),
-        size_z=float(collider.get("size_z", 0.0)),
-        radius=float(collider.get("radius", 0.0)),
-        height=float(collider.get("height", 0.0)),
+        size_x=collider.size_x,
+        size_y=collider.size_y,
+        size_z=collider.size_z,
+        radius=collider.radius,
+        height=collider.height,
         source_index=source_index,
     )
 
 
-def _is_enabled_valid_primitive(collider: dict[str, Any]) -> bool:
-    if not bool(collider.get("enabled", True)):
+def _is_enabled_valid_primitive(collider: PrimitiveColliderData) -> bool:
+    if not collider.enabled:
         return False
-    shape = str(collider.get("shape", "box")).strip().lower()
+    shape = collider.shape
     if shape == "box":
-        return (
-            float(collider.get("size_x", 0.0)) > EPSILON
-            and float(collider.get("size_y", 0.0)) > EPSILON
-            and float(collider.get("size_z", 0.0)) > EPSILON
-        )
+        return collider.size_x > EPSILON and collider.size_y > EPSILON and collider.size_z > EPSILON
     if shape == "cylinder":
-        return float(collider.get("radius", 0.0)) > EPSILON and float(collider.get("height", 0.0)) > EPSILON
+        return collider.radius > EPSILON and collider.height > EPSILON
     if shape == "sphere":
-        return float(collider.get("radius", 0.0)) > EPSILON
+        return collider.radius > EPSILON
     return False
 
 

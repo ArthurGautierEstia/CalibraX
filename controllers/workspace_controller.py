@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.workspace_file import WorkspaceFile
 from models.workspace_model import WorkspaceModel
+from models.workspace_primitive_zone_models import WorkspacePrimitiveZoneData
 from views.workspace_view import WorkspaceView
 from widgets.workspace_view.workspace_configuration_widget import WorkspaceConfigurationWidget
 
@@ -33,8 +34,12 @@ class WorkspaceController(QObject):
         self.workspace_widget.scene_name_changed.connect(self._on_scene_name_changed)
         self.workspace_widget.robot_base_pose_world_changed.connect(self._on_robot_base_pose_world_changed)
         self.workspace_widget.workspace_cad_elements_changed.connect(self._on_workspace_cad_elements_changed)
-        self.workspace_widget.workspace_tcp_zones_changed.connect(self._on_workspace_tcp_zones_changed)
-        self.workspace_widget.workspace_collision_zones_changed.connect(self._on_workspace_collision_zones_changed)
+        self.workspace_widget.workspace_tcp_zone_changed.connect(self._on_workspace_tcp_zone_changed)
+        self.workspace_widget.workspace_tcp_zone_added.connect(self._on_workspace_tcp_zone_added)
+        self.workspace_widget.workspace_tcp_zone_removed.connect(self._on_workspace_tcp_zone_removed)
+        self.workspace_widget.workspace_collision_zone_changed.connect(self._on_workspace_collision_zone_changed)
+        self.workspace_widget.workspace_collision_zone_added.connect(self._on_workspace_collision_zone_added)
+        self.workspace_widget.workspace_collision_zone_removed.connect(self._on_workspace_collision_zone_removed)
         self.workspace_widget.workspace_save_requested.connect(self._on_save_workspace_requested)
         self.workspace_widget.workspace_load_requested.connect(self._on_load_workspace_requested)
         self.workspace_widget.workspace_clear_requested.connect(self._on_clear_workspace_requested)
@@ -72,17 +77,45 @@ class WorkspaceController(QObject):
         finally:
             self._updating_from_view = False
 
-    def _on_workspace_tcp_zones_changed(self, values: list[dict]) -> None:
+    def _on_workspace_tcp_zone_changed(self, index: int, value: WorkspacePrimitiveZoneData) -> None:
         self._updating_from_view = True
         try:
-            self.workspace_model.set_workspace_tcp_zones(values)
+            self.workspace_model.update_workspace_tcp_zone(index, value)
         finally:
             self._updating_from_view = False
 
-    def _on_workspace_collision_zones_changed(self, values: list[dict]) -> None:
+    def _on_workspace_tcp_zone_added(self, index: int, value: WorkspacePrimitiveZoneData) -> None:
         self._updating_from_view = True
         try:
-            self.workspace_model.set_workspace_collision_zones(values)
+            self.workspace_model.insert_workspace_tcp_zone(index, value)
+        finally:
+            self._updating_from_view = False
+
+    def _on_workspace_tcp_zone_removed(self, index: int) -> None:
+        self._updating_from_view = True
+        try:
+            self.workspace_model.remove_workspace_tcp_zone(index)
+        finally:
+            self._updating_from_view = False
+
+    def _on_workspace_collision_zone_changed(self, index: int, value: WorkspacePrimitiveZoneData) -> None:
+        self._updating_from_view = True
+        try:
+            self.workspace_model.update_workspace_collision_zone(index, value)
+        finally:
+            self._updating_from_view = False
+
+    def _on_workspace_collision_zone_added(self, index: int, value: WorkspacePrimitiveZoneData) -> None:
+        self._updating_from_view = True
+        try:
+            self.workspace_model.insert_workspace_collision_zone(index, value)
+        finally:
+            self._updating_from_view = False
+
+    def _on_workspace_collision_zone_removed(self, index: int) -> None:
+        self._updating_from_view = True
+        try:
+            self.workspace_model.remove_workspace_collision_zone(index)
         finally:
             self._updating_from_view = False
 

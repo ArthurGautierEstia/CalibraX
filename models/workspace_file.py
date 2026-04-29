@@ -4,32 +4,29 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, TYPE_CHECKING
 
-from models.collider_models import parse_primitive_colliders, primitive_collider_to_dict
+from models.primitive_collider_models import (
+    parse_primitive_collider_data,
+    primitive_collider_data_to_dicts,
+)
+from utils.math_utils import safe_float
 from utils.reference_frame_utils import normalize_pose6
 
 if TYPE_CHECKING:
     from models.workspace_model import WorkspaceModel
 
 
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _normalize_pose(raw_pose: Any) -> list[float]:
     if isinstance(raw_pose, dict):
         values = [
-            _safe_float(raw_pose.get("x", 0.0), 0.0),
-            _safe_float(raw_pose.get("y", 0.0), 0.0),
-            _safe_float(raw_pose.get("z", 0.0), 0.0),
-            _safe_float(raw_pose.get("a", 0.0), 0.0),
-            _safe_float(raw_pose.get("b", 0.0), 0.0),
-            _safe_float(raw_pose.get("c", 0.0), 0.0),
+            safe_float(raw_pose.get("x", 0.0), 0.0),
+            safe_float(raw_pose.get("y", 0.0), 0.0),
+            safe_float(raw_pose.get("z", 0.0), 0.0),
+            safe_float(raw_pose.get("a", 0.0), 0.0),
+            safe_float(raw_pose.get("b", 0.0), 0.0),
+            safe_float(raw_pose.get("c", 0.0), 0.0),
         ]
     elif isinstance(raw_pose, list):
-        values = [_safe_float(raw_pose[idx] if idx < len(raw_pose) else 0.0, 0.0) for idx in range(6)]
+        values = [safe_float(raw_pose[idx] if idx < len(raw_pose) else 0.0, 0.0) for idx in range(6)]
     else:
         values = [0.0] * 6
     return values[:6]
@@ -69,11 +66,8 @@ class WorkspaceFile:
             scene_name=workspace_model.get_workspace_scene_name(),
             robot_base_pose_world=normalize_pose6(workspace_model.get_robot_base_pose_world()),
             cad_elements=[normalize_workspace_cad_element(v) for v in workspace_model.get_workspace_cad_elements()],
-            tcp_zones=parse_primitive_colliders(workspace_model.get_workspace_tcp_zones(), default_shape="box"),
-            collision_zones=parse_primitive_colliders(
-                workspace_model.get_workspace_collision_zones(),
-                default_shape="box",
-            ),
+            tcp_zones=primitive_collider_data_to_dicts(workspace_model.get_workspace_tcp_zones()),
+            collision_zones=primitive_collider_data_to_dicts(workspace_model.get_workspace_collision_zones()),
         )
 
     @classmethod
@@ -91,10 +85,11 @@ class WorkspaceFile:
                 data.get("robot_base_pose_world", data.get("robot_pose", data.get("base_pose")))
             ),
             cad_elements=parse_workspace_cad_elements(data.get("cad_elements", data.get("elements"))),
-            tcp_zones=parse_primitive_colliders(data.get("tcp_zones", data.get("zones_tcp")), default_shape="box"),
-            collision_zones=parse_primitive_colliders(
-                data.get("collision_zones", data.get("zones_collision")),
-                default_shape="box",
+            tcp_zones=primitive_collider_data_to_dicts(
+                parse_primitive_collider_data(data.get("tcp_zones", data.get("zones_tcp")))
+            ),
+            collision_zones=primitive_collider_data_to_dicts(
+                parse_primitive_collider_data(data.get("collision_zones", data.get("zones_collision")))
             ),
         )
 
@@ -103,8 +98,8 @@ class WorkspaceFile:
             "scene_name": self.scene_name,
             "robot_base_pose_world": normalize_pose6(self.robot_base_pose_world),
             "cad_elements": [normalize_workspace_cad_element(v) for v in self.cad_elements],
-            "tcp_zones": [primitive_collider_to_dict(v) for v in self.tcp_zones],
-            "collision_zones": [primitive_collider_to_dict(v) for v in self.collision_zones],
+            "tcp_zones": primitive_collider_data_to_dicts(self.tcp_zones),
+            "collision_zones": primitive_collider_data_to_dicts(self.collision_zones),
         }
 
     def apply_to_workspace_model(self, workspace_model: "WorkspaceModel", file_path: str | None = None) -> None:

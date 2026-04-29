@@ -5,7 +5,13 @@ import json
 import math
 from typing import Any, TYPE_CHECKING
 
-from models.collider_models import axis_colliders_to_dict, default_axis_colliders, parse_axis_colliders
+from models.collider_models import default_axis_colliders
+from models.primitive_collider_models import (
+    RobotAxisColliderData,
+    parse_robot_axis_colliders,
+    robot_axis_colliders_to_dicts,
+)
+from utils.math_utils import safe_float
 from utils.mgi import MgiConfigKey
 
 if TYPE_CHECKING:
@@ -25,7 +31,7 @@ DEFAULT_AXIS_ACCEL_LIMITS: list[float] = [
     round(math.sqrt(speed * jerk), 3)
     for speed, jerk in zip(DEFAULT_AXIS_SPEED_LIMITS, DEFAULT_AXIS_JERK_LIMITS)
 ]
-DEFAULT_AXIS_COLLIDERS: list[dict[str, Any]] = default_axis_colliders(6)
+DEFAULT_AXIS_COLLIDERS: list[RobotAxisColliderData] = default_axis_colliders(6)
 DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: list[tuple[float, float]] = [
     (-1000.0, 1000.0),
     (-1000.0, 1000.0),
@@ -48,7 +54,9 @@ class RobotConfigurationFile:
     axis_speed_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_SPEED_LIMITS))
     axis_accel_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_ACCEL_LIMITS))
     axis_jerk_limits: list[float] = field(default_factory=lambda: list(DEFAULT_AXIS_JERK_LIMITS))
-    axis_colliders: list[dict[str, Any]] = field(default_factory=lambda: axis_colliders_to_dict(DEFAULT_AXIS_COLLIDERS, 6))
+    axis_colliders: list[RobotAxisColliderData] = field(
+        default_factory=lambda: [collider.copy() for collider in DEFAULT_AXIS_COLLIDERS]
+    )
     axis_reversed: list[int] = field(default_factory=lambda: [1] * 6)
     joint_weights: list[float] = field(default_factory=lambda: [1.0] * 6)
     allowed_configs: set[MgiConfigKey] = field(default_factory=lambda: set(MgiConfigKey))
@@ -59,13 +67,6 @@ class RobotConfigurationFile:
 
     # Tracks which fields were present when loaded from JSON.
     present_fields: set[str] = field(default_factory=set, repr=False)
-
-    @staticmethod
-    def _safe_float(value: Any, default: float = 0.0) -> float:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return default
 
     @classmethod
     def _parse_matrix(
@@ -82,7 +83,7 @@ class RobotConfigurationFile:
         for row in rows[:row_count]:
             if not isinstance(row, list):
                 row = []
-            parsed_row = [cls._safe_float(v, default_value) for v in row[:col_count]]
+            parsed_row = [safe_float(v, default_value) for v in row[:col_count]]
             while len(parsed_row) < col_count:
                 parsed_row.append(default_value)
             matrix.append(parsed_row)
@@ -98,7 +99,7 @@ class RobotConfigurationFile:
             values = []
 
         for value in values[:length]:
-            parsed.append(cls._safe_float(value, default_value))
+            parsed.append(safe_float(value, default_value))
 
         while len(parsed) < length:
             parsed.append(default_value)
@@ -120,7 +121,7 @@ class RobotConfigurationFile:
         for i, item in enumerate(values[:6]):
             default_min, default_max = DEFAULT_AXIS_LIMITS[i]
             if isinstance(item, (list, tuple)) and len(item) >= 2:
-                limits.append((cls._safe_float(item[0], default_min), cls._safe_float(item[1], default_max)))
+                limits.append((safe_float(item[0], default_min), safe_float(item[1], default_max)))
             else:
                 limits.append((default_min, default_max))
 
@@ -137,7 +138,7 @@ class RobotConfigurationFile:
         for i, item in enumerate(values[:3]):
             default_min, default_max = DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ[i]
             if isinstance(item, (list, tuple)) and len(item) >= 2:
-                limits.append((cls._safe_float(item[0], default_min), cls._safe_float(item[1], default_max)))
+                limits.append((safe_float(item[0], default_min), safe_float(item[1], default_max)))
             else:
                 limits.append((default_min, default_max))
 
@@ -152,7 +153,7 @@ class RobotConfigurationFile:
             values = []
 
         for i, item in enumerate(values[:6]):
-            speed_limits.append(cls._safe_float(item, DEFAULT_AXIS_SPEED_LIMITS[i]))
+            speed_limits.append(safe_float(item, DEFAULT_AXIS_SPEED_LIMITS[i]))
 
         while len(speed_limits) < 6:
             speed_limits.append(DEFAULT_AXIS_SPEED_LIMITS[len(speed_limits)])
@@ -162,8 +163,8 @@ class RobotConfigurationFile:
     def _calculate_axis_accel_limits(cls, speed_limits: list[float], jerk_limits: list[float]) -> list[float]:
         accel_limits: list[float] = []
         for index in range(6):
-            speed = cls._safe_float(speed_limits[index] if index < len(speed_limits) else 0.0, 0.0)
-            jerk = cls._safe_float(jerk_limits[index] if index < len(jerk_limits) else 0.0, 0.0)
+            speed = safe_float(speed_limits[index] if index < len(speed_limits) else 0.0, 0.0)
+            jerk = safe_float(jerk_limits[index] if index < len(jerk_limits) else 0.0, 0.0)
             accel_limits.append(round(math.sqrt(max(0.0, speed) * max(0.0, jerk)), 3))
         return accel_limits
 
@@ -180,7 +181,7 @@ class RobotConfigurationFile:
             values = []
 
         for i, item in enumerate(values[:6]):
-            accel_limits.append(max(0.0, cls._safe_float(item, defaults[i])))
+            accel_limits.append(max(0.0, safe_float(item, defaults[i])))
 
         while len(accel_limits) < 6:
             accel_limits.append(defaults[len(accel_limits)])
@@ -193,7 +194,7 @@ class RobotConfigurationFile:
             values = []
 
         for i, item in enumerate(values[:6]):
-            jerk_limits.append(cls._safe_float(item, DEFAULT_AXIS_JERK_LIMITS[i]))
+            jerk_limits.append(safe_float(item, DEFAULT_AXIS_JERK_LIMITS[i]))
 
         while len(jerk_limits) < 6:
             jerk_limits.append(DEFAULT_AXIS_JERK_LIMITS[len(jerk_limits)])
@@ -258,7 +259,7 @@ class RobotConfigurationFile:
             axis_speed_limits=robot_model.get_axis_speed_limits(),
             axis_accel_limits=robot_model.get_axis_accel_limits(),
             axis_jerk_limits=robot_model.get_axis_jerk_limits(),
-            axis_colliders=robot_model.get_axis_colliders(),
+            axis_colliders=robot_model.get_axis_collider_data(),
             axis_reversed=robot_model.get_axis_reversed(),
             joint_weights=robot_model.get_joint_weights(),
             allowed_configs=robot_model.get_allowed_configurations(),
@@ -335,7 +336,7 @@ class RobotConfigurationFile:
                 axis_jerk_limits,
             ),
             axis_jerk_limits=axis_jerk_limits,
-            axis_colliders=parse_axis_colliders(data.get("axis_colliders", DEFAULT_AXIS_COLLIDERS), 6),
+            axis_colliders=parse_robot_axis_colliders(data.get("axis_colliders", DEFAULT_AXIS_COLLIDERS), 6),
             axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
             joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
             allowed_configs=allowed_configs,
@@ -363,7 +364,7 @@ class RobotConfigurationFile:
             "axis_speed_limits": self.axis_speed_limits[:6],
             "axis_accel_limits": self.axis_accel_limits[:6],
             "axis_jerk_limits": self.axis_jerk_limits[:6],
-            "axis_colliders": axis_colliders_to_dict(self.axis_colliders, 6),
+            "axis_colliders": robot_axis_colliders_to_dicts(self.axis_colliders, 6),
             "axis_reversed": self.axis_reversed[:6],
             "joint_weights": self.joint_weights[:6],
             "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],
