@@ -7,6 +7,7 @@ import numpy as np
 
 import utils.math_utils as math_utils
 from models.pose6 import Pose6
+from models.xyz3 import XYZ3
 from utils.math_utils import safe_float
 
 
@@ -25,19 +26,6 @@ class AxisDirection(str, Enum):
 SUPPORTED_PRIMITIVE_COLLIDER_SHAPES = tuple(PrimitiveColliderShape)
 SUPPORTED_AXIS_DIRECTIONS = tuple(AxisDirection)
 
-
-def normalize_xyz3(raw_xyz: Any) -> list[float]:
-    if isinstance(raw_xyz, dict):
-        return [
-            safe_float(raw_xyz.get("x", 0.0), 0.0),
-            safe_float(raw_xyz.get("y", 0.0), 0.0),
-            safe_float(raw_xyz.get("z", 0.0), 0.0),
-        ]
-    if isinstance(raw_xyz, (list, tuple)):
-        values = [safe_float(raw_xyz[idx] if idx < len(raw_xyz) else 0.0, 0.0) for idx in range(3)]
-    else:
-        values = [0.0, 0.0, 0.0]
-    return values[:3]
 
 def _safe_bool(value: Any, default: bool = True) -> bool:
     if isinstance(value, bool):
@@ -339,15 +327,15 @@ class RobotAxisColliderData:
         radius: float = 40.0,
         height: float = 200.0,
         direction_axis: AxisDirection | str = AxisDirection.Z,
-        offset_xyz: list[float] | tuple[float, ...] | None = None,
+        offset_xyz: XYZ3 | list[float] | tuple[float, ...] | dict[str, object] | None = None,
     ) -> None:
         self.axis_index = max(0, int(axis_index))
         self.enabled = bool(enabled)
         self.radius = max(0.0, float(radius))
         self.height = float(height)
         self.direction_axis = _normalize_axis_direction(direction_axis, AxisDirection.Z)
-        normalized_offset = normalize_xyz3([0.0, 0.0, 0.0] if offset_xyz is None else offset_xyz)
-        self.offset_xyz = tuple(float(value) for value in normalized_offset[:3])
+        normalized_offset = XYZ3.zeros() if offset_xyz is None else XYZ3.from_any(offset_xyz, fill_missing=True)
+        self.offset_xyz = normalized_offset.to_tuple()
 
     @classmethod
     def from_raw(cls, raw: object, axis_index: int = 0) -> "RobotAxisColliderData":
@@ -369,7 +357,7 @@ class RobotAxisColliderData:
                 data.get("direction_axis", data.get("axis_direction", data.get("orientation_axis", AxisDirection.Z))),
                 AxisDirection.Z,
             ),
-            offset_xyz=normalize_xyz3(data.get("offset_xyz")),
+            offset_xyz=XYZ3.from_any(data.get("offset_xyz"), fill_missing=True),
         )
 
     def copy(self) -> "RobotAxisColliderData":

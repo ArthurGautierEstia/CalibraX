@@ -5,10 +5,6 @@ from typing import Any
 import models.primitive_collider_models as primitive_collider_models
 
 
-def normalize_xyz3(raw_xyz: Any) -> list[float]:
-    return primitive_collider_models.normalize_xyz3(raw_xyz)
-
-
 def parse_primitive_colliders(
     raw_values: object,
     default_shape: primitive_collider_models.PrimitiveColliderShape = (
