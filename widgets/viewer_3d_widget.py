@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from PyQt6.QtWidgets import (
@@ -1398,36 +1399,55 @@ class Viewer3DWidget(QWidget):
         return item
 
     @staticmethod
-    def _primitive_extrusion_orientation(
-        direction_axis: str,
-        positive_direction: bool = True,
-        _cache: dict[tuple[str, bool], np.ndarray] = {},
-    ) -> np.ndarray:
-        if not _cache:
-            z_rotation = np.eye(4, dtype=float)
-
-            x_rotation = np.eye(4, dtype=float)
-            x_rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-
-            y_rotation = np.eye(4, dtype=float)
-            y_rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
-
-            flip = np.eye(4, dtype=float)
-            flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
-
-            _cache.update(
-                {
-                    ("z", True): z_rotation,
-                    ("z", False): z_rotation @ flip,
-                    ("x", True): x_rotation,
-                    ("x", False): x_rotation @ flip,
-                    ("y", True): y_rotation,
-                    ("y", False): y_rotation @ flip,
-                }
-            )
-
+    @lru_cache(maxsize=6)
+    def _primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
+        rotation = np.eye(4, dtype=float)
         normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-        return _cache[(normalized_axis, bool(positive_direction))]
+        if normalized_axis == "x":
+            rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
+        elif normalized_axis == "y":
+            rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
+
+
+
+        if positive_direction:
+            return rotation
+
+        flip = np.eye(4, dtype=float)
+        flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
+        return rotation @ flip
+
+    #@staticmethod
+    #def _primitive_extrusion_orientation(
+    #    direction_axis: str,
+    #    positive_direction: bool = True,
+    #    _cache: dict[tuple[str, bool], np.ndarray] = {},
+    #) -> np.ndarray:
+    #    if not _cache:
+    #        z_rotation = np.eye(4, dtype=float)
+    #
+    #        x_rotation = np.eye(4, dtype=float)
+    #        x_rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
+    #
+    #        y_rotation = np.eye(4, dtype=float)
+    #        y_rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
+    #
+    #        flip = np.eye(4, dtype=float)
+    #        flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
+    #
+    #        _cache.update(
+    #            {
+    #                ("z", True): z_rotation,
+    #                ("z", False): z_rotation @ flip,
+    #                ("x", True): x_rotation,
+    #                ("x", False): x_rotation @ flip,
+    #                ("y", True): y_rotation,
+    #                ("y", False): y_rotation @ flip,
+    #            }
+    #        )
+    ##
+    #    normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
+    #    return _cache[(normalized_axis, bool(positive_direction))]
 
     def _build_primitive_mesh_data(
         self,
