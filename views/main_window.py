@@ -1,20 +1,20 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QSplitter, QSizePolicy
+from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
-from widgets.viewer_3d_widget import Viewer3DWidget
-from views.robot_view import RobotView
-from views.workspace_view import WorkspaceView
 from views.calibration_view import CalibrationView
-from views.joint_control_view import JointControlView
 from views.cartesian_control_view import CartesianControlView
 from views.jog_view import JogView
+from views.joint_control_view import JointControlView
+from views.robot_view import RobotView
 from views.trajectory_view import TrajectoryView
+from views.workspace_view import WorkspaceView
+from widgets.viewer_3d_widget import Viewer3DWidget
+
 
 class MainWindow(QMainWindow):
-
     def __init__(
         self,
         robot_model: RobotModel,
@@ -26,6 +26,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Calibrax")
 
         self.tabs = QTabWidget()
+        self.main_splitter: QSplitter | None = None
+        self._initial_splitter_sizes_applied = False
 
         self.robot_view = RobotView()
         self.workspace_view = WorkspaceView()
@@ -38,7 +40,7 @@ class MainWindow(QMainWindow):
         self.viewer3d = Viewer3DWidget()
 
         self._setup_ui()
-    
+
     def _setup_ui(self) -> None:
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -46,30 +48,40 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.robot_view, "Robot")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.calibration_view, "Calibration")
-        self.tabs.addTab(self.joint_control_view, "Contrôle articulaire")
-        self.tabs.addTab(self.cartesian_control_view, "Contrôle cartésien")
+        self.tabs.addTab(self.joint_control_view, "Controle articulaire")
+        self.tabs.addTab(self.cartesian_control_view, "Controle cartesien")
         self.tabs.addTab(self.jog_view, "Jog")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
 
-        splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
-        splitter.setHandleWidth(6)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
+        self.main_splitter.setHandleWidth(6)
+
         self.tabs.setMinimumWidth(0)
         self.tabs.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.viewer3d.setMinimumWidth(0)
         self.viewer3d.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        splitter.addWidget(self.tabs)
-        splitter.addWidget(self.viewer3d)
 
-        # Taille initiale (équivalent de tes "2" et "3")
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 3)
-        splitter.setSizes([400, 600])  # optionnel : donne une taille de départ plus stable
-
-        # Optionnel : empêcher que l'un des deux disparaisse complètement
-        splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(self.tabs)
+        self.main_splitter.addWidget(self.viewer3d)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setChildrenCollapsible(False)
 
         layout = QVBoxLayout(central_widget)
-        layout.addWidget(splitter)
+        layout.addWidget(self.main_splitter)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._apply_initial_splitter_sizes()
+
+    def _apply_initial_splitter_sizes(self) -> None:
+        if self._initial_splitter_sizes_applied or self.main_splitter is None:
+            return
+        total_width = max(2, self.main_splitter.size().width())
+        left_width = total_width // 2
+        right_width = total_width - left_width
+        self.main_splitter.setSizes([left_width, right_width])
+        self._initial_splitter_sizes_applied = True
 
     ####################
     # VIEW GETTERS
@@ -78,7 +90,7 @@ class MainWindow(QMainWindow):
     def get_robot_view(self) -> RobotView:
         """Retourne la vue de configuration du robot"""
         return self.robot_view
-    
+
     def get_calibration_view(self) -> CalibrationView:
         """Retourne la vue de calibration du robot"""
         return self.calibration_view
@@ -88,13 +100,13 @@ class MainWindow(QMainWindow):
         return self.workspace_view
 
     def get_joint_control_view(self) -> JointControlView:
-        """Retourne la vue de contrôle articulaire"""
+        """Retourne la vue de controle articulaire"""
         return self.joint_control_view
-    
+
     def get_cartesian_control_view(self) -> CartesianControlView:
-        """Retourne la vue de contrôle cartésien"""
+        """Retourne la vue de controle cartesien"""
         return self.cartesian_control_view
-    
+
     def get_jog_view(self) -> JogView:
         """Retourne la vue de jog"""
         return self.jog_view
@@ -102,7 +114,7 @@ class MainWindow(QMainWindow):
     def get_trajectory_view(self) -> TrajectoryView:
         """Retourne la vue de trajectoire"""
         return self.trajectory_view
-    
+
     def get_viewer3d(self) -> Viewer3DWidget:
         """Retourne la vue du viewer 3D"""
         return self.viewer3d
@@ -112,9 +124,8 @@ class MainWindow(QMainWindow):
     #####################
 
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
-        """Active ou désactive les onglets de contrôle en fonction de la configuration du robot"""
+        """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
         self.tabs.setTabEnabled(3, robot_has_configuration)
         self.tabs.setTabEnabled(4, robot_has_configuration)
         self.tabs.setTabEnabled(5, robot_has_configuration)
         self.tabs.setTabEnabled(6, robot_has_configuration)
-    

@@ -22,10 +22,13 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_group = QButtonGroup(self)
         self.mode_group.addButton(self.mode_articular_radio)
         self.mode_group.addButton(self.mode_cartesian_radio)
+        self.mode_selector_frame = QWidget(self)
 
         self.joints_widget = JointsControlWidget(compact=True)
         self.cartesian_widget = CartesianControlWidget(compact=True)
         self.configuration_label = QLabel("Configuration courante : FUN")
+        self.reference_label = self.cartesian_widget.reference_label
+        self.reference_frame_combo = self.cartesian_widget.reference_frame_combo
 
         self.mode_stack = QStackedWidget()
         self.mode_stack.addWidget(self.joints_widget)
@@ -45,6 +48,11 @@ class ViewerControlOverlayWidget(QWidget):
             QWidget#viewerControlOverlay QLabel,
             QWidget#viewerControlOverlay QRadioButton {
                 color: lightgray;
+            }
+            QWidget#viewerControlOverlay QWidget#viewerModeSelector {
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 32);
+                border-radius: 6px;
             }
             QWidget#viewerControlOverlay QRadioButton::indicator {
                 width: 14px;
@@ -71,7 +79,6 @@ class ViewerControlOverlayWidget(QWidget):
                 border-radius: 7px;
                 background-color: #ff8c00;
             }
-            QWidget#viewerControlOverlay QDoubleSpinBox,
             QWidget#viewerControlOverlay QComboBox,
             QWidget#viewerControlOverlay QPushButton {
                 color: white;
@@ -79,25 +86,6 @@ class ViewerControlOverlayWidget(QWidget):
                 border: 1px solid rgba(255, 255, 255, 28);
                 border-radius: 6px;
                 padding: 4px 6px;
-            }
-            QWidget#viewerControlOverlay QDoubleSpinBox {
-                padding-right: 20px;
-            }
-            QWidget#viewerControlOverlay QDoubleSpinBox::up-button,
-            QWidget#viewerControlOverlay QDoubleSpinBox::down-button {
-                width: 18px;
-                subcontrol-origin: border;
-                background-color: rgba(255, 255, 255, 10);
-                border-left: 1px solid rgba(255, 255, 255, 24);
-            }
-            QWidget#viewerControlOverlay QDoubleSpinBox::up-button {
-                subcontrol-position: top right;
-                border-top-right-radius: 6px;
-            }
-            QWidget#viewerControlOverlay QDoubleSpinBox::down-button {
-                subcontrol-position: bottom right;
-                border-bottom-right-radius: 6px;
-                border-top: 1px solid rgba(255, 255, 255, 18);
             }
         """)
 
@@ -108,8 +96,20 @@ class ViewerControlOverlayWidget(QWidget):
         mode_layout = QHBoxLayout()
         mode_layout.setContentsMargins(0, 0, 0, 0)
         mode_layout.setSpacing(12)
-        mode_layout.addWidget(self.mode_articular_radio)
-        mode_layout.addWidget(self.mode_cartesian_radio)
+
+        self.mode_selector_frame.setObjectName("viewerModeSelector")
+        selector_layout = QHBoxLayout(self.mode_selector_frame)
+        selector_layout.setContentsMargins(10, 6, 10, 6)
+        selector_layout.setSpacing(12)
+        selector_layout.addWidget(self.mode_articular_radio)
+        selector_layout.addWidget(self.mode_cartesian_radio)
+        mode_layout.addWidget(self.mode_selector_frame, 0)
+        if self.reference_label is not None:
+            mode_layout.addWidget(self.reference_label)
+            self.reference_label.hide()
+        if self.reference_frame_combo is not None:
+            mode_layout.addWidget(self.reference_frame_combo)
+            self.reference_frame_combo.hide()
         mode_layout.addStretch()
         mode_layout.addWidget(self.configuration_label, 0)
         layout.addLayout(mode_layout)
@@ -120,6 +120,11 @@ class ViewerControlOverlayWidget(QWidget):
         self.joints_widget.configuration_changed.connect(self._on_configuration_changed)
 
     def _on_mode_changed(self) -> None:
+        show_cartesian_controls = self.mode_cartesian_radio.isChecked()
+        if self.reference_label is not None:
+            self.reference_label.setVisible(show_cartesian_controls)
+        if self.reference_frame_combo is not None:
+            self.reference_frame_combo.setVisible(show_cartesian_controls)
         if self.mode_cartesian_radio.isChecked():
             self.mode_stack.setCurrentWidget(self.cartesian_widget)
             return

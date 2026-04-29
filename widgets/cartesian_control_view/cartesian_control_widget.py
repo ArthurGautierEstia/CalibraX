@@ -10,6 +10,8 @@ from models.reference_frame import ReferenceFrame
 
 class CartesianControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées cartésiennes"""
+
+    _COMPACT_ROW_HEIGHT = 28
     
     # ============================================================================
     # RÉ‰GION: Signaux
@@ -72,6 +74,8 @@ class CartesianControlWidget(QWidget):
         self.sliders_cart: List[QSlider] = []
         self.spinboxes_cart: List[QDoubleSpinBox] = []
         self.labels_cart: List[QLabel] = []
+        self.reference_label: QLabel | None = None
+        self.reference_frame_combo: QComboBox | None = None
         self.current_convention = "Kuka"
         self.current_reference_frame = ReferenceFrame.BASE.value
         self._compact = bool(compact)
@@ -103,6 +107,7 @@ class CartesianControlWidget(QWidget):
         self.convention_combo.setCurrentText(self.current_convention)
         self.convention_combo.currentTextChanged.connect(self._on_convention_changed)
         self.convention_combo.setEnabled(False)
+        self.reference_label = QLabel("Repere:")
         self.reference_frame_combo = QComboBox()
         self.reference_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
         self.reference_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
@@ -114,9 +119,9 @@ class CartesianControlWidget(QWidget):
             convention_label = QLabel("Convention:")
             convention_layout.addWidget(convention_label)
             convention_layout.addWidget(self.convention_combo)
-        reference_label = QLabel("Repere:")
-        convention_layout.addWidget(reference_label)
-        convention_layout.addWidget(self.reference_frame_combo)
+        if not self._compact:
+            convention_layout.addWidget(self.reference_label)
+            convention_layout.addWidget(self.reference_frame_combo)
         convention_layout.addStretch()
         layout.addLayout(convention_layout)
         if not self._compact:
@@ -129,11 +134,16 @@ class CartesianControlWidget(QWidget):
         
         for i in range(6):
             row_layout = QHBoxLayout()
+            if self._compact:
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
             
             # Label
             label_text = self.CONVENTIONS[self.current_convention]["labels"][i]
             label = QLabel(label_text)
             label.setMinimumWidth(62 if self._compact else 80)
+            if self._compact:
+                label.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             self.labels_cart.append(label)
             
             # Déterminer les limites
@@ -143,6 +153,8 @@ class CartesianControlWidget(QWidget):
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
             slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par défaut
+            if self._compact:
+                slider.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             
             # SpinBox (valeur réelle)
             spinbox = QDoubleSpinBox()
@@ -151,6 +163,8 @@ class CartesianControlWidget(QWidget):
             spinbox.setSingleStep(0.10)
             spinbox.setSuffix(" mm" if i < 3 else " °")
             spinbox.setValue(0.0)
+            if self._compact:
+                spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             
             # Assurer une largeur uniforme pour tous les spinboxes
             if spinbox_width is None or spinbox.sizeHint().width() > spinbox_width:

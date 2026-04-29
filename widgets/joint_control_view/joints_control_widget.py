@@ -9,6 +9,8 @@ from utils.mgi import MgiConfigKey
 
 class JointsControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées articulaires"""
+
+    _COMPACT_ROW_HEIGHT = 28
     
     # Signaux
     joint_value_changed = pyqtSignal(int, float)  # index, value
@@ -64,13 +66,20 @@ class JointsControlWidget(QWidget):
         spinbox_width: int | None = None
         for i in range(6):
             row_layout = QHBoxLayout()
+            if self._compact:
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
             label = QLabel(f"q{i+1}")
             label.setMinimumWidth(58 if self._compact else 72)
+            if self._compact:
+                label.setFixedHeight(self._COMPACT_ROW_HEIGHT)
 
             # Slider (0-100 représente min-max)
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
             slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par défaut
+            if self._compact:
+                slider.setFixedHeight(self._COMPACT_ROW_HEIGHT)
 
             # SpinBox (valeur réelle)
             spinbox = QDoubleSpinBox()
@@ -79,6 +88,8 @@ class JointsControlWidget(QWidget):
             spinbox.setSingleStep(0.10)
             spinbox.setSuffix(" °")
             spinbox.setValue(0.0)
+            if self._compact:
+                spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             if spinbox_width is None:
                 reference_spinbox = QDoubleSpinBox()
                 reference_spinbox.setDecimals(3)
