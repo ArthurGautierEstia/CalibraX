@@ -41,7 +41,7 @@ class JogTCPVisualizationWidget(QWidget):
         groupbox = QGroupBox("Coordonnées TCP")
         groupbox_layout = QVBoxLayout(groupbox)
         frame_row = QHBoxLayout()
-        frame_row.addWidget(QLabel("RepÃ¨re"))
+        frame_row.addWidget(QLabel("Repère"))
         self.display_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
         self.display_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
         self.display_frame_combo.currentIndexChanged.connect(self._on_display_frame_changed)

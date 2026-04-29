@@ -766,13 +766,13 @@ class RobotModel(QObject):
             self.axis_speed_limits_changed.emit()
 
     def set_axis_accel_limit(self, index: int, value: float):
-        """DÃ©finit la limite d'acceleration d'un axe specifique en deg/s^2"""
+        """Définit la limite d'acceleration d'un axe specifique en deg/s^2"""
         if 0 <= index < 6:
             self.axis_accel_limits[index] = max(0.0, float(value))
             self.axis_accel_limits_changed.emit()
 
     def set_axis_accel_limits(self, limits: list[float]):
-        """DÃ©finit les limites d'acceleration de tous les axes en deg/s^2"""
+        """Définit les limites d'acceleration de tous les axes en deg/s^2"""
         if len(limits) >= 6:
             self.axis_accel_limits = [max(0.0, float(v)) for v in limits[:6]]
             self.axis_accel_limits_changed.emit()

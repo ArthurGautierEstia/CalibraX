@@ -9,17 +9,17 @@ from models.reference_frame import ReferenceFrame
 
 
 class CartesianControlWidget(QWidget):
-    """Widget pour le contrÃ´le des coordonnÃ©es cartÃ©siennes"""
+    """Widget pour le contrôle des coordonnées cartésiennes"""
     
     # ============================================================================
-    # RÃ‰GION: Signaux
+    # RÉ‰GION: Signaux
     # ============================================================================
     cartesian_value_changed = pyqtSignal(int, float)  # index (0-5), value
     convention_changed = pyqtSignal(str)  # convention name
     reference_frame_changed = pyqtSignal(str)
     
     # ============================================================================
-    # RÃ‰GION: Conventions constructeurs
+    # RÉ‰GION: Conventions constructeurs
     # ============================================================================
     CONVENTIONS = {
         "Kuka": {
@@ -53,10 +53,10 @@ class CartesianControlWidget(QWidget):
         super().__init__(parent)
         
         # ========================================================================
-        # RÃ‰GION: Attributs
+        # RÉ‰GION: Attributs
         # ========================================================================
-        # DonnÃ©es internes
-        self._cartesian_values: List[float] = [0.0] * 6  # Valeurs rÃ©elles (prÃ©cision complÃ¨te)
+        # Données internes
+        self._cartesian_values: List[float] = [0.0] * 6  # Valeurs réelles (précision complète)
         self._axis_limits: List[Tuple[float, float]] = [
             (-2000.0, 2000.0),  # X
             (-2000.0, 2000.0),  # Y
@@ -77,7 +77,7 @@ class CartesianControlWidget(QWidget):
         self._compact = bool(compact)
         
         # ========================================================================
-        # RÃ‰GION: Initialisation UI
+        # RÉ‰GION: Initialisation UI
         # ========================================================================
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.setup_ui()
@@ -90,10 +90,10 @@ class CartesianControlWidget(QWidget):
             layout.setSpacing(4)
         
         # ========================================================================
-        # RÃ‰GION: En-tÃªte
+        # RÉ‰GION: En-tÉªte
         # ========================================================================
         if not self._compact:
-            titre = QLabel("CoordonnÃ©es cartÃ©siennes")
+            titre = QLabel("Coordonnées cartésiennes")
             titre.setStyleSheet("font-size: 14px; font-weight: bold;")
             layout.addWidget(titre)
         
@@ -123,7 +123,7 @@ class CartesianControlWidget(QWidget):
             layout.addWidget(self.convention_description)
         
         # ========================================================================
-        # RÃ‰GION: Sliders et spinboxes pour les 6 coordonnÃ©es cartÃ©siennes
+        # RÉ‰GION: Sliders et spinboxes pour les 6 coordonnées cartésiennes
         # ========================================================================
         spinbox_width: int | None = None
         
@@ -136,15 +136,15 @@ class CartesianControlWidget(QWidget):
             label.setMinimumWidth(62 if self._compact else 80)
             self.labels_cart.append(label)
             
-            # DÃ©terminer les limites
+            # Déterminer les limites
             min_val, max_val = self._axis_limits[i]
             
-            # Slider (0-100 reprÃ©sente min-max)
+            # Slider (0-100 représente min-max)
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, self._SLIDER_MAX)
-            slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par dÃ©faut
+            slider.setValue(int(self._SLIDER_MAX / 2))  # Milieu par défaut
             
-            # SpinBox (valeur rÃ©elle)
+            # SpinBox (valeur réelle)
             spinbox = QDoubleSpinBox()
             spinbox.setRange(min_val, max_val)
             spinbox.setDecimals(3)
@@ -170,16 +170,16 @@ class CartesianControlWidget(QWidget):
             self.spinboxes_cart.append(spinbox)
     
     # ============================================================================
-    # RÃ‰GION: MÃ©thodes privÃ©es - Conversion slider <-> valeur
+    # RÉ‰GION: Méthodes privées - Conversion slider <-> valeur
     # ============================================================================
     
     def _slider_to_value(self, index: int, slider_pos: int) -> float:
-        """Convertit une position de slider (0-100) en valeur rÃ©elle"""
+        """Convertit une position de slider (0-100) en valeur réelle"""
         min_val, max_val = self._axis_limits[index]
         return min_val + (slider_pos / self._SLIDER_MAX) * (max_val - min_val)
     
     def _value_to_slider(self, index: int, value: float) -> int:
-        """Convertit une valeur rÃ©elle en position de slider (0-100)"""
+        """Convertit une valeur réelle en position de slider (0-100)"""
         min_val, max_val = self._axis_limits[index]
         if max_val == min_val:
             return int(self._SLIDER_MAX / 2)
@@ -188,47 +188,47 @@ class CartesianControlWidget(QWidget):
     
     def _on_slider_changed(self, index: int, slider_pos: int) -> None:
         """Callback quand le slider change"""
-        # Calculer la valeur rÃ©elle depuis le slider
+        # Calculer la valeur réelle depuis le slider
         value = self._slider_to_value(index, slider_pos)
         
-        # Mettre Ã  jour la valeur interne
+        # Mettre à jour la valeur interne
         self._cartesian_values[index] = value
         
-        # Mettre Ã  jour le spinbox sans dÃ©clencher son signal
+        # Mettre à jour le spinbox sans déclencher son signal
         self.spinboxes_cart[index].blockSignals(True)
         self.spinboxes_cart[index].setValue(value)
         self.spinboxes_cart[index].blockSignals(False)
         
-        # Ã‰mettre le signal de changement
+        # É‰mettre le signal de changement
         self.cartesian_value_changed.emit(index, value)
     
     def _on_spinbox_changed(self, index: int, value: float) -> None:
         """Callback quand le spinbox change"""
-        # Mettre Ã  jour la valeur interne
+        # Mettre à jour la valeur interne
         self._cartesian_values[index] = value
         
-        # Mettre Ã  jour le slider sans dÃ©clencher son signal
+        # Mettre à jour le slider sans déclencher son signal
         slider_pos = self._value_to_slider(index, value)
         self.sliders_cart[index].blockSignals(True)
         self.sliders_cart[index].setValue(slider_pos)
         self.sliders_cart[index].blockSignals(False)
         
-        # Ã‰mettre le signal de changement
+        # É‰mettre le signal de changement
         self.cartesian_value_changed.emit(index, value)
     
     def _on_convention_changed(self, convention_name: str) -> None:
-        """GÃ¨re le changement de convention constructeur"""
+        """Gère le changement de convention constructeur"""
         self.current_convention = convention_name
         
-        # Mise Ã  jour des labels
+        # Mise à jour des labels
         labels = self.CONVENTIONS[convention_name]["labels"]
         for i, label in enumerate(self.labels_cart):
             label.setText(labels[i])
         
-        # Mise Ã  jour de la description
+        # Mise à jour de la description
         self.convention_description.setText(self.CONVENTIONS[convention_name]["description"])
         
-        # Ã‰mettre le signal
+        # É‰mettre le signal
         self.convention_changed.emit(convention_name)
 
     def _on_reference_frame_changed(self, _index: int) -> None:
@@ -237,11 +237,11 @@ class CartesianControlWidget(QWidget):
         self.reference_frame_changed.emit(self.current_reference_frame)
     
     # ============================================================================
-    # RÃ‰GION: MÃ©thodes publiques
+    # RÉ‰GION: Méthodes publiques
     # ============================================================================
     
     def set_cartesian_value(self, index: int, value: float) -> None:
-        """DÃ©finit la valeur d'une coordonnÃ©e cartÃ©sienne (mise Ã  jour externe)"""
+        """Définit la valeur d'une coordonnée cartésienne (mise à jour externe)"""
         if not (0 <= index < 6):
             return
         
@@ -249,10 +249,10 @@ class CartesianControlWidget(QWidget):
         min_val, max_val = self._axis_limits[index]
         value = max(min_val, min(max_val, value))
         
-        # Mettre Ã  jour la valeur interne
+        # Mettre à jour la valeur interne
         self._cartesian_values[index] = value
         
-        # Mettre Ã  jour les widgets sans dÃ©clencher les signaux
+        # Mettre à jour les widgets sans déclencher les signaux
         self.spinboxes_cart[index].blockSignals(True)
         self.sliders_cart[index].blockSignals(True)
         
@@ -263,22 +263,22 @@ class CartesianControlWidget(QWidget):
         self.sliders_cart[index].blockSignals(False)
     
     def set_all_cartesian(self, values: List[float]) -> None:
-        """DÃ©finit toutes les valeurs cartÃ©siennes"""
+        """Définit toutes les valeurs cartésiennes"""
         for i, val in enumerate(values[:6]):
             self.set_cartesian_value(i, val)
     
     def get_cartesian_value(self, index: int) -> float:
-        """RÃ©cupÃ¨re la valeur rÃ©elle d'une coordonnÃ©e"""
+        """Récupère la valeur réelle d'une coordonnée"""
         if 0 <= index < 6:
             return self._cartesian_values[index]
         return 0.0
     
     def get_cartesian_values(self) -> List[float]:
-        """Retourne les valeurs actuelles des coordonnÃ©es cartÃ©siennes"""
+        """Retourne les valeurs actuelles des coordonnées cartésiennes"""
         return self._cartesian_values.copy()
     
     def get_current_convention(self) -> str:
-        """Retourne la convention actuellement sÃ©lectionnÃ©e"""
+        """Retourne la convention actuellement sélectionnée"""
         return self.current_convention
 
     def get_reference_frame(self) -> str:
@@ -297,7 +297,7 @@ class CartesianControlWidget(QWidget):
             self.reference_frame_changed.emit(self.current_reference_frame)
     
     def update_axis_limits(self, limits: List[Tuple[float, float]]) -> None:
-        """Met Ã  jour les limites des axes
+        """Met à jour les limites des axes
         
         Args:
             limits: Liste de 6 tuples (min, max) pour chaque axe
@@ -306,22 +306,22 @@ class CartesianControlWidget(QWidget):
             min_val, max_val = limits[i]
             self._axis_limits[i] = (min_val, max_val)
             
-            # Mettre Ã  jour la range du spinbox
+            # Mettre à jour la range du spinbox
             self.spinboxes_cart[i].setRange(min_val, max_val)
             
-            # Clamper la valeur actuelle si nÃ©cessaire
+            # Clamper la valeur actuelle si nécessaire
             current_value = self._cartesian_values[i]
             if current_value < min_val or current_value > max_val:
                 clamped_value = max(min_val, min(max_val, current_value))
                 self.set_cartesian_value(i, clamped_value)
             else:
-                # Juste mettre Ã  jour le slider (les limites ont changÃ©)
+                # Juste mettre à jour le slider (les limites ont changé)
                 self.sliders_cart[i].blockSignals(True)
                 self.sliders_cart[i].setValue(self._value_to_slider(i, current_value))
                 self.sliders_cart[i].blockSignals(False)
     
     def get_axis_limits(self) -> List[Tuple[float, float]]:
-        """RÃ©cupÃ¨re les limites des axes"""
+        """Récupère les limites des axes"""
         return self._axis_limits.copy()
 
 

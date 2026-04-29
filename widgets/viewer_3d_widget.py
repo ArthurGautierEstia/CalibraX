@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from PyQt6.QtWidgets import (
@@ -200,7 +199,7 @@ class Viewer3DWidget(QWidget):
             }
         """)
         self.msg_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        # Position initiale (sera ajustÃ©e dans resizeEvent)
+        # Position initiale (sera ajustée dans resizeEvent)
         self.msg_label.adjustSize()
         self._position_overlays()
         self.toolbar_overlay = QWidget(self.viewer)
@@ -459,7 +458,7 @@ class Viewer3DWidget(QWidget):
         return QIcon(pixmap)
 
     def on_frame_clicked(self, index: int):
-        """GÃ¨re le clic sur un Ã©lÃ©ment de la liste"""
+        """Gère le clic sur un élément de la liste"""
         if index < 0 or index >= len(self.frames_visibility):
             return
         self.frames_visibility[index] = not self.frames_visibility[index]
@@ -516,10 +515,10 @@ class Viewer3DWidget(QWidget):
         self._emit_display_state_changed()
 
     def update_frame_list_ui(self):
-        """Met Ã  jour l'apparence de la liste (Gras = Visible)"""
+        """Met à jour l'apparence de la liste (Gras = Visible)"""
         count = len(self.frames_visibility)
         
-        # Si le nombre de repÃ¨res a changÃ©, on recrÃ©e la liste
+        # Si le nombre de repères a changé, on recrée la liste
         if self.frame_list.count() != count:
             self.frame_list.clear()
             for i in range(count):
@@ -529,7 +528,7 @@ class Viewer3DWidget(QWidget):
                 self.frame_list.addItem(item)
             self.frame_list.show()
 
-        # Mise Ã  jour du style (Gras vs Normal)
+        # Mise à jour du style (Gras vs Normal)
         font_bold = QFont()
         font_bold.setBold(True)
         
@@ -545,7 +544,7 @@ class Viewer3DWidget(QWidget):
                 item.setForeground(Qt.GlobalColor.lightGray)  # Gris clair en gras
             else:
                 item.setFont(font_normal)
-                item.setForeground(Qt.GlobalColor.darkGray)  # Gris foncÃ© en normal
+                item.setForeground(Qt.GlobalColor.darkGray)  # Gris foncé en normal
 
         self.frame_overlay.set_frames_visibility(self.frames_visibility)
         self.workspace_frame_overlay.set_frames_visibility(
@@ -742,7 +741,7 @@ class Viewer3DWidget(QWidget):
                 self.viewer.addItem(item)
 
     def draw_frame(self, T, longueur=100, color: tuple[int, int, int]=None):
-        """Dessine un repÃ¨re unique"""
+        """Dessine un repère unique"""
         origine = T[:3, 3]
         R = T[:3, :3]
         
@@ -765,10 +764,10 @@ class Viewer3DWidget(QWidget):
         return items
 
     def draw_all_frames(self, matrices):
-        """Dessine les repÃ¨res en fonction de leur visibilitÃ© individuelle"""
+        """Dessine les repères en fonction de leur visibilité individuelle"""
         self._clear_viewer_items(self._robot_frame_items)
         for i, T in enumerate(matrices):
-            # On dessine seulement si l'index est marquÃ© visible dans la liste
+            # On dessine seulement si l'index est marqué visible dans la liste
             if i < len(self.frames_visibility) and self.frames_visibility[i]:
                 self._robot_frame_items.extend(self.draw_frame(self._transform_robot_matrix_to_world(T)))
     
@@ -1041,7 +1040,7 @@ class Viewer3DWidget(QWidget):
             mesh_item.hide()
 
     def update_robot(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
-        """Met Ã  jour la visualisation 3D avec repÃ¨res et visibilitÃ© des frames"""
+        """Met à jour la visualisation 3D avec repères et visibilité des frames"""
         self._robot_model = robot_model
         self._tool_model = tool_model
 
@@ -1295,22 +1294,22 @@ class Viewer3DWidget(QWidget):
     def _clear_and_refresh(self):
         num_frames = len(self.last_dh_matrices)
         
-        # Initialiser la liste de visibilitÃ© si nÃ©cessaire
+        # Initialiser la liste de visibilité si nécessaire
         if len(self.frames_visibility) != num_frames:
             self.frames_visibility = [True] * num_frames
         
-        # Mettre Ã  jour l'interface de la liste (affichage gras/normal)
+        # Mettre à jour l'interface de la liste (affichage gras/normal)
         
-        # Effacer et redessiner la scÃ¨ne
+        # Effacer et redessiner la scène
         self.clear_viewer()
         self._workspace_frame_matrices = []
         self._workspace_frame_labels = []
         
-        # Afficher les repÃ¨res selon la visibilitÃ©
+        # Afficher les repères selon la visibilité
         if self.show_axes:
             self.draw_all_frames(self.last_dh_matrices)
         
-        # Mettre Ã  jour le CAD si chargÃ©
+        # Mettre à jour le CAD si chargé
         if self._cad_loaded:
             self.update_robot_poses(self.last_corrected_matrices)
 
@@ -1399,21 +1398,36 @@ class Viewer3DWidget(QWidget):
         return item
 
     @staticmethod
-    @lru_cache(maxsize=6)
-    def _primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
-        rotation = np.eye(4, dtype=float)
+    def _primitive_extrusion_orientation(
+        direction_axis: str,
+        positive_direction: bool = True,
+        _cache: dict[tuple[str, bool], np.ndarray] = {},
+    ) -> np.ndarray:
+        if not _cache:
+            z_rotation = np.eye(4, dtype=float)
+
+            x_rotation = np.eye(4, dtype=float)
+            x_rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
+
+            y_rotation = np.eye(4, dtype=float)
+            y_rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
+
+            flip = np.eye(4, dtype=float)
+            flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
+
+            _cache.update(
+                {
+                    ("z", True): z_rotation,
+                    ("z", False): z_rotation @ flip,
+                    ("x", True): x_rotation,
+                    ("x", False): x_rotation @ flip,
+                    ("y", True): y_rotation,
+                    ("y", False): y_rotation @ flip,
+                }
+            )
+
         normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-        if normalized_axis == "x":
-            rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-        elif normalized_axis == "y":
-            rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
-
-        if positive_direction:
-            return rotation
-
-        flip = np.eye(4, dtype=float)
-        flip[:3, :3] = math_utils.rot_x(180.0, degrees=True)
-        return rotation @ flip
+        return _cache[(normalized_axis, bool(positive_direction))]
 
     def _build_primitive_mesh_data(
         self,
@@ -1597,7 +1611,7 @@ class Viewer3DWidget(QWidget):
         try:
             self.viewer.removeItem(item)
         except ValueError:
-            # L'item n'est dÃ©jÃ  plus enregistrÃ© dans GLViewWidget.items
+            # L'item n'est déjà plus enregistré dans GLViewWidget.items
             pass
         except Exception:
             pass

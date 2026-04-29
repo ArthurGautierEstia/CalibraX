@@ -322,7 +322,7 @@ class ExternalAxisWidget(QWidget):
             if expected_count != len(data) // 2:
                 QMessageBox.warning(
                     self,
-                    "Coordonnees theoriques",
+                    "Coordonnées theoriques",
                     "La plage Min/Max/Step ne correspond pas au nombre de points Aller du fichier.",
                 )
             self._update_plot()
