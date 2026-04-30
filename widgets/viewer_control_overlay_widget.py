@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QRadioButton,
@@ -7,12 +8,17 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt6.QtCore import pyqtSignal
 
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
 
 
 class ViewerControlOverlayWidget(QWidget):
+    jog_delta_changed = pyqtSignal(float)
+    _CURRENT_CONFIG_COLOR = "orange"
+    _JOG_SPEED_FACTOR = 6
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("viewerControlOverlay")
@@ -23,10 +29,12 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_group.addButton(self.mode_articular_radio)
         self.mode_group.addButton(self.mode_cartesian_radio)
         self.mode_selector_frame = QWidget(self)
+        self.jog_delta_label = QLabel("Vitesse Jog :")
+        self.jog_delta_spinbox = QDoubleSpinBox(self)
 
-        self.joints_widget = JointsControlWidget(compact=True)
-        self.cartesian_widget = CartesianControlWidget(compact=True)
-        self.configuration_label = QLabel("Configuration courante : FUN")
+        self.joints_widget = JointsControlWidget(compact=True, enable_jog_spin_buttons=True)
+        self.cartesian_widget = CartesianControlWidget(compact=True, enable_jog_spin_buttons=True)
+        self.configuration_label = QLabel()
         self.reference_label = self.cartesian_widget.reference_label
         self.reference_frame_combo = self.cartesian_widget.reference_frame_combo
 
@@ -54,31 +62,6 @@ class ViewerControlOverlayWidget(QWidget):
                 border: 1px solid rgba(255, 255, 255, 32);
                 border-radius: 6px;
             }
-            QWidget#viewerControlOverlay QRadioButton::indicator {
-                width: 14px;
-                height: 14px;
-            }
-            QWidget#viewerControlOverlay QRadioButton::indicator:unchecked {
-                border: 1px solid rgba(255, 255, 255, 80);
-                border-radius: 7px;
-                background-color: rgba(255, 255, 255, 18);
-            }
-            QWidget#viewerControlOverlay QRadioButton::indicator:checked {
-                border: 1px solid #ff8c00;
-                border-radius: 7px;
-                background-color: #ff8c00;
-            }
-            QWidget#viewerControlOverlay QSlider::groove:horizontal {
-                height: 6px;
-                border-radius: 3px;
-                background-color: rgba(255, 255, 255, 36);
-            }
-            QWidget#viewerControlOverlay QSlider::handle:horizontal {
-                width: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
-                background-color: #ff8c00;
-            }
             QWidget#viewerControlOverlay QComboBox,
             QWidget#viewerControlOverlay QPushButton {
                 color: white;
@@ -103,7 +86,16 @@ class ViewerControlOverlayWidget(QWidget):
         selector_layout.setSpacing(12)
         selector_layout.addWidget(self.mode_articular_radio)
         selector_layout.addWidget(self.mode_cartesian_radio)
+        self.jog_delta_spinbox.setDecimals(0)
+        self.jog_delta_spinbox.setRange(10.0, 100.0)
+        self.jog_delta_spinbox.setSingleStep(10.0)
+        self.jog_delta_spinbox.setSuffix(" %")
+        self.jog_delta_spinbox.setValue(50.0)
+        self.jog_delta_spinbox.setFixedWidth(88)
+        self.jog_delta_spinbox.valueChanged.connect(self._on_jog_delta_changed)
         mode_layout.addWidget(self.mode_selector_frame, 0)
+        mode_layout.addWidget(self.jog_delta_label)
+        mode_layout.addWidget(self.jog_delta_spinbox)
         if self.reference_label is not None:
             mode_layout.addWidget(self.reference_label)
             self.reference_label.hide()
@@ -118,6 +110,8 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_articular_radio.toggled.connect(self._on_mode_changed)
         self.mode_cartesian_radio.toggled.connect(self._on_mode_changed)
         self.joints_widget.configuration_changed.connect(self._on_configuration_changed)
+        self._on_configuration_changed("FUN")
+        self._on_jog_delta_changed(self.get_jog_delta())
 
     def _on_mode_changed(self) -> None:
         show_cartesian_controls = self.mode_cartesian_radio.isChecked()
@@ -131,10 +125,28 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_stack.setCurrentWidget(self.joints_widget)
 
     def _on_configuration_changed(self, config_name: str) -> None:
-        self.configuration_label.setText(f"Configuration courante : {config_name}")
+        self.configuration_label.setText(
+            f'Configuration courante : <span style="color: {self._CURRENT_CONFIG_COLOR};">{config_name}</span>'
+        )
 
     def get_joints_widget(self) -> JointsControlWidget:
         return self.joints_widget
 
     def get_cartesian_widget(self) -> CartesianControlWidget:
         return self.cartesian_widget
+
+    def get_jog_delta(self) -> float:
+        return float(self.jog_delta_spinbox.value()) / self._JOG_SPEED_FACTOR
+
+    def set_jog_delta(self, value: float) -> None:
+        normalized_value = max(0.01, float(value))
+        self.jog_delta_spinbox.blockSignals(True)
+        self.jog_delta_spinbox.setValue(normalized_value * self._JOG_SPEED_FACTOR)
+        self.jog_delta_spinbox.blockSignals(False)
+        self._on_jog_delta_changed(normalized_value)
+
+    def _on_jog_delta_changed(self, value: float) -> None:
+        normalized_value = max(0.01, float(value) / self._JOG_SPEED_FACTOR)
+        self.joints_widget.set_jog_increment(normalized_value)
+        self.cartesian_widget.set_jog_increment(normalized_value)
+        self.jog_delta_changed.emit(normalized_value)

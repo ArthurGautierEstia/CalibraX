@@ -6,6 +6,7 @@ from enum import Enum
 class ReferenceFrame(str, Enum):
     BASE = "BASE"
     WORLD = "WORLD"
+    TOOL = "TOOL"
 
     @classmethod
     def from_value(cls, value: object, default: "ReferenceFrame" = None) -> "ReferenceFrame":

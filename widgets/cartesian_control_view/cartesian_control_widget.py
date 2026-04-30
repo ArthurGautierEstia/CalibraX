@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from models.reference_frame import ReferenceFrame
+from widgets.jog_spin_box import JogSpinBox
 
 
 class CartesianControlWidget(QWidget):
@@ -19,6 +20,8 @@ class CartesianControlWidget(QWidget):
     cartesian_value_changed = pyqtSignal(int, float)  # index (0-5), value
     convention_changed = pyqtSignal(str)  # convention name
     reference_frame_changed = pyqtSignal(str)
+    spinbox_jog_pressed = pyqtSignal(int, int)
+    spinbox_jog_released = pyqtSignal(int, int)
     
     # ============================================================================
     # RÉ‰GION: Conventions constructeurs
@@ -51,7 +54,7 @@ class CartesianControlWidget(QWidget):
         }
     }
     
-    def __init__(self, parent: QWidget = None, compact: bool = False):
+    def __init__(self, parent: QWidget = None, compact: bool = False, enable_jog_spin_buttons: bool = False):
         super().__init__(parent)
         
         # ========================================================================
@@ -79,12 +82,14 @@ class CartesianControlWidget(QWidget):
         self.current_convention = "Kuka"
         self.current_reference_frame = ReferenceFrame.BASE.value
         self._compact = bool(compact)
+        self._enable_jog_spin_buttons = bool(enable_jog_spin_buttons)
         
         # ========================================================================
         # RÉ‰GION: Initialisation UI
         # ========================================================================
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.setup_ui()
+        self._apply_reference_frame_interaction_mode()
         
     def setup_ui(self) -> None:
         """Initialise l'interface du widget"""
@@ -107,10 +112,11 @@ class CartesianControlWidget(QWidget):
         self.convention_combo.setCurrentText(self.current_convention)
         self.convention_combo.currentTextChanged.connect(self._on_convention_changed)
         self.convention_combo.setEnabled(False)
-        self.reference_label = QLabel("Repere:")
+        self.reference_label = QLabel("Référentiel :")
         self.reference_frame_combo = QComboBox()
         self.reference_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
         self.reference_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
+        self.reference_frame_combo.addItem("Tool", ReferenceFrame.TOOL.value)
         self.reference_frame_combo.currentIndexChanged.connect(self._on_reference_frame_changed)
         self.convention_description = QLabel(self.CONVENTIONS[self.current_convention]["description"])
         self.convention_description.setStyleSheet("font-size: 10px; font-style: italic; color: gray;")
@@ -157,7 +163,7 @@ class CartesianControlWidget(QWidget):
                 slider.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             
             # SpinBox (valeur réelle)
-            spinbox = QDoubleSpinBox()
+            spinbox = JogSpinBox() if self._enable_jog_spin_buttons else QDoubleSpinBox()
             spinbox.setRange(min_val, max_val)
             spinbox.setDecimals(3)
             spinbox.setSingleStep(0.10)
@@ -170,6 +176,13 @@ class CartesianControlWidget(QWidget):
             if spinbox_width is None or spinbox.sizeHint().width() > spinbox_width:
                 spinbox_width = spinbox.sizeHint().width()
             spinbox.setFixedWidth(spinbox_width)
+            if isinstance(spinbox, JogSpinBox):
+                spinbox.jog_button_pressed.connect(
+                    lambda direction, idx=i: self.spinbox_jog_pressed.emit(idx, direction)
+                )
+                spinbox.jog_button_released.connect(
+                    lambda direction, idx=i: self.spinbox_jog_released.emit(idx, direction)
+                )
             
             # Connexions
             slider.valueChanged.connect(lambda value, idx=i: self._on_slider_changed(idx, value))
@@ -248,6 +261,7 @@ class CartesianControlWidget(QWidget):
     def _on_reference_frame_changed(self, _index: int) -> None:
         raw = self.reference_frame_combo.currentData()
         self.current_reference_frame = ReferenceFrame.from_value(raw).value
+        self._apply_reference_frame_interaction_mode()
         self.reference_frame_changed.emit(self.current_reference_frame)
     
     # ============================================================================
@@ -307,6 +321,7 @@ class CartesianControlWidget(QWidget):
         self.reference_frame_combo.setCurrentIndex(index)
         self.reference_frame_combo.blockSignals(False)
         self.current_reference_frame = normalized.value
+        self._apply_reference_frame_interaction_mode()
         if emit_signal:
             self.reference_frame_changed.emit(self.current_reference_frame)
     
@@ -337,5 +352,24 @@ class CartesianControlWidget(QWidget):
     def get_axis_limits(self) -> List[Tuple[float, float]]:
         """Récupère les limites des axes"""
         return self._axis_limits.copy()
+
+    def set_spinbox_single_step(self, step: float) -> None:
+        normalized_step = max(0.001, float(step))
+        for spinbox in self.spinboxes_cart:
+            spinbox.setSingleStep(normalized_step)
+
+    def set_jog_increment(self, value: float) -> None:
+        normalized_value = max(0.001, float(value))
+        for index, spinbox in enumerate(self.spinboxes_cart):
+            spinbox.setSingleStep(normalized_value if index < 3 else normalized_value * 0.1)
+
+    def _apply_reference_frame_interaction_mode(self) -> None:
+        jog_only_mode = self.current_reference_frame == ReferenceFrame.TOOL.value
+        for slider in self.sliders_cart:
+            slider.setEnabled(not jog_only_mode)
+        for spinbox in self.spinboxes_cart:
+            spinbox.setReadOnly(jog_only_mode)
+            if isinstance(spinbox, JogSpinBox):
+                spinbox.set_allow_jog_while_read_only(jog_only_mode)
 
 

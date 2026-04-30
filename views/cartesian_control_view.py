@@ -17,7 +17,6 @@ class CartesianControlView(QWidget):
     def _setup_ui(self) -> None:
         """Configure l'interface utilisateur pour la vue du robot"""
         layout = QVBoxLayout(self)
-        layout.addWidget(self.cartesian_control_widget)
         layout.addWidget(self.mgi_solutions_widget)
 
     def get_cartesian_control_widget(self) -> CartesianControlWidget:

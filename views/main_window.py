@@ -6,7 +6,6 @@ from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
-from views.jog_view import JogView
 from views.joint_control_view import JointControlView
 from views.robot_view import RobotView
 from views.trajectory_view import TrajectoryView
@@ -34,7 +33,6 @@ class MainWindow(QMainWindow):
         self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
         self.cartesian_control_view = CartesianControlView()
-        self.jog_view = JogView()
         self.trajectory_view = TrajectoryView(robot_model, tool_model, workspace_model)
 
         self.viewer3d = Viewer3DWidget()
@@ -48,9 +46,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.robot_view, "Robot")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.calibration_view, "Calibration")
-        self.tabs.addTab(self.joint_control_view, "Controle articulaire")
-        self.tabs.addTab(self.cartesian_control_view, "Controle cartesien")
-        self.tabs.addTab(self.jog_view, "Jog")
+        self.tabs.addTab(self.cartesian_control_view, "MGI")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
@@ -107,10 +103,6 @@ class MainWindow(QMainWindow):
         """Retourne la vue de controle cartesien"""
         return self.cartesian_control_view
 
-    def get_jog_view(self) -> JogView:
-        """Retourne la vue de jog"""
-        return self.jog_view
-
     def get_trajectory_view(self) -> TrajectoryView:
         """Retourne la vue de trajectoire"""
         return self.trajectory_view
@@ -125,7 +117,10 @@ class MainWindow(QMainWindow):
 
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
-        self.tabs.setTabEnabled(3, robot_has_configuration)
-        self.tabs.setTabEnabled(4, robot_has_configuration)
-        self.tabs.setTabEnabled(5, robot_has_configuration)
-        self.tabs.setTabEnabled(6, robot_has_configuration)
+        for control_view in (
+            self.cartesian_control_view,
+            self.trajectory_view,
+        ):
+            tab_index = self.tabs.indexOf(control_view)
+            if tab_index >= 0:
+                self.tabs.setTabEnabled(tab_index, robot_has_configuration)
