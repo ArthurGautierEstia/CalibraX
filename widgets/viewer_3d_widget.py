@@ -8,8 +8,10 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QLabel,
     QListWidgetItem,
+    QListWidget,
+    QAbstractItemView,
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtGui
@@ -29,7 +31,6 @@ from models.workspace_model import WorkspaceModel
 
 
 TangentSegment = tuple[XYZ3, XYZ3]
-from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
     FrameTransform,
@@ -180,39 +181,70 @@ class Viewer3DWidget(QWidget):
         self.viewer.setBackgroundColor(45, 45, 48, 255)
         layout.addWidget(self.viewer)
 
-        # --- LISTE DES REPERES (Overlay en haut a droite) ---
-        self.frame_overlay = FrameVisibilityOverlayWidget(self.viewer)
-        self.frame_overlay.set_title("Frames robot")
-        self.frame_list = self.frame_overlay.list_widget
-        self.workspace_frame_overlay = FrameVisibilityOverlayWidget(self.viewer)
-        self.workspace_frame_overlay.set_title("Frames scene")
-        self.viewer_control_overlay = ViewerControlOverlayWidget(self.viewer)
-        self.robot_controls_toggle_button = QPushButton(self.viewer)
-        self.robot_controls_toggle_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: rgba(25, 25, 28, 160);
-                color: lightgray;
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 6px;
-                padding: 6px 10px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: rgba(40, 40, 45, 185);
-            }
-            """
-        )
-        self.position_buttons_overlay = QWidget(self.viewer)
-        self.position_buttons_overlay.setObjectName("viewerPositionOverlay")
-        self.position_buttons_overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.position_buttons_overlay.setStyleSheet("""
-            QWidget#viewerPositionOverlay {
+        # --- LISTE DES REPERES (Overlay ancré au bouton de liste) ---
+        self.frame_lists_overlay = QWidget(self.viewer)
+        self.frame_lists_overlay.setObjectName("viewerFrameListsOverlay")
+        self.frame_lists_overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.frame_lists_overlay.setStyleSheet("""
+            QWidget#viewerFrameListsOverlay {
                 background-color: rgba(0, 0, 0, 18);
                 border: 1px solid rgba(255, 255, 255, 20);
                 border-radius: 10px;
             }
+            QWidget#viewerFrameListsOverlay QLabel {
+                color: rgba(230, 230, 230, 210);
+                font-size: 10px;
+                font-weight: 600;
+            }
+            QWidget#viewerFrameListsOverlay QListWidget {
+                background-color: rgba(25, 25, 28, 130);
+                color: lightgray;
+                border: 1px solid rgba(255, 255, 255, 35);
+                border-radius: 6px;
+                outline: 0;
+                font-size: 10px;
+            }
+            QWidget#viewerFrameListsOverlay QListWidget::item {
+                padding: 3px 4px;
+            }
         """)
+        frame_lists_layout = QHBoxLayout(self.frame_lists_overlay)
+        frame_lists_layout.setContentsMargins(6, 6, 6, 6)
+        frame_lists_layout.setSpacing(6)
+        frame_lists_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        frame_column_width = 126
+        self.robot_frame_list_label = QLabel("Robot", self.frame_lists_overlay)
+        self.frame_list = QListWidget(self.frame_lists_overlay)
+        self.scene_frame_list_label = QLabel("Scene", self.frame_lists_overlay)
+        self.workspace_frame_list = QListWidget(self.frame_lists_overlay)
+        for list_widget in (self.frame_list, self.workspace_frame_list):
+            list_widget.setFixedWidth(frame_column_width)
+            list_widget.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+            list_widget.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.robot_frame_column = QWidget(self.frame_lists_overlay)
+        self.robot_frame_column.setFixedWidth(frame_column_width)
+        robot_column = QVBoxLayout(self.robot_frame_column)
+        robot_column.setContentsMargins(0, 0, 0, 0)
+        robot_column.setSpacing(4)
+        robot_column.setAlignment(Qt.AlignmentFlag.AlignTop)
+        robot_column.addWidget(self.robot_frame_list_label)
+        robot_column.addWidget(self.frame_list)
+        self.scene_frame_column = QWidget(self.frame_lists_overlay)
+        self.scene_frame_column.setFixedWidth(frame_column_width)
+        scene_column = QVBoxLayout(self.scene_frame_column)
+        scene_column.setContentsMargins(0, 0, 0, 0)
+        scene_column.setSpacing(4)
+        scene_column.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scene_column.addWidget(self.scene_frame_list_label)
+        scene_column.addWidget(self.workspace_frame_list)
+        frame_lists_layout.addWidget(self.robot_frame_column, 0, Qt.AlignmentFlag.AlignTop)
+        frame_lists_layout.addWidget(self.scene_frame_column, 0, Qt.AlignmentFlag.AlignTop)
+        self.frame_lists_overlay.hide()
+        self.viewer_control_overlay = ViewerControlOverlayWidget(self.viewer)
+        self.position_buttons_overlay = QWidget(self.viewer)
+        self.position_buttons_overlay.setObjectName("viewerPositionOverlay")
+        self.position_buttons_overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.position_buttons_overlay.setStyleSheet("QWidget#viewerPositionOverlay { background-color: transparent; border: none; }")
 
         # --- LABEL EN HAUT A GAUCHE ---
         self.msg_label = QLabel("", self.viewer)  # Parent = viewer pour l'overlay
@@ -240,35 +272,45 @@ class Viewer3DWidget(QWidget):
         """)
         toolbar_layout = QHBoxLayout(self.toolbar_overlay)
         toolbar_layout.setContentsMargins(8, 8, 8, 8)
-        toolbar_layout.setSpacing(6)
+        toolbar_layout.setSpacing(8)
 
         self.btn_toggle_cad = self._create_overlay_button("Affichage CAD", "cad")
         self.btn_toggle_transparency = self._create_overlay_button("Transparence", "transparency")
+        self.btn_toggle_robot_controls = self._create_overlay_button("Contrôles robot", "robot_controls")
+        self.btn_toggle_frame_lists = self._create_overlay_button("Liste de repères", "frame_list")
         self.btn_toggle_axes = self._create_overlay_button("Afficher / Masquer tous les repères", "axes")
-        self.btn_toggle_axes_base_tool = self._create_overlay_button("Repères Base & Tool", "base_tool")
-        self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zones TCP", "tcp_zones")
-        self.btn_toggle_workspace_collision_zones = self._create_overlay_button("Zones collisions", "collision_zones")
+        self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zone de travail", "tcp_zones")
+        self.btn_toggle_workspace_collision_zones = self._create_overlay_button("Zone de collision", "collision_zones")
         self.btn_toggle_robot_colliders = self._create_overlay_button("Colliders robot", "robot_colliders")
         self.btn_toggle_tool_colliders = self._create_overlay_button("Colliders tool", "tool_colliders")
 
-        for button in (
-            self.btn_toggle_cad,
-            self.btn_toggle_transparency,
-            self.btn_toggle_axes,
-            self.btn_toggle_axes_base_tool,
-            self.btn_toggle_workspace_tcp_zones,
-            self.btn_toggle_workspace_collision_zones,
-            self.btn_toggle_robot_colliders,
-            self.btn_toggle_tool_colliders,
+        for zone_widget in (
+            self._create_toolbar_zone(
+                "Robot",
+                (self.btn_toggle_cad, self.btn_toggle_transparency, self.btn_toggle_robot_controls),
+            ),
+            self._create_toolbar_zone(
+                "Repères",
+                (self.btn_toggle_axes, self.btn_toggle_frame_lists),
+            ),
+            self._create_toolbar_zone(
+                "Zones",
+                (self.btn_toggle_workspace_tcp_zones, self.btn_toggle_workspace_collision_zones),
+            ),
+            self._create_toolbar_zone(
+                "Colliders",
+                (self.btn_toggle_robot_colliders, self.btn_toggle_tool_colliders),
+            ),
         ):
-            toolbar_layout.addWidget(button)
+            toolbar_layout.addWidget(zone_widget)
+        toolbar_layout.addStretch(1)
         self.toolbar_overlay.adjustSize()
 
         position_layout = QVBoxLayout(self.position_buttons_overlay)
-        position_layout.setContentsMargins(6, 6, 6, 6)
+        position_layout.setContentsMargins(0, 0, 0, 0)
         position_layout.setSpacing(6)
         self.btn_go_position_calibration_overlay = self._create_overlay_button(
-            "Position calibration",
+            "Position de calibration",
             "calibration_pose",
             checkable=True,
             parent=self.position_buttons_overlay,
@@ -290,21 +332,22 @@ class Viewer3DWidget(QWidget):
             self.btn_go_position_zero_overlay,
             self.btn_go_home_position_overlay,
         ):
+            position_layout.setAlignment(button, Qt.AlignmentFlag.AlignHCenter)
             position_layout.addWidget(button)
         self.position_buttons_overlay.adjustSize()
         
         self.setLayout(layout)
         self.add_grid()
 
-        self.frame_overlay.frame_clicked.connect(self.on_frame_clicked)
-        self.frame_overlay.geometry_changed.connect(self._position_overlays)
-        self.workspace_frame_overlay.frame_clicked.connect(self.on_workspace_frame_clicked)
-        self.workspace_frame_overlay.geometry_changed.connect(self._position_overlays)
-        self.robot_controls_toggle_button.clicked.connect(self._toggle_robot_controls_overlay)
+        self.frame_list.itemClicked.connect(self._on_robot_frame_item_clicked)
+        self.workspace_frame_list.itemClicked.connect(self._on_workspace_frame_item_clicked)
+        self.frame_list.itemChanged.connect(self._on_robot_frame_item_changed)
+        self.workspace_frame_list.itemChanged.connect(self._on_workspace_frame_item_changed)
+        self.btn_toggle_robot_controls.clicked.connect(self._toggle_robot_controls_overlay)
         self.btn_toggle_cad.clicked.connect(self._on_cad_button_clicked)
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
-        self.btn_toggle_axes_base_tool.clicked.connect(self.toogle_base_axis_frames)
+        self.btn_toggle_frame_lists.clicked.connect(self._on_frame_lists_button_clicked)
         self.btn_toggle_workspace_tcp_zones.clicked.connect(self._on_workspace_tcp_zones_button_clicked)
         self.btn_toggle_workspace_collision_zones.clicked.connect(self._on_workspace_collision_zones_button_clicked)
         self.btn_toggle_robot_colliders.clicked.connect(self._on_robot_colliders_button_clicked)
@@ -324,11 +367,23 @@ class Viewer3DWidget(QWidget):
         if hasattr(self, "toolbar_overlay"):
             self.toolbar_overlay.adjustSize()
             self.toolbar_overlay.move(margin, margin)
-        frame_overlay_x = max(margin, self.viewer.width() - self.frame_overlay.width() - margin)
-        self.frame_overlay.move(frame_overlay_x, margin)
-        workspace_overlay_y = margin + (self.frame_overlay.height() + margin if self.frame_overlay.isVisible() else 0)
-        workspace_overlay_x = max(margin, self.viewer.width() - self.workspace_frame_overlay.width() - margin)
-        self.workspace_frame_overlay.move(workspace_overlay_x, workspace_overlay_y)
+        if hasattr(self, "btn_toggle_frame_lists"):
+            anchor_pos = self.btn_toggle_frame_lists.mapTo(self.viewer, QPoint(0, 0))
+            overlay_anchor_x = anchor_pos.x() + (self.btn_toggle_frame_lists.width() // 2)
+            overlay_y = anchor_pos.y() + self.btn_toggle_frame_lists.height() + 16
+        else:
+            overlay_anchor_x = self.viewer.width() - margin
+            overlay_y = margin
+        if hasattr(self, "frame_lists_overlay"):
+            self.frame_lists_overlay.adjustSize()
+            frame_overlay_x = max(
+                margin,
+                min(
+                    self.viewer.width() - self.frame_lists_overlay.width() - margin,
+                    overlay_anchor_x - (self.frame_lists_overlay.width() // 2),
+                ),
+            )
+            self.frame_lists_overlay.move(frame_overlay_x, overlay_y)
         message_y = margin
         if hasattr(self, "toolbar_overlay"):
             message_y = self.toolbar_overlay.y() + self.toolbar_overlay.height() + 6
@@ -340,15 +395,7 @@ class Viewer3DWidget(QWidget):
             control_height = self.viewer_control_overlay.height() if self.viewer_control_overlay.isVisible() else 0
         else:
             control_height = 0
-        if hasattr(self, "robot_controls_toggle_button"):
-            self.robot_controls_toggle_button.adjustSize()
-            toggle_y = max(
-                margin,
-                self.viewer.height() - self.robot_controls_toggle_button.height() - margin,
-            )
-            self.robot_controls_toggle_button.move(margin, toggle_y)
-        else:
-            toggle_y = self.viewer.height() - margin
+        toggle_y = self.viewer.height() - margin
         if hasattr(self, "viewer_control_overlay"):
             control_y = max(
                 margin,
@@ -358,7 +405,13 @@ class Viewer3DWidget(QWidget):
         if hasattr(self, "position_buttons_overlay"):
             self.position_buttons_overlay.adjustSize()
             positions_x = max(margin, self.viewer.width() - self.position_buttons_overlay.width() - margin)
-            positions_y = max(margin, (self.viewer.height() - self.position_buttons_overlay.height()) // 2)
+            if hasattr(self, "viewer_control_overlay"):
+                positions_y = max(
+                    margin,
+                    self.viewer_control_overlay.y() - self.position_buttons_overlay.height() - 10,
+                )
+            else:
+                positions_y = max(margin, (self.viewer.height() - self.position_buttons_overlay.height()) // 2)
             self.position_buttons_overlay.move(positions_x, positions_y)
 
     def resizeEvent(self, event):
@@ -387,10 +440,8 @@ class Viewer3DWidget(QWidget):
             self.viewer_control_overlay.setVisible(controls_visible)
         if hasattr(self, "position_buttons_overlay"):
             self.position_buttons_overlay.setVisible(controls_visible)
-        if hasattr(self, "robot_controls_toggle_button"):
-            arrow = "▸" if self._robot_controls_collapsed else "▾"
-            self.robot_controls_toggle_button.setText(f"Contrôles robot {arrow}")
-            self.robot_controls_toggle_button.adjustSize()
+        if hasattr(self, "btn_toggle_robot_controls"):
+            self._set_overlay_button_state(self.btn_toggle_robot_controls, controls_visible)
 
     def begin_loading_feedback(self, message: str) -> None:
         self._loading_feedback_depth += 1
@@ -485,11 +536,45 @@ class Viewer3DWidget(QWidget):
         """)
         return button
 
+    def _create_toolbar_zone(self, title: str, buttons: tuple[QPushButton, ...]) -> QWidget:
+        zone = QWidget(self.toolbar_overlay)
+        zone.setObjectName("viewerToolbarZone")
+        zone.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        zone.setStyleSheet("""
+            QWidget#viewerToolbarZone {
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 22);
+                border-radius: 8px;
+            }
+            QWidget#viewerToolbarZone QLabel {
+                color: rgba(230, 230, 230, 210);
+                font-size: 11px;
+                font-weight: 600;
+                padding-left: 2px;
+            }
+        """)
+        layout = QVBoxLayout(zone)
+        layout.setContentsMargins(8, 6, 8, 8)
+        layout.setSpacing(6)
+
+        title_label = QLabel(title, zone)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(6)
+        buttons_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        for button in buttons:
+            buttons_layout.addWidget(button)
+
+        layout.addWidget(title_label)
+        layout.addLayout(buttons_layout)
+        return zone
+
     def _refresh_toolbar_buttons(self) -> None:
         self._set_overlay_button_state(self.btn_toggle_cad, self._cad_showed)
         self._set_overlay_button_state(self.btn_toggle_transparency, self.transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_axes, self.show_axes)
-        self._set_overlay_button_state(self.btn_toggle_axes_base_tool, self._is_base_tool_only_mode())
+        self._set_overlay_button_state(self.btn_toggle_frame_lists, self._is_frame_lists_overlay_visible())
         self._set_overlay_button_state(self.btn_toggle_workspace_tcp_zones, self._workspace_tcp_zones_visible)
         self._set_overlay_button_state(self.btn_toggle_workspace_collision_zones, self._workspace_collision_zones_visible)
         self._set_overlay_button_state(self.btn_toggle_robot_colliders, self._robot_colliders_visible)
@@ -521,6 +606,9 @@ class Viewer3DWidget(QWidget):
             return False
         last = size - 1
         return all(visible == (idx == 0 or idx == last) for idx, visible in enumerate(self.frames_visibility))
+
+    def _is_frame_lists_overlay_visible(self) -> bool:
+        return hasattr(self, "frame_lists_overlay") and self.frame_lists_overlay.isVisible()
 
     def _is_robot_at_reference_position(self, position_kind: str) -> bool:
         if self._robot_model is None:
@@ -575,6 +663,13 @@ class Viewer3DWidget(QWidget):
             painter.drawEllipse(2, 8, 4, 4)
             painter.drawEllipse(14, 8, 4, 4)
             painter.drawLine(6, 10, 14, 10)
+        elif icon_kind == "frame_list":
+            painter.drawLine(4, 5, 16, 5)
+            painter.drawLine(4, 10, 16, 10)
+            painter.drawLine(4, 15, 16, 15)
+            painter.drawEllipse(2, 4, 2, 2)
+            painter.drawEllipse(2, 9, 2, 2)
+            painter.drawEllipse(2, 14, 2, 2)
         elif icon_kind == "tcp_zones":
             painter.drawRoundedRect(3, 3, 14, 14, 3, 3)
             painter.drawLine(10, 6, 10, 14)
@@ -594,6 +689,15 @@ class Viewer3DWidget(QWidget):
             painter.drawLine(9, 4, 15, 4)
             painter.drawLine(15, 4, 15, 10)
             painter.drawEllipse(2, 13, 4, 4)
+        elif icon_kind == "robot_controls":
+            painter.drawEllipse(4, 3, 12, 6)
+            painter.drawLine(10, 9, 10, 15)
+            painter.drawLine(6, 16, 10, 12)
+            painter.drawLine(14, 16, 10, 12)
+            painter.drawLine(5, 6, 3, 10)
+            painter.drawLine(15, 6, 17, 10)
+            painter.drawEllipse(2, 10, 3, 3)
+            painter.drawEllipse(15, 10, 3, 3)
         elif icon_kind == "calibration_pose":
             painter.drawEllipse(4, 4, 12, 12)
             painter.drawEllipse(8, 8, 4, 4)
@@ -631,6 +735,46 @@ class Viewer3DWidget(QWidget):
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
 
+    def _on_robot_frame_item_changed(self, item: QListWidgetItem) -> None:
+        index = self.frame_list.row(item)
+        if index < 0 or index >= len(self.frames_visibility):
+            return
+        is_visible = item.checkState() == Qt.CheckState.Checked
+        if self.frames_visibility[index] == is_visible:
+            return
+        self.frames_visibility[index] = is_visible
+        self._clear_and_refresh()
+        self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
+
+    def _on_robot_frame_item_clicked(self, item: QListWidgetItem) -> None:
+        self._toggle_list_item_check_state(self.frame_list, item)
+
+    def _on_workspace_frame_item_changed(self, item: QListWidgetItem) -> None:
+        index = self.workspace_frame_list.row(item)
+        if index < 0 or index >= len(self.workspace_frames_visibility):
+            return
+        is_visible = item.checkState() == Qt.CheckState.Checked
+        if self.workspace_frames_visibility[index] == is_visible:
+            return
+        self.workspace_frames_visibility[index] = is_visible
+        self._clear_and_refresh()
+        self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
+
+    def _on_workspace_frame_item_clicked(self, item: QListWidgetItem) -> None:
+        self._toggle_list_item_check_state(self.workspace_frame_list, item)
+
+    def _toggle_list_item_check_state(self, list_widget: QListWidget, item: QListWidgetItem) -> None:
+        if item is None:
+            return
+        list_widget.blockSignals(True)
+        item.setCheckState(
+            Qt.CheckState.Unchecked if item.checkState() == Qt.CheckState.Checked else Qt.CheckState.Checked
+        )
+        list_widget.blockSignals(False)
+        list_widget.itemChanged.emit(item)
+
     def _on_cad_button_clicked(self):
         self.set_robot_visibility(not self._cad_showed)
 
@@ -646,6 +790,16 @@ class Viewer3DWidget(QWidget):
         self._clear_and_refresh()
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
+
+    def _on_frame_lists_button_clicked(self):
+        if not hasattr(self, "frame_lists_overlay"):
+            return
+        should_show = not self.frame_lists_overlay.isVisible()
+        if should_show:
+            self._refresh_frame_lists_overlay()
+        self.frame_lists_overlay.setVisible(should_show)
+        self._position_overlays()
+        self._refresh_toolbar_buttons()
 
     def _on_workspace_tcp_zones_button_clicked(self):
         self._workspace_tcp_zones_visible = not self._workspace_tcp_zones_visible
@@ -672,6 +826,14 @@ class Viewer3DWidget(QWidget):
         self._emit_display_state_changed()
 
     def update_frame_list_ui(self):
+        self._sync_frame_list_widget(self.frame_list, self.frames_visibility)
+        self._sync_frame_list_widget(
+            self.workspace_frame_list,
+            self.workspace_frames_visibility,
+            self._workspace_frame_labels,
+        )
+        self._refresh_frame_lists_overlay()
+        return
         """Met à jour l'apparence de la liste (Gras = Visible)"""
         count = len(self.frames_visibility)
         
@@ -708,6 +870,64 @@ class Viewer3DWidget(QWidget):
             self.workspace_frames_visibility,
             self._workspace_frame_labels,
         )
+
+    def _sync_frame_list_widget(
+        self,
+        list_widget: QListWidget,
+        frames_visibility: list[bool],
+        labels: list[str] | None = None,
+    ) -> None:
+        count = len(frames_visibility)
+        normalized_labels = [str(label) for label in labels] if isinstance(labels, list) else []
+        list_widget.blockSignals(True)
+        if list_widget.count() != count:
+            list_widget.clear()
+            for index in range(count):
+                item = QListWidgetItem(self._frame_label_for_index(index, normalized_labels))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                item.setSizeHint(QSize(0, 28))
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+                list_widget.addItem(item)
+        else:
+            for index in range(count):
+                item = list_widget.item(index)
+                if item is not None:
+                    item.setText(self._frame_label_for_index(index, normalized_labels))
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        for index, is_visible in enumerate(frames_visibility):
+            item = list_widget.item(index)
+            if item is None:
+                continue
+            item.setCheckState(Qt.CheckState.Checked if is_visible else Qt.CheckState.Unchecked)
+        self._set_frame_list_height(list_widget, count)
+        list_widget.blockSignals(False)
+
+    def _frame_label_for_index(self, index: int, labels: list[str]) -> str:
+        if 0 <= index < len(labels):
+            label = labels[index].strip()
+            if label:
+                return label
+        return f"Frame {index}"
+
+    def _set_frame_list_height(self, list_widget: QListWidget, count: int) -> None:
+        row_height = max(22, list_widget.sizeHintForRow(0) if count > 0 else 22)
+        visible_rows = min(count, 10)
+        height = (row_height * max(1, visible_rows)) + (2 * list_widget.frameWidth())
+        list_widget.setFixedHeight(height)
+
+    def _refresh_frame_lists_overlay(self) -> None:
+        has_robot_frames = self.frame_list.count() > 0
+        has_scene_frames = self.workspace_frame_list.count() > 0
+        self.robot_frame_column.setVisible(has_robot_frames)
+        self.robot_frame_list_label.setVisible(has_robot_frames)
+        self.frame_list.setVisible(has_robot_frames)
+        self.scene_frame_column.setVisible(has_scene_frames)
+        self.scene_frame_list_label.setVisible(has_scene_frames)
+        self.workspace_frame_list.setVisible(has_scene_frames)
+        should_show_overlay = self.btn_toggle_frame_lists.isChecked() and (has_robot_frames or has_scene_frames)
+        self.frame_lists_overlay.setVisible(should_show_overlay)
+        self.frame_lists_overlay.adjustSize()
+        self._position_overlays()
 
     def add_grid(self):
         grid = gl.GLGridItem()
@@ -1360,10 +1580,7 @@ class Viewer3DWidget(QWidget):
         if len(self.frames_visibility) != num_frames:
             self.frames_visibility = [True] * num_frames
 
-        if self.show_axes:
-            self.draw_all_frames(self.last_dh_matrices)
-        else:
-            self._clear_viewer_items(self._robot_frame_items)
+        self.draw_all_frames(self.last_dh_matrices)
 
         if self._cad_loaded:
             self.update_robot_poses(self.last_corrected_matrices)
@@ -1396,8 +1613,7 @@ class Viewer3DWidget(QWidget):
         self._workspace_frame_labels = []
         
         # Afficher les repères selon la visibilité
-        if self.show_axes:
-            self.draw_all_frames(self.last_dh_matrices)
+        self.draw_all_frames(self.last_dh_matrices)
         
         # Mettre à jour le CAD si chargé
         if self._cad_loaded:
@@ -1415,8 +1631,7 @@ class Viewer3DWidget(QWidget):
 
         self._render_workspace_models()
         self._normalize_workspace_frames_visibility()
-        if self.show_axes:
-            self.draw_workspace_frames()
+        self.draw_workspace_frames()
         self._render_workspace_zones()
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
