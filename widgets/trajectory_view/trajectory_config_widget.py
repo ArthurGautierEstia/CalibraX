@@ -34,6 +34,7 @@ from models.trajectory_keypoint import (
 )
 from models.trajectory_options import TrajectoryBezierDegree
 from models.reference_frame import ReferenceFrame
+from models.types import XYZ3
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
@@ -313,16 +314,16 @@ class TrajectoryConfigWidget(QWidget):
             )
         else:
             tcp_pose = self.robot_model.get_tcp_pose()
-            start_xyz = [float(v) for v in tcp_pose[:3]] if len(tcp_pose) >= 3 else None
+            start_xyz = XYZ3(tcp_pose.x, tcp_pose.y, tcp_pose.z)
         if start_xyz is None:
             return None
 
         current_keypoint = keypoints[row]
         if current_keypoint.mode == KeypointMotionMode.CUBIC:
             segment_length_mm = math_utils.norm3(
-                end_xyz[0] - start_xyz[0],
-                end_xyz[1] - start_xyz[1],
-                end_xyz[2] - start_xyz[2],
+                end_xyz.x - start_xyz.x,
+                end_xyz.y - start_xyz.y,
+                end_xyz.z - start_xyz.z,
             )
             return current_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
 

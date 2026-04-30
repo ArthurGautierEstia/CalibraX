@@ -44,7 +44,7 @@ from models.trajectory_keypoint import (
     TrajectoryKeypoint,
 )
 from models.reference_frame import ReferenceFrame
-from models.types import Pose6
+from models.types import Pose6, XYZ3
 from models.trajectory_result import TrajectoryResult
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -932,7 +932,7 @@ class TrajectoryKeypointDialog(QDialog):
         spin.setValue(max(0.0, float(value)))
         spin.blockSignals(False)
 
-    def _linear_segment_start_xyz(self) -> list[float] | None:
+    def _linear_segment_start_xyz(self) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is not None and row > 0 and (row - 1) < len(self._context_keypoints):
             return resolve_keypoint_xyz(
@@ -943,7 +943,7 @@ class TrajectoryKeypointDialog(QDialog):
             )
 
         tcp_pose = self.robot_model.get_tcp_pose()
-        return [tcp_pose.x, tcp_pose.y, tcp_pose.z]
+        return XYZ3(tcp_pose.x, tcp_pose.y, tcp_pose.z)
 
     def _linear_segment_length_mm(self) -> float:
         start_xyz = self._linear_segment_start_xyz()
@@ -951,9 +951,9 @@ class TrajectoryKeypointDialog(QDialog):
         if start_xyz is None or end_xyz is None:
             return 0.0
         return math_utils.norm3(
-            float(end_xyz[0]) - float(start_xyz[0]),
-            float(end_xyz[1]) - float(start_xyz[1]),
-            float(end_xyz[2]) - float(start_xyz[2]),
+            float(end_xyz[0]) - start_xyz.x,
+            float(end_xyz[1]) - start_xyz.y,
+            float(end_xyz[2]) - start_xyz.z,
         )
 
     def _linear_ratio_to_amplitude_mm(self, ratio: float) -> float:
@@ -1038,9 +1038,9 @@ class TrajectoryKeypointDialog(QDialog):
             return None
 
         look_at_start_point = [
-            previous_point_xyz[0] + float(start_direction_xyz[0]),
-            previous_point_xyz[1] + float(start_direction_xyz[1]),
-            previous_point_xyz[2] + float(start_direction_xyz[2]),
+            previous_point_xyz.x + float(start_direction_xyz[0]),
+            previous_point_xyz.y + float(start_direction_xyz[1]),
+            previous_point_xyz.z + float(start_direction_xyz[2]),
         ]
         return [
             look_at_start_point[0] - current_point_xyz[0],
@@ -1067,9 +1067,9 @@ class TrajectoryKeypointDialog(QDialog):
             return None
 
         look_at_end_point = [
-            next_point_xyz[0] + float(end_direction_xyz[0]),
-            next_point_xyz[1] + float(end_direction_xyz[1]),
-            next_point_xyz[2] + float(end_direction_xyz[2]),
+            next_point_xyz.x + float(end_direction_xyz[0]),
+            next_point_xyz.y + float(end_direction_xyz[1]),
+            next_point_xyz.z + float(end_direction_xyz[2]),
         ]
         return [
             look_at_end_point[0] - current_point_xyz[0],

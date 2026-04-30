@@ -4,6 +4,7 @@ from enum import Enum
 import math
 
 from models.reference_frame import ReferenceFrame
+from models.types import XYZ3
 from utils.mgi import ConfigurationIdentifier, MgiConfigKey
 
 
@@ -158,15 +159,26 @@ class TrajectoryKeypoint:
 
     def resolve_linear_tangent_vectors(
         self,
-        start_xyz: list[float],
-        end_xyz: list[float],
+        start_xyz: XYZ3 | list[float],
+        end_xyz: XYZ3 | list[float],
     ) -> tuple[list[float], list[float]]:
-        if len(start_xyz) < 3 or len(end_xyz) < 3:
+        if isinstance(start_xyz, XYZ3):
+            start_x, start_y, start_z = start_xyz.x, start_xyz.y, start_xyz.z
+        elif len(start_xyz) >= 3:
+            start_x, start_y, start_z = float(start_xyz[0]), float(start_xyz[1]), float(start_xyz[2])
+        else:
             return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
 
-        dx = float(end_xyz[0]) - float(start_xyz[0])
-        dy = float(end_xyz[1]) - float(start_xyz[1])
-        dz = float(end_xyz[2]) - float(start_xyz[2])
+        if isinstance(end_xyz, XYZ3):
+            end_x, end_y, end_z = end_xyz.x, end_xyz.y, end_xyz.z
+        elif len(end_xyz) >= 3:
+            end_x, end_y, end_z = float(end_xyz[0]), float(end_xyz[1]), float(end_xyz[2])
+        else:
+            return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+
+        dx = end_x - start_x
+        dy = end_y - start_y
+        dz = end_z - start_z
         start_ratio = self._clamp_min(float(self.linear_tangent_ratios[0]), 0.0)
         end_ratio = self._clamp_min(float(self.linear_tangent_ratios[1]), 0.0)
         return (

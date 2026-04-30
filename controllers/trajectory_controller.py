@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
-from models.types import Pose6
+from models.types import Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 from models.trajectory_result import (
     TrajectoryDynamicViolationSeverity,
@@ -32,6 +32,9 @@ from utils.reference_frame_utils import (
 from views.trajectory_view import TrajectoryView
 from controllers.viewer3d_controller import Viewer3DController
 import utils.math_utils as math_utils
+
+
+TangentSegment = tuple[XYZ3, XYZ3]
 
 
 class TrajectoryController(QObject):
@@ -616,7 +619,7 @@ class TrajectoryController(QObject):
 
     def _build_edit_tangent_segments(
         self,
-    ) -> tuple[list[list[list[float]]] | None, list[list[list[float]]] | None]:
+    ) -> tuple[list[TangentSegment] | None, list[TangentSegment] | None]:
         if self._editing_keypoint_index is None:
             return None, None
         keypoints = self._displayed_keypoints
@@ -624,12 +627,10 @@ class TrajectoryController(QObject):
             return None, None
 
         tcp_pose = self.robot_model.get_tcp_pose()
-        if len(tcp_pose) < 3:
-            return None, None
-        first_start_anchor = [float(v) for v in tcp_pose[:3]]
+        first_start_anchor = XYZ3(tcp_pose.x, tcp_pose.y, tcp_pose.z)
 
-        tangent_out_segments: list[list[list[float]]] = []
-        tangent_in_segments: list[list[list[float]]] = []
+        tangent_out_segments: list[TangentSegment] = []
+        tangent_in_segments: list[TangentSegment] = []
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         count = min(len(self.current_trajectory.segments), len(keypoints))
         for segment_index in range(count):
@@ -655,31 +656,33 @@ class TrajectoryController(QObject):
                 if start_anchor is None:
                     continue
 
-            out_direction = [float(v) for v in segment_result.out_direction[:3]]
-            in_direction = [float(v) for v in segment_result.in_direction[:3]]
+            start_anchor_xyz = start_anchor.copy()
+            end_anchor_xyz = end_anchor.copy()
+            out_direction = XYZ3(*segment_result.out_direction[:3])
+            in_direction = XYZ3(*segment_result.in_direction[:3])
 
-            if not math_utils.is_near_zero_vector_xyz(out_direction):
+            if not math_utils.is_near_zero_vector_xyz(out_direction.to_list()):
                 tangent_out_segments.append(
-                    [
-                        start_anchor,
-                        [
-                            start_anchor[0] + out_direction[0],
-                            start_anchor[1] + out_direction[1],
-                            start_anchor[2] + out_direction[2],
-                        ],
-                    ]
+                    (
+                        start_anchor_xyz,
+                        XYZ3(
+                            start_anchor_xyz.x + out_direction.x,
+                            start_anchor_xyz.y + out_direction.y,
+                            start_anchor_xyz.z + out_direction.z,
+                        ),
+                    )
                 )
 
-            if not math_utils.is_near_zero_vector_xyz(in_direction):
+            if not math_utils.is_near_zero_vector_xyz(in_direction.to_list()):
                 tangent_in_segments.append(
-                    [
-                        end_anchor,
-                        [
-                            end_anchor[0] + in_direction[0],
-                            end_anchor[1] + in_direction[1],
-                            end_anchor[2] + in_direction[2],
-                        ],
-                    ]
+                    (
+                        end_anchor_xyz,
+                        XYZ3(
+                            end_anchor_xyz.x + in_direction.x,
+                            end_anchor_xyz.y + in_direction.y,
+                            end_anchor_xyz.z + in_direction.z,
+                        ),
+                    )
                 )
 
         return (
@@ -705,7 +708,7 @@ class TrajectoryController(QObject):
             )
             if xyz is None:
                 continue
-            points_xyz.append(xyz)
+            points_xyz.append(xyz.to_list())
             index_map.append(idx)
 
         def _mapped_index(source_idx: int | None) -> int | None:
@@ -853,3 +856,4 @@ class TrajectoryController(QObject):
         self._playback_index = self._sample_index_at_time(target_time_s)
         self.actions_widget.set_time_value(target_time_s)
         self._apply_time_value(target_time_s, force_real_robot=True)
+

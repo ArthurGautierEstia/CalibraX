@@ -5,8 +5,12 @@ from controllers.joint_control_view.joints_controller import JointsController
 from models.collision_scene_model import CollisionSceneModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
+from models.types import XYZ3
 from models.workspace_model import WorkspaceModel
 from widgets.viewer_3d_widget import Viewer3DWidget
+
+
+TangentSegment = tuple[XYZ3, XYZ3]
 
 
 class Viewer3DController(QObject):
@@ -144,8 +148,8 @@ class Viewer3DController(QObject):
 
     def set_trajectory_edit_tangents(
         self,
-        tangent_out_segments: list[list[list[float]]] | None,
-        tangent_in_segments: list[list[list[float]]] | None,
+        tangent_out_segments: list[TangentSegment] | None,
+        tangent_in_segments: list[TangentSegment] | None,
     ) -> None:
         self.viewer_3d_widget.set_trajectory_edit_tangents(tangent_out_segments, tangent_in_segments)
 

@@ -22,10 +22,13 @@ from models.collision_scene_model import CollisionSceneModel
 from models.primitive_collider_models import PrimitiveCollider, PrimitiveColliderData
 from models.robot_model import RobotModel
 from models.reference_frame import ReferenceFrame
-from models.types import Pose6
+from models.types import Pose6, XYZ3
 from models.tool_model import ToolModel
 from models.workspace_cad_element import WorkspaceCadElement
 from models.workspace_model import WorkspaceModel
+
+
+TangentSegment = tuple[XYZ3, XYZ3]
 from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
@@ -763,17 +766,16 @@ class Viewer3DWidget(QWidget):
 
     def set_trajectory_edit_tangents(
         self,
-        tangent_out_segments: list[list[list[float]]] | None,
-        tangent_in_segments: list[list[list[float]]] | None,
+        tangent_out_segments: list[TangentSegment] | None,
+        tangent_in_segments: list[TangentSegment] | None,
     ) -> None:
         if tangent_out_segments is None:
             self._trajectory_tangent_out_segments = None
         else:
             parsed_out: list[np.ndarray] = []
             for segment in tangent_out_segments:
-                if len(segment) < 2:
-                    continue
-                parsed_out.append(np.array([p[:3] for p in segment], dtype=float))
+                start_xyz, end_xyz = segment
+                parsed_out.append(np.array([start_xyz.to_list(), end_xyz.to_list()], dtype=float))
             self._trajectory_tangent_out_segments = parsed_out if parsed_out else None
 
         if tangent_in_segments is None:
@@ -781,9 +783,8 @@ class Viewer3DWidget(QWidget):
         else:
             parsed_in: list[np.ndarray] = []
             for segment in tangent_in_segments:
-                if len(segment) < 2:
-                    continue
-                parsed_in.append(np.array([p[:3] for p in segment], dtype=float))
+                start_xyz, end_xyz = segment
+                parsed_in.append(np.array([start_xyz.to_list(), end_xyz.to_list()], dtype=float))
             self._trajectory_tangent_in_segments = parsed_in if parsed_in else None
 
         self._render_trajectory_overlay()

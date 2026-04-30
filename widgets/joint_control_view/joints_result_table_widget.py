@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView
 )
 
+from models.types import Pose6
 from utils.str_utils import str_to_float
 
 class JointsResultTableWidget(QWidget):
@@ -33,8 +34,13 @@ class JointsResultTableWidget(QWidget):
         
         layout.addWidget(self.result_table)
         self.setLayout(layout)
-    
-    def update_results(self, tcp_pose: list[float], corrected_tcp_pose: list[float], deviations: list[float]):
+
+    def update_results(
+        self,
+        tcp_pose: Pose6,
+        corrected_tcp_pose: Pose6,
+        deviations: Pose6,
+    ):
         """
         Met à jour les résultats affichés
         
@@ -43,26 +49,30 @@ class JointsResultTableWidget(QWidget):
             corrected_tcp_pose: array [X, Y, Z, A, B, C] du TCP corrigé
             deviations: array [dX, dY, dZ, dA, dB, dC] des écarts
         """
+        tcp_values = tcp_pose.to_list()
+        corrected_values = corrected_tcp_pose.to_list()
+        deviation_values = deviations.to_list()
+
         self.result_table.blockSignals(True)
-        
+
         for row in range(6):
             # Colonne 0: TCP standard
             if row < 3:  # Position
-                self.result_table.setItem(row, 0, QTableWidgetItem(f"{tcp_pose[row]:.2f}"))
+                self.result_table.setItem(row, 0, QTableWidgetItem(f"{tcp_values[row]:.2f}"))
             else:  # Orientation
-                self.result_table.setItem(row, 0, QTableWidgetItem(f"{tcp_pose[row]:.4f}"))
+                self.result_table.setItem(row, 0, QTableWidgetItem(f"{tcp_values[row]:.4f}"))
             
             # Colonne 1: TCP corrigé
             if row < 3:  # Position
-                self.result_table.setItem(row, 1, QTableWidgetItem(f"{corrected_tcp_pose[row]:.2f}"))
+                self.result_table.setItem(row, 1, QTableWidgetItem(f"{corrected_values[row]:.2f}"))
             else:  # Orientation
-                self.result_table.setItem(row, 1, QTableWidgetItem(f"{corrected_tcp_pose[row]:.4f}"))
+                self.result_table.setItem(row, 1, QTableWidgetItem(f"{corrected_values[row]:.4f}"))
             
             # Colonne 2: Écarts
             if row < 3:  # Position
-                self.result_table.setItem(row, 2, QTableWidgetItem(f"{deviations[row]:.2f}"))
+                self.result_table.setItem(row, 2, QTableWidgetItem(f"{deviation_values[row]:.2f}"))
             else:  # Orientation
-                self.result_table.setItem(row, 2, QTableWidgetItem(f"{deviations[row]:.4f}"))
+                self.result_table.setItem(row, 2, QTableWidgetItem(f"{deviation_values[row]:.4f}"))
         
         self.result_table.blockSignals(False)
     
