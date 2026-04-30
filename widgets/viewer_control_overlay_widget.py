@@ -17,6 +17,7 @@ from widgets.joint_control_view.joints_control_widget import JointsControlWidget
 class ViewerControlOverlayWidget(QWidget):
     jog_delta_changed = pyqtSignal(float)
     _CURRENT_CONFIG_COLOR = "orange"
+    _JOG_SPEED_FACTOR = 6
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -28,7 +29,7 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_group.addButton(self.mode_articular_radio)
         self.mode_group.addButton(self.mode_cartesian_radio)
         self.mode_selector_frame = QWidget(self)
-        self.jog_delta_label = QLabel("Incrément :")
+        self.jog_delta_label = QLabel("Vitesse Jog :")
         self.jog_delta_spinbox = QDoubleSpinBox(self)
 
         self.joints_widget = JointsControlWidget(compact=True, enable_jog_spin_buttons=True)
@@ -85,12 +86,12 @@ class ViewerControlOverlayWidget(QWidget):
         selector_layout.setSpacing(12)
         selector_layout.addWidget(self.mode_articular_radio)
         selector_layout.addWidget(self.mode_cartesian_radio)
-        self.jog_delta_spinbox.setDecimals(2)
-        self.jog_delta_spinbox.setRange(1, 10.0)
-        self.jog_delta_spinbox.setSingleStep(1)
-        self.jog_delta_spinbox.setValue(5.0)
+        self.jog_delta_spinbox.setDecimals(0)
+        self.jog_delta_spinbox.setRange(10.0, 100.0)
+        self.jog_delta_spinbox.setSingleStep(10.0)
+        self.jog_delta_spinbox.setSuffix(" %")
+        self.jog_delta_spinbox.setValue(50.0)
         self.jog_delta_spinbox.setFixedWidth(88)
-        self.jog_delta_spinbox.setToolTip("Unités : mm/s pour X,Y,Z et 1/10°/s pour les angles.")
         self.jog_delta_spinbox.valueChanged.connect(self._on_jog_delta_changed)
         mode_layout.addWidget(self.mode_selector_frame, 0)
         mode_layout.addWidget(self.jog_delta_label)
@@ -110,7 +111,7 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_cartesian_radio.toggled.connect(self._on_mode_changed)
         self.joints_widget.configuration_changed.connect(self._on_configuration_changed)
         self._on_configuration_changed("FUN")
-        self._on_jog_delta_changed(self.jog_delta_spinbox.value())
+        self._on_jog_delta_changed(self.get_jog_delta())
 
     def _on_mode_changed(self) -> None:
         show_cartesian_controls = self.mode_cartesian_radio.isChecked()
@@ -135,17 +136,17 @@ class ViewerControlOverlayWidget(QWidget):
         return self.cartesian_widget
 
     def get_jog_delta(self) -> float:
-        return float(self.jog_delta_spinbox.value())
+        return float(self.jog_delta_spinbox.value()) / self._JOG_SPEED_FACTOR
 
     def set_jog_delta(self, value: float) -> None:
         normalized_value = max(0.01, float(value))
         self.jog_delta_spinbox.blockSignals(True)
-        self.jog_delta_spinbox.setValue(normalized_value)
+        self.jog_delta_spinbox.setValue(normalized_value * self._JOG_SPEED_FACTOR)
         self.jog_delta_spinbox.blockSignals(False)
         self._on_jog_delta_changed(normalized_value)
 
     def _on_jog_delta_changed(self, value: float) -> None:
-        normalized_value = max(0.01, float(value))
+        normalized_value = max(0.01, float(value) / self._JOG_SPEED_FACTOR)
         self.joints_widget.set_jog_increment(normalized_value)
         self.cartesian_widget.set_jog_increment(normalized_value)
         self.jog_delta_changed.emit(normalized_value)
