@@ -69,8 +69,8 @@ class WorkspaceConfigurationWidget(QWidget):
 
         self.tcp_zones_editor = WorkspacePrimitiveZonesEditorWidget(
             title="Zones de travail TCP (repère world)",
-            add_button_text="Ajouter zone TCP",
-            remove_button_text="Supprimer zone TCP",
+            add_button_text="Ajouter",
+            remove_button_text="Supprimer",
             default_name_prefix="Zone TCP",
             parent=self,
         )
@@ -84,8 +84,8 @@ class WorkspaceConfigurationWidget(QWidget):
 
         self.collision_zones_editor = WorkspacePrimitiveZonesEditorWidget(
             title="Zones de collision (repère world)",
-            add_button_text="Ajouter zone collision",
-            remove_button_text="Supprimer zone collision",
+            add_button_text="Ajouter",
+            remove_button_text="Supprimer",
             default_name_prefix="Zone collision",
             parent=self,
         )
@@ -108,15 +108,15 @@ class WorkspaceConfigurationWidget(QWidget):
         self.scene_name_line_edit.textChanged.connect(self.scene_name_changed.emit)
         layout.addWidget(self.scene_name_line_edit, 0, 1)
 
-        save_btn = QPushButton("Sauvegarder scène")
-        save_btn.clicked.connect(self.workspace_save_requested.emit)
-        layout.addWidget(save_btn, 0, 2)
-
-        load_btn = QPushButton("Charger scène")
+        load_btn = QPushButton("Charger")
         load_btn.clicked.connect(self.workspace_load_requested.emit)
-        layout.addWidget(load_btn, 0, 3)
+        layout.addWidget(load_btn, 0, 2)
 
-        clear_btn = QPushButton("Vider scène")
+        save_btn = QPushButton("Enregistrer")
+        save_btn.clicked.connect(self.workspace_save_requested.emit)
+        layout.addWidget(save_btn, 0, 3)
+
+        clear_btn = QPushButton("Vider")
         clear_btn.clicked.connect(self.workspace_clear_requested.emit)
         layout.addWidget(clear_btn, 0, 4)
 
@@ -163,15 +163,15 @@ class WorkspaceConfigurationWidget(QWidget):
         layout.addWidget(self.table_elements)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("Ajouter élément")
+        add_btn = QPushButton("Ajouter")
         add_btn.clicked.connect(self._on_add_element_clicked)
         btn_row.addWidget(add_btn)
 
-        remove_btn = QPushButton("Supprimer élément")
+        remove_btn = QPushButton("Supprimer")
         remove_btn.clicked.connect(self._on_remove_element_clicked)
         btn_row.addWidget(remove_btn)
 
-        browse_btn = QPushButton("Parcourir STL")
+        browse_btn = QPushButton("Parcourir")
         browse_btn.clicked.connect(self._on_browse_element_stl_clicked)
         btn_row.addWidget(browse_btn)
         btn_row.addStretch()

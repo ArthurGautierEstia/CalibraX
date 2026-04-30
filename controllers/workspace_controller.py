@@ -132,7 +132,7 @@ class WorkspaceController(QObject):
         default_target = os.path.join(workspace_dir, default_file_name)
         selected_path, _ = QFileDialog.getSaveFileName(
             self.workspace_widget,
-            "Sauvegarder un workspace",
+            "Enregistrer un workspace",
             default_target,
             "JSON Files (*.json)",
         )

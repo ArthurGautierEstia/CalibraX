@@ -46,7 +46,7 @@ class ToolWidget(QWidget):
 
         # Paramètres de translation
         trans_layout = QVBoxLayout()
-        trans_layout.addWidget(QLabel("Translation (mm):"))
+        trans_layout.addWidget(QLabel("Translation :"))
 
         for axis in ['x', 'y', 'z']:
             axis_layout = QHBoxLayout()
@@ -57,6 +57,7 @@ class ToolWidget(QWidget):
             spin_box.setValue(getattr(self._tool, axis))
             spin_box.setSingleStep(0.1)
             spin_box.setDecimals(2)
+            spin_box.setSuffix(" mm")
             spin_box.valueChanged.connect(
                 lambda value, ax=axis: self._on_param_changed(ax, value)
             )
@@ -69,7 +70,7 @@ class ToolWidget(QWidget):
 
         # Paramètres de rotation
         rot_layout = QVBoxLayout()
-        rot_layout.addWidget(QLabel("Rotation (°):"))
+        rot_layout.addWidget(QLabel("Rotation :"))
 
         for axis in ['a', 'b', 'c']:
             axis_layout = QHBoxLayout()
@@ -80,6 +81,7 @@ class ToolWidget(QWidget):
             spin_box.setValue(getattr(self._tool, axis))
             spin_box.setSingleStep(0.1)
             spin_box.setDecimals(2)
+            spin_box.setSuffix(" °")
             spin_box.valueChanged.connect(
                 lambda value, ax=axis: self._on_param_changed(ax, value)
             )

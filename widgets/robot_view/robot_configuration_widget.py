@@ -56,9 +56,6 @@ class RobotConfigurationWidget(QWidget):
 
     axis_config_changed = pyqtSignal(list, list, list, list, list, list)
     positions_config_changed = pyqtSignal(list, list, list)
-    position_zero_requested = pyqtSignal()
-    position_calibration_requested = pyqtSignal()
-    home_position_requested = pyqtSignal()
 
     robot_cad_models_changed = pyqtSignal(list)
     tool_cad_model_changed = pyqtSignal(str)
@@ -104,6 +101,11 @@ class RobotConfigurationWidget(QWidget):
 
     AXIS_COLLIDER_COUNT = 6
     ROBOT_CAD_COUNT = 7
+    UNIT_DEG = "°"
+    UNIT_MM = "mm"
+    UNIT_DEG_PER_S = "°/s"
+    UNIT_DEG_PER_S2 = "°/s^2"
+    UNIT_DEG_PER_S3 = "°/s^3"
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -146,25 +148,25 @@ class RobotConfigurationWidget(QWidget):
         self.btn_load.clicked.connect(self.load_config_requested.emit)
         header_layout.addWidget(self.btn_load, 0, 1)
 
-        self.btn_export = QPushButton("Exporter")
+        self.btn_export = QPushButton("Enregistrer")
         self.btn_export.clicked.connect(self.export_config_requested.emit)
         header_layout.addWidget(self.btn_export, 0, 2)
 
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_dh_tab(), "DH Table")
-        self.tabs.addTab(self._build_axis_tab(), "Paramétrage des axes")
-        self.tabs.addTab(self._build_axis_colliders_tab(), "Colliders axes")
-        self.tabs.addTab(self._build_positions_tab(), "Paramétrage des positions")
-        self.tabs.addTab(self._build_cad_tab(), "CAO")
+        self.tabs.addTab(self._build_dh_tab(), "DHM")
+        self.tabs.addTab(self._build_axis_tab(), "Axes")
+        self.tabs.addTab(self._build_tool_section(), "Tool")
+        self.tabs.addTab(self._build_axis_colliders_tab(), "Colliders")
+        self.tabs.addTab(self._build_positions_tab(), "Positions")
+        self.tabs.addTab(self._build_cad_tab(), "CAD Files")
         top_layout.addWidget(self.tabs)
 
-        main_layout.addLayout(top_layout, 3)
-        main_layout.addWidget(self._build_tool_section(), 2)
+        main_layout.addLayout(top_layout, 1)
 
         self.tool_widget = ToolWidget()
-        self.tool_widget.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.tool_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.tool_widget.tool_changed.connect(self._on_tool_changed)
         self.tool_widget_container_layout.addWidget(self.tool_widget)
         self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)
@@ -176,50 +178,46 @@ class RobotConfigurationWidget(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        title = QLabel("Table de Denavit-Hartenberg")
-        layout.addWidget(title)
-
         self.measured_dh_toggle = ToggleSwitchWidget(
-            off_label="Configuration d'usine",
-            on_label="Configuration robot mesuré",
+            off_label="Robot d'usine",
+            on_label="Robot mesuré",
         )
         self.measured_dh_toggle.setChecked(False)
         self.measured_dh_toggle.setEnabled(False)
         self.measured_dh_toggle.toggled.connect(self._on_measured_dh_toggle_changed)
         layout.addWidget(self.measured_dh_toggle)
 
-        tables_layout = QHBoxLayout()
+        tables_layout = QVBoxLayout()
 
-        nominal_layout = QVBoxLayout()
-        nominal_label = QLabel("Valeurs nominales")
-        nominal_layout.addWidget(nominal_label)
+        nominal_group = QGroupBox("Valeurs nominales")
+        nominal_layout = QVBoxLayout(nominal_group)
 
         self.table_dh = QTableWidget(6, 4)
-        self.table_dh.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
         self.table_dh.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh.horizontalHeader().setDefaultSectionSize(90)
         self.table_dh.cellChanged.connect(self._on_dh_cell_changed)
         nominal_layout.addWidget(self.table_dh)
-        tables_layout.addLayout(nominal_layout, 1)
+        tables_layout.addWidget(nominal_group, 1)
 
-        measured_layout = QVBoxLayout()
+        measured_group = QGroupBox("Valeurs mesurées")
+        measured_layout = QVBoxLayout(measured_group)
         measured_label = QLabel("Valeurs mesurées")
-        measured_layout.addWidget(measured_label)
 
         self.table_dh_measured = QTableWidget(6, 4)
-        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
         self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
         self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(90)
         self.table_dh_measured.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_dh_measured.setEnabled(False)
         measured_layout.addWidget(self.table_dh_measured)
-        tables_layout.addLayout(measured_layout, 1)
+        tables_layout.addWidget(measured_group, 1)
 
         layout.addLayout(tables_layout)
         return tab
@@ -231,11 +229,11 @@ class RobotConfigurationWidget(QWidget):
         self.table_axis = QTableWidget(6, 6)
         self.table_axis.setHorizontalHeaderLabels(
             [
-                "Min (deg)",
-                "Max (deg)",
-                "Vitesse max (deg/s)",
-                "Accel max (deg/s^2)",
-                "Jerk max (deg/s^3)",
+                "Min",
+                "Max",
+                "Vitesse max",
+                "Accel max",
+                "Jerk max",
                 "Inverse",
             ]
         )
@@ -262,33 +260,25 @@ class RobotConfigurationWidget(QWidget):
         axis_button_layout.addStretch()
         layout.addLayout(axis_button_layout)
 
-        cartesian_group = QGroupBox("Plages des sliders cartesiens")
-        cartesian_layout = QVBoxLayout(cartesian_group)
-        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du controle cartesien."))
-        self.table_cartesian_slider_limits = QTableWidget(3, 2)
-        self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min (mm)", "Max (mm)"])
-        self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
-        self.table_cartesian_slider_limits.horizontalHeader().setDefaultSectionSize(120)
-        self.table_cartesian_slider_limits.itemChanged.connect(self._on_cartesian_slider_limits_item_changed)
-        cartesian_layout.addWidget(self.table_cartesian_slider_limits)
-        layout.addWidget(cartesian_group)
-
         return tab
 
     def _build_axis_colliders_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        robot_group = QGroupBox("Colliders des axes robot")
+        robot_layout = QVBoxLayout(robot_group)
+
         self.table_axis_colliders = QTableWidget(RobotConfigurationWidget.AXIS_COLLIDER_COUNT, 7)
         self.table_axis_colliders.setHorizontalHeaderLabels(
             [
                 "Actif",
                 "Axe cylindre",
-                "Rayon (mm)",
-                "Hauteur (mm)",
-                "X (mm)",
-                "Y (mm)",
-                "Z (mm)",
+                "Rayon",
+                "Hauteur",
+                "X",
+                "Y",
+                "Z",
             ]
         )
         vertical_labels = [f"q{i + 1}" for i in range(6)]
@@ -315,40 +305,92 @@ class RobotConfigurationWidget(QWidget):
             self.axis_collider_direction_combos.append(direction_combo)
 
         self.table_axis_colliders.itemChanged.connect(self._on_axis_colliders_item_changed)
-        layout.addWidget(self.table_axis_colliders)
+        robot_layout.addWidget(self.table_axis_colliders)
+        layout.addWidget(robot_group, 1)
+
+        tool_group = QGroupBox("Colliders de l'outil")
+        tool_layout = QVBoxLayout(tool_group)
+
+        evaluated_colliders_layout = QHBoxLayout()
+        evaluated_colliders_layout.addWidget(QLabel("Colliders robot à évaluer pour ce tool"))
+        self._tool_evaluated_robot_axis_colliders_checkboxes.clear()
+        for axis in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
+            checkbox = QCheckBox(f"J{axis + 1}")
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._emit_tool_evaluated_robot_axis_colliders_changed)
+            self._tool_evaluated_robot_axis_colliders_checkboxes.append(checkbox)
+            evaluated_colliders_layout.addWidget(checkbox)
+        evaluated_colliders_layout.addStretch()
+        tool_layout.addLayout(evaluated_colliders_layout)
+
+        self.table_tool_colliders = QTableWidget(0, 14)
+        self.table_tool_colliders.setHorizontalHeaderLabels(
+            [
+                "Actif",
+                "Nom",
+                "Type",
+                "X",
+                "Y",
+                "Z",
+                "A",
+                "B",
+                "C",
+                "Size X",
+                "Size Y",
+                "Size Z",
+                "Rayon",
+                "Hauteur",
+            ]
+        )
+        self.table_tool_colliders.horizontalHeader().setDefaultSectionSize(90)
+        self.table_tool_colliders.itemChanged.connect(self._on_tool_colliders_item_changed)
+        tool_layout.addWidget(self.table_tool_colliders)
+
+        colliders_btn_layout = QHBoxLayout()
+        add_tool_collider_btn = QPushButton("Ajouter")
+        add_tool_collider_btn.clicked.connect(self._on_add_tool_collider_clicked)
+        colliders_btn_layout.addWidget(add_tool_collider_btn)
+
+        remove_tool_collider_btn = QPushButton("Supprimer")
+        remove_tool_collider_btn.clicked.connect(self._on_remove_tool_collider_clicked)
+        colliders_btn_layout.addWidget(remove_tool_collider_btn)
+        colliders_btn_layout.addStretch()
+        tool_layout.addLayout(colliders_btn_layout)
+
+        layout.addWidget(tool_group, 1)
         return tab
 
     def _build_positions_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        positions_group = QGroupBox("Paramétrage des positions")
+        positions_layout = QVBoxLayout(positions_group)
+
         self.table_positions = QTableWidget(6, 3)
         self.table_positions.setHorizontalHeaderLabels(
             [
-                "Position 0 (deg)",
-                "Position calibration (deg)",
-                "Position home (deg)",
+                "Position 0",
+                "Position calibration",
+                "Position home",
             ]
         )
         self.table_positions.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_positions.horizontalHeader().setDefaultSectionSize(180)
         self.table_positions.itemChanged.connect(self._on_positions_item_changed)
-        layout.addWidget(self.table_positions)
+        positions_layout.addWidget(self.table_positions)
+        layout.addWidget(positions_group, 1)
 
-        positions_btn_layout = QHBoxLayout()
-        self.btn_go_position_zero = QPushButton("Aller Position 0")
-        self.btn_go_position_zero.clicked.connect(self.position_zero_requested.emit)
-        positions_btn_layout.addWidget(self.btn_go_position_zero)
-
-        self.btn_go_position_calibration = QPushButton("Aller Position calibration")
-        self.btn_go_position_calibration.clicked.connect(self.position_calibration_requested.emit)
-        positions_btn_layout.addWidget(self.btn_go_position_calibration)
-
-        self.btn_go_home_position = QPushButton("Aller Position home")
-        self.btn_go_home_position.clicked.connect(self.home_position_requested.emit)
-        positions_btn_layout.addWidget(self.btn_go_home_position)
-
-        layout.addLayout(positions_btn_layout)
+        cartesian_group = QGroupBox("Plages des sliders cartésiens")
+        cartesian_layout = QVBoxLayout(cartesian_group)
+        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contrôle cartésien."))
+        self.table_cartesian_slider_limits = QTableWidget(3, 2)
+        self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min", "Max"])
+        self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
+        self.table_cartesian_slider_limits.horizontalHeader().setDefaultSectionSize(120)
+        self.table_cartesian_slider_limits.itemChanged.connect(self._on_cartesian_slider_limits_item_changed)
+        cartesian_layout.addWidget(self.table_cartesian_slider_limits)
+        layout.addWidget(cartesian_group, 1)
 
         return tab
 
@@ -394,13 +436,9 @@ class RobotConfigurationWidget(QWidget):
 
         return tab
 
-    def _build_tool_section(self) -> QGroupBox:
-        group = QGroupBox("Configuration tool")
-        layout = QVBoxLayout(group)
-
-        description = QLabel("Définition du tool actif : Nom, XYZABC, CAO et offset visuel Rz.")
-        description.setWordWrap(True)
-        layout.addWidget(description)
+    def _build_tool_section(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
 
         profiles_grid = QGridLayout()
 
@@ -449,79 +487,45 @@ class RobotConfigurationWidget(QWidget):
         tool_clear_button.clicked.connect(self._on_clear_tool_cad)
         tool_cad_grid.addWidget(tool_clear_button, 0, 3)
 
-        tool_cad_grid.addWidget(QLabel("Offset Rz tool (deg)"), 1, 0)
+        tool_cad_grid.addWidget(QLabel("Offset Rz tool"), 1, 0)
         self.tool_cad_offset_rz_spin = QDoubleSpinBox()
         self.tool_cad_offset_rz_spin.setRange(-360.0, 360.0)
         self.tool_cad_offset_rz_spin.setDecimals(2)
         self.tool_cad_offset_rz_spin.setSingleStep(1.0)
+        self.tool_cad_offset_rz_spin.setSuffix(f" {RobotConfigurationWidget.UNIT_DEG}")
         self.tool_cad_offset_rz_spin.valueChanged.connect(self.tool_cad_offset_rz_changed.emit)
         tool_cad_grid.addWidget(self.tool_cad_offset_rz_spin, 1, 1)
 
         layout.addLayout(tool_cad_grid)
 
-        evaluated_colliders_layout = QHBoxLayout()
-        evaluated_colliders_layout.addWidget(QLabel("Colliders robot à évaluer pour ce tool"))
-        self._tool_evaluated_robot_axis_colliders_checkboxes.clear()
-        for axis in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
-            checkbox = QCheckBox(f"J{axis + 1}")
-            checkbox.setChecked(True)
-            checkbox.stateChanged.connect(self._emit_tool_evaluated_robot_axis_colliders_changed)
-            self._tool_evaluated_robot_axis_colliders_checkboxes.append(checkbox)
-            evaluated_colliders_layout.addWidget(checkbox)
-        evaluated_colliders_layout.addStretch()
-        layout.addLayout(evaluated_colliders_layout)
+        layout.addStretch()
 
-        colliders_title = QLabel("Colliders tool (repère flange / axe 6)")
-        colliders_title.setStyleSheet("font-weight: bold;")
-        layout.addWidget(colliders_title)
-
-        self.table_tool_colliders = QTableWidget(0, 14)
-        self.table_tool_colliders.setHorizontalHeaderLabels(
-            [
-                "Actif",
-                "Nom",
-                "Type",
-                "X",
-                "Y",
-                "Z",
-                "A",
-                "B",
-                "C",
-                "Size X",
-                "Size Y",
-                "Size Z",
-                "Rayon",
-                "Hauteur",
-            ]
-        )
-        self.table_tool_colliders.horizontalHeader().setDefaultSectionSize(90)
-        self.table_tool_colliders.itemChanged.connect(self._on_tool_colliders_item_changed)
-        layout.addWidget(self.table_tool_colliders)
-
-        colliders_btn_layout = QHBoxLayout()
-        add_tool_collider_btn = QPushButton("Ajouter collider tool")
-        add_tool_collider_btn.clicked.connect(self._on_add_tool_collider_clicked)
-        colliders_btn_layout.addWidget(add_tool_collider_btn)
-
-        remove_tool_collider_btn = QPushButton("Supprimer collider tool")
-        remove_tool_collider_btn.clicked.connect(self._on_remove_tool_collider_clicked)
-        colliders_btn_layout.addWidget(remove_tool_collider_btn)
-        colliders_btn_layout.addStretch()
-        layout.addLayout(colliders_btn_layout)
-
-        return group
+        return widget
 
     def _on_dh_cell_changed(self, row: int, col: int) -> None:
         item = self.table_dh.item(row, col)
         if item is not None:
+            unit = RobotConfigurationWidget.UNIT_DEG if col in (0, 2) else RobotConfigurationWidget.UNIT_MM
+            self._format_table_item_with_unit(self.table_dh, item, unit)
             self.dh_value_changed.emit(row, col, item.text())
 
     def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
         if item.column() == RobotConfigurationWidget.COL_AXIS_ACCEL:
             self._format_axis_accel_item(item)
+        elif item.column() in (RobotConfigurationWidget.COL_AXIS_MIN, RobotConfigurationWidget.COL_AXIS_MAX):
+            self._format_table_item_with_unit(self.table_axis, item, RobotConfigurationWidget.UNIT_DEG)
+        elif item.column() == RobotConfigurationWidget.COL_AXIS_SPEED:
+            self._format_table_item_with_unit(self.table_axis, item, RobotConfigurationWidget.UNIT_DEG_PER_S)
+        elif item.column() == RobotConfigurationWidget.COL_AXIS_JERK:
+            self._format_table_item_with_unit(self.table_axis, item, RobotConfigurationWidget.UNIT_DEG_PER_S3)
         self._emit_axis_config_changed()
 
     def _on_cartesian_slider_limits_item_changed(self, _item: QTableWidgetItem) -> None:
+        self._format_table_item_with_unit(
+            self.table_cartesian_slider_limits,
+            _item,
+            RobotConfigurationWidget.UNIT_MM,
+        )
         self._emit_axis_config_changed()
 
     def _on_reset_axis_accel_limits_clicked(self) -> None:
@@ -529,9 +533,27 @@ class RobotConfigurationWidget(QWidget):
         self._emit_axis_config_changed()
 
     def _on_axis_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
+        self._format_table_item_with_unit(self.table_axis_colliders, _item, RobotConfigurationWidget.UNIT_MM)
         self._emit_axis_colliders_config_changed()
 
     def _on_tool_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
+        if _item.column() in (
+            RobotConfigurationWidget.COL_PRIM_X,
+            RobotConfigurationWidget.COL_PRIM_Y,
+            RobotConfigurationWidget.COL_PRIM_Z,
+            RobotConfigurationWidget.COL_PRIM_SIZE_X,
+            RobotConfigurationWidget.COL_PRIM_SIZE_Y,
+            RobotConfigurationWidget.COL_PRIM_SIZE_Z,
+            RobotConfigurationWidget.COL_PRIM_RADIUS,
+            RobotConfigurationWidget.COL_PRIM_HEIGHT,
+        ):
+            self._format_table_item_with_unit(self.table_tool_colliders, _item, RobotConfigurationWidget.UNIT_MM)
+        elif _item.column() in (
+            RobotConfigurationWidget.COL_PRIM_A,
+            RobotConfigurationWidget.COL_PRIM_B,
+            RobotConfigurationWidget.COL_PRIM_C,
+        ):
+            self._format_table_item_with_unit(self.table_tool_colliders, _item, RobotConfigurationWidget.UNIT_DEG)
         self.tool_colliders_changed.emit(self.get_tool_colliders())
 
     def _emit_tool_evaluated_robot_axis_colliders_changed(self) -> None:
@@ -539,17 +561,17 @@ class RobotConfigurationWidget(QWidget):
 
     def _on_add_tool_collider_clicked(self) -> None:
         self._insert_tool_collider_row(
-            {
-                "name": f"Tool collider {self.table_tool_colliders.rowCount() + 1 if self.table_tool_colliders is not None else 1}",
-                "enabled": True,
-                "shape": "cylinder",
-                "pose": [0.0] * 6,
-                "size_x": 100.0,
-                "size_y": 100.0,
-                "size_z": 100.0,
-                "radius": 40.0,
-                "height": 120.0,
-            }
+            PrimitiveColliderData(
+                name=f"Tool collider {self.table_tool_colliders.rowCount() + 1 if self.table_tool_colliders is not None else 1}",
+                enabled=True,
+                shape=PrimitiveColliderShape.CYLINDER,
+                pose=Pose6.zeros(),
+                size_x=100.0,
+                size_y=100.0,
+                size_z=100.0,
+                radius=40.0,
+                height=120.0,
+            )
         )
         self.tool_colliders_changed.emit(self.get_tool_colliders())
 
@@ -598,22 +620,23 @@ class RobotConfigurationWidget(QWidget):
         pose = collider.pose
         cells = {
             RobotConfigurationWidget.COL_PRIM_NAME: collider.name,
-            RobotConfigurationWidget.COL_PRIM_X: str(float(pose.x)),
-            RobotConfigurationWidget.COL_PRIM_Y: str(float(pose.y)),
-            RobotConfigurationWidget.COL_PRIM_Z: str(float(pose.z)),
-            RobotConfigurationWidget.COL_PRIM_A: str(float(pose.a)),
-            RobotConfigurationWidget.COL_PRIM_B: str(float(pose.b)),
-            RobotConfigurationWidget.COL_PRIM_C: str(float(pose.c)),
-            RobotConfigurationWidget.COL_PRIM_SIZE_X: str(float(collider.size_x)),
-            RobotConfigurationWidget.COL_PRIM_SIZE_Y: str(float(collider.size_y)),
-            RobotConfigurationWidget.COL_PRIM_SIZE_Z: str(float(collider.size_z)),
-            RobotConfigurationWidget.COL_PRIM_RADIUS: str(float(collider.radius)),
-            RobotConfigurationWidget.COL_PRIM_HEIGHT: str(float(collider.height)),
+            RobotConfigurationWidget.COL_PRIM_X: self._format_value_with_unit(float(pose.x), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_Y: self._format_value_with_unit(float(pose.y), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_Z: self._format_value_with_unit(float(pose.z), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_A: self._format_value_with_unit(float(pose.a), RobotConfigurationWidget.UNIT_DEG),
+            RobotConfigurationWidget.COL_PRIM_B: self._format_value_with_unit(float(pose.b), RobotConfigurationWidget.UNIT_DEG),
+            RobotConfigurationWidget.COL_PRIM_C: self._format_value_with_unit(float(pose.c), RobotConfigurationWidget.UNIT_DEG),
+            RobotConfigurationWidget.COL_PRIM_SIZE_X: self._format_value_with_unit(float(collider.size_x), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_SIZE_Y: self._format_value_with_unit(float(collider.size_y), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_SIZE_Z: self._format_value_with_unit(float(collider.size_z), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_RADIUS: self._format_value_with_unit(float(collider.radius), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_HEIGHT: self._format_value_with_unit(float(collider.height), RobotConfigurationWidget.UNIT_MM),
         }
         for column, value in cells.items():
             self.table_tool_colliders.setItem(row, column, QTableWidgetItem(value))
 
     def _on_positions_item_changed(self, _item: QTableWidgetItem) -> None:
+        self._format_table_item_with_unit(self.table_positions, _item, RobotConfigurationWidget.UNIT_DEG)
         self.positions_config_changed.emit(
             self.get_home_position(),
             self.get_position_zero(),
@@ -636,7 +659,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_multiple_robot_cad(self) -> None:
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Sélectionner plusieurs CAO robot",
+            "Sélectionner plusieurs CAD Files",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -685,7 +708,7 @@ class RobotConfigurationWidget(QWidget):
     def _on_pick_tool_cad(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Sélectionner une CAO de tool",
+            "Sélectionner une CAD File pour le tool",
             self._get_cad_start_directory(),
             "STL files (*.stl);;All files (*)",
         )
@@ -876,6 +899,32 @@ class RobotConfigurationWidget(QWidget):
         item = table.item(row, column)
         return safe_float(item.text() if item else "", default)
 
+    @staticmethod
+    def _format_value_with_unit(value: float | int | str, unit: str) -> str:
+        return f"{value} {unit}"
+
+    @staticmethod
+    def _set_table_item_with_unit(
+        table: QTableWidget,
+        row: int,
+        column: int,
+        value: float | int | str,
+        unit: str,
+    ) -> None:
+        table.setItem(row, column, QTableWidgetItem(RobotConfigurationWidget._format_value_with_unit(value, unit)))
+
+    @staticmethod
+    def _format_table_item_with_unit(table: QTableWidget, item: QTableWidgetItem, unit: str) -> None:
+        raw_text = item.text().strip()
+        if raw_text == "":
+            return
+        numeric_value = safe_float(raw_text, 0.0)
+        table.blockSignals(True)
+        try:
+            item.setText(RobotConfigurationWidget._format_value_with_unit(numeric_value, unit))
+        finally:
+            table.blockSignals(False)
+
     def _calculate_default_axis_accel_for_row(self, row: int) -> float:
         speed = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0))
         jerk = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, 0.0))
@@ -886,7 +935,7 @@ class RobotConfigurationWidget(QWidget):
         if accel_item is None:
             accel_item = QTableWidgetItem("")
             self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL, accel_item)
-        accel_item.setText(f"{accel:.3f}")
+        accel_item.setText(self._format_value_with_unit(f"{accel:.3f}", RobotConfigurationWidget.UNIT_DEG_PER_S2))
 
     def _format_axis_accel_item(self, item: QTableWidgetItem) -> None:
         if item.text().strip() == "":
@@ -894,7 +943,7 @@ class RobotConfigurationWidget(QWidget):
         accel = max(0.0, safe_float(item.text(), 0.0))
         self.table_axis.blockSignals(True)
         try:
-            item.setText(f"{accel:.3f}")
+            item.setText(self._format_value_with_unit(f"{accel:.3f}", RobotConfigurationWidget.UNIT_DEG_PER_S2))
         finally:
             self.table_axis.blockSignals(False)
 
@@ -1001,7 +1050,8 @@ class RobotConfigurationWidget(QWidget):
                 values = params[row] if row < len(params) else []
                 for col in range(4):
                     value = str(values[col]) if col < len(values) else ""
-                    self.table_dh.setItem(row, col, QTableWidgetItem(value))
+                    unit = RobotConfigurationWidget.UNIT_DEG if col in (0, 2) else RobotConfigurationWidget.UNIT_MM
+                    self._set_table_item_with_unit(self.table_dh, row, col, value, unit)
         finally:
             self.table_dh.blockSignals(False)
 
@@ -1015,7 +1065,8 @@ class RobotConfigurationWidget(QWidget):
                 values = params[row] if row < len(params) else []
                 for col in range(4):
                     value = str(values[col]) if col < len(values) else ""
-                    item = QTableWidgetItem(value)
+                    unit = RobotConfigurationWidget.UNIT_DEG if col in (0, 2) else RobotConfigurationWidget.UNIT_MM
+                    item = QTableWidgetItem(self._format_value_with_unit(value, unit))
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                     self.table_dh_measured.setItem(row, col, item)
         finally:
@@ -1065,11 +1116,35 @@ class RobotConfigurationWidget(QWidget):
                 accel = axis_accel_limits[row] if row < len(axis_accel_limits) else math.sqrt(max(0.0, float(speed)) * max(0.0, float(jerk)))
                 reversed_axis = axis_reversed[row] if row < len(axis_reversed) else 1
 
-                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_MIN, QTableWidgetItem(str(min_val)))
-                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_MAX, QTableWidgetItem(str(max_val)))
-                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_SPEED, QTableWidgetItem(str(speed)))
+                self._set_table_item_with_unit(
+                    self.table_axis,
+                    row,
+                    RobotConfigurationWidget.COL_AXIS_MIN,
+                    min_val,
+                    RobotConfigurationWidget.UNIT_DEG,
+                )
+                self._set_table_item_with_unit(
+                    self.table_axis,
+                    row,
+                    RobotConfigurationWidget.COL_AXIS_MAX,
+                    max_val,
+                    RobotConfigurationWidget.UNIT_DEG,
+                )
+                self._set_table_item_with_unit(
+                    self.table_axis,
+                    row,
+                    RobotConfigurationWidget.COL_AXIS_SPEED,
+                    speed,
+                    RobotConfigurationWidget.UNIT_DEG_PER_S,
+                )
                 self._set_axis_accel_cell(row, float(accel))
-                self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_JERK, QTableWidgetItem(str(jerk)))
+                self._set_table_item_with_unit(
+                    self.table_axis,
+                    row,
+                    RobotConfigurationWidget.COL_AXIS_JERK,
+                    jerk,
+                    RobotConfigurationWidget.UNIT_DEG_PER_S3,
+                )
 
                 checkbox = self.axis_reversed_checkboxes[row]
                 checkbox.blockSignals(True)
@@ -1105,8 +1180,20 @@ class RobotConfigurationWidget(QWidget):
                 if row < len(limits):
                     min_val = float(limits[row][0])
                     max_val = float(limits[row][1])
-                self.table_cartesian_slider_limits.setItem(row, 0, QTableWidgetItem(str(min_val)))
-                self.table_cartesian_slider_limits.setItem(row, 1, QTableWidgetItem(str(max_val)))
+                self._set_table_item_with_unit(
+                    self.table_cartesian_slider_limits,
+                    row,
+                    0,
+                    min_val,
+                    RobotConfigurationWidget.UNIT_MM,
+                )
+                self._set_table_item_with_unit(
+                    self.table_cartesian_slider_limits,
+                    row,
+                    1,
+                    max_val,
+                    RobotConfigurationWidget.UNIT_MM,
+                )
         finally:
             self.table_cartesian_slider_limits.blockSignals(False)
 
@@ -1165,30 +1252,40 @@ class RobotConfigurationWidget(QWidget):
                 direction_combo.setCurrentText(direction_axis.value.upper())
                 direction_combo.blockSignals(False)
 
-                self.table_axis_colliders.setItem(
+                self._set_table_item_with_unit(
+                    self.table_axis_colliders,
                     row,
                     RobotConfigurationWidget.COL_AXIS_COLLIDER_RADIUS,
-                    QTableWidgetItem(str(radius)),
+                    radius,
+                    RobotConfigurationWidget.UNIT_MM,
                 )
-                self.table_axis_colliders.setItem(
+                self._set_table_item_with_unit(
+                    self.table_axis_colliders,
                     row,
                     RobotConfigurationWidget.COL_AXIS_COLLIDER_HEIGHT,
-                    QTableWidgetItem(str(height)),
+                    height,
+                    RobotConfigurationWidget.UNIT_MM,
                 )
-                self.table_axis_colliders.setItem(
+                self._set_table_item_with_unit(
+                    self.table_axis_colliders,
                     row,
                     RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X,
-                    QTableWidgetItem(str(offset_x)),
+                    offset_x,
+                    RobotConfigurationWidget.UNIT_MM,
                 )
-                self.table_axis_colliders.setItem(
+                self._set_table_item_with_unit(
+                    self.table_axis_colliders,
                     row,
                     RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y,
-                    QTableWidgetItem(str(offset_y)),
+                    offset_y,
+                    RobotConfigurationWidget.UNIT_MM,
                 )
-                self.table_axis_colliders.setItem(
+                self._set_table_item_with_unit(
+                    self.table_axis_colliders,
                     row,
                     RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z,
-                    QTableWidgetItem(str(offset_z)),
+                    offset_z,
+                    RobotConfigurationWidget.UNIT_MM,
                 )
         finally:
             self.table_axis_colliders.blockSignals(False)
@@ -1257,9 +1354,27 @@ class RobotConfigurationWidget(QWidget):
                 calibration_value = position_calibration[row] if row < len(position_calibration) else 0.0
                 home_value = home_position[row] if row < len(home_position) else 0.0
 
-                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_ZERO, QTableWidgetItem(str(zero_value)))
-                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_CALIBRATION, QTableWidgetItem(str(calibration_value)))
-                self.table_positions.setItem(row, RobotConfigurationWidget.COL_POS_HOME, QTableWidgetItem(str(home_value)))
+                self._set_table_item_with_unit(
+                    self.table_positions,
+                    row,
+                    RobotConfigurationWidget.COL_POS_ZERO,
+                    zero_value,
+                    RobotConfigurationWidget.UNIT_DEG,
+                )
+                self._set_table_item_with_unit(
+                    self.table_positions,
+                    row,
+                    RobotConfigurationWidget.COL_POS_CALIBRATION,
+                    calibration_value,
+                    RobotConfigurationWidget.UNIT_DEG,
+                )
+                self._set_table_item_with_unit(
+                    self.table_positions,
+                    row,
+                    RobotConfigurationWidget.COL_POS_HOME,
+                    home_value,
+                    RobotConfigurationWidget.UNIT_DEG,
+                )
         finally:
             self.table_positions.blockSignals(False)
 

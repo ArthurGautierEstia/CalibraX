@@ -41,9 +41,6 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
         self.robot_configuration_widget.axis_colliders_config_changed.connect(self._on_view_axis_colliders_config_changed)
         self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
-        self.robot_configuration_widget.position_zero_requested.connect(self._on_view_position_zero_requested)
-        self.robot_configuration_widget.position_calibration_requested.connect(self._on_view_position_calibration_requested)
-        self.robot_configuration_widget.home_position_requested.connect(self._on_view_home_position_requested)
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
         self.robot_configuration_widget.export_config_requested.connect(self._on_view_export_config_requested)
@@ -121,25 +118,6 @@ class RobotConfigurationController(QObject):
         self.robot_model.set_position_calibration(position_calibration)
         self.robot_model.set_home_position(home_position)
 
-    def _sync_positions_from_view(self) -> None:
-        self._on_view_positions_config_changed(
-            self.robot_configuration_widget.get_home_position(),
-            self.robot_configuration_widget.get_position_zero(),
-            self.robot_configuration_widget.get_position_calibration(),
-        )
-
-    def _on_view_position_zero_requested(self) -> None:
-        self._sync_positions_from_view()
-        self.robot_model.go_to_position_zero()
-
-    def _on_view_position_calibration_requested(self) -> None:
-        self._sync_positions_from_view()
-        self.robot_model.go_to_position_calibration()
-
-    def _on_view_home_position_requested(self) -> None:
-        self._sync_positions_from_view()
-        self.robot_model.go_to_home_position()
-
     def _on_view_robot_cad_models_changed(self, robot_cad_models: list[str]) -> None:
         self.robot_model.set_robot_cad_models(robot_cad_models)
 
@@ -147,7 +125,7 @@ class RobotConfigurationController(QObject):
         self.load_configuration()
 
     def _on_view_export_config_requested(self) -> None:
-        self.export_configuration()
+        self.save_configuration()
 
     # ======
     # Methods
@@ -208,14 +186,14 @@ class RobotConfigurationController(QObject):
             
             self.load_configuration_from_path(file_path)
 
-    def export_configuration(self):
-        """Exporter la configuration actuelle"""
+    def save_configuration(self):
+        """Enregistrer la configuration actuelle"""
         configuration_dir = self._robot_configuration_directory()
 
         config = RobotConfigurationFile.from_robot_model(self.robot_model)
         FileIOHandler.save_json(
             self.robot_configuration_widget,
-            "Sauvegarder une configuration robot",
+            "Enregistrer une configuration robot",
             config.to_dict(),
             configuration_dir,
         )
