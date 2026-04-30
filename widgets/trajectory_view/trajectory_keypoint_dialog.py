@@ -529,7 +529,7 @@ class TrajectoryKeypointDialog(QDialog):
             self.cartesian_target_widget.set_reference_frame(self._initial_keypoint.cartesian_frame.value)
             self._last_cartesian_reference_frame = ReferenceFrame.from_value(self._initial_keypoint.cartesian_frame).value
             self._apply_cartesian_target_limits()
-            self.cartesian_target_widget.set_all_cartesian(list(self._initial_keypoint.cartesian_target))
+            self.cartesian_target_widget.set_all_cartesian(Pose6(*self._initial_keypoint.cartesian_target[:6]))
             self._emit_ghost_update()
             return
 
@@ -1330,7 +1330,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.cartesian_target_widget.set_reference_frame(keypoint.cartesian_frame.value)
         self._last_cartesian_reference_frame = ReferenceFrame.from_value(keypoint.cartesian_frame).value
         self._apply_cartesian_target_limits()
-        self.cartesian_target_widget.set_all_cartesian(keypoint.cartesian_target)
+        self.cartesian_target_widget.set_all_cartesian(Pose6(*keypoint.cartesian_target[:6]))
         self.joint_target_widget.set_all_joints(keypoint.joint_target)
 
         self._ptp_speed_percent = keypoint.ptp_speed_percent

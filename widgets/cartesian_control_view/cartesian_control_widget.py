@@ -298,18 +298,15 @@ class CartesianControlWidget(QWidget):
         self.spinboxes_cart[index].blockSignals(False)
         self.sliders_cart[index].blockSignals(False)
     
-    def set_all_cartesian(self, values: Pose6 | List[float]) -> None:
+    def set_all_cartesian(self, values: Pose6) -> None:
         """Définit toutes les valeurs cartésiennes"""
-        if isinstance(values, Pose6):
-            pose = values
-        else:
-            raw_values = [float(value) for value in list(values)[:6]]
-            while len(raw_values) < 6:
-                raw_values.append(0.0)
-            pose = Pose6(*raw_values)
-        for i, val in enumerate(pose.to_list()):
-            self.set_cartesian_value(i, float(val))
-    
+        self.set_cartesian_value(0, values.x)
+        self.set_cartesian_value(1, values.y)
+        self.set_cartesian_value(2, values.z)
+        self.set_cartesian_value(3, values.a)
+        self.set_cartesian_value(4, values.b)
+        self.set_cartesian_value(5, values.c)
+
     def get_cartesian_value(self, index: int) -> float:
         """Récupère la valeur réelle d'une coordonnée"""
         if 0 <= index < 6:
