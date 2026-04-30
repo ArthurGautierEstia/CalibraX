@@ -28,10 +28,10 @@ class CartesianWidgetController(QObject):
         self.new_target = Pose6.zeros()
         self._limits_cache_key: tuple | None = None
         self._limits_cache_value: list[tuple[float, float]] | None = None
-        self._last_display_pose: list[float] = [0.0] * 6
+        self._last_display_pose: Pose6 = Pose6.zeros()
         self._last_reference_frame: str = self.cartesian_control_widget.get_reference_frame()
-        self._tool_anchor_display_pose: list[float] = [0.0] * 6
-        self._tool_anchor_tcp_pose: list[float] = [0.0] * 6
+        self._tool_anchor_display_pose: Pose6 = Pose6.zeros()
+        self._tool_anchor_tcp_pose: Pose6 = Pose6.zeros()
         self._setup_connections()
         self._apply_cartesian_slider_limits()
 
@@ -47,7 +47,7 @@ class CartesianWidgetController(QObject):
         self._apply_cartesian_slider_limits()
         self._on_model_tcp_changed()
 
-    def _on_model_tcp_changed(self):
+    def _on_model_tcp_changed(self) -> None:
         tcp_pose_base = self.robot_model.get_tcp_pose()
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         display_pose = convert_pose_from_base_frame(
@@ -55,16 +55,15 @@ class CartesianWidgetController(QObject):
             ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
             robot_base_transform,
         )
-        self._last_display_pose = list(display_pose)
+        self._last_display_pose = display_pose.copy()
         self._last_reference_frame = self.cartesian_control_widget.get_reference_frame()
         self.cartesian_control_widget.set_all_cartesian(display_pose)
-        self.cartesian_control_widget.set_all_cartesian(display_pose.to_list())
 
-    def _on_view_cartesian_value_changed(self, idx: int, value: float):
+    def _on_view_cartesian_value_changed(self, idx: int, value: float) -> None:
         if idx < 0 or idx >= 6:
             return
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
-        displayed_pose = self._convert_pose_from_base_frame(
+        displayed_pose = convert_pose_from_base_frame(
             self.robot_model.get_tcp_pose(),
             ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
             robot_base_transform,
@@ -83,9 +82,9 @@ class CartesianWidgetController(QObject):
         next_frame = ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame())
         previous_frame = ReferenceFrame.from_value(self._last_reference_frame)
         if next_frame == ReferenceFrame.TOOL and previous_frame != ReferenceFrame.TOOL:
-            tcp_pose_base = list(self.robot_model.get_tcp_pose())
-            self._tool_anchor_display_pose = tcp_pose_base
-            self._tool_anchor_tcp_pose = tcp_pose_base
+            tcp_pose_base = self.robot_model.get_tcp_pose().copy()
+            self._tool_anchor_display_pose = tcp_pose_base.copy()
+            self._tool_anchor_tcp_pose = tcp_pose_base.copy()
         self._apply_cartesian_slider_limits()
         self._on_model_tcp_changed()
 

@@ -454,7 +454,7 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _get_cartesian_target_in_base_frame(self) -> Pose6:
         return convert_pose_to_base_frame(
-            Pose6(*self.cartesian_target_widget.get_cartesian_values()[:6]),
+            self.cartesian_target_widget.get_cartesian_values(),
             ReferenceFrame.from_value(self.cartesian_target_widget.get_reference_frame()),
             self._robot_base_pose_world(),
         )
@@ -488,7 +488,7 @@ class TrajectoryKeypointDialog(QDialog):
                 pose_base,
                 ReferenceFrame.from_value(self.cartesian_target_widget.get_reference_frame()),
                 self._robot_base_pose_world(),
-            ).to_list()
+            )
         )
 
     def _on_cartesian_limits_context_changed(self) -> None:
@@ -1165,7 +1165,7 @@ class TrajectoryKeypointDialog(QDialog):
         previous_frame = ReferenceFrame.from_value(self._last_cartesian_reference_frame)
         next_frame = ReferenceFrame.from_value(frame)
         pose_base = convert_pose_to_base_frame(
-            Pose6(*self.cartesian_target_widget.get_cartesian_values()[:6]),
+            self.cartesian_target_widget.get_cartesian_values(),
             previous_frame,
             self._robot_base_pose_world(),
         )
@@ -1176,7 +1176,7 @@ class TrajectoryKeypointDialog(QDialog):
                 pose_base,
                 next_frame,
                 self._robot_base_pose_world(),
-            ).to_list()
+            )
         )
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             self._refresh_cartesian_solutions_table()
@@ -1399,7 +1399,7 @@ class TrajectoryKeypointDialog(QDialog):
 
         return TrajectoryKeypoint(
             target_type=target_type,
-            cartesian_target=self.cartesian_target_widget.get_cartesian_values(),
+            cartesian_target=self.cartesian_target_widget.get_cartesian_values().to_list(),
             cartesian_frame=ReferenceFrame.from_value(self.cartesian_target_widget.get_reference_frame()),
             joint_target=self.joint_target_widget.get_all_joints(),
             mode=mode,

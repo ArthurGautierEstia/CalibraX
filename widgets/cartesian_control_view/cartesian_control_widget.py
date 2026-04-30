@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from models.reference_frame import ReferenceFrame
+from models.types import Pose6
 from widgets.jog_spin_box import JogSpinBox
 
 
@@ -13,6 +14,7 @@ class CartesianControlWidget(QWidget):
     """Widget pour le contrôle des coordonnées cartésiennes"""
 
     _COMPACT_ROW_HEIGHT = 28
+    _POSE_AXIS_NAMES = ("x", "y", "z", "a", "b", "c")
     
     # ============================================================================
     # RÉ‰GION: Signaux
@@ -61,7 +63,7 @@ class CartesianControlWidget(QWidget):
         # RÉ‰GION: Attributs
         # ========================================================================
         # Données internes
-        self._cartesian_values: List[float] = [0.0] * 6  # Valeurs réelles (précision complète)
+        self._cartesian_values: Pose6 = Pose6.zeros()  # Valeurs réelles (précision complète)
         self._axis_limits: List[Tuple[float, float]] = [
             (-2000.0, 2000.0),  # X
             (-2000.0, 2000.0),  # Y
@@ -219,7 +221,7 @@ class CartesianControlWidget(QWidget):
         value = self._slider_to_value(index, slider_pos)
         
         # Mettre à jour la valeur interne
-        self._cartesian_values[index] = value
+        self._set_internal_cartesian_value(index, value)
         
         # Mettre à jour le spinbox sans déclencher son signal
         self.spinboxes_cart[index].blockSignals(True)
@@ -232,7 +234,7 @@ class CartesianControlWidget(QWidget):
     def _on_spinbox_changed(self, index: int, value: float) -> None:
         """Callback quand le spinbox change"""
         # Mettre à jour la valeur interne
-        self._cartesian_values[index] = value
+        self._set_internal_cartesian_value(index, value)
         
         # Mettre à jour le slider sans déclencher son signal
         slider_pos = self._value_to_slider(index, value)
@@ -263,6 +265,12 @@ class CartesianControlWidget(QWidget):
         self.current_reference_frame = ReferenceFrame.from_value(raw).value
         self._apply_reference_frame_interaction_mode()
         self.reference_frame_changed.emit(self.current_reference_frame)
+
+    def _set_internal_cartesian_value(self, index: int, value: float) -> None:
+        setattr(self._cartesian_values, self._POSE_AXIS_NAMES[index], float(value))
+
+    def _get_internal_cartesian_value(self, index: int) -> float:
+        return float(getattr(self._cartesian_values, self._POSE_AXIS_NAMES[index]))
     
     # ============================================================================
     # RÉ‰GION: Méthodes publiques
@@ -278,7 +286,7 @@ class CartesianControlWidget(QWidget):
         value = max(min_val, min(max_val, value))
         
         # Mettre à jour la valeur interne
-        self._cartesian_values[index] = value
+        self._set_internal_cartesian_value(index, value)
         
         # Mettre à jour les widgets sans déclencher les signaux
         self.spinboxes_cart[index].blockSignals(True)
@@ -290,19 +298,26 @@ class CartesianControlWidget(QWidget):
         self.spinboxes_cart[index].blockSignals(False)
         self.sliders_cart[index].blockSignals(False)
     
-    def set_all_cartesian(self, values: List[float]) -> None:
+    def set_all_cartesian(self, values: Pose6 | List[float]) -> None:
         """Définit toutes les valeurs cartésiennes"""
-        for i, val in enumerate(values[:6]):
-            self.set_cartesian_value(i, val)
+        if isinstance(values, Pose6):
+            pose = values
+        else:
+            raw_values = [float(value) for value in list(values)[:6]]
+            while len(raw_values) < 6:
+                raw_values.append(0.0)
+            pose = Pose6(*raw_values)
+        for i, val in enumerate(pose.to_list()):
+            self.set_cartesian_value(i, float(val))
     
     def get_cartesian_value(self, index: int) -> float:
         """Récupère la valeur réelle d'une coordonnée"""
         if 0 <= index < 6:
-            return self._cartesian_values[index]
+            return self._get_internal_cartesian_value(index)
         return 0.0
-    
-    def get_cartesian_values(self) -> List[float]:
-        """Retourne les valeurs actuelles des coordonnées cartésiennes"""
+
+    def get_cartesian_values(self) -> Pose6:
+        """Retourne les valeurs actuelles des coordonnées cartésiennes."""
         return self._cartesian_values.copy()
     
     def get_current_convention(self) -> str:
@@ -339,7 +354,7 @@ class CartesianControlWidget(QWidget):
             self.spinboxes_cart[i].setRange(min_val, max_val)
             
             # Clamper la valeur actuelle si nécessaire
-            current_value = self._cartesian_values[i]
+            current_value = self._get_internal_cartesian_value(i)
             if current_value < min_val or current_value > max_val:
                 clamped_value = max(min_val, min(max_val, current_value))
                 self.set_cartesian_value(i, clamped_value)

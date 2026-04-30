@@ -7,7 +7,7 @@ from models.collision_scene_model import CollisionSceneModel
 from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
-from models.types import XYZ3
+from models.types import Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 import utils.math_utils as math_utils
 from widgets.viewer_3d_widget import Viewer3DWidget
@@ -178,15 +178,20 @@ class Viewer3DController(QObject):
             reference_frame = ReferenceFrame.from_value(widget.get_reference_frame())
 
             if reference_frame == ReferenceFrame.TOOL:
-                current_tcp_pose = np.array(self.robot_model.get_tcp_pose(), dtype=float)
+                current_tcp_pose = self.robot_model.get_tcp_pose()
                 target = current_tcp_pose.copy()
                 if axis_index < 3:
                     delta_pos = np.array([0.0, 0.0, 0.0], dtype=float)
                     delta_pos[axis_index] = delta
                     delta_in_base = self.robot_model.get_tcp_rotation_matrix() @ delta_pos
-                    target[0] += delta_in_base[0]
-                    target[1] += delta_in_base[1]
-                    target[2] += delta_in_base[2]
+                    target = Pose6(
+                        target.x + float(delta_in_base[0]),
+                        target.y + float(delta_in_base[1]),
+                        target.z + float(delta_in_base[2]),
+                        target.a,
+                        target.b,
+                        target.c,
+                    )
                 else:
                     delta_rotation = (
                         math_utils.rot_z(delta)
@@ -195,9 +200,14 @@ class Viewer3DController(QObject):
                     )
                     new_tcp_rotation = self.robot_model.get_tcp_rotation_matrix() @ delta_rotation
                     new_abc = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
-                    target[3] = new_abc[0]
-                    target[4] = new_abc[1]
-                    target[5] = new_abc[2]
+                    target = Pose6(
+                        target.x,
+                        target.y,
+                        target.z,
+                        float(new_abc[0]),
+                        float(new_abc[1]),
+                        float(new_abc[2]),
+                    )
                 mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
                 if not mgi_result:
                     return
@@ -205,7 +215,7 @@ class Viewer3DController(QObject):
                 if best_solution is None:
                     return
                 self.robot_model.set_joints(best_solution[1].joints)
-                widget.set_all_cartesian(list(self.robot_model.get_tcp_pose()))
+                widget.set_all_cartesian(self.robot_model.get_tcp_pose())
             else:
                 axis_limits = widget.get_axis_limits()
                 min_limit, max_limit = axis_limits[axis_index]
