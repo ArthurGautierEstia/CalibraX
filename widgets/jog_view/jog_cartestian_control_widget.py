@@ -41,7 +41,7 @@ class JogCartesianControlWidget(QWidget):
         base_tool_label.setFixedWidth(80)
 
         self.base_tool_combobox = QComboBox()
-        self.base_tool_combobox.addItem("Base")
+        self.base_tool_combobox.addItem("Robot")
         self.base_tool_combobox.addItem("Tool")
         self.base_tool_combobox.setFixedWidth(101)
         

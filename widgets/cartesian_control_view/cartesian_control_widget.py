@@ -116,7 +116,7 @@ class CartesianControlWidget(QWidget):
         self.convention_combo.setEnabled(False)
         self.reference_label = QLabel("Référentiel :")
         self.reference_frame_combo = QComboBox()
-        self.reference_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
+        self.reference_frame_combo.addItem("Robot", ReferenceFrame.BASE.value)
         self.reference_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
         self.reference_frame_combo.addItem("Tool", ReferenceFrame.TOOL.value)
         self.reference_frame_combo.currentIndexChanged.connect(self._on_reference_frame_changed)

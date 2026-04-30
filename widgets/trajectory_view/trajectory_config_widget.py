@@ -131,7 +131,7 @@ class TrajectoryConfigWidget(QWidget):
         options_row.addWidget(self.bezier_degree_combo)
         options_row.addSpacing(12)
         options_row.addWidget(QLabel("Repère cartésien"))
-        self.cartesian_display_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
+        self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.BASE.value)
         self.cartesian_display_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
         options_row.addWidget(self.cartesian_display_frame_combo)
         options_row.addStretch()

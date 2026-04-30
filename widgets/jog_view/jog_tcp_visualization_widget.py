@@ -42,7 +42,7 @@ class JogTCPVisualizationWidget(QWidget):
         groupbox_layout = QVBoxLayout(groupbox)
         frame_row = QHBoxLayout()
         frame_row.addWidget(QLabel("Repère"))
-        self.display_frame_combo.addItem("Base", ReferenceFrame.BASE.value)
+        self.display_frame_combo.addItem("Robot", ReferenceFrame.BASE.value)
         self.display_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
         self.display_frame_combo.currentIndexChanged.connect(self._on_display_frame_changed)
         frame_row.addWidget(self.display_frame_combo)
