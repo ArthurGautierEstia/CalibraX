@@ -224,7 +224,7 @@ class TrajectoryController(QObject):
             return
 
         target_pose = convert_pose_to_base_frame(
-            Pose6(*keypoint.cartesian_target[:6]),
+            keypoint.cartesian_target,
             keypoint.cartesian_frame,
             self.workspace_model.get_robot_base_transform_world(),
         )

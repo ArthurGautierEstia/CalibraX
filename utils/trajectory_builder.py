@@ -225,7 +225,7 @@ class TrajectoryBuilder:
     def _resolve_keypoint_pose(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
             return convert_pose_to_base_frame(
-                Pose6(*keypoint.cartesian_target[:6]),
+                keypoint.cartesian_target,
                 keypoint.cartesian_frame,
                 self.workspace_model.get_robot_base_transform_world(),
             ).to_list()
@@ -1191,7 +1191,7 @@ class TrajectoryBuilder:
             target_type=KeypointTargetType.JOINT,
             joint_target=joints_6,
             mode=to_keypoint.mode,
-            cubic_vectors=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            cubic_vectors=[XYZ3.zeros(), XYZ3.zeros()],
             configuration_policy=ConfigurationPolicy.FORCED,
             forced_config=identified_config,
             ptp_speed_percent=to_keypoint.ptp_speed_percent,

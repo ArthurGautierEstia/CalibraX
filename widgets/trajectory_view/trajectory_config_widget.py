@@ -340,14 +340,14 @@ class TrajectoryConfigWidget(QWidget):
         if previous_row >= 0:
             previous_keypoint = keypoints[previous_row]
             if previous_keypoint.mode == KeypointMotionMode.CUBIC:
-                previous_keypoint.cubic_vectors[1] = (-start_tangent).normalized().to_list()
+                previous_keypoint.cubic_vectors[1] = (-start_tangent).normalized()
                 previous_keypoint.cubic_amplitudes_mm[1] = start_tangent.norm()
 
         next_row = row + 1
         if next_row < len(keypoints):
             next_keypoint = keypoints[next_row]
             if next_keypoint.mode == KeypointMotionMode.CUBIC:
-                next_keypoint.cubic_vectors[0] = (-end_tangent).normalized().to_list()
+                next_keypoint.cubic_vectors[0] = (-end_tangent).normalized()
                 next_keypoint.cubic_amplitudes_mm[0] = end_tangent.norm()
 
     def _on_active_dialog_preview_keypoint_changed(self, preview_keypoint: TrajectoryKeypoint) -> None:
@@ -415,7 +415,7 @@ class TrajectoryConfigWidget(QWidget):
             last_keypoint = self._keypoints[-1]
             initial_keypoint = TrajectoryKeypoint(
                 target_type=last_keypoint.target_type,
-                cartesian_target=list(last_keypoint.cartesian_target),
+                cartesian_target=last_keypoint.cartesian_target.copy(),
                 cartesian_frame=last_keypoint.cartesian_frame,
                 joint_target=list(last_keypoint.joint_target),
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),
@@ -426,7 +426,7 @@ class TrajectoryConfigWidget(QWidget):
                     self.robot_model.get_tcp_pose(),
                     ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                     self.workspace_model.get_robot_base_transform_world(),
-                ).to_list(),
+                ),
                 cartesian_frame=ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                 joint_target=list(self.robot_model.get_joints()),
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),
@@ -614,7 +614,9 @@ class TrajectoryConfigWidget(QWidget):
 
     @staticmethod
     def _keypoint_target_values(keypoint: TrajectoryKeypoint) -> list[float]:
-        return keypoint.cartesian_target if keypoint.target_type == KeypointTargetType.CARTESIAN else keypoint.joint_target
+        if keypoint.target_type == KeypointTargetType.CARTESIAN:
+            return keypoint.cartesian_target.to_list()
+        return keypoint.joint_target
 
     @staticmethod
     def _speed_text(keypoint: TrajectoryKeypoint) -> str:

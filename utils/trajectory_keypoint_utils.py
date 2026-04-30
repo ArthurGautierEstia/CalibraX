@@ -13,10 +13,8 @@ def resolve_keypoint_xyz(
     robot_base_pose_world: FrameTransform | Pose6 | None = None,
 ) -> XYZ3 | None:
     if keypoint.target_type == KeypointTargetType.CARTESIAN:
-        cartesian_values = keypoint.cartesian_target
-        target_pose = Pose6(*cartesian_values[:6])
         target = convert_pose_to_base_frame(
-            target_pose,
+            keypoint.cartesian_target,
             keypoint.cartesian_frame,
             Pose6.zeros() if robot_base_pose_world is None else robot_base_pose_world,
         )

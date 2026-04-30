@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from math import sqrt
 
 
@@ -14,6 +15,18 @@ class XYZ3:
     @classmethod
     def zeros(cls) -> "XYZ3":
         return cls()
+
+    @classmethod
+    def from_values(cls, values: "XYZ3 | Sequence[float] | None") -> "XYZ3":
+        if isinstance(values, XYZ3):
+            return values.copy()
+        if values is None:
+            return cls()
+        return cls(
+            float(values[0]) if len(values) > 0 else 0.0,
+            float(values[1]) if len(values) > 1 else 0.0,
+            float(values[2]) if len(values) > 2 else 0.0,
+        )
 
     def copy(self) -> "XYZ3":
         return XYZ3(self.x, self.y, self.z)

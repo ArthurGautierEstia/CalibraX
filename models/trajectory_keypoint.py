@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 import math
 
 from models.reference_frame import ReferenceFrame
-from models.types import XYZ3
+from models.types import Pose6, XYZ3
 from utils.mgi import ConfigurationIdentifier, MgiConfigKey
 
 
@@ -32,11 +33,11 @@ class TrajectoryKeypoint:
     def __init__(
         self,
         target_type: KeypointTargetType = KeypointTargetType.CARTESIAN,
-        cartesian_target: list[float] | None = None,
+        cartesian_target: Pose6 | None = None,
         cartesian_frame: ReferenceFrame | str = ReferenceFrame.BASE,
         joint_target: list[float] | None = None,
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
-        cubic_vectors: list[list[float]] | None = None,
+        cubic_vectors: Sequence[XYZ3] | None = None,
         cubic_amplitudes_mm: list[float] | None = None,
         linear_tangent_ratios: list[float] | None = None,
         linear_tangent_ratios_linked: bool = True,
@@ -48,11 +49,7 @@ class TrajectoryKeypoint:
         self.target_type = target_type
         self.mode = mode
 
-        self.cartesian_target = self._normalize_float_list(
-            [0.0] * 6 if cartesian_target is None else list(cartesian_target),
-            6,
-            0.0,
-        )
+        self.cartesian_target = self._normalize_pose6(cartesian_target)
         self.cartesian_frame = ReferenceFrame.from_value(cartesian_frame)
         self.joint_target = self._normalize_float_list(
             [0.0] * 6 if joint_target is None else list(joint_target),
@@ -63,12 +60,12 @@ class TrajectoryKeypoint:
         # Segment-in semantics (for the segment that ends at this keypoint):
         # cubic_vectors[0] = direction at segment start (previous point side)
         # cubic_vectors[1] = direction at segment end (current point side)
-        vectors = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]] if cubic_vectors is None else list(cubic_vectors)
-        vec1 = vectors[0] if len(vectors) > 0 else []
-        vec2 = vectors[1] if len(vectors) > 1 else []
+        vectors = list(cubic_vectors) if cubic_vectors is not None else []
+        vec1 = vectors[0] if len(vectors) > 0 else None
+        vec2 = vectors[1] if len(vectors) > 1 else None
         self.cubic_vectors = [
-            self._normalize_direction_vector(self._normalize_float_list(list(vec1), 3, 0.0)),
-            self._normalize_direction_vector(self._normalize_float_list(list(vec2), 3, 0.0)),
+            self._normalize_direction_vector(vec1),
+            self._normalize_direction_vector(vec2),
         ]
         amplitudes = (
             [self.DEFAULT_CUBIC_AMPLITUDE_MM, self.DEFAULT_CUBIC_AMPLITUDE_MM]
@@ -133,29 +130,36 @@ class TrajectoryKeypoint:
         return out
 
     @staticmethod
-    def _normalize_direction_vector(vector_xyz: list[float]) -> list[float]:
-        x = float(vector_xyz[0]) if len(vector_xyz) > 0 else 0.0
-        y = float(vector_xyz[1]) if len(vector_xyz) > 1 else 0.0
-        z = float(vector_xyz[2]) if len(vector_xyz) > 2 else 0.0
-        norm = math.sqrt(x * x + y * y + z * z)
+    def _normalize_pose6(value: Pose6 | None) -> Pose6:
+        return Pose6.zeros() if value is None else value.copy()
+
+    @staticmethod
+    def _normalize_direction_vector(vector_xyz: XYZ3 | None) -> XYZ3:
+        vector = XYZ3.zeros() if vector_xyz is None else vector_xyz.copy()
+        norm = math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z)
         if norm <= 1e-12:
-            return [0.0, 0.0, 0.0]
-        return [x / norm, y / norm, z / norm]
+            return XYZ3()
+        inv_norm = 1.0 / norm
+        return XYZ3(vector.x * inv_norm, vector.y * inv_norm, vector.z * inv_norm)
 
     def resolve_cubic_tangent_vectors(self, segment_length_mm: float) -> tuple[XYZ3, XYZ3]:
         _ = segment_length_mm
-        tangents: list[XYZ3] = []
-        for idx in range(2):
-            direction = self.cubic_vectors[idx]
-            amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[idx]), 0.0)
-            tangents.append(
-                XYZ3(
-                    float(direction[0]) * amplitude_mm,
-                    float(direction[1]) * amplitude_mm,
-                    float(direction[2]) * amplitude_mm,
-                )
-            )
-        return tangents[0], tangents[1]
+        start_direction = self.cubic_vectors[0]
+        end_direction = self.cubic_vectors[1]
+        start_amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[0]), 0.0)
+        end_amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[1]), 0.0)
+        return (
+            XYZ3(
+                start_direction.x * start_amplitude_mm,
+                start_direction.y * start_amplitude_mm,
+                start_direction.z * start_amplitude_mm,
+            ),
+            XYZ3(
+                end_direction.x * end_amplitude_mm,
+                end_direction.y * end_amplitude_mm,
+                end_direction.z * end_amplitude_mm,
+            ),
+        )
 
     def resolve_linear_tangent_vectors(
         self,
@@ -193,11 +197,11 @@ class TrajectoryKeypoint:
     def clone(self) -> TrajectoryKeypoint:
         return TrajectoryKeypoint(
             target_type=self.target_type,
-            cartesian_target=list(self.cartesian_target),
+            cartesian_target=self.cartesian_target.copy(),
             cartesian_frame=self.cartesian_frame,
             joint_target=list(self.joint_target),
             mode=self.mode,
-            cubic_vectors=[list(self.cubic_vectors[0]), list(self.cubic_vectors[1])],
+            cubic_vectors=[self.cubic_vectors[0].copy(), self.cubic_vectors[1].copy()],
             cubic_amplitudes_mm=list(self.cubic_amplitudes_mm),
             linear_tangent_ratios=list(self.linear_tangent_ratios),
             linear_tangent_ratios_linked=self.linear_tangent_ratios_linked,
@@ -210,13 +214,13 @@ class TrajectoryKeypoint:
     def to_dict(self) -> dict:
         return {
             "target_type": self.target_type.value,
-            "cartesian_target": [float(v) for v in self.cartesian_target[:6]],
+            "cartesian_target": self.cartesian_target.to_list(),
             "cartesian_frame": self.cartesian_frame.value,
             "joint_target": [float(v) for v in self.joint_target[:6]],
             "mode": self.mode.value,
             "cubic_vectors": [
-                [float(v) for v in self.cubic_vectors[0][:3]],
-                [float(v) for v in self.cubic_vectors[1][:3]],
+                self.cubic_vectors[0].to_list(),
+                self.cubic_vectors[1].to_list(),
             ],
             "cubic_amplitudes_mm": [
                 float(self.cubic_amplitudes_mm[0]),
@@ -262,9 +266,13 @@ class TrajectoryKeypoint:
             except KeyError:
                 forced_config = None
 
-        cubic_vectors = raw.get("cubic_vectors")
-        if not isinstance(cubic_vectors, list):
-            cubic_vectors = None
+        cubic_vectors_raw = raw.get("cubic_vectors")
+        cubic_vectors: list[XYZ3] | None = None
+        if isinstance(cubic_vectors_raw, list):
+            cubic_vectors = [
+                XYZ3.from_values(cubic_vectors_raw[0]) if len(cubic_vectors_raw) > 0 else XYZ3.zeros(),
+                XYZ3.from_values(cubic_vectors_raw[1]) if len(cubic_vectors_raw) > 1 else XYZ3.zeros(),
+            ]
         cubic_amplitudes_mm = raw.get("cubic_amplitudes_mm")
         if not isinstance(cubic_amplitudes_mm, list) or len(cubic_amplitudes_mm) < 2:
             raise ValueError(
@@ -285,7 +293,7 @@ class TrajectoryKeypoint:
 
         return TrajectoryKeypoint(
             target_type=target_type,
-            cartesian_target=raw.get("cartesian_target"),
+            cartesian_target=Pose6.from_values(raw.get("cartesian_target")),
             cartesian_frame=ReferenceFrame.from_value(raw.get("cartesian_frame")),
             joint_target=raw.get("joint_target"),
             mode=mode,

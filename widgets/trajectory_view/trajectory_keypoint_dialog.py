@@ -152,7 +152,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._setup_connections()
         self.load_keypoint(
             TrajectoryKeypoint(
-                cartesian_target=self.robot_model.get_tcp_pose().to_list(),
+                cartesian_target=self.robot_model.get_tcp_pose(),
                 joint_target=list(self.robot_model.get_joints()),
             )
         )
@@ -529,7 +529,7 @@ class TrajectoryKeypointDialog(QDialog):
             self.cartesian_target_widget.set_reference_frame(self._initial_keypoint.cartesian_frame.value)
             self._last_cartesian_reference_frame = ReferenceFrame.from_value(self._initial_keypoint.cartesian_frame).value
             self._apply_cartesian_target_limits()
-            self.cartesian_target_widget.set_all_cartesian(Pose6(*self._initial_keypoint.cartesian_target[:6]))
+            self.cartesian_target_widget.set_all_cartesian(self._initial_keypoint.cartesian_target.copy())
             self._emit_ghost_update()
             return
 
@@ -833,10 +833,10 @@ class TrajectoryKeypointDialog(QDialog):
     def should_auto_update_adjacent_cubic_tangents(self) -> bool:
         return self.cubic_auto_update_adjacent_checkbox.isEnabled() and self.cubic_auto_update_adjacent_checkbox.isChecked()
 
-    def _resolve_current_target_xyz(self) -> list[float] | None:
+    def _resolve_current_target_xyz(self) -> XYZ3 | None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             target = self._get_cartesian_target_in_base_frame()
-            return [target.x, target.y, target.z]
+            return XYZ3(target.x, target.y, target.z)
 
         fk_result = self.robot_model.compute_fk_joints(
             self.joint_target_widget.get_all_joints(),
@@ -845,9 +845,9 @@ class TrajectoryKeypointDialog(QDialog):
         if fk_result is None:
             return None
         _, _, pose, _, _ = fk_result
-        return [pose.x, pose.y, pose.z]
+        return XYZ3(pose.x, pose.y, pose.z)
 
-    def _get_previous_segment_end_tangent_for_auto(self) -> list[float] | None:
+    def _get_previous_segment_end_tangent_for_auto(self) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is None or row < 1:
             return None
@@ -858,12 +858,9 @@ class TrajectoryKeypointDialog(QDialog):
         if previous_segment_index >= len(trajectory_result.segments):
             return None
         previous_segment = trajectory_result.segments[previous_segment_index]
-        direction = [float(v) for v in previous_segment.in_direction[:3]]
-        if len(direction) < 3:
-            return None
-        return direction
+        return XYZ3.from_values(previous_segment.in_direction)
 
-    def _get_next_segment_start_tangent_for_auto(self) -> list[float] | None:
+    def _get_next_segment_start_tangent_for_auto(self) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is None:
             return None
@@ -874,10 +871,7 @@ class TrajectoryKeypointDialog(QDialog):
         if next_segment_index >= len(trajectory_result.segments):
             return None
         next_segment = trajectory_result.segments[next_segment_index]
-        direction = [float(v) for v in next_segment.out_direction[:3]]
-        if len(direction) < 3:
-            return None
-        return direction
+        return XYZ3.from_values(next_segment.out_direction)
 
     def _update_auto_tangent_buttons_state(self) -> None:
         is_cubic = self._current_mode() == KeypointMotionMode.CUBIC
@@ -888,18 +882,18 @@ class TrajectoryKeypointDialog(QDialog):
             is_cubic and self._get_next_segment_start_tangent_for_auto() is not None
         )
 
-    def _apply_cubic_start_tangent_direction(self, direction_xyz: list[float], emit_preview: bool = True) -> None:
-        for idx, spin in enumerate(self.cubic_vector_1):
+    def _apply_cubic_start_tangent_direction(self, direction_xyz: XYZ3, emit_preview: bool = True) -> None:
+        for spin, value in zip(self.cubic_vector_1, direction_xyz.to_tuple()):
             spin.blockSignals(True)
-            spin.setValue(float(direction_xyz[idx]))
+            spin.setValue(value)
             spin.blockSignals(False)
         if emit_preview:
             self._emit_live_preview()
 
-    def _apply_cubic_end_tangent_direction(self, direction_xyz: list[float], emit_preview: bool = True) -> None:
-        for idx, spin in enumerate(self.cubic_vector_2):
+    def _apply_cubic_end_tangent_direction(self, direction_xyz: XYZ3, emit_preview: bool = True) -> None:
+        for spin, value in zip(self.cubic_vector_2, direction_xyz.to_tuple()):
             spin.blockSignals(True)
-            spin.setValue(float(direction_xyz[idx]))
+            spin.setValue(value)
             spin.blockSignals(False)
         if emit_preview:
             self._emit_live_preview()
@@ -951,9 +945,9 @@ class TrajectoryKeypointDialog(QDialog):
         if start_xyz is None or end_xyz is None:
             return 0.0
         return math_utils.norm3(
-            float(end_xyz[0]) - start_xyz.x,
-            float(end_xyz[1]) - start_xyz.y,
-            float(end_xyz[2]) - start_xyz.z,
+            end_xyz.x - start_xyz.x,
+            end_xyz.y - start_xyz.y,
+            end_xyz.z - start_xyz.z,
         )
 
     def _linear_ratio_to_amplitude_mm(self, ratio: float) -> float:
@@ -1021,8 +1015,8 @@ class TrajectoryKeypointDialog(QDialog):
 
     def _compute_end_tangent_from_first_tangent_look_at(
         self,
-        start_direction_xyz: list[float],
-    ) -> list[float] | None:
+        start_direction_xyz: XYZ3,
+    ) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is None or row < 1 or (row - 1) >= len(self._context_keypoints):
             return None
@@ -1037,21 +1031,16 @@ class TrajectoryKeypointDialog(QDialog):
         if previous_point_xyz is None or current_point_xyz is None:
             return None
 
-        look_at_start_point = [
-            previous_point_xyz.x + float(start_direction_xyz[0]),
-            previous_point_xyz.y + float(start_direction_xyz[1]),
-            previous_point_xyz.z + float(start_direction_xyz[2]),
-        ]
-        return [
-            look_at_start_point[0] - current_point_xyz[0],
-            look_at_start_point[1] - current_point_xyz[1],
-            look_at_start_point[2] - current_point_xyz[2],
-        ]
+        return XYZ3(
+            previous_point_xyz.x + start_direction_xyz.x - current_point_xyz.x,
+            previous_point_xyz.y + start_direction_xyz.y - current_point_xyz.y,
+            previous_point_xyz.z + start_direction_xyz.z - current_point_xyz.z,
+        )
 
     def _compute_start_tangent_from_end_tangent_look_at(
         self,
-        end_direction_xyz: list[float],
-    ) -> list[float] | None:
+        end_direction_xyz: XYZ3,
+    ) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is None or (row + 1) >= len(self._context_keypoints):
             return None
@@ -1066,49 +1055,52 @@ class TrajectoryKeypointDialog(QDialog):
         if current_point_xyz is None or next_point_xyz is None:
             return None
 
-        look_at_end_point = [
-            next_point_xyz.x + float(end_direction_xyz[0]),
-            next_point_xyz.y + float(end_direction_xyz[1]),
-            next_point_xyz.z + float(end_direction_xyz[2]),
-        ]
-        return [
-            look_at_end_point[0] - current_point_xyz[0],
-            look_at_end_point[1] - current_point_xyz[1],
-            look_at_end_point[2] - current_point_xyz[2],
-        ]
+        return XYZ3(
+            next_point_xyz.x + end_direction_xyz.x - current_point_xyz.x,
+            next_point_xyz.y + end_direction_xyz.y - current_point_xyz.y,
+            next_point_xyz.z + end_direction_xyz.z - current_point_xyz.z,
+        )
 
     def _on_auto_start_tangent_clicked(self) -> None:
         direction = self._get_previous_segment_end_tangent_for_auto()
         if direction is None:
             return
-        start_amplitude_mm = math_utils.vector_norm3(direction)
-        start_direction = [-float(d) for d in direction[:3]]
+        start_amplitude_mm = direction.norm()
+        start_direction = -direction
         self._apply_cubic_start_tangent_direction(start_direction, emit_preview=False)
         self._set_cubic_start_amplitude_mm(start_amplitude_mm, emit_preview=False)
 
-        current_end_direction = [float(spin.value()) for spin in self.cubic_vector_2]
-        if math_utils.is_near_zero_vector_xyz(current_end_direction):
+        current_end_direction = XYZ3(
+            self.cubic_vector_2[0].value(),
+            self.cubic_vector_2[1].value(),
+            self.cubic_vector_2[2].value(),
+        )
+        if current_end_direction.norm() <= 1e-9:
             end_direction = self._compute_end_tangent_from_first_tangent_look_at(start_direction)
             if end_direction is not None:
                 self._apply_cubic_end_tangent_direction(end_direction, emit_preview=False)
-                self._set_cubic_end_amplitude_mm(math_utils.vector_norm3(end_direction), emit_preview=False)
+                self._set_cubic_end_amplitude_mm(end_direction.norm(), emit_preview=False)
         self._emit_live_preview()
 
     def _on_auto_end_tangent_clicked(self) -> None:
         direction = self._get_next_segment_start_tangent_for_auto()
         if direction is None:
             return
-        end_amplitude_mm = math_utils.vector_norm3(direction)
-        end_direction = [-float(d) for d in direction[:3]]
+        end_amplitude_mm = direction.norm()
+        end_direction = -direction
         self._apply_cubic_end_tangent_direction(end_direction, emit_preview=False)
         self._set_cubic_end_amplitude_mm(end_amplitude_mm, emit_preview=False)
 
-        current_start_direction = [float(spin.value()) for spin in self.cubic_vector_1]
-        if math_utils.is_near_zero_vector_xyz(current_start_direction):
+        current_start_direction = XYZ3(
+            self.cubic_vector_1[0].value(),
+            self.cubic_vector_1[1].value(),
+            self.cubic_vector_1[2].value(),
+        )
+        if current_start_direction.norm() <= 1e-9:
             start_direction = self._compute_start_tangent_from_end_tangent_look_at(end_direction)
             if start_direction is not None:
                 self._apply_cubic_start_tangent_direction(start_direction, emit_preview=False)
-                self._set_cubic_start_amplitude_mm(math_utils.vector_norm3(start_direction), emit_preview=False)
+                self._set_cubic_start_amplitude_mm(start_direction.norm(), emit_preview=False)
         self._emit_live_preview()
 
     def _store_current_speed(self) -> None:
@@ -1330,7 +1322,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.cartesian_target_widget.set_reference_frame(keypoint.cartesian_frame.value)
         self._last_cartesian_reference_frame = ReferenceFrame.from_value(keypoint.cartesian_frame).value
         self._apply_cartesian_target_limits()
-        self.cartesian_target_widget.set_all_cartesian(Pose6(*keypoint.cartesian_target[:6]))
+        self.cartesian_target_widget.set_all_cartesian(keypoint.cartesian_target.copy())
         self.joint_target_widget.set_all_joints(keypoint.joint_target)
 
         self._ptp_speed_percent = keypoint.ptp_speed_percent
@@ -1343,10 +1335,10 @@ class TrajectoryKeypointDialog(QDialog):
         self.mode_combo.blockSignals(False)
         self._last_mode = keypoint.mode
 
-        for i, spin in enumerate(self.cubic_vector_1):
-            spin.setValue(keypoint.cubic_vectors[0][i])
-        for i, spin in enumerate(self.cubic_vector_2):
-            spin.setValue(keypoint.cubic_vectors[1][i])
+        for spin, value in zip(self.cubic_vector_1, keypoint.cubic_vectors[0].to_tuple()):
+            spin.setValue(value)
+        for spin, value in zip(self.cubic_vector_2, keypoint.cubic_vectors[1].to_tuple()):
+            spin.setValue(value)
         self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_mm[0]))
         self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_mm[1]))
         self._set_linear_tangent_ratios(
@@ -1399,13 +1391,13 @@ class TrajectoryKeypointDialog(QDialog):
 
         return TrajectoryKeypoint(
             target_type=target_type,
-            cartesian_target=self.cartesian_target_widget.get_cartesian_values().to_list(),
+            cartesian_target=self.cartesian_target_widget.get_cartesian_values(),
             cartesian_frame=ReferenceFrame.from_value(self.cartesian_target_widget.get_reference_frame()),
             joint_target=self.joint_target_widget.get_all_joints(),
             mode=mode,
             cubic_vectors=[
-                [spin.value() for spin in self.cubic_vector_1],
-                [spin.value() for spin in self.cubic_vector_2],
+                XYZ3(self.cubic_vector_1[0].value(), self.cubic_vector_1[1].value(), self.cubic_vector_1[2].value()),
+                XYZ3(self.cubic_vector_2[0].value(), self.cubic_vector_2[1].value(), self.cubic_vector_2[2].value()),
             ],
             cubic_amplitudes_mm=[
                 self.cubic_amplitude_1.value(),
