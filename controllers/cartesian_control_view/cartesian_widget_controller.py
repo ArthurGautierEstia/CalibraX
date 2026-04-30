@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
+from models.types import Pose6
 from models.workspace_model import WorkspaceModel
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 import utils.math_utils as math_utils
@@ -24,7 +25,7 @@ class CartesianWidgetController(QObject):
         self.robot_model = robot_model
         self.workspace_model = workspace_model
         self.cartesian_control_widget = cartesian_control_widget
-        self.new_target = [0.0] * 6
+        self.new_target = Pose6.zeros()
         self._limits_cache_key: tuple | None = None
         self._limits_cache_value: list[tuple[float, float]] | None = None
         self._setup_connections()
@@ -47,10 +48,10 @@ class CartesianWidgetController(QObject):
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         display_pose = convert_pose_from_base_frame(
             tcp_pose_base,
-            self.cartesian_control_widget.get_reference_frame(),
+            ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
             robot_base_transform,
         )
-        self.cartesian_control_widget.set_all_cartesian(display_pose)
+        self.cartesian_control_widget.set_all_cartesian(display_pose.to_list())
 
     def _on_view_cartesian_value_changed(self, idx: int, value: float):
         if idx < 0 or idx >= 6:
@@ -58,13 +59,15 @@ class CartesianWidgetController(QObject):
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         displayed_pose = convert_pose_from_base_frame(
             self.robot_model.get_tcp_pose(),
-            self.cartesian_control_widget.get_reference_frame(),
+            ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
             robot_base_transform,
         )
-        displayed_pose[idx] = value
+        displayed_values = displayed_pose.to_list()
+        displayed_values[idx] = value
+        displayed_pose = Pose6(*displayed_values)
         self.new_target = convert_pose_to_base_frame(
             displayed_pose,
-            self.cartesian_control_widget.get_reference_frame(),
+            ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
             robot_base_transform,
         )
         self.new_target_computed.emit()
@@ -98,5 +101,5 @@ class CartesianWidgetController(QObject):
         self._limits_cache_value = limits
         return limits
     
-    def get_new_target(self) -> list[float]:
-        return self.new_target
+    def get_new_target(self) -> Pose6:
+        return self.new_target.copy()

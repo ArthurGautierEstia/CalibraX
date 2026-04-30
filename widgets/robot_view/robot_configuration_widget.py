@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -30,11 +29,12 @@ from models.collider_models import (
     default_axis_colliders,
 )
 from models.primitive_collider_models import (
+    AxisDirection,
     PrimitiveColliderData,
+    PrimitiveColliderShape,
     RobotAxisColliderData,
-    parse_primitive_collider_data,
-    parse_robot_axis_colliders,
 )
+from models.types import Pose6, XYZ3
 from widgets.toggle_switch_widget import ToggleSwitchWidget
 from widgets.robot_view.tool_widget import ToolWidget
 from utils.math_utils import safe_float
@@ -169,7 +169,7 @@ class RobotConfigurationWidget(QWidget):
         self.tool_widget_container_layout.addWidget(self.tool_widget)
         self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)
         self.set_tool_colliders([])
-        self.set_tool_evaluated_robot_axis_colliders(None)
+        self.set_tool_evaluated_robot_axis_colliders([True] * RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
 
     def _build_dh_tab(self) -> QWidget:
@@ -589,8 +589,8 @@ class RobotConfigurationWidget(QWidget):
 
         type_combo = QComboBox()
         type_combo.addItems(["box", "cylinder", "sphere"])
-        shape_value = collider.shape
-        type_combo.setCurrentText(shape_value if shape_value in {"box", "cylinder", "sphere"} else "cylinder")
+        shape_value = collider.shape.value
+        type_combo.setCurrentText(shape_value)
         type_combo.currentIndexChanged.connect(lambda _idx: self.tool_colliders_changed.emit(self.get_tool_colliders()))
         self.table_tool_colliders.setCellWidget(row, RobotConfigurationWidget.COL_PRIM_TYPE, type_combo)
         self._tool_collider_type_combos.append(type_combo)
@@ -598,12 +598,12 @@ class RobotConfigurationWidget(QWidget):
         pose = collider.pose
         cells = {
             RobotConfigurationWidget.COL_PRIM_NAME: collider.name,
-            RobotConfigurationWidget.COL_PRIM_X: str(float(pose[0] if len(pose) > 0 else 0.0)),
-            RobotConfigurationWidget.COL_PRIM_Y: str(float(pose[1] if len(pose) > 1 else 0.0)),
-            RobotConfigurationWidget.COL_PRIM_Z: str(float(pose[2] if len(pose) > 2 else 0.0)),
-            RobotConfigurationWidget.COL_PRIM_A: str(float(pose[3] if len(pose) > 3 else 0.0)),
-            RobotConfigurationWidget.COL_PRIM_B: str(float(pose[4] if len(pose) > 4 else 0.0)),
-            RobotConfigurationWidget.COL_PRIM_C: str(float(pose[5] if len(pose) > 5 else 0.0)),
+            RobotConfigurationWidget.COL_PRIM_X: str(float(pose.x)),
+            RobotConfigurationWidget.COL_PRIM_Y: str(float(pose.y)),
+            RobotConfigurationWidget.COL_PRIM_Z: str(float(pose.z)),
+            RobotConfigurationWidget.COL_PRIM_A: str(float(pose.a)),
+            RobotConfigurationWidget.COL_PRIM_B: str(float(pose.b)),
+            RobotConfigurationWidget.COL_PRIM_C: str(float(pose.c)),
             RobotConfigurationWidget.COL_PRIM_SIZE_X: str(float(collider.size_x)),
             RobotConfigurationWidget.COL_PRIM_SIZE_Y: str(float(collider.size_y)),
             RobotConfigurationWidget.COL_PRIM_SIZE_Z: str(float(collider.size_z)),
@@ -868,7 +868,7 @@ class RobotConfigurationWidget(QWidget):
         self.set_tool_colliders([])
         if emit_signals:
             self.tool_colliders_changed.emit([])
-        self.set_tool_evaluated_robot_axis_colliders(None)
+        self.set_tool_evaluated_robot_axis_colliders([True] * RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
         if emit_signals:
             self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
 
@@ -1133,14 +1133,15 @@ class RobotConfigurationWidget(QWidget):
             reversed_values.append(-1 if checkbox.isChecked() else 1)
         return reversed_values
 
-    def set_axis_colliders(self, axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]]) -> None:
+    def set_axis_colliders(self, axis_colliders: list[RobotAxisColliderData]) -> None:
         if self.table_axis_colliders is None:
             return
 
-        normalized = parse_robot_axis_colliders(
-            axis_colliders if axis_colliders else default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT),
-            axis_count=RobotConfigurationWidget.AXIS_COLLIDER_COUNT,
-        )
+        if not all(isinstance(collider, RobotAxisColliderData) for collider in axis_colliders):
+            raise TypeError("axis_colliders must contain RobotAxisColliderData")
+        if axis_colliders and len(axis_colliders) != RobotConfigurationWidget.AXIS_COLLIDER_COUNT:
+            raise ValueError("axis_colliders must contain 6 values")
+        normalized = axis_colliders if axis_colliders else default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
         self.table_axis_colliders.blockSignals(True)
         try:
             for row in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
@@ -1150,9 +1151,9 @@ class RobotConfigurationWidget(QWidget):
                 radius = collider.radius
                 height = collider.height
                 offset_xyz = collider.offset_xyz
-                offset_x = float(offset_xyz[0] if len(offset_xyz) > 0 else 0.0)
-                offset_y = float(offset_xyz[1] if len(offset_xyz) > 1 else 0.0)
-                offset_z = float(offset_xyz[2] if len(offset_xyz) > 2 else 0.0)
+                offset_x = float(offset_xyz.x)
+                offset_y = float(offset_xyz.y)
+                offset_z = float(offset_xyz.z)
 
                 checkbox = self.axis_collider_enabled_checkboxes[row]
                 checkbox.blockSignals(True)
@@ -1161,7 +1162,7 @@ class RobotConfigurationWidget(QWidget):
 
                 direction_combo = self.axis_collider_direction_combos[row]
                 direction_combo.blockSignals(True)
-                direction_combo.setCurrentText(direction_axis.upper() if direction_axis in {"x", "y", "z"} else "Z")
+                direction_combo.setCurrentText(direction_axis.value.upper())
                 direction_combo.blockSignals(False)
 
                 self.table_axis_colliders.setItem(
@@ -1199,7 +1200,7 @@ class RobotConfigurationWidget(QWidget):
         values: list[RobotAxisColliderData] = []
         for row in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
             enabled = self.axis_collider_enabled_checkboxes[row].isChecked()
-            direction_axis = self.axis_collider_direction_combos[row].currentText().strip().lower()
+            direction_axis = AxisDirection(self.axis_collider_direction_combos[row].currentText().strip().lower())
 
             radius = self._cell_to_float(
                 self.table_axis_colliders,
@@ -1235,10 +1236,10 @@ class RobotConfigurationWidget(QWidget):
                 RobotAxisColliderData(
                     axis_index=row,
                     enabled=enabled,
-                    direction_axis=direction_axis if direction_axis in {"x", "y", "z"} else "z",
+                    direction_axis=direction_axis,
                     radius=max(0.0, radius),
                     height=float(height),
-                    offset_xyz=[float(offset_x), float(offset_y), float(offset_z)],
+                    offset_xyz=XYZ3(float(offset_x), float(offset_y), float(offset_z)),
                 )
             )
         return values
@@ -1301,14 +1302,12 @@ class RobotConfigurationWidget(QWidget):
             return 0.0
         return float(self.tool_cad_offset_rz_spin.value())
 
-    def set_tool_colliders(self, tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]]) -> None:
+    def set_tool_colliders(self, tool_colliders: list[PrimitiveColliderData]) -> None:
         if self.table_tool_colliders is None:
             return
-        normalized = parse_primitive_collider_data(
-            tool_colliders,
-            default_shape="cylinder",
-            default_name_prefix="Tool collider",
-        )
+        if not all(isinstance(collider, PrimitiveColliderData) for collider in tool_colliders):
+            raise TypeError("tool_colliders must contain PrimitiveColliderData")
+        normalized = [collider.copy() for collider in tool_colliders]
         self.table_tool_colliders.blockSignals(True)
         try:
             self.table_tool_colliders.setRowCount(0)
@@ -1328,16 +1327,20 @@ class RobotConfigurationWidget(QWidget):
             enabled = bool(enabled_widget.isChecked()) if isinstance(enabled_widget, QCheckBox) else True
 
             shape_widget = self.table_tool_colliders.cellWidget(row, RobotConfigurationWidget.COL_PRIM_TYPE)
-            shape = str(shape_widget.currentText()).strip().lower() if isinstance(shape_widget, QComboBox) else "cylinder"
+            shape = (
+                PrimitiveColliderShape(str(shape_widget.currentText()).strip().lower())
+                if isinstance(shape_widget, QComboBox)
+                else PrimitiveColliderShape.CYLINDER
+            )
 
-            pose = [
+            pose = Pose6(
                 self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_X, 0.0),
                 self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_Y, 0.0),
                 self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_Z, 0.0),
                 self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_A, 0.0),
                 self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_B, 0.0),
                 self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_C, 0.0),
-            ]
+            )
 
             name_item = self.table_tool_colliders.item(row, RobotConfigurationWidget.COL_PRIM_NAME)
             name = name_item.text().strip() if name_item is not None else f"Tool collider {row + 1}"
@@ -1376,15 +1379,13 @@ class RobotConfigurationWidget(QWidget):
         return values
 
     @staticmethod
-    def _normalize_tool_evaluated_robot_axis_colliders(values: list[bool] | None) -> list[bool]:
-        raw_values = values if isinstance(values, list) else []
-        normalized: list[bool] = []
-        for axis in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
-            normalized.append(bool(raw_values[axis]) if axis < len(raw_values) else True)
-        return normalized
+    def _copy_tool_evaluated_robot_axis_colliders(values: list[bool]) -> list[bool]:
+        if len(values) != RobotConfigurationWidget.AXIS_COLLIDER_COUNT:
+            raise ValueError("tool evaluated robot axis colliders must contain 6 values")
+        return [bool(value) for value in values]
 
-    def set_tool_evaluated_robot_axis_colliders(self, values: list[bool] | None) -> None:
-        normalized = RobotConfigurationWidget._normalize_tool_evaluated_robot_axis_colliders(values)
+    def set_tool_evaluated_robot_axis_colliders(self, values: list[bool]) -> None:
+        normalized = RobotConfigurationWidget._copy_tool_evaluated_robot_axis_colliders(values)
         for axis, checkbox in enumerate(self._tool_evaluated_robot_axis_colliders_checkboxes):
             checkbox.blockSignals(True)
             checkbox.setChecked(normalized[axis])

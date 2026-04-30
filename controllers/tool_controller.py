@@ -72,7 +72,7 @@ class ToolController(QObject):
         self.tool_model.set_tool_cad_model("")
         self.tool_model.set_tool_cad_offset_rz(0.0)
         self.tool_model.set_tool_colliders([])
-        self.tool_model.set_evaluated_robot_axis_colliders(None)
+        self.tool_model.set_evaluated_robot_axis_colliders([True] * 6)
 
     def update_tool_view(self) -> None:
         self.robot_configuration_widget.set_tool_profiles_directory(self.tool_model.get_tool_profiles_directory())

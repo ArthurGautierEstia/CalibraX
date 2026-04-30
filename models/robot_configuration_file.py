@@ -7,10 +7,10 @@ from typing import Any, TYPE_CHECKING
 
 from models.collider_models import default_axis_colliders
 from models.primitive_collider_models import (
+    AxisDirection,
     RobotAxisColliderData,
-    parse_robot_axis_colliders,
-    robot_axis_colliders_to_dicts,
 )
+from models.types import XYZ3
 from utils.math_utils import safe_float
 from utils.mgi import MgiConfigKey
 
@@ -38,6 +38,54 @@ DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: list[tuple[float, float]] = [
     (-1000.0, 1000.0),
 ]
 DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./default_data/robots_stl/rocky{i}.stl" for i in range(7)]
+
+
+def _parse_axis_direction(value: Any) -> AxisDirection:
+    if not isinstance(value, str):
+        raise TypeError("axis collider direction_axis must be a string")
+    return AxisDirection(value)
+
+
+def _parse_xyz3_list(value: Any) -> XYZ3:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError("axis collider offset_xyz must be a list of 3 values")
+    return XYZ3(safe_float(value[0], 0.0), safe_float(value[1], 0.0), safe_float(value[2], 0.0))
+
+
+def _parse_axis_collider(value: Any, index: int) -> RobotAxisColliderData:
+    if not isinstance(value, dict):
+        raise TypeError("axis collider must be a JSON object")
+    required = ("axis", "enabled", "radius", "height", "direction_axis", "offset_xyz")
+    missing = [key for key in required if key not in value]
+    if missing:
+        raise ValueError(f"axis collider is missing keys: {', '.join(missing)}")
+    return RobotAxisColliderData(
+        axis_index=int(value["axis"]),
+        enabled=bool(value["enabled"]),
+        radius=safe_float(value["radius"], 0.0),
+        height=safe_float(value["height"], 0.0),
+        direction_axis=_parse_axis_direction(value["direction_axis"]),
+        offset_xyz=_parse_xyz3_list(value["offset_xyz"]),
+    )
+
+
+def _parse_axis_colliders(value: Any) -> list[RobotAxisColliderData]:
+    if not isinstance(value, list) or len(value) != 6:
+        raise ValueError("axis_colliders must be a list of 6 colliders")
+    return [_parse_axis_collider(collider, index) for index, collider in enumerate(value)]
+
+
+def _axis_collider_to_dict(collider: RobotAxisColliderData) -> dict[str, Any]:
+    return {
+        "axis": collider.axis_index,
+        "enabled": collider.enabled,
+        "radius": float(collider.radius),
+        "height": float(collider.height),
+        "direction_axis": collider.direction_axis.value,
+        "offset_xyz": collider.offset_xyz.to_list(),
+    }
+
+
 @dataclass
 class RobotConfigurationFile:
     """Representation d'un fichier de configuration robot."""
@@ -297,6 +345,30 @@ class RobotConfigurationFile:
             raise TypeError("La configuration robot doit etre un dictionnaire JSON.")
 
         present_fields = set(data.keys())
+        required_fields = {
+            "name",
+            "dh",
+            "dh_measured",
+            "dh_measured_enabled",
+            "corr",
+            "axis_limits",
+            "cartesian_slider_limits_xyz",
+            "axis_speed_limits",
+            "axis_accel_limits",
+            "axis_jerk_limits",
+            "axis_colliders",
+            "axis_reversed",
+            "joint_weights",
+            "allowed_configs",
+            "home_position",
+            "position_zero",
+            "position_calibration",
+            "robot_cad_models",
+        }
+        missing = sorted(required_fields - present_fields)
+        if missing:
+            raise ValueError(f"La configuration robot est incomplete: {', '.join(missing)}")
+
         name_raw = data.get("name", "")
         if isinstance(name_raw, list) and name_raw:
             name = str(name_raw[0])
@@ -336,7 +408,7 @@ class RobotConfigurationFile:
                 axis_jerk_limits,
             ),
             axis_jerk_limits=axis_jerk_limits,
-            axis_colliders=parse_robot_axis_colliders(data.get("axis_colliders", DEFAULT_AXIS_COLLIDERS), 6),
+            axis_colliders=_parse_axis_colliders(data.get("axis_colliders")),
             axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
             joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
             allowed_configs=allowed_configs,
@@ -364,7 +436,7 @@ class RobotConfigurationFile:
             "axis_speed_limits": self.axis_speed_limits[:6],
             "axis_accel_limits": self.axis_accel_limits[:6],
             "axis_jerk_limits": self.axis_jerk_limits[:6],
-            "axis_colliders": robot_axis_colliders_to_dicts(self.axis_colliders, 6),
+            "axis_colliders": [_axis_collider_to_dict(collider) for collider in self.axis_colliders[:6]],
             "axis_reversed": self.axis_reversed[:6],
             "joint_weights": self.joint_weights[:6],
             "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],

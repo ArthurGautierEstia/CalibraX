@@ -426,9 +426,9 @@ class TrajectoryConfigWidget(QWidget):
             initial_keypoint = TrajectoryKeypoint(
                 cartesian_target=convert_pose_from_base_frame(
                     self.robot_model.get_tcp_pose(),
-                    self.get_cartesian_display_frame(),
+                    ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                     self.workspace_model.get_robot_base_transform_world(),
-                ),
+                ).to_list(),
                 cartesian_frame=ReferenceFrame.from_value(self.get_cartesian_display_frame()),
                 joint_target=list(self.robot_model.get_joints()),
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),

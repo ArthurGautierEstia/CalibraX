@@ -5,8 +5,14 @@ from pathlib import Path
 import numpy as np
 
 import utils.math_utils as math_utils
-from models.pose6 import Pose6
-from models.primitive_collider_models import parse_robot_axis_colliders
+from models.types import Pose6, XYZ3
+from models.primitive_collider_models import (
+    AxisDirection,
+    PrimitiveColliderData,
+    PrimitiveColliderShape,
+    RobotAxisColliderData,
+)
+from models.tool_config_file import ToolConfigFile
 from utils.collision_utils import (
     CollisionShape,
     CollisionWorldCache,
@@ -17,7 +23,7 @@ from utils.collision_utils import (
 
 
 def _shape(
-    shape: str,
+    shape: PrimitiveColliderShape,
     pose=None,
     size_x=0.0,
     size_y=0.0,
@@ -25,7 +31,7 @@ def _shape(
     radius=0.0,
     height=0.0,
 ) -> CollisionShape:
-    pose_value = Pose6.zeros() if pose is None else Pose6.from_sequence(pose, fill_missing=False)
+    pose_value = Pose6.zeros() if pose is None else Pose6(*pose)
     return CollisionShape(
         owner="test",
         name=shape,
@@ -39,92 +45,123 @@ def _shape(
     )
 
 
+def _primitive(
+    shape: PrimitiveColliderShape,
+    pose: Pose6 | None = None,
+    enabled: bool = True,
+    name: str = "Collider",
+    size_x: float = 100.0,
+    size_y: float = 100.0,
+    size_z: float = 100.0,
+    radius: float = 50.0,
+    height: float = 100.0,
+) -> PrimitiveColliderData:
+    return PrimitiveColliderData(
+        name=name,
+        enabled=enabled,
+        shape=shape,
+        pose=Pose6.zeros() if pose is None else pose,
+        size_x=size_x,
+        size_y=size_y,
+        size_z=size_z,
+        radius=radius,
+        height=height,
+    )
+
+
+def _axis_collider(index: int = 0, enabled: bool = True) -> RobotAxisColliderData:
+    return RobotAxisColliderData(
+        axis_index=index,
+        enabled=enabled,
+        radius=1.0,
+        height=2.0,
+        direction_axis=AxisDirection.Z,
+        offset_xyz=XYZ3.zeros(),
+    )
+
+
 class CollisionUtilsGjkTests(unittest.TestCase):
     def test_box_box_touch_overlap_and_separation(self):
-        box_a = _shape("box", size_x=2.0, size_y=2.0, size_z=2.0)
-        self.assertTrue(intersects(box_a, _shape("box", pose=[1.0, 0, 0, 0, 0, 0], size_x=2, size_y=2, size_z=2)))
-        self.assertTrue(intersects(box_a, _shape("box", pose=[2.0, 0, 0, 0, 0, 0], size_x=2, size_y=2, size_z=2)))
-        self.assertFalse(intersects(box_a, _shape("box", pose=[2.01, 0, 0, 0, 0, 0], size_x=2, size_y=2, size_z=2)))
+        box_a = _shape(PrimitiveColliderShape.BOX, size_x=2.0, size_y=2.0, size_z=2.0)
+        self.assertTrue(intersects(box_a, _shape(PrimitiveColliderShape.BOX, pose=[1.0, 0, 0, 0, 0, 0], size_x=2, size_y=2, size_z=2)))
+        self.assertTrue(intersects(box_a, _shape(PrimitiveColliderShape.BOX, pose=[2.0, 0, 0, 0, 0, 0], size_x=2, size_y=2, size_z=2)))
+        self.assertFalse(intersects(box_a, _shape(PrimitiveColliderShape.BOX, pose=[2.01, 0, 0, 0, 0, 0], size_x=2, size_y=2, size_z=2)))
 
     def test_sphere_sphere_touch_overlap_and_separation(self):
-        sphere_a = _shape("sphere", radius=1.0)
-        self.assertTrue(intersects(sphere_a, _shape("sphere", pose=[1.5, 0, 0, 0, 0, 0], radius=1.0)))
-        self.assertTrue(intersects(sphere_a, _shape("sphere", pose=[2.0, 0, 0, 0, 0, 0], radius=1.0)))
-        self.assertFalse(intersects(sphere_a, _shape("sphere", pose=[2.01, 0, 0, 0, 0, 0], radius=1.0)))
+        sphere_a = _shape(PrimitiveColliderShape.SPHERE, radius=1.0)
+        self.assertTrue(intersects(sphere_a, _shape(PrimitiveColliderShape.SPHERE, pose=[1.5, 0, 0, 0, 0, 0], radius=1.0)))
+        self.assertTrue(intersects(sphere_a, _shape(PrimitiveColliderShape.SPHERE, pose=[2.0, 0, 0, 0, 0, 0], radius=1.0)))
+        self.assertFalse(intersects(sphere_a, _shape(PrimitiveColliderShape.SPHERE, pose=[2.01, 0, 0, 0, 0, 0], radius=1.0)))
 
     def test_cylinder_box_and_sphere_with_rotation(self):
-        cylinder = _shape("cylinder", radius=1.0, height=2.0)
-        self.assertTrue(intersects(cylinder, _shape("box", pose=[1.5, 0, 0.5, 0, 0, 0], size_x=1, size_y=1, size_z=1)))
-        self.assertFalse(intersects(cylinder, _shape("box", pose=[2.51, 0, 0.5, 0, 0, 0], size_x=1, size_y=1, size_z=1)))
+        cylinder = _shape(PrimitiveColliderShape.CYLINDER, radius=1.0, height=2.0)
+        self.assertTrue(intersects(cylinder, _shape(PrimitiveColliderShape.BOX, pose=[1.5, 0, 0.5, 0, 0, 0], size_x=1, size_y=1, size_z=1)))
+        self.assertFalse(intersects(cylinder, _shape(PrimitiveColliderShape.BOX, pose=[2.51, 0, 0.5, 0, 0, 0], size_x=1, size_y=1, size_z=1)))
 
-        horizontal_cylinder = _shape("cylinder", pose=[0, 0, 0, 0, 90, 0], radius=0.5, height=2.0)
-        self.assertTrue(intersects(horizontal_cylinder, _shape("sphere", pose=[2.4, 0, 0, 0, 0, 0], radius=0.5)))
-        self.assertFalse(intersects(horizontal_cylinder, _shape("sphere", pose=[2.6, 0, 0, 0, 0, 0], radius=0.5)))
+        horizontal_cylinder = _shape(PrimitiveColliderShape.CYLINDER, pose=[0, 0, 0, 0, 90, 0], radius=0.5, height=2.0)
+        self.assertTrue(intersects(horizontal_cylinder, _shape(PrimitiveColliderShape.SPHERE, pose=[2.4, 0, 0, 0, 0, 0], radius=0.5)))
+        self.assertFalse(intersects(horizontal_cylinder, _shape(PrimitiveColliderShape.SPHERE, pose=[2.6, 0, 0, 0, 0, 0], radius=0.5)))
 
 
 class CollisionUtilsGeometryTests(unittest.TestCase):
     def test_box_uses_calibrax_z_from_zero_to_size_z(self):
-        box = _shape("box", size_x=10.0, size_y=10.0, size_z=900.0)
+        box = _shape(PrimitiveColliderShape.BOX, size_x=10.0, size_y=10.0, size_z=900.0)
         np.testing.assert_allclose(box.support(np.array([0.0, 0.0, -1.0]))[2], 0.0)
         np.testing.assert_allclose(box.support(np.array([0.0, 0.0, 1.0]))[2], 900.0)
 
     def test_cylinder_uses_calibrax_z_from_zero_to_height(self):
-        cylinder = _shape("cylinder", radius=10.0, height=120.0)
+        cylinder = _shape(PrimitiveColliderShape.CYLINDER, radius=10.0, height=120.0)
         np.testing.assert_allclose(cylinder.support(np.array([0.0, 0.0, -1.0]))[2], 0.0)
         np.testing.assert_allclose(cylinder.support(np.array([0.0, 0.0, 1.0]))[2], 120.0)
 
     def test_full_zyx_transform_is_used_by_support_function(self):
-        box = _shape("box", pose=[0, 0, 0, 90, 0, 0], size_x=2.0, size_y=4.0, size_z=1.0)
+        box = _shape(PrimitiveColliderShape.BOX, pose=[0, 0, 0, 90, 0, 0], size_x=2.0, size_y=4.0, size_z=1.0)
         support = box.support(np.array([1.0, 0.0, 0.0]))
         np.testing.assert_allclose(support[0], 2.0, atol=1e-9)
 
 
 class CollisionWorldCacheTests(unittest.TestCase):
     def test_robot_axis_collider_parsing_accepts_dict_inputs(self):
-        parsed = parse_robot_axis_colliders(
-            [
-                {
-                    "enabled": True,
-                    "radius": 12.0,
-                    "height": 34.0,
-                    "direction_axis": "x",
-                    "offset_xyz": [1.0, 2.0, 3.0],
-                }
-            ],
-            axis_count=1,
-        )
+        parsed = [
+            RobotAxisColliderData(
+                axis_index=0,
+                enabled=True,
+                radius=12.0,
+                height=34.0,
+                direction_axis=AxisDirection.X,
+                offset_xyz=XYZ3(1.0, 2.0, 3.0),
+            )
+        ]
 
         self.assertEqual(1, len(parsed))
         self.assertEqual(0, parsed[0].axis_index)
         self.assertEqual(12.0, parsed[0].radius)
         self.assertEqual(34.0, parsed[0].height)
-        self.assertEqual("x", parsed[0].direction_axis)
-        self.assertEqual((1.0, 2.0, 3.0), parsed[0].offset_xyz)
+        self.assertEqual(AxisDirection.X, parsed[0].direction_axis)
+        self.assertEqual(XYZ3(1.0, 2.0, 3.0), parsed[0].offset_xyz)
 
     def test_workspace_collision_queries_do_not_rebuild_shapes(self):
         cache = CollisionWorldCache()
         cache.set_workspace_collision_zones(
             [
-                {
-                    "name": "Zone",
-                    "enabled": True,
-                    "shape": "box",
-                    "pose": [0, 0, 0, 0, 0, 0],
-                    "size_x": 10,
-                    "size_y": 10,
-                    "size_z": 10,
-                }
+                _primitive(
+                    PrimitiveColliderShape.BOX,
+                    name="Zone",
+                    pose=Pose6.zeros(),
+                    size_x=10,
+                    size_y=10,
+                    size_z=10,
+                )
             ]
         )
         cache.update_tool_colliders(
             [
-                {
-                    "name": "Tool",
-                    "enabled": True,
-                    "shape": "sphere",
-                    "pose": [0, 0, 5, 0, 0, 0],
-                    "radius": 1,
-                }
+                _primitive(
+                    PrimitiveColliderShape.SPHERE,
+                    name="Tool",
+                    pose=Pose6(0, 0, 5, 0, 0, 0),
+                    radius=1,
+                )
             ],
             [np.eye(4), np.eye(4)],
         )
@@ -149,26 +186,16 @@ class CollisionWorldCacheTests(unittest.TestCase):
     def test_robot_update_replaces_only_robot_shapes_and_ignores_disabled_colliders(self):
         cache = CollisionWorldCache()
         cache.set_workspace_collision_zones(
-            [{"enabled": True, "shape": "box", "pose": [0] * 6, "size_x": 1, "size_y": 1, "size_z": 1}]
+            [_primitive(PrimitiveColliderShape.BOX, size_x=1, size_y=1, size_z=1)]
         )
         cache.update_tool_colliders(
-            [{"enabled": True, "shape": "sphere", "pose": [0] * 6, "radius": 1}],
+            [_primitive(PrimitiveColliderShape.SPHERE, radius=1)],
             [np.eye(4), np.eye(4)],
         )
         workspace_ids = [id(shape) for shape in cache.workspace_shapes_world]
         tool_ids = [id(shape) for shape in cache.tool_shapes_world]
 
-        axis_colliders = []
-        for index in range(6):
-            axis_colliders.append(
-                {
-                    "enabled": index == 0,
-                    "radius": 1.0,
-                    "height": 2.0,
-                    "direction_axis": "z",
-                    "offset_xyz": [0.0, 0.0, 0.0],
-                }
-            )
+        axis_colliders = [_axis_collider(index, enabled=index == 0) for index in range(6)]
         matrices = [np.eye(4) for _ in range(8)]
         cache.update_robot_axis_colliders(axis_colliders, matrices)
 
@@ -179,21 +206,13 @@ class CollisionWorldCacheTests(unittest.TestCase):
     def test_dynamic_refresh_reuses_compiled_templates_and_workspace_shapes(self):
         cache = CollisionWorldCache()
         cache.set_workspace_collision_zones(
-            [{"enabled": True, "shape": "box", "pose": [0] * 6, "size_x": 10, "size_y": 10, "size_z": 10}]
+            [_primitive(PrimitiveColliderShape.BOX, size_x=10, size_y=10, size_z=10)]
         )
         cache.set_robot_axis_templates(
-            [
-                {
-                    "enabled": True,
-                    "radius": 1.0,
-                    "height": 2.0,
-                    "direction_axis": "z",
-                    "offset_xyz": [0.0, 0.0, 0.0],
-                }
-            ]
+            [_axis_collider()]
         )
         cache.set_tool_templates(
-            [{"enabled": True, "shape": "sphere", "pose": [0] * 6, "radius": 1.0}]
+            [_primitive(PrimitiveColliderShape.SPHERE, radius=1.0)]
         )
 
         workspace_ids = [id(shape) for shape in cache.workspace_shapes_world]
@@ -205,7 +224,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
         first_robot_center = cache.robot_shapes_world[0].center.copy()
 
         frames_b = [np.eye(4) for _ in range(8)]
-        frames_b[1] = math_utils.pose_zyx_to_matrix(Pose6.from_values(5.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        frames_b[1] = math_utils.pose_zyx_to_matrix(Pose6(5.0, 0.0, 0.0, 0.0, 0.0, 0.0))
         cache.update_dynamic_world_shapes(frames_b, np.eye(4))
 
         self.assertEqual(workspace_ids, [id(shape) for shape in cache.workspace_shapes_world])
@@ -223,9 +242,9 @@ class CollisionWorldCacheTests(unittest.TestCase):
         if not tool_data_path.exists():
             self.skipTest("Default tool profile is not available")
 
-        tool_data = json.loads(tool_data_path.read_text(encoding="utf-8"))
+        tool_data = ToolConfigFile.from_dict(json.loads(tool_data_path.read_text(encoding="utf-8")))
         matrices = [np.eye(4) for _ in range(8)]
-        shapes = build_tool_collision_shapes(tool_data.get("tool_colliders", []), matrices)
+        shapes = build_tool_collision_shapes(tool_data.tool_colliders, matrices)
         self.assertGreaterEqual(len(shapes), 1)
         for shape in shapes:
             self.assertEqual("tool", shape.owner)
@@ -233,11 +252,11 @@ class CollisionWorldCacheTests(unittest.TestCase):
 
     def test_tool_collision_shapes_use_flange_frame(self):
         matrices = [np.eye(4) for _ in range(8)]
-        matrices[-2] = math_utils.pose_zyx_to_matrix(Pose6.from_values(10.0, 0.0, 0.0, 0.0, 0.0, 0.0))
-        matrices[-1] = math_utils.pose_zyx_to_matrix(Pose6.from_values(20.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        matrices[-2] = math_utils.pose_zyx_to_matrix(Pose6(10.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        matrices[-1] = math_utils.pose_zyx_to_matrix(Pose6(20.0, 0.0, 0.0, 0.0, 0.0, 0.0))
 
         shapes = build_tool_collision_shapes(
-            [{"enabled": True, "shape": "sphere", "pose": [0.0] * 6, "radius": 1.0}],
+            [_primitive(PrimitiveColliderShape.SPHERE, radius=1.0)],
             matrices,
         )
 
@@ -250,7 +269,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
             CollisionShape(
                 owner="robot",
                 name="Robot collider J1",
-                shape="sphere",
+                shape=PrimitiveColliderShape.SPHERE,
                 world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=0,
@@ -258,8 +277,8 @@ class CollisionWorldCacheTests(unittest.TestCase):
             CollisionShape(
                 owner="robot",
                 name="Robot collider J2",
-                shape="sphere",
-                world_transform=math_utils.pose_zyx_to_matrix(Pose6.from_values(10.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
+                shape=PrimitiveColliderShape.SPHERE,
+                world_transform=math_utils.pose_zyx_to_matrix(Pose6(10.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
                 radius=1.0,
                 source_index=1,
             ),
@@ -268,7 +287,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
             CollisionShape(
                 owner="tool",
                 name="Tool collider",
-                shape="sphere",
+                shape=PrimitiveColliderShape.SPHERE,
                 world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=0,
@@ -287,7 +306,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
             CollisionShape(
                 owner="robot",
                 name="No axis",
-                shape="sphere",
+                shape=PrimitiveColliderShape.SPHERE,
                 world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=None,
@@ -295,7 +314,7 @@ class CollisionWorldCacheTests(unittest.TestCase):
             CollisionShape(
                 owner="robot",
                 name="Axis 2",
-                shape="sphere",
+                shape=PrimitiveColliderShape.SPHERE,
                 world_transform=math_utils.pose_zyx_to_matrix(Pose6.zeros()),
                 radius=1.0,
                 source_index=1,

@@ -1,29 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
 import utils.math_utils as math_utils
-from models.pose6 import Pose6
+from models.types import Pose6
 from models.primitive_collider_models import (
+    AxisDirection,
     PrimitiveColliderData,
+    PrimitiveColliderShape,
     RobotAxisColliderData,
-    parse_primitive_collider_data,
-    parse_robot_axis_colliders,
 )
+from utils.reference_frame_utils import FrameTransform
 
 
 EPSILON = 1e-9
-SUPPORTED_SHAPES = {"box", "cylinder", "sphere"}
+SUPPORTED_SHAPES = set(PrimitiveColliderShape)
 
 
 @dataclass(eq=False)
 class CollisionShape:
     owner: str
     name: str
-    shape: str
+    shape: PrimitiveColliderShape
     world_transform: np.ndarray
     size_x: float = 0.0
     size_y: float = 0.0
@@ -31,17 +31,17 @@ class CollisionShape:
     radius: float = 0.0
     height: float = 0.0
     source_index: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         transform = np.array(self.world_transform, dtype=float)
         if transform.shape != (4, 4):
             raise ValueError("world_transform must be a 4x4 matrix")
 
-        normalized_shape = self.shape if self.shape in SUPPORTED_SHAPES else "box"
+        if not isinstance(self.shape, PrimitiveColliderShape):
+            raise TypeError("shape must be a PrimitiveColliderShape")
         transform.setflags(write=False)
         self.world_transform = transform
-        self.shape = normalized_shape
         self.size_x = max(0.0, float(self.size_x))
         self.size_y = max(0.0, float(self.size_y))
         self.size_z = max(0.0, float(self.size_z))
@@ -71,14 +71,14 @@ class CollisionShape:
         return self.translation + self.rotation @ point_local
 
     def _local_center(self) -> np.ndarray:
-        if self.shape == "box":
+        if self.shape == PrimitiveColliderShape.BOX:
             return np.array([0.0, 0.0, self.size_z * 0.5], dtype=float)
-        if self.shape == "cylinder":
+        if self.shape == PrimitiveColliderShape.CYLINDER:
             return np.array([0.0, 0.0, self.height * 0.5], dtype=float)
         return np.zeros(3, dtype=float)
 
     def _local_support(self, direction_local: np.ndarray) -> np.ndarray:
-        if self.shape == "box":
+        if self.shape == PrimitiveColliderShape.BOX:
             return np.array(
                 [
                     self.size_x * 0.5 if direction_local[0] >= 0.0 else -self.size_x * 0.5,
@@ -88,7 +88,7 @@ class CollisionShape:
                 dtype=float,
             )
 
-        if self.shape == "cylinder":
+        if self.shape == PrimitiveColliderShape.CYLINDER:
             dxy = direction_local[:2]
             nxy = np.linalg.norm(dxy)
             if nxy > EPSILON:
@@ -130,7 +130,7 @@ class CollisionPair:
 class CollisionShapeTemplate:
     owner: str
     name: str
-    shape: str
+    shape: PrimitiveColliderShape
     local_transform: np.ndarray
     size_x: float = 0.0
     size_y: float = 0.0
@@ -138,7 +138,7 @@ class CollisionShapeTemplate:
     radius: float = 0.0
     height: float = 0.0
     source_index: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, int | str] = field(default_factory=dict)
     attached_frame_index: int | None = None
 
     def __post_init__(self) -> None:
@@ -147,7 +147,8 @@ class CollisionShapeTemplate:
             raise ValueError("local_transform must be a 4x4 matrix")
         local_transform.setflags(write=False)
         object.__setattr__(self, "local_transform", local_transform)
-        object.__setattr__(self, "shape", self.shape if self.shape in SUPPORTED_SHAPES else "box")
+        if not isinstance(self.shape, PrimitiveColliderShape):
+            raise TypeError("shape must be a PrimitiveColliderShape")
         object.__setattr__(self, "size_x", max(0.0, float(self.size_x)))
         object.__setattr__(self, "size_y", max(0.0, float(self.size_y)))
         object.__setattr__(self, "size_z", max(0.0, float(self.size_z)))
@@ -178,17 +179,17 @@ class CollisionWorldCache:
         self.robot_shapes_world: list[CollisionShape] = []
         self.tool_shapes_world: list[CollisionShape] = []
 
-    def set_workspace_collision_zones(self, zones: list[PrimitiveColliderData] | list[dict[str, Any]]) -> None:
+    def set_workspace_collision_zones(self, zones: list[PrimitiveColliderData]) -> None:
         self.workspace_shapes_world = build_workspace_collision_shapes(zones)
 
     def set_robot_axis_templates(
         self,
-        axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+        axis_colliders: list[RobotAxisColliderData],
     ) -> None:
         self.robot_shape_templates = build_robot_axis_collision_shape_templates(axis_colliders)
         self.robot_shapes_world = []
 
-    def set_tool_templates(self, tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]]) -> None:
+    def set_tool_templates(self, tool_colliders: list[PrimitiveColliderData]) -> None:
         self.tool_shape_templates = build_tool_collision_shape_templates(tool_colliders)
         self.tool_shapes_world = []
 
@@ -217,9 +218,9 @@ class CollisionWorldCache:
 
     def update_robot_axis_colliders(
         self,
-        axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+        axis_colliders: list[RobotAxisColliderData],
         corrected_matrices: list[np.ndarray],
-        robot_base_world: object | None = None,
+        robot_base_world: FrameTransform | Pose6 | np.ndarray | None = None,
     ) -> None:
         self.set_robot_axis_templates(axis_colliders)
         frame_world_transforms = build_world_frame_transforms(corrected_matrices, robot_base_world)
@@ -227,9 +228,9 @@ class CollisionWorldCache:
 
     def update_tool_colliders(
         self,
-        tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
+        tool_colliders: list[PrimitiveColliderData],
         corrected_matrices: list[np.ndarray],
-        robot_base_world: object | None = None,
+        robot_base_world: FrameTransform | Pose6 | np.ndarray | None = None,
     ) -> None:
         self.set_tool_templates(tool_colliders)
         frame_world_transforms = build_world_frame_transforms(corrected_matrices, robot_base_world)
@@ -257,27 +258,25 @@ class CollisionWorldCache:
         return find_collisions(shapes_a, shapes_b)
 
 
-def build_workspace_collision_shapes(
-    zones: list[PrimitiveColliderData] | list[dict[str, Any]],
-) -> list[CollisionShape]:
+def build_workspace_collision_shapes(zones: list[PrimitiveColliderData]) -> list[CollisionShape]:
+    if not all(isinstance(zone, PrimitiveColliderData) for zone in zones):
+        raise TypeError("zones must contain PrimitiveColliderData")
     shapes: list[CollisionShape] = []
-    for index, zone in enumerate(
-        parse_primitive_collider_data(zones, default_shape="box", default_name_prefix="Workspace zone")
-    ):
+    for index, zone in enumerate(zones):
         if not _is_enabled_valid_primitive(zone):
             continue
         shapes.append(_primitive_to_shape(zone, "workspace", zone.name, index))
     return shapes
 
 
-def build_robot_axis_collision_shape_templates(
-    axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
-) -> list[CollisionShapeTemplate]:
+def build_robot_axis_collision_shape_templates(axis_colliders: list[RobotAxisColliderData]) -> list[CollisionShapeTemplate]:
+    if not all(isinstance(collider, RobotAxisColliderData) for collider in axis_colliders):
+        raise TypeError("axis_colliders must contain RobotAxisColliderData")
     if not axis_colliders:
         return []
 
     templates: list[CollisionShapeTemplate] = []
-    for axis_index, collider in enumerate(parse_robot_axis_colliders(axis_colliders, 6)[:6]):
+    for axis_index, collider in enumerate(axis_colliders[:6]):
         if not collider.enabled:
             continue
 
@@ -288,38 +287,29 @@ def build_robot_axis_collision_shape_templates(
             continue
 
         translation = np.eye(4, dtype=float)
-        translation[:3, 3] = np.array(collider.offset_xyz, dtype=float)
-        orientation = primitive_extrusion_orientation(
-            collider.direction_axis,
-            signed_height >= 0.0,
-        )
+        translation[:3, 3] = np.array(collider.offset_xyz.to_list(), dtype=float)
+        orientation = primitive_extrusion_orientation(collider.direction_axis, signed_height >= 0.0)
         templates.append(
             CollisionShapeTemplate(
                 owner="robot",
                 name=f"Robot collider J{axis_index + 1}",
-                shape="cylinder",
+                shape=PrimitiveColliderShape.CYLINDER,
                 local_transform=translation @ orientation,
                 radius=radius,
                 height=height,
                 source_index=axis_index,
-                metadata={"axis": axis_index, "direction_axis": collider.direction_axis},
+                metadata={"axis": axis_index, "direction_axis": collider.direction_axis.value},
                 attached_frame_index=axis_index + 1,
             )
         )
     return templates
 
 
-def build_tool_collision_shape_templates(
-    tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
-) -> list[CollisionShapeTemplate]:
+def build_tool_collision_shape_templates(tool_colliders: list[PrimitiveColliderData]) -> list[CollisionShapeTemplate]:
+    if not all(isinstance(collider, PrimitiveColliderData) for collider in tool_colliders):
+        raise TypeError("tool_colliders must contain PrimitiveColliderData")
     templates: list[CollisionShapeTemplate] = []
-    for index, collider in enumerate(
-        parse_primitive_collider_data(
-            tool_colliders,
-            default_shape="cylinder",
-            default_name_prefix="Tool collider",
-        )
-    ):
+    for index, collider in enumerate(tool_colliders):
         if not _is_enabled_valid_primitive(collider):
             continue
         templates.append(
@@ -361,7 +351,7 @@ def instantiate_collision_shapes_from_templates(
 
 def build_world_frame_transforms(
     corrected_matrices: list[np.ndarray],
-    robot_base_world: object | None = None,
+    robot_base_world: FrameTransform | Pose6 | np.ndarray | None = None,
 ) -> list[np.ndarray]:
     base_world = _as_transform_matrix(robot_base_world)
     matrices = _normalize_matrices(corrected_matrices)
@@ -378,9 +368,9 @@ def resolve_flange_world_transform(frame_world_transforms: list[np.ndarray]) -> 
 
 
 def build_robot_axis_collision_shapes(
-    axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+    axis_colliders: list[RobotAxisColliderData],
     corrected_matrices: list[np.ndarray],
-    robot_base_world: object | None = None,
+    robot_base_world: FrameTransform | Pose6 | np.ndarray | None = None,
 ) -> list[CollisionShape]:
     templates = build_robot_axis_collision_shape_templates(axis_colliders)
     frame_world_transforms = build_world_frame_transforms(corrected_matrices, robot_base_world)
@@ -388,9 +378,9 @@ def build_robot_axis_collision_shapes(
 
 
 def build_tool_collision_shapes(
-    tool_colliders: list[PrimitiveColliderData] | list[dict[str, Any]],
+    tool_colliders: list[PrimitiveColliderData],
     corrected_matrices: list[np.ndarray],
-    robot_base_world: object | None = None,
+    robot_base_world: FrameTransform | Pose6 | np.ndarray | None = None,
 ) -> list[CollisionShape]:
     templates = build_tool_collision_shape_templates(tool_colliders)
     frame_world_transforms = build_world_frame_transforms(corrected_matrices, robot_base_world)
@@ -434,12 +424,13 @@ def intersects(shape_a: CollisionShape, shape_b: CollisionShape, max_iters: int 
     return _gjk(shape_a, shape_b, max_iters=max_iters)
 
 
-def primitive_extrusion_orientation(direction_axis: str, positive_direction: bool = True) -> np.ndarray:
+def primitive_extrusion_orientation(direction_axis: AxisDirection, positive_direction: bool = True) -> np.ndarray:
+    if not isinstance(direction_axis, AxisDirection):
+        raise TypeError("direction_axis must be an AxisDirection")
     rotation = np.eye(4, dtype=float)
-    normalized_axis = direction_axis if direction_axis in {"x", "y", "z"} else "z"
-    if normalized_axis == "x":
+    if direction_axis == AxisDirection.X:
         rotation[:3, :3] = math_utils.rot_y(90.0, degrees=True)
-    elif normalized_axis == "y":
+    elif direction_axis == AxisDirection.Y:
         rotation[:3, :3] = math_utils.rot_x(-90.0, degrees=True)
 
     if positive_direction:
@@ -476,26 +467,29 @@ def _is_enabled_valid_primitive(collider: PrimitiveColliderData) -> bool:
     if not collider.enabled:
         return False
     shape = collider.shape
-    if shape == "box":
+    if shape == PrimitiveColliderShape.BOX:
         return collider.size_x > EPSILON and collider.size_y > EPSILON and collider.size_z > EPSILON
-    if shape == "cylinder":
+    if shape == PrimitiveColliderShape.CYLINDER:
         return collider.radius > EPSILON and collider.height > EPSILON
-    if shape == "sphere":
+    if shape == PrimitiveColliderShape.SPHERE:
         return collider.radius > EPSILON
     return False
 
 
-def _as_transform_matrix(value: object | None) -> np.ndarray:
+def _as_transform_matrix(value: FrameTransform | Pose6 | np.ndarray | None) -> np.ndarray:
     if value is None:
         return np.eye(4, dtype=float)
 
-    matrix_value = getattr(value, "matrix", value)
+    if isinstance(value, FrameTransform):
+        return value.matrix.copy()
+    if isinstance(value, Pose6):
+        return math_utils.pose_zyx_to_matrix(value)
+
+    matrix_value = value
     matrix = np.array(matrix_value, dtype=float)
     if matrix.shape == (4, 4):
         return matrix
-    if matrix.shape == (6,):
-        return math_utils.pose_zyx_to_matrix(Pose6.from_sequence(matrix.tolist(), fill_missing=False))
-    raise ValueError("Expected a 4x4 transform matrix, a FrameTransform, or a pose6")
+    raise ValueError("Expected a 4x4 transform matrix, a FrameTransform, or a Pose6")
 
 
 def _normalize_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:

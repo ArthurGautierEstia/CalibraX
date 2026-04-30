@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -20,8 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from utils.math_utils import safe_float
-
-from models.workspace_file import parse_workspace_cad_elements
+from models.types import Pose6
+from models.workspace_cad_element import WorkspaceCadElement
 from models.workspace_primitive_zone_models import WorkspacePrimitiveZoneData
 from widgets.workspace_view.workspace_primitive_zones_editor_widget import WorkspacePrimitiveZonesEditorWidget
 
@@ -293,15 +292,18 @@ class WorkspaceConfigurationWidget(QWidget):
         self._workspace_file_path = str(file_path or "").strip()
         self._refresh_scene_name_tooltip()
 
-    def set_robot_base_pose_world(self, pose: list[float]) -> None:
-        values = [safe_float(pose[idx] if idx < len(pose) else 0.0, 0.0) for idx in range(6)]
+    def set_robot_base_pose_world(self, pose: Pose6) -> None:
+        if not isinstance(pose, Pose6):
+            raise TypeError("pose must be a Pose6")
+        values = pose.to_list()
         for idx, spinbox in enumerate(self.robot_base_pose_spinboxes):
             spinbox.blockSignals(True)
             spinbox.setValue(values[idx])
             spinbox.blockSignals(False)
 
-    def get_robot_base_pose_world(self) -> list[float]:
-        return [float(spinbox.value()) for spinbox in self.robot_base_pose_spinboxes[:6]]
+    def get_robot_base_pose_world(self) -> Pose6:
+        values = [float(spinbox.value()) for spinbox in self.robot_base_pose_spinboxes[:6]]
+        return Pose6(*values)
 
     def _refresh_scene_name_tooltip(self) -> None:
         if self.scene_name_line_edit is None:
@@ -309,24 +311,26 @@ class WorkspaceConfigurationWidget(QWidget):
         tooltip_path = self._workspace_file_path if self._workspace_file_path else self._workspace_directory
         self.scene_name_line_edit.setToolTip(tooltip_path)
 
-    def set_workspace_cad_elements(self, values: list[dict[str, Any]]) -> None:
+    def set_workspace_cad_elements(self, values: list[WorkspaceCadElement]) -> None:
         if self.table_elements is None:
             return
-        normalized = parse_workspace_cad_elements(values)
+        if not all(isinstance(value, WorkspaceCadElement) for value in values):
+            raise TypeError("values must contain WorkspaceCadElement")
+        normalized = [value.copy() for value in values]
         self.table_elements.blockSignals(True)
         try:
             self.table_elements.setRowCount(0)
             for row, value in enumerate(normalized):
                 self.table_elements.insertRow(row)
-                pose = value.get("pose", [0.0] * 6)
-                self.table_elements.setItem(row, self.COL_ELEM_NAME, QTableWidgetItem(str(value.get("name", f"Element {row + 1}"))))
-                self.table_elements.setItem(row, self.COL_ELEM_STL, QTableWidgetItem(str(value.get("cad_model", ""))))
-                self.table_elements.setItem(row, self.COL_ELEM_X, QTableWidgetItem(str(float(pose[0] if len(pose) > 0 else 0.0))))
-                self.table_elements.setItem(row, self.COL_ELEM_Y, QTableWidgetItem(str(float(pose[1] if len(pose) > 1 else 0.0))))
-                self.table_elements.setItem(row, self.COL_ELEM_Z, QTableWidgetItem(str(float(pose[2] if len(pose) > 2 else 0.0))))
-                self.table_elements.setItem(row, self.COL_ELEM_A, QTableWidgetItem(str(float(pose[3] if len(pose) > 3 else 0.0))))
-                self.table_elements.setItem(row, self.COL_ELEM_B, QTableWidgetItem(str(float(pose[4] if len(pose) > 4 else 0.0))))
-                self.table_elements.setItem(row, self.COL_ELEM_C, QTableWidgetItem(str(float(pose[5] if len(pose) > 5 else 0.0))))
+                pose = value.pose
+                self.table_elements.setItem(row, self.COL_ELEM_NAME, QTableWidgetItem(value.name))
+                self.table_elements.setItem(row, self.COL_ELEM_STL, QTableWidgetItem(value.cad_model))
+                self.table_elements.setItem(row, self.COL_ELEM_X, QTableWidgetItem(str(float(pose.x))))
+                self.table_elements.setItem(row, self.COL_ELEM_Y, QTableWidgetItem(str(float(pose.y))))
+                self.table_elements.setItem(row, self.COL_ELEM_Z, QTableWidgetItem(str(float(pose.z))))
+                self.table_elements.setItem(row, self.COL_ELEM_A, QTableWidgetItem(str(float(pose.a))))
+                self.table_elements.setItem(row, self.COL_ELEM_B, QTableWidgetItem(str(float(pose.b))))
+                self.table_elements.setItem(row, self.COL_ELEM_C, QTableWidgetItem(str(float(pose.c))))
                 status_item = QTableWidgetItem("")
                 status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table_elements.setItem(row, self.COL_ELEM_STATUS, status_item)
@@ -334,31 +338,31 @@ class WorkspaceConfigurationWidget(QWidget):
         finally:
             self.table_elements.blockSignals(False)
 
-    def get_workspace_cad_elements(self) -> list[dict[str, Any]]:
+    def get_workspace_cad_elements(self) -> list[WorkspaceCadElement]:
         if self.table_elements is None:
             return []
 
-        values: list[dict[str, Any]] = []
+        values: list[WorkspaceCadElement] = []
         for row in range(self.table_elements.rowCount()):
             name_item = self.table_elements.item(row, self.COL_ELEM_NAME)
             stl_item = self.table_elements.item(row, self.COL_ELEM_STL)
             values.append(
-                {
-                    "name": name_item.text().strip() if name_item is not None else f"Element {row + 1}",
-                    "cad_model": stl_item.text().strip() if stl_item is not None else "",
-                    "pose": [
+                WorkspaceCadElement(
+                    name=name_item.text().strip() if name_item is not None else f"Element {row + 1}",
+                    cad_model=stl_item.text().strip() if stl_item is not None else "",
+                    pose=Pose6(
                         self._cell_to_float(self.table_elements, row, self.COL_ELEM_X, 0.0),
                         self._cell_to_float(self.table_elements, row, self.COL_ELEM_Y, 0.0),
                         self._cell_to_float(self.table_elements, row, self.COL_ELEM_Z, 0.0),
                         self._cell_to_float(self.table_elements, row, self.COL_ELEM_A, 0.0),
                         self._cell_to_float(self.table_elements, row, self.COL_ELEM_B, 0.0),
                         self._cell_to_float(self.table_elements, row, self.COL_ELEM_C, 0.0),
-                    ],
-                }
+                    ),
+                )
             )
-        return parse_workspace_cad_elements(values)
+        return values
 
-    def set_workspace_tcp_zones(self, values: list[WorkspacePrimitiveZoneData] | list[dict[str, Any]]) -> None:
+    def set_workspace_tcp_zones(self, values: list[WorkspacePrimitiveZoneData]) -> None:
         if self.tcp_zones_editor is None:
             return
         self.tcp_zones_editor.set_zones(values)

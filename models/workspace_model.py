@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
-
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from models.primitive_collider_models import (
     PrimitiveCollider,
     PrimitiveColliderData,
     build_primitive_colliders,
-    parse_primitive_collider_data,
-    primitive_collider_data_to_dicts,
 )
-from models.pose6 import Pose6
-from models.workspace_file import parse_workspace_cad_elements
-from utils.reference_frame_utils import FrameTransform, normalize_pose6
+from models.types import Pose6
+from models.workspace_cad_element import WorkspaceCadElement
+from utils.reference_frame_utils import FrameTransform
 
 
 class WorkspaceModel(QObject):
@@ -39,7 +35,7 @@ class WorkspaceModel(QObject):
             self.robot_base_pose_world,
             revision=self._robot_base_revision,
         )
-        self.workspace_cad_elements: list[dict[str, Any]] = []
+        self.workspace_cad_elements: list[WorkspaceCadElement] = []
         self.workspace_tcp_zones: list[PrimitiveColliderData] = []
         self.workspace_tcp_zone_colliders: list[PrimitiveCollider] = []
         self.workspace_collision_zones: list[PrimitiveColliderData] = []
@@ -90,19 +86,23 @@ class WorkspaceModel(QObject):
     def _touch_workspace_structure(self) -> None:
         self._workspace_structure_revision += 1
 
-    def set_robot_base_pose_world(self, pose: Pose6 | list[float], emit: bool = True) -> None:
-        normalized = normalize_pose6(pose)
+    def set_robot_base_pose_world(self, pose: Pose6, emit: bool = True) -> None:
+        if not isinstance(pose, Pose6):
+            raise TypeError("pose must be a Pose6")
+        normalized = pose.copy()
         if normalized == self.robot_base_pose_world:
             return
         self._set_robot_base_pose_world_cached(normalized)
         if emit:
             self.workspace_changed.emit()
 
-    def get_workspace_cad_elements(self) -> list[dict[str, Any]]:
-        return parse_workspace_cad_elements(self.workspace_cad_elements)
+    def get_workspace_cad_elements(self) -> list[WorkspaceCadElement]:
+        return [element.copy() for element in self.workspace_cad_elements]
 
-    def set_workspace_cad_elements(self, cad_elements: list[dict[str, Any]], emit: bool = True) -> None:
-        normalized = parse_workspace_cad_elements(cad_elements)
+    def set_workspace_cad_elements(self, cad_elements: list[WorkspaceCadElement], emit: bool = True) -> None:
+        if not all(isinstance(element, WorkspaceCadElement) for element in cad_elements):
+            raise TypeError("cad_elements must contain WorkspaceCadElement")
+        normalized = [element.copy() for element in cad_elements]
         if normalized == self.workspace_cad_elements:
             return
         self.workspace_cad_elements = normalized
@@ -116,15 +116,14 @@ class WorkspaceModel(QObject):
     def get_workspace_tcp_zone_colliders(self) -> list[PrimitiveCollider]:
         return [collider.copy() for collider in self.workspace_tcp_zone_colliders]
 
-    def get_workspace_tcp_zones_as_dicts(self) -> list[dict[str, Any]]:
-        return primitive_collider_data_to_dicts(self.workspace_tcp_zones)
-
     def set_workspace_tcp_zones(
         self,
-        zones: list[PrimitiveColliderData] | list[dict[str, Any]],
+        zones: list[PrimitiveColliderData],
         emit: bool = True,
     ) -> None:
-        normalized = parse_primitive_collider_data(zones)
+        if not all(isinstance(zone, PrimitiveColliderData) for zone in zones):
+            raise TypeError("zones must contain PrimitiveColliderData")
+        normalized = [zone.copy() for zone in zones]
         if normalized == self.workspace_tcp_zones:
             return
         self.workspace_tcp_zones = normalized
@@ -136,15 +135,14 @@ class WorkspaceModel(QObject):
     def update_workspace_tcp_zone(
         self,
         index: int,
-        zone: PrimitiveColliderData | dict[str, Any],
+        zone: PrimitiveColliderData,
         emit: bool = True,
     ) -> None:
         if index < 0:
             return
-        normalized_list = parse_primitive_collider_data([zone])
-        if not normalized_list:
-            return
-        normalized_zone = normalized_list[0]
+        if not isinstance(zone, PrimitiveColliderData):
+            raise TypeError("zone must be a PrimitiveColliderData")
+        normalized_zone = zone.copy()
         if index >= len(self.workspace_tcp_zones):
             return
         if self.workspace_tcp_zones[index] == normalized_zone:
@@ -163,13 +161,12 @@ class WorkspaceModel(QObject):
     def insert_workspace_tcp_zone(
         self,
         index: int,
-        zone: PrimitiveColliderData | dict[str, Any],
+        zone: PrimitiveColliderData,
         emit: bool = True,
     ) -> None:
-        normalized_list = parse_primitive_collider_data([zone])
-        if not normalized_list:
-            return
-        normalized_zone = normalized_list[0]
+        if not isinstance(zone, PrimitiveColliderData):
+            raise TypeError("zone must be a PrimitiveColliderData")
+        normalized_zone = zone.copy()
         bounded_index = max(0, min(int(index), len(self.workspace_tcp_zones)))
         self.workspace_tcp_zones.insert(bounded_index, normalized_zone)
         self.workspace_tcp_zone_colliders.insert(bounded_index, normalized_zone.build_collider())
@@ -197,10 +194,12 @@ class WorkspaceModel(QObject):
 
     def set_workspace_collision_zones(
         self,
-        zones: list[PrimitiveColliderData] | list[dict[str, Any]],
+        zones: list[PrimitiveColliderData],
         emit: bool = True,
     ) -> None:
-        normalized = parse_primitive_collider_data(zones)
+        if not all(isinstance(zone, PrimitiveColliderData) for zone in zones):
+            raise TypeError("zones must contain PrimitiveColliderData")
+        normalized = [zone.copy() for zone in zones]
         if normalized == self.workspace_collision_zones:
             return
         self.workspace_collision_zones = normalized
@@ -212,15 +211,14 @@ class WorkspaceModel(QObject):
     def update_workspace_collision_zone(
         self,
         index: int,
-        zone: PrimitiveColliderData | dict[str, Any],
+        zone: PrimitiveColliderData,
         emit: bool = True,
     ) -> None:
         if index < 0:
             return
-        normalized_list = parse_primitive_collider_data([zone])
-        if not normalized_list:
-            return
-        normalized_zone = normalized_list[0]
+        if not isinstance(zone, PrimitiveColliderData):
+            raise TypeError("zone must be a PrimitiveColliderData")
+        normalized_zone = zone.copy()
         if index >= len(self.workspace_collision_zones):
             return
         if self.workspace_collision_zones[index] == normalized_zone:
@@ -239,13 +237,12 @@ class WorkspaceModel(QObject):
     def insert_workspace_collision_zone(
         self,
         index: int,
-        zone: PrimitiveColliderData | dict[str, Any],
+        zone: PrimitiveColliderData,
         emit: bool = True,
     ) -> None:
-        normalized_list = parse_primitive_collider_data([zone])
-        if not normalized_list:
-            return
-        normalized_zone = normalized_list[0]
+        if not isinstance(zone, PrimitiveColliderData):
+            raise TypeError("zone must be a PrimitiveColliderData")
+        normalized_zone = zone.copy()
         bounded_index = max(0, min(int(index), len(self.workspace_collision_zones)))
         self.workspace_collision_zones.insert(bounded_index, normalized_zone)
         self.workspace_collision_zone_colliders.insert(bounded_index, normalized_zone.build_collider())
@@ -268,19 +265,27 @@ class WorkspaceModel(QObject):
     def set_workspace_data(
         self,
         scene_name: str,
-        robot_base_pose_world: Pose6 | list[float],
-        cad_elements: list[dict[str, Any]],
-        tcp_zones: list[PrimitiveColliderData] | list[dict[str, Any]],
-        collision_zones: list[PrimitiveColliderData] | list[dict[str, Any]],
+        robot_base_pose_world: Pose6,
+        cad_elements: list[WorkspaceCadElement],
+        tcp_zones: list[PrimitiveColliderData],
+        collision_zones: list[PrimitiveColliderData],
         file_path: str | None = None,
     ) -> None:
         normalized_scene_name = (
             str(scene_name).strip() if scene_name else WorkspaceModel.DEFAULT_WORKSPACE_SCENE_NAME
         )
-        normalized_robot_base_pose_world = normalize_pose6(robot_base_pose_world)
-        normalized_cad_elements = parse_workspace_cad_elements(cad_elements)
-        normalized_tcp_zones = parse_primitive_collider_data(tcp_zones)
-        normalized_collision_zones = parse_primitive_collider_data(collision_zones)
+        if not isinstance(robot_base_pose_world, Pose6):
+            raise TypeError("robot_base_pose_world must be a Pose6")
+        if not all(isinstance(element, WorkspaceCadElement) for element in cad_elements):
+            raise TypeError("cad_elements must contain WorkspaceCadElement")
+        if not all(isinstance(zone, PrimitiveColliderData) for zone in tcp_zones):
+            raise TypeError("tcp_zones must contain PrimitiveColliderData")
+        if not all(isinstance(zone, PrimitiveColliderData) for zone in collision_zones):
+            raise TypeError("collision_zones must contain PrimitiveColliderData")
+        normalized_robot_base_pose_world = robot_base_pose_world.copy()
+        normalized_cad_elements = [element.copy() for element in cad_elements]
+        normalized_tcp_zones = [zone.copy() for zone in tcp_zones]
+        normalized_collision_zones = [zone.copy() for zone in collision_zones]
         normalized_file_path = "" if file_path is None else str(file_path).strip()
 
         has_changes = (

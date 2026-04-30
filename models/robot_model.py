@@ -1,16 +1,14 @@
 from PyQt6.QtCore import QObject, pyqtSignal
-from typing import Any, List, Tuple
+from typing import List, Tuple
 import math
 from utils.mgi import *
 import utils.math_utils as math_utils
-from models.pose6 import Pose6
+from models.types import Pose6
 from models.collider_models import (
     default_axis_colliders,
 )
 from models.primitive_collider_models import (
     RobotAxisColliderData,
-    parse_robot_axis_colliders,
-    robot_axis_colliders_to_dicts,
 )
 from models.robot_configuration_file import RobotConfigurationFile
 
@@ -282,7 +280,7 @@ class RobotModel(QObject):
 
     def compute_ik_optimise(
         self,
-        target: list[float],
+        target: Pose6,
         q_initial: list[float],
         params=None,
         tool: RobotTool | None = None,
@@ -302,9 +300,11 @@ class RobotModel(QObject):
             MgiJacobienResultat avec joints raffinés et métriques de convergence
         """
         from utils.mgi_jacobien import mgi_jacobien, MgiJacobienParams
+        if not isinstance(target, Pose6):
+            raise TypeError("target must be a Pose6")
         if params is None:
             params = MgiJacobienParams()
-        return mgi_jacobien(target, self, q_initial, params, tool=tool)
+        return mgi_jacobien(target.to_list(), self, q_initial, params, tool=tool)
 
     def compute_ik(
         self,
@@ -322,8 +322,10 @@ class RobotModel(QObject):
         self.MGI_solver.set_q6ValueIfSingularityQ5(self.joint_values[5])
         return self.MGI_solver.compute_mgi(x, y, z, a, b, c)
 
-    def compute_ik_target(self, target: list[float], tool: RobotTool | None = None):
-        return self.compute_ik(target[0], target[1], target[2], target[3], target[4], target[5], tool=tool)
+    def compute_ik_target(self, target: Pose6, tool: RobotTool | None = None):
+        if not isinstance(target, Pose6):
+            raise TypeError("target must be a Pose6")
+        return self.compute_ik(target.x, target.y, target.z, target.a, target.b, target.c, tool=tool)
 
     def get_best_mgi_solution(self, mgi_result: MgiResult):
         joints_rad = [math.radians(q) for q in self.joint_values]
@@ -337,7 +339,7 @@ class RobotModel(QObject):
     def build_tool_transform(tool: RobotTool | None = None):
         current_tool = tool if tool is not None else RobotTool()
         return math_utils.pose_zyx_to_matrix(
-            Pose6.from_values(
+            Pose6(
                 current_tool.x,
                 current_tool.y,
                 current_tool.z,
@@ -447,16 +449,23 @@ class RobotModel(QObject):
         # Extraction position et orientation
         dh_pos = T_dh[:3, 3]
         dh_ori = math_utils.matrix_to_euler_zyx(T_dh)
-        dh_pose = np.concatenate([dh_pos, dh_ori])
+        dh_pose = Pose6(dh_pos[0], dh_pos[1], dh_pos[2], dh_ori[0], dh_ori[1], dh_ori[2])
         
         corrected_pos = T_corrected[:3, 3]
         corrected_ori = math_utils.matrix_to_euler_zyx(T_corrected)
-        corrected_pose = np.concatenate([corrected_pos, corrected_ori])
+        corrected_pose = Pose6(
+            corrected_pos[0],
+            corrected_pos[1],
+            corrected_pos[2],
+            corrected_ori[0],
+            corrected_ori[1],
+            corrected_ori[2],
+        )
         
         # Calcul de la déviation
         pos_dev = corrected_pos - dh_pos
         ori_dev = corrected_ori - dh_ori
-        deviation = np.concatenate([pos_dev, ori_dev])
+        deviation = Pose6(pos_dev[0], pos_dev[1], pos_dev[2], ori_dev[0], ori_dev[1], ori_dev[2])
         
         return dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation
 
@@ -490,7 +499,11 @@ class RobotModel(QObject):
         self._set_tcp_pose(dh_pose)
         self._set_corrected_tcp_pose(corrected_pose, True)
 
-        self._tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(*self.tcp_pose[3:6])
+        self._tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(
+            self.tcp_pose.a,
+            self.tcp_pose.b,
+            self.tcp_pose.c,
+        )
 
         # update MGI for current TCP
         self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose, tool=tool)
@@ -535,8 +548,8 @@ class RobotModel(QObject):
         self.robot_cad_models_changed.emit()
         self.cad_models_changed.emit()
 
-    def get_axis_colliders(self) -> list[dict[str, Any]]:
-        return robot_axis_colliders_to_dicts(self.axis_colliders, 6)
+    def get_axis_colliders(self) -> list[RobotAxisColliderData]:
+        return self.get_axis_collider_data()
 
     def get_axis_collider_data(self) -> list[RobotAxisColliderData]:
         return [collider.copy() for collider in self.axis_colliders]
@@ -546,9 +559,13 @@ class RobotModel(QObject):
 
     def set_axis_colliders(
         self,
-        axis_colliders: list[RobotAxisColliderData] | list[dict[str, Any]],
+        axis_colliders: list[RobotAxisColliderData],
     ) -> None:
-        normalized = parse_robot_axis_colliders(axis_colliders, 6)
+        if not all(isinstance(collider, RobotAxisColliderData) for collider in axis_colliders):
+            raise TypeError("axis_colliders must contain RobotAxisColliderData")
+        if len(axis_colliders) != 6:
+            raise ValueError("axis_colliders must contain 6 values")
+        normalized = [collider.copy() for collider in axis_colliders[:6]]
         if normalized == self.axis_colliders:
             return
         self.axis_colliders = normalized
@@ -960,31 +977,39 @@ class RobotModel(QObject):
     
     def get_tcp_position(self):
         """Retourne la position (X, Y, Z) du TCP"""
-        return list(self.tcp_pose[:3])
+        return [self.tcp_pose.x, self.tcp_pose.y, self.tcp_pose.z]
     
     def get_tcp_rotation(self):
         """Retourne la rotation (Rx, Ry, Rz) du TCP"""
-        return list(self.tcp_pose[3:6])
+        return [self.tcp_pose.a, self.tcp_pose.b, self.tcp_pose.c]
     
     # ============================================================================
     # RÉGION: Setters - Résultats cinématique
     # ============================================================================
     
-    def _set_tcp_pose(self, pose: Pose6 | list[float] | np.ndarray):
+    def _set_tcp_pose(self, pose: Pose6):
         """Définit la pose TCP non corrigée"""
-        self.tcp_pose = Pose6.from_sequence(list(pose), fill_missing=False)
+        if not isinstance(pose, Pose6):
+            raise TypeError("pose must be a Pose6")
+        self.tcp_pose = pose.copy()
     
-    def _set_corrected_tcp_pose(self, pose: Pose6 | list[float] | np.ndarray, compute_deviation: bool=True):
+    def _set_corrected_tcp_pose(self, pose: Pose6, compute_deviation: bool=True):
         """Définit la pose TCP non corrigée"""
-        self.corrected_tcp_pose = Pose6.from_sequence(list(pose), fill_missing=False)
+        if not isinstance(pose, Pose6):
+            raise TypeError("pose must be a Pose6")
+        self.corrected_tcp_pose = pose.copy()
         if compute_deviation:
             self._compute_deviation()
 
     def _compute_deviation(self):
         """Calcule la déviation entre TCP et TCP corrigé"""
-        self.pose_deviation = Pose6.from_sequence(
-            [self.corrected_tcp_pose[i] - self.tcp_pose[i] for i in range(6)],
-            fill_missing=False,
+        self.pose_deviation = Pose6(
+            self.corrected_tcp_pose.x - self.tcp_pose.x,
+            self.corrected_tcp_pose.y - self.tcp_pose.y,
+            self.corrected_tcp_pose.z - self.tcp_pose.z,
+            self.corrected_tcp_pose.a - self.tcp_pose.a,
+            self.corrected_tcp_pose.b - self.tcp_pose.b,
+            self.corrected_tcp_pose.c - self.tcp_pose.c,
         )
     
     # ============================================================================

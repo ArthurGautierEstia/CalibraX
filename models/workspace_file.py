@@ -4,103 +4,169 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, TYPE_CHECKING
 
-from models.primitive_collider_models import (
-    parse_primitive_collider_data,
-    primitive_collider_data_to_dicts,
-)
-from models.pose6 import Pose6
+from models.primitive_collider_models import PrimitiveColliderData, PrimitiveColliderShape
+from models.types import Pose6
+from models.workspace_cad_element import WorkspaceCadElement
 from utils.math_utils import safe_float
-from utils.reference_frame_utils import normalize_pose6
 
 if TYPE_CHECKING:
     from models.workspace_model import WorkspaceModel
 
 
-def _normalize_pose(raw_pose: Any) -> list[float]:
-    if isinstance(raw_pose, dict):
-        values = [
-            safe_float(raw_pose.get("x", 0.0), 0.0),
-            safe_float(raw_pose.get("y", 0.0), 0.0),
-            safe_float(raw_pose.get("z", 0.0), 0.0),
-            safe_float(raw_pose.get("a", 0.0), 0.0),
-            safe_float(raw_pose.get("b", 0.0), 0.0),
-            safe_float(raw_pose.get("c", 0.0), 0.0),
-        ]
-    elif isinstance(raw_pose, list):
-        values = [safe_float(raw_pose[idx] if idx < len(raw_pose) else 0.0, 0.0) for idx in range(6)]
-    else:
-        values = [0.0] * 6
-    return values[:6]
+def _require_mapping(data: Any, name: str) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise TypeError(f"{name} must be a JSON object")
+    return data
 
 
-def normalize_workspace_cad_element(raw_value: Any, default_name: str = "Element") -> dict[str, Any]:
-    data = raw_value if isinstance(raw_value, dict) else {}
-    cad_model = data.get("cad_model", data.get("stl_file", data.get("file", "")))
-    pose = data.get("pose", data.get("xyzabc", data.get("transform")))
+def _require_list(data: Any, name: str, length: int | None = None) -> list[Any]:
+    if not isinstance(data, list):
+        raise TypeError(f"{name} must be a JSON list")
+    if length is not None and len(data) != length:
+        raise ValueError(f"{name} must contain {length} values")
+    return data
 
+
+def _parse_pose6_list(data: Any, name: str) -> Pose6:
+    values = _require_list(data, name, 6)
+    return Pose6(*(safe_float(value, 0.0) for value in values))
+
+
+def _parse_shape(data: Any, name: str) -> PrimitiveColliderShape:
+    if not isinstance(data, str):
+        raise TypeError(f"{name} must be a string")
+    return PrimitiveColliderShape(data)
+
+
+def _parse_workspace_cad_element(data: Any, name: str) -> WorkspaceCadElement:
+    values = _require_mapping(data, name)
+    required = ("name", "cad_model", "pose")
+    missing = [key for key in required if key not in values]
+    if missing:
+        raise ValueError(f"{name} is missing keys: {', '.join(missing)}")
+    return WorkspaceCadElement(
+        name=str(values["name"]),
+        cad_model=str(values["cad_model"]),
+        pose=_parse_pose6_list(values["pose"], f"{name}.pose"),
+    )
+
+
+def _workspace_cad_element_to_dict(element: WorkspaceCadElement) -> dict[str, Any]:
     return {
-        "name": str(data.get("name", default_name)),
-        "cad_model": "" if cad_model is None else str(cad_model),
-        "pose": _normalize_pose(pose),
+        "name": element.name,
+        "cad_model": element.cad_model,
+        "pose": element.pose.to_list(),
     }
 
 
-def parse_workspace_cad_elements(raw_values: Any) -> list[dict[str, Any]]:
-    values = raw_values if isinstance(raw_values, list) else []
-    parsed: list[dict[str, Any]] = []
-    for idx, raw_value in enumerate(values):
-        parsed.append(normalize_workspace_cad_element(raw_value, default_name=f"Element {idx + 1}"))
-    return parsed
+def _parse_primitive_collider(data: Any, name: str) -> PrimitiveColliderData:
+    values = _require_mapping(data, name)
+    required = (
+        "name",
+        "enabled",
+        "shape",
+        "pose",
+        "size_x",
+        "size_y",
+        "size_z",
+        "radius",
+        "height",
+    )
+    missing = [key for key in required if key not in values]
+    if missing:
+        raise ValueError(f"{name} is missing keys: {', '.join(missing)}")
+    return PrimitiveColliderData(
+        name=str(values["name"]),
+        enabled=bool(values["enabled"]),
+        shape=_parse_shape(values["shape"], f"{name}.shape"),
+        pose=_parse_pose6_list(values["pose"], f"{name}.pose"),
+        size_x=safe_float(values["size_x"], 0.0),
+        size_y=safe_float(values["size_y"], 0.0),
+        size_z=safe_float(values["size_z"], 0.0),
+        radius=safe_float(values["radius"], 0.0),
+        height=safe_float(values["height"], 0.0),
+    )
+
+
+def _parse_primitive_colliders(data: Any, name: str) -> list[PrimitiveColliderData]:
+    values = _require_list(data, name)
+    return [_parse_primitive_collider(value, f"{name}[{index}]") for index, value in enumerate(values)]
+
+
+def _primitive_collider_to_dict(collider: PrimitiveColliderData) -> dict[str, Any]:
+    return {
+        "name": collider.name,
+        "enabled": collider.enabled,
+        "shape": collider.shape.value,
+        "pose": collider.pose.to_list(),
+        "size_x": float(collider.size_x),
+        "size_y": float(collider.size_y),
+        "size_z": float(collider.size_z),
+        "radius": float(collider.radius),
+        "height": float(collider.height),
+    }
 
 
 @dataclass
 class WorkspaceFile:
     scene_name: str = ""
     robot_base_pose_world: Pose6 = field(default_factory=Pose6.zeros)
-    cad_elements: list[dict[str, Any]] = field(default_factory=list)
-    tcp_zones: list[dict[str, Any]] = field(default_factory=list)
-    collision_zones: list[dict[str, Any]] = field(default_factory=list)
+    cad_elements: list[WorkspaceCadElement] = field(default_factory=list)
+    tcp_zones: list[PrimitiveColliderData] = field(default_factory=list)
+    collision_zones: list[PrimitiveColliderData] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.robot_base_pose_world, Pose6):
+            raise TypeError("robot_base_pose_world must be a Pose6")
+        if not all(isinstance(element, WorkspaceCadElement) for element in self.cad_elements):
+            raise TypeError("cad_elements must contain WorkspaceCadElement")
+        if not all(isinstance(zone, PrimitiveColliderData) for zone in self.tcp_zones):
+            raise TypeError("tcp_zones must contain PrimitiveColliderData")
+        if not all(isinstance(zone, PrimitiveColliderData) for zone in self.collision_zones):
+            raise TypeError("collision_zones must contain PrimitiveColliderData")
+
+        self.scene_name = str(self.scene_name)
+        self.robot_base_pose_world = self.robot_base_pose_world.copy()
+        self.cad_elements = [element.copy() for element in self.cad_elements]
+        self.tcp_zones = [zone.copy() for zone in self.tcp_zones]
+        self.collision_zones = [zone.copy() for zone in self.collision_zones]
 
     @classmethod
     def from_workspace_model(cls, workspace_model: "WorkspaceModel") -> "WorkspaceFile":
         return cls(
             scene_name=workspace_model.get_workspace_scene_name(),
-            robot_base_pose_world=normalize_pose6(workspace_model.get_robot_base_pose_world()),
-            cad_elements=[normalize_workspace_cad_element(v) for v in workspace_model.get_workspace_cad_elements()],
-            tcp_zones=primitive_collider_data_to_dicts(workspace_model.get_workspace_tcp_zones()),
-            collision_zones=primitive_collider_data_to_dicts(workspace_model.get_workspace_collision_zones()),
+            robot_base_pose_world=workspace_model.get_robot_base_pose_world(),
+            cad_elements=workspace_model.get_workspace_cad_elements(),
+            tcp_zones=workspace_model.get_workspace_tcp_zones(),
+            collision_zones=workspace_model.get_workspace_collision_zones(),
         )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "WorkspaceFile":
-        if not isinstance(data, dict):
-            raise TypeError("Le workspace doit etre un dictionnaire JSON.")
-
-        scene_name = "" if data.get("scene_name") is None else str(data.get("scene_name"))
-        if scene_name == "":
-            scene_name = "" if data.get("name") is None else str(data.get("name"))
+        values = _require_mapping(data, "workspace")
+        required = ("scene_name", "robot_base_pose_world", "cad_elements", "tcp_zones", "collision_zones")
+        missing = [key for key in required if key not in values]
+        if missing:
+            raise ValueError(f"workspace is missing keys: {', '.join(missing)}")
 
         return cls(
-            scene_name=scene_name,
-            robot_base_pose_world=normalize_pose6(
-                data.get("robot_base_pose_world", data.get("robot_pose", data.get("base_pose")))
-            ),
-            cad_elements=parse_workspace_cad_elements(data.get("cad_elements", data.get("elements"))),
-            tcp_zones=primitive_collider_data_to_dicts(
-                parse_primitive_collider_data(data.get("tcp_zones", data.get("zones_tcp")))
-            ),
-            collision_zones=primitive_collider_data_to_dicts(
-                parse_primitive_collider_data(data.get("collision_zones", data.get("zones_collision")))
-            ),
+            scene_name=str(values["scene_name"]),
+            robot_base_pose_world=_parse_pose6_list(values["robot_base_pose_world"], "robot_base_pose_world"),
+            cad_elements=[
+                _parse_workspace_cad_element(value, f"cad_elements[{index}]")
+                for index, value in enumerate(_require_list(values["cad_elements"], "cad_elements"))
+            ],
+            tcp_zones=_parse_primitive_colliders(values["tcp_zones"], "tcp_zones"),
+            collision_zones=_parse_primitive_colliders(values["collision_zones"], "collision_zones"),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "scene_name": self.scene_name,
-            "robot_base_pose_world": normalize_pose6(self.robot_base_pose_world).to_list(),
-            "cad_elements": [normalize_workspace_cad_element(v) for v in self.cad_elements],
-            "tcp_zones": primitive_collider_data_to_dicts(self.tcp_zones),
-            "collision_zones": primitive_collider_data_to_dicts(self.collision_zones),
+            "robot_base_pose_world": self.robot_base_pose_world.to_list(),
+            "cad_elements": [_workspace_cad_element_to_dict(element) for element in self.cad_elements],
+            "tcp_zones": [_primitive_collider_to_dict(zone) for zone in self.tcp_zones],
+            "collision_zones": [_primitive_collider_to_dict(zone) for zone in self.collision_zones],
         }
 
     def apply_to_workspace_model(self, workspace_model: "WorkspaceModel", file_path: str | None = None) -> None:

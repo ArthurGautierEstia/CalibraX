@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.workspace_file import WorkspaceFile
 from models.workspace_model import WorkspaceModel
+from models.types import Pose6
+from models.workspace_cad_element import WorkspaceCadElement
 from models.workspace_primitive_zone_models import WorkspacePrimitiveZoneData
 from views.workspace_view import WorkspaceView
 from widgets.workspace_view.workspace_configuration_widget import WorkspaceConfigurationWidget
@@ -63,14 +65,14 @@ class WorkspaceController(QObject):
         finally:
             self._updating_from_view = False
 
-    def _on_workspace_cad_elements_changed(self, values: list[dict]) -> None:
+    def _on_workspace_cad_elements_changed(self, values: list[WorkspaceCadElement]) -> None:
         self._updating_from_view = True
         try:
             self.workspace_model.set_workspace_cad_elements(values)
         finally:
             self._updating_from_view = False
 
-    def _on_robot_base_pose_world_changed(self, pose: list[float]) -> None:
+    def _on_robot_base_pose_world_changed(self, pose: Pose6) -> None:
         self._updating_from_view = True
         try:
             self.workspace_model.set_robot_base_pose_world(pose)

@@ -15,8 +15,9 @@ from PyQt6.QtWidgets import (
 
 from models.workspace_primitive_zone_models import (
     WorkspacePrimitiveZoneData,
-    parse_workspace_primitive_zones,
 )
+from models.primitive_collider_models import PrimitiveColliderShape
+from models.types import Pose6
 from utils.math_utils import safe_float
 
 
@@ -98,10 +99,12 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
 
         layout.addWidget(group)
 
-    def set_zones(self, values: list[WorkspacePrimitiveZoneData] | list[dict]) -> None:
+    def set_zones(self, values: list[WorkspacePrimitiveZoneData]) -> None:
         if self.table is None:
             return
-        normalized = parse_workspace_primitive_zones(values)
+        if not all(isinstance(value, WorkspacePrimitiveZoneData) for value in values):
+            raise TypeError("values must contain WorkspacePrimitiveZoneData")
+        normalized = [value.copy() for value in values]
         self.table.blockSignals(True)
         try:
             self.table.setRowCount(0)
@@ -128,8 +131,8 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
         value = WorkspacePrimitiveZoneData(
             name=f"{self._default_name_prefix} {row + 1}",
             enabled=True,
-            shape="box",
-            pose=[0.0] * 6,
+            shape=PrimitiveColliderShape.BOX,
+            pose=Pose6.zeros(),
             size_x=200.0,
             size_y=200.0,
             size_z=200.0,
@@ -176,7 +179,7 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
 
         type_combo = QComboBox()
         type_combo.addItems(["box", "cylinder", "sphere"])
-        type_combo.setCurrentText(value.shape)
+        type_combo.setCurrentText(value.shape.value)
         type_combo.currentIndexChanged.connect(
             lambda _idx, combo=type_combo: self._on_shape_changed(combo)
         )
@@ -184,12 +187,12 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
         self._type_combos.append(type_combo)
 
         self.table.setItem(row, self.COL_NAME, QTableWidgetItem(value.name))
-        self.table.setItem(row, self.COL_X, QTableWidgetItem(str(value.pose[0])))
-        self.table.setItem(row, self.COL_Y, QTableWidgetItem(str(value.pose[1])))
-        self.table.setItem(row, self.COL_Z, QTableWidgetItem(str(value.pose[2])))
-        self.table.setItem(row, self.COL_A, QTableWidgetItem(str(value.pose[3])))
-        self.table.setItem(row, self.COL_B, QTableWidgetItem(str(value.pose[4])))
-        self.table.setItem(row, self.COL_C, QTableWidgetItem(str(value.pose[5])))
+        self.table.setItem(row, self.COL_X, QTableWidgetItem(str(value.pose.x)))
+        self.table.setItem(row, self.COL_Y, QTableWidgetItem(str(value.pose.y)))
+        self.table.setItem(row, self.COL_Z, QTableWidgetItem(str(value.pose.z)))
+        self.table.setItem(row, self.COL_A, QTableWidgetItem(str(value.pose.a)))
+        self.table.setItem(row, self.COL_B, QTableWidgetItem(str(value.pose.b)))
+        self.table.setItem(row, self.COL_C, QTableWidgetItem(str(value.pose.c)))
         self.table.setItem(row, self.COL_SIZE_X, QTableWidgetItem(str(value.size_x)))
         self.table.setItem(row, self.COL_SIZE_Y, QTableWidgetItem(str(value.size_y)))
         self.table.setItem(row, self.COL_SIZE_Z, QTableWidgetItem(str(value.size_z)))
@@ -233,7 +236,11 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
         enabled = bool(enabled_widget.isChecked()) if isinstance(enabled_widget, QCheckBox) else True
 
         shape_widget = self.table.cellWidget(row, self.COL_TYPE)
-        shape = str(shape_widget.currentText()).strip().lower() if isinstance(shape_widget, QComboBox) else "box"
+        shape = (
+            PrimitiveColliderShape(str(shape_widget.currentText()).strip().lower())
+            if isinstance(shape_widget, QComboBox)
+            else PrimitiveColliderShape.BOX
+        )
 
         name_item = self.table.item(row, self.COL_NAME)
         name = name_item.text().strip() if name_item is not None else f"{self._default_name_prefix} {row + 1}"
@@ -244,14 +251,14 @@ class WorkspacePrimitiveZonesEditorWidget(QWidget):
             name=name,
             enabled=enabled,
             shape=shape,
-            pose=[
+            pose=Pose6(
                 self._cell_to_float(row, self.COL_X, 0.0),
                 self._cell_to_float(row, self.COL_Y, 0.0),
                 self._cell_to_float(row, self.COL_Z, 0.0),
                 self._cell_to_float(row, self.COL_A, 0.0),
                 self._cell_to_float(row, self.COL_B, 0.0),
                 self._cell_to_float(row, self.COL_C, 0.0),
-            ],
+            ),
             size_x=max(0.0, self._cell_to_float(row, self.COL_SIZE_X, 200.0)),
             size_y=max(0.0, self._cell_to_float(row, self.COL_SIZE_Y, 200.0)),
             size_z=max(0.0, self._cell_to_float(row, self.COL_SIZE_Z, 200.0)),

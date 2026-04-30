@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
+from models.types import Pose6
 from models.workspace_model import WorkspaceModel
 from models.trajectory_result import (
     TrajectoryDynamicViolationSeverity,
@@ -19,6 +20,7 @@ from models.trajectory_result import (
     TrajectorySegment,
 )
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
+from models.reference_frame import ReferenceFrame
 from utils.trajectory_builder import TrajectoryBuilder
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from utils.trajectory_status import build_trajectory_issue_messages, build_trajectory_warning_messages
@@ -219,7 +221,7 @@ class TrajectoryController(QObject):
             return
 
         target_pose = convert_pose_to_base_frame(
-            keypoint.cartesian_target[:6],
+            Pose6(*keypoint.cartesian_target[:6]),
             keypoint.cartesian_frame,
             self.workspace_model.get_robot_base_transform_world(),
         )
@@ -354,14 +356,21 @@ class TrajectoryController(QObject):
                 writer = csv.writer(handle, delimiter=";")
                 writer.writerow(header)
                 for sample in self.current_samples:
-                    pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_transform)
+                    pose = convert_pose_from_base_frame(
+                        Pose6(*sample.pose[:6]),
+                        ReferenceFrame.from_value(display_frame),
+                        robot_base_transform,
+                    ).to_list()
                     if display_frame == "WORLD":
-                        cartesian_velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_transform)
-                        cartesian_acceleration = twist_base_to_world(
-                            sample.cartesian_acceleration[:6],
+                        cartesian_velocity = twist_base_to_world(
+                            Pose6(*sample.cartesian_velocity[:6]),
                             robot_base_transform,
-                        )
-                        cartesian_jerk = twist_base_to_world(sample.cartesian_jerk[:6], robot_base_transform)
+                        ).to_list()
+                        cartesian_acceleration = twist_base_to_world(
+                            Pose6(*sample.cartesian_acceleration[:6]),
+                            robot_base_transform,
+                        ).to_list()
+                        cartesian_jerk = twist_base_to_world(Pose6(*sample.cartesian_jerk[:6]), robot_base_transform).to_list()
                     else:
                         cartesian_velocity = [float(v) for v in sample.cartesian_velocity[:6]]
                         cartesian_acceleration = [float(v) for v in sample.cartesian_acceleration[:6]]
@@ -518,11 +527,15 @@ class TrajectoryController(QObject):
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         out: list[tuple[list[float], list[float], list[float], list[float]]] = []
         for sample in self.current_samples:
-            pose = convert_pose_from_base_frame(sample.pose[:6], display_frame, robot_base_transform)
+            pose = convert_pose_from_base_frame(
+                Pose6(*sample.pose[:6]),
+                ReferenceFrame.from_value(display_frame),
+                robot_base_transform,
+            ).to_list()
             if display_frame == "WORLD":
-                velocity = twist_base_to_world(sample.cartesian_velocity[:6], robot_base_transform)
-                acceleration = twist_base_to_world(sample.cartesian_acceleration[:6], robot_base_transform)
-                jerk = twist_base_to_world(sample.cartesian_jerk[:6], robot_base_transform)
+                velocity = twist_base_to_world(Pose6(*sample.cartesian_velocity[:6]), robot_base_transform).to_list()
+                acceleration = twist_base_to_world(Pose6(*sample.cartesian_acceleration[:6]), robot_base_transform).to_list()
+                jerk = twist_base_to_world(Pose6(*sample.cartesian_jerk[:6]), robot_base_transform).to_list()
             else:
                 velocity = [float(v) for v in sample.cartesian_velocity[:6]]
                 acceleration = [float(v) for v in sample.cartesian_acceleration[:6]]

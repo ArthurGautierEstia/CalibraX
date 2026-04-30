@@ -13,6 +13,7 @@ from models.trajectory_keypoint import (
     TrajectoryKeypoint,
 )
 from models.trajectory_options import TrajectoryBezierDegree
+from models.types import Pose6
 from models.trajectory_result import (
     TrajectoryCollisionDiagnostic,
     TrajectoryCollisionDomain,
@@ -197,11 +198,10 @@ class TrajectoryBuilder:
         return diagnostics
 
     @staticmethod
-    def _normalize_joints_6(values: list[float]) -> list[float]:
-        joints = [float(v) for v in values[:6]]
-        while len(joints) < 6:
-            joints.append(0.0)
-        return joints
+    def _copy_joints_6(values: list[float]) -> list[float]:
+        if len(values) < 6:
+            raise ValueError("joints must contain at least 6 values")
+        return [float(v) for v in values[:6]]
 
     @staticmethod
     def _shortest_angle_delta_deg(from_deg: float, to_deg: float) -> float:
@@ -225,10 +225,10 @@ class TrajectoryBuilder:
     def _resolve_keypoint_pose(self, keypoint: TrajectoryKeypoint) -> list[float] | None:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
             return convert_pose_to_base_frame(
-                keypoint.cartesian_target,
+                Pose6(*keypoint.cartesian_target[:6]),
                 keypoint.cartesian_frame,
                 self.workspace_model.get_robot_base_transform_world(),
-            )
+            ).to_list()
         return self._resolve_pose_from_joints(keypoint.joint_target)
 
     def _resolve_pose_from_joints(self, joints_deg: list[float]) -> list[float] | None:
@@ -236,9 +236,7 @@ class TrajectoryBuilder:
         if fk_result is None:
             return None
         _, _, dh_pose, _, _ = fk_result
-        if len(dh_pose) < 6:
-            return None
-        return [float(v) for v in dh_pose[:6]]
+        return dh_pose.to_list()
 
     def _resolve_reference_config(self, reference_sample: TrajectorySample | None) -> MgiConfigKey:
         config_identifier = self.robot_model.get_config_identifier()
@@ -258,7 +256,7 @@ class TrajectoryBuilder:
         if keypoint.target_type == KeypointTargetType.JOINT:
             config_identifier = self.robot_model.get_config_identifier()
             joint_config = MgiConfigKey.identify_configuration_deg(
-                TrajectoryBuilder._normalize_joints_6(keypoint.joint_target),
+                TrajectoryBuilder._copy_joints_6(keypoint.joint_target),
                 config_identifier,
             )
             return ({joint_config} & robot_allowed)
@@ -282,7 +280,7 @@ class TrajectoryBuilder:
         allowed_configs: set[MgiConfigKey],
     ) -> tuple[list[float] | None, TrajectorySampleErrorCode]:
         if keypoint.target_type == KeypointTargetType.JOINT:
-            joints = TrajectoryBuilder._normalize_joints_6(keypoint.joint_target)
+            joints = TrajectoryBuilder._copy_joints_6(keypoint.joint_target)
             config_identifier = self.robot_model.get_config_identifier()
             joint_config = MgiConfigKey.identify_configuration_deg(joints, config_identifier)
             if joint_config not in allowed_configs:
@@ -299,7 +297,7 @@ class TrajectoryBuilder:
             return None, TrajectoryBuilder._resolve_error_for_missing_selected_solution(mgi_result, allowed_configs)
 
         _, solution = selected_solution
-        return TrajectoryBuilder._normalize_joints_6(solution.joints), TrajectorySampleErrorCode.NONE
+        return TrajectoryBuilder._copy_joints_6(solution.joints), TrajectorySampleErrorCode.NONE
 
     def _resolve_PTP_segment_endpoints(self,
                                        segment: TrajectorySegment,
@@ -316,7 +314,7 @@ class TrajectoryBuilder:
 
         to_reference_sample = TrajectorySample()
         to_reference_sample.reachable = True
-        to_reference_sample.joints = TrajectoryBuilder._normalize_joints_6(from_joints)
+        to_reference_sample.joints = TrajectoryBuilder._copy_joints_6(from_joints)
         to_allowed_configs = self._resolve_allowed_configs_for_keypoint(
             segment.to_keypoint,
             to_reference_sample,
@@ -663,8 +661,8 @@ class TrajectoryBuilder:
 
     def _get_reference_joints_for_ik(self, previous_sample: TrajectorySample | None) -> list[float]:
         if previous_sample is not None and previous_sample.reachable:
-            return TrajectoryBuilder._normalize_joints_6(previous_sample.joints)
-        return TrajectoryBuilder._normalize_joints_6(self.robot_model.get_joints())
+            return TrajectoryBuilder._copy_joints_6(previous_sample.joints)
+        return TrajectoryBuilder._copy_joints_6(self.robot_model.get_joints())
 
     def _compute_mgi_for_pose(self, pose: list[float], previous_sample: TrajectorySample | None) -> MgiResult:
         reference_joints = self._get_reference_joints_for_ik(previous_sample)
@@ -1068,7 +1066,7 @@ class TrajectoryBuilder:
             return False
 
         sample.configuration = config_key
-        sample.joints = TrajectoryBuilder._normalize_joints_6(selected.joints)
+        sample.joints = TrajectoryBuilder._copy_joints_6(selected.joints)
         sample.reachable = True
         sample.error_code = TrajectorySampleErrorCode.NONE
         sample.error_axis = None
@@ -1175,7 +1173,7 @@ class TrajectoryBuilder:
         start_time_s: float = 0.0,
     ) -> SegmentResult:
         self._ensure_collision_world_cache()
-        joints_6 = TrajectoryBuilder._normalize_joints_6(current_joints)
+        joints_6 = TrajectoryBuilder._copy_joints_6(current_joints)
         config_identifier = self.robot_model.get_config_identifier()
         identified_config = MgiConfigKey.identify_configuration_deg(joints_6, config_identifier)
 
@@ -1688,7 +1686,7 @@ class TrajectoryBuilder:
             sample.reachable = True
             sample.error_code = TrajectorySampleErrorCode.NONE
             sample.configuration = config_key
-            sample.joints = TrajectoryBuilder._normalize_joints_6(solution.joints)
+            sample.joints = TrajectoryBuilder._copy_joints_6(solution.joints)
             fk_result = self.robot_model.compute_fk_joints(sample.joints, tool=self.tool_model.get_tool())
             if fk_result is None:
                 sample.reachable = False
@@ -1740,7 +1738,7 @@ class TrajectoryBuilder:
         # A) Create base sample payload from joint state at current time.
         sample = TrajectorySample()
         sample.time = float(time_s)
-        sample.joints = TrajectoryBuilder._normalize_joints_6(joints_deg)
+        sample.joints = TrajectoryBuilder._copy_joints_6(joints_deg)
         corrected_matrices: list[np.ndarray] | None = None
 
         # B) Compute pose from FK and expose configuration reachability metadata.
@@ -1753,7 +1751,7 @@ class TrajectoryBuilder:
             sample.mgi_solutions = {}
         else:
             _, corrected_matrices, dh_pose, _, _ = fk_result
-            sample.pose = [float(v) for v in dh_pose[:6]]
+            sample.pose = dh_pose.to_list()
             while len(sample.pose) < 6:
                 sample.pose.append(0.0)
 

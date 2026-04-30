@@ -1,7 +1,5 @@
 import os
 from dataclasses import dataclass
-from typing import Any
-
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -21,16 +19,17 @@ from stl import mesh
 import utils.math_utils as math_utils
 from models.app_session_file import ViewerDisplayState
 from models.collision_scene_model import CollisionSceneModel
-from models.primitive_collider_models import PrimitiveCollider
+from models.primitive_collider_models import PrimitiveCollider, PrimitiveColliderData
 from models.robot_model import RobotModel
 from models.reference_frame import ReferenceFrame
+from models.types import Pose6
 from models.tool_model import ToolModel
+from models.workspace_cad_element import WorkspaceCadElement
 from models.workspace_model import WorkspaceModel
 from widgets.frame_visibility_overlay_widget import FrameVisibilityOverlayWidget
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
     FrameTransform,
-    normalize_pose6,
     transform_matrix_base_to_world,
     transform_points_base_to_world,
 )
@@ -45,13 +44,11 @@ class WorkspaceElementState:
     revision: int
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any], index: int) -> "WorkspaceElementState":
-        name = str(value.get("name", f"Element {index + 1}")).strip()
-        if name == "":
-            name = f"Element {index + 1}"
-        cad_model = str(value.get("cad_model", "")).strip()
-        pose = tuple(normalize_pose6(value.get("pose", [0.0] * 6)))
-        transform = math_utils.pose_zyx_to_matrix(pose)
+    def from_element(cls, value: WorkspaceCadElement, index: int) -> "WorkspaceElementState":
+        name = value.name if value.name != "" else f"Element {index + 1}"
+        cad_model = value.cad_model
+        pose = value.pose.to_tuple()
+        transform = math_utils.pose_zyx_to_matrix(value.pose)
         transform.setflags(write=False)
         revision = hash((name, cad_model, pose))
         return cls(name, cad_model, pose, transform, revision)
@@ -73,25 +70,22 @@ class PrimitiveColliderState:
     revision: int
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any], index: int) -> "PrimitiveColliderState":
-        name = str(value.get("name", f"Zone {index + 1}")).strip()
-        if name == "":
-            name = f"Zone {index + 1}"
-        shape = str(value.get("shape", "box")).strip().lower()
-        shape = shape if shape in {"box", "cylinder", "sphere"} else "box"
-        pose = tuple(normalize_pose6(value.get("pose", [0.0] * 6)))
-        size_x = max(0.0, float(value.get("size_x", 100.0)))
-        size_y = max(0.0, float(value.get("size_y", 100.0)))
-        size_z = max(0.0, float(value.get("size_z", 100.0)))
-        radius = max(0.0, float(value.get("radius", 50.0)))
-        height = max(0.0, float(value.get("height", 100.0)))
-        local_transform = math_utils.pose_zyx_to_matrix(pose)
+    def from_collider_data(cls, value: PrimitiveColliderData, index: int) -> "PrimitiveColliderState":
+        name = value.name if value.name != "" else f"Zone {index + 1}"
+        shape = value.shape.value
+        pose = value.pose.to_tuple()
+        size_x = max(0.0, float(value.size_x))
+        size_y = max(0.0, float(value.size_y))
+        size_z = max(0.0, float(value.size_z))
+        radius = max(0.0, float(value.radius))
+        height = max(0.0, float(value.height))
+        local_transform = math_utils.pose_zyx_to_matrix(value.pose)
         local_transform.setflags(write=False)
         shape_key = (shape, size_x, size_y, size_z, radius, height)
-        revision = hash((name, bool(value.get("enabled", True)), shape_key, pose))
+        revision = hash((name, value.enabled, shape_key, pose))
         return cls(
             name=name,
-            enabled=bool(value.get("enabled", True)),
+            enabled=value.enabled,
             shape=shape,
             pose=pose,
             size_x=size_x,
@@ -143,7 +137,7 @@ class Viewer3DWidget(QWidget):
         self._robot_model: RobotModel | None = None
         self._tool_model: ToolModel | None = None
         self._workspace_model: WorkspaceModel | None = None
-        self._robot_base_transform_world = FrameTransform.from_pose([0.0] * 6)
+        self._robot_base_transform_world = FrameTransform.from_pose(Pose6.zeros())
         self._workspace_structure_revision: int | None = None
         self._mesh_data_cache: dict[str, gl.MeshData] = {}
         self._missing_mesh_paths: set[str] = set()
@@ -1230,7 +1224,7 @@ class Viewer3DWidget(QWidget):
 
         self._workspace_model = workspace_model
         self._robot_base_transform_world = (
-            FrameTransform.from_pose([0.0] * 6)
+            FrameTransform.from_pose(Pose6.zeros())
             if workspace_model is None
             else workspace_model.get_robot_base_transform_world()
         )
@@ -1249,7 +1243,7 @@ class Viewer3DWidget(QWidget):
 
         raw_elements = [] if workspace_model is None else workspace_model.get_workspace_cad_elements()
         self._workspace_elements = [
-            WorkspaceElementState.from_dict(element, index)
+            WorkspaceElementState.from_element(element, index)
             for index, element in enumerate(raw_elements)
         ]
         self.begin_loading_feedback("Chargement scene workspace...")
@@ -1278,7 +1272,7 @@ class Viewer3DWidget(QWidget):
         self._render_tool_colliders()
 
     @staticmethod
-    def _pose_to_matrix(pose: list[float]) -> np.ndarray:
+    def _pose_to_matrix(pose) -> np.ndarray:
         return math_utils.pose_zyx_to_matrix(pose)
 
     def _get_robot_base_pose_world(self) -> list[float]:
@@ -1450,13 +1444,13 @@ class Viewer3DWidget(QWidget):
 
     def _build_primitive_item(
         self,
-        primitive: PrimitiveCollider | PrimitiveColliderState | dict,
+        primitive: PrimitiveCollider | PrimitiveColliderState,
         color: tuple[float, float, float, float],
         base_transform: np.ndarray | None = None,
         skip_pose: bool = False,
     ) -> gl.GLMeshItem | None:
         if isinstance(primitive, PrimitiveCollider):
-            shape = primitive.shape
+            shape = primitive.shape.value
             size_x = primitive.size_x
             size_y = primitive.size_y
             size_z = primitive.size_z
@@ -1472,13 +1466,7 @@ class Viewer3DWidget(QWidget):
             height = primitive.height
             primitive_transform = primitive.local_transform
         else:
-            shape = str(primitive.get("shape", "box")).strip().lower()
-            size_x = primitive.get("size_x", 100.0)
-            size_y = primitive.get("size_y", 100.0)
-            size_z = primitive.get("size_z", 100.0)
-            radius = primitive.get("radius", 50.0)
-            height = primitive.get("height", 100.0)
-            primitive_transform = self._pose_to_matrix(primitive.get("pose", [0.0] * 6))
+            raise TypeError("primitive must be a PrimitiveCollider or PrimitiveColliderState")
 
         mesh_data = self._build_primitive_mesh_data(shape, size_x, size_y, size_z, radius, height)
         if mesh_data is None:

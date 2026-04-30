@@ -5,8 +5,10 @@ from typing import Tuple, Optional
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
+from models.reference_frame import ReferenceFrame
 from views.jog_view import JogView
 import utils.math_utils as math_utils
+from models.types import Pose6
 from utils.reference_frame_utils import convert_pose_from_base_frame
 
 class JogController(QObject):
@@ -165,7 +167,7 @@ class JogController(QObject):
         """
         try:
             # Obtenir la pose TCP actuelle [X, Y, Z, A, B, C]
-            current_tcp_pose = np.array(self.robot_model.get_tcp_pose())
+            current_tcp_pose = np.array(self.robot_model.get_tcp_pose().to_list(), dtype=float)
             target = current_tcp_pose.copy()
 
             # Si le référentiel est TOOL, convertir le décalage en référentiel BASE
@@ -206,7 +208,7 @@ class JogController(QObject):
                     target[5] = newABC[2]
 
             # Appeler le MGI sur la nouvelle pose cible
-            mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
+            mgi_result = self.robot_model.compute_ik_target(Pose6(*target.tolist()), tool=self.tool_model.get_tool())
             
             # Si des solutions existent, appliquer la meilleure
             if mgi_result:
@@ -237,10 +239,10 @@ class JogController(QObject):
         # Mettre à jour la visualisation du TCP
         tcp_pose = convert_pose_from_base_frame(
             self.robot_model.get_tcp_pose(),
-            self.jog_tcp_visualization_widget.get_display_frame(),
+            ReferenceFrame.from_value(self.jog_tcp_visualization_widget.get_display_frame()),
             self.workspace_model.get_robot_base_transform_world(),
         )
-        self.jog_tcp_visualization_widget.set_tcp_pose(tcp_pose)
+        self.jog_tcp_visualization_widget.set_tcp_pose(tcp_pose.to_list())
         self.jog_matrix_widget.set_matrix(self.robot_model.get_tcp_rotation_matrix())
     
     def _update_axis_limits(self) -> None:

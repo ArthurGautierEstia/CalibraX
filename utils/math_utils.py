@@ -1,5 +1,5 @@
 import numpy as np
-from models.pose6 import Pose6
+from models.types import Pose6
 
 # ============================================================================
 # RÉGION: Parsing et utilitaires
@@ -268,7 +268,7 @@ def matrix_to_pose_zyx(transform: np.ndarray) -> Pose6:
     if matrix.shape != (4, 4):
         raise ValueError("La matrice doit etre de taille 4x4")
     angles = rotation_matrix_to_euler_zyx(matrix[:3, :3])
-    return Pose6.from_values(
+    return Pose6(
         matrix[0, 3],
         matrix[1, 3],
         matrix[2, 3],
