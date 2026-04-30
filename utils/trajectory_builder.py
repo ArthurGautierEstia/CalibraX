@@ -13,7 +13,7 @@ from models.trajectory_keypoint import (
     TrajectoryKeypoint,
 )
 from models.trajectory_options import TrajectoryBezierDegree
-from models.types import Pose6
+from models.types import Pose6, XYZ3
 from models.trajectory_result import (
     TrajectoryCollisionDiagnostic,
     TrajectoryCollisionDomain,
@@ -544,14 +544,24 @@ class TrajectoryBuilder:
         if from_pose is None or to_pose is None:
             return None
 
-        p0 = [float(from_pose[0]), float(from_pose[1]), float(from_pose[2])]
-        p3 = [float(to_pose[0]), float(to_pose[1]), float(to_pose[2])]
-        segment_length_mm = math_utils.norm3(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2])
+        p0_xyz = XYZ3(float(from_pose[0]), float(from_pose[1]), float(from_pose[2]))
+        p3_xyz = XYZ3(float(to_pose[0]), float(to_pose[1]), float(to_pose[2]))
+        p0 = p0_xyz.to_list()
+        p3 = p3_xyz.to_list()
+        segment_length_mm = math_utils.norm3(
+            p3_xyz.x - p0_xyz.x,
+            p3_xyz.y - p0_xyz.y,
+            p3_xyz.z - p0_xyz.z,
+        )
 
         if segment.to_keypoint.mode == KeypointMotionMode.LINEAR:
-            t_out, t_in = segment.to_keypoint.resolve_linear_tangent_vectors(p0, p3)
+            t_out_xyz, t_in_xyz = segment.to_keypoint.resolve_linear_tangent_vectors(p0_xyz, p3_xyz)
+            t_out = t_out_xyz.to_list()
+            t_in = t_in_xyz.to_list()
         else:
-            t_out, t_in = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+            t_out_xyz, t_in_xyz = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+            t_out = t_out_xyz.to_list()
+            t_in = t_in_xyz.to_list()
 
         coeffs = self._build_bezier_coefficients(p0, p3, t_out, t_in)
         arc_lut_t, arc_lut_s = TrajectoryBuilder._build_arc_length_lut(coeffs)
@@ -1328,16 +1338,26 @@ class TrajectoryBuilder:
             result.status = TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
             return result
 
-        p0 = [from_pose[0], from_pose[1], from_pose[2]]
-        p3 = [to_pose[0], to_pose[1], to_pose[2]]
-        segment_length_mm = math_utils.norm3(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2])
+        p0_xyz = XYZ3(float(from_pose[0]), float(from_pose[1]), float(from_pose[2]))
+        p3_xyz = XYZ3(float(to_pose[0]), float(to_pose[1]), float(to_pose[2]))
+        p0 = p0_xyz.to_list()
+        p3 = p3_xyz.to_list()
+        segment_length_mm = math_utils.norm3(
+            p3_xyz.x - p0_xyz.x,
+            p3_xyz.y - p0_xyz.y,
+            p3_xyz.z - p0_xyz.z,
+        )
 
         if force_linear_handles:
-            t_out, t_in = segment.to_keypoint.resolve_linear_tangent_vectors(p0, p3)
+            t_out_xyz, t_in_xyz = segment.to_keypoint.resolve_linear_tangent_vectors(p0_xyz, p3_xyz)
+            t_out = t_out_xyz.to_list()
+            t_in = t_in_xyz.to_list()
         else:
             # Cubic handles are carried by the destination keypoint (segment-in semantics):
             # [0] = start-side direction/amplitude, [1] = end-side direction/amplitude.
-            t_out, t_in = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+            t_out_xyz, t_in_xyz = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+            t_out = t_out_xyz.to_list()
+            t_in = t_in_xyz.to_list()
 
         coeffs = self._build_bezier_coefficients(p0, p3, t_out, t_in)
         arc_length_mm = TrajectoryBuilder._estimate_arc_length(coeffs)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import sqrt
+
 
 class XYZ3:
     __slots__ = ("x", "y", "z")
@@ -16,11 +18,24 @@ class XYZ3:
     def copy(self) -> "XYZ3":
         return XYZ3(self.x, self.y, self.z)
 
+    def norm(self) -> float:
+        return sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
+
+    def normalized(self, epsilon: float = 1e-9) -> "XYZ3":
+        n = self.norm()
+        if n <= float(epsilon):
+            return XYZ3()
+        inv_n = 1.0 / n
+        return XYZ3(self.x * inv_n, self.y * inv_n, self.z * inv_n)
+
     def to_list(self) -> list[float]:
         return [self.x, self.y, self.z]
 
     def to_tuple(self) -> tuple[float, float, float]:
         return (self.x, self.y, self.z)
+
+    def __neg__(self) -> "XYZ3":
+        return XYZ3(-self.x, -self.y, -self.z)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, XYZ3) and self.to_tuple() == other.to_tuple()

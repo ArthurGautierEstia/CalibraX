@@ -142,48 +142,34 @@ class TrajectoryKeypoint:
             return [0.0, 0.0, 0.0]
         return [x / norm, y / norm, z / norm]
 
-    def resolve_cubic_tangent_vectors(self, segment_length_mm: float) -> tuple[list[float], list[float]]:
+    def resolve_cubic_tangent_vectors(self, segment_length_mm: float) -> tuple[XYZ3, XYZ3]:
         _ = segment_length_mm
-        tangents: list[list[float]] = []
+        tangents: list[XYZ3] = []
         for idx in range(2):
             direction = self.cubic_vectors[idx]
             amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[idx]), 0.0)
             tangents.append(
-                [
+                XYZ3(
                     float(direction[0]) * amplitude_mm,
                     float(direction[1]) * amplitude_mm,
                     float(direction[2]) * amplitude_mm,
-                ]
+                )
             )
         return tangents[0], tangents[1]
 
     def resolve_linear_tangent_vectors(
         self,
-        start_xyz: XYZ3 | list[float],
-        end_xyz: XYZ3 | list[float],
-    ) -> tuple[list[float], list[float]]:
-        if isinstance(start_xyz, XYZ3):
-            start_x, start_y, start_z = start_xyz.x, start_xyz.y, start_xyz.z
-        elif len(start_xyz) >= 3:
-            start_x, start_y, start_z = float(start_xyz[0]), float(start_xyz[1]), float(start_xyz[2])
-        else:
-            return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-
-        if isinstance(end_xyz, XYZ3):
-            end_x, end_y, end_z = end_xyz.x, end_xyz.y, end_xyz.z
-        elif len(end_xyz) >= 3:
-            end_x, end_y, end_z = float(end_xyz[0]), float(end_xyz[1]), float(end_xyz[2])
-        else:
-            return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-
-        dx = end_x - start_x
-        dy = end_y - start_y
-        dz = end_z - start_z
+        start_xyz: XYZ3,
+        end_xyz: XYZ3,
+    ) -> tuple[XYZ3, XYZ3]:
+        dx = end_xyz.x - start_xyz.x
+        dy = end_xyz.y - start_xyz.y
+        dz = end_xyz.z - start_xyz.z
         start_ratio = self._clamp_min(float(self.linear_tangent_ratios[0]), 0.0)
         end_ratio = self._clamp_min(float(self.linear_tangent_ratios[1]), 0.0)
         return (
-            [dx * start_ratio, dy * start_ratio, dz * start_ratio],
-            [-dx * end_ratio, -dy * end_ratio, -dz * end_ratio],
+            XYZ3(dx * start_ratio, dy * start_ratio, dz * start_ratio),
+            XYZ3(-dx * end_ratio, -dy * end_ratio, -dz * end_ratio),
         )
 
     def _normalize_configuration_rules(self) -> None:

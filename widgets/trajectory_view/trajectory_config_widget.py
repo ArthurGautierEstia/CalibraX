@@ -292,7 +292,7 @@ class TrajectoryConfigWidget(QWidget):
     def _emit_trajectory_preview(self, keypoints: list[TrajectoryKeypoint]) -> None:
         self.trajectoryPreviewRequested.emit([keypoint.clone() for keypoint in keypoints])
 
-    def _resolve_segment_tangents_for_keypoint(self, keypoints: list[TrajectoryKeypoint], row: int) -> tuple[list[float], list[float]] | None:
+    def _resolve_segment_tangents_for_keypoint(self, keypoints: list[TrajectoryKeypoint], row: int) -> tuple[XYZ3, XYZ3] | None:
         if row < 0 or row >= len(keypoints):
             return None
 
@@ -325,7 +325,8 @@ class TrajectoryConfigWidget(QWidget):
                 end_xyz.y - start_xyz.y,
                 end_xyz.z - start_xyz.z,
             )
-            return current_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+            start_tangent, end_tangent = current_keypoint.resolve_cubic_tangent_vectors(segment_length_mm)
+            return start_tangent, end_tangent
 
         return current_keypoint.resolve_linear_tangent_vectors(start_xyz, end_xyz)
 
@@ -339,19 +340,15 @@ class TrajectoryConfigWidget(QWidget):
         if previous_row >= 0:
             previous_keypoint = keypoints[previous_row]
             if previous_keypoint.mode == KeypointMotionMode.CUBIC:
-                previous_keypoint.cubic_vectors[1] = math_utils.normalize3(
-                    [-start_tangent[0], -start_tangent[1], -start_tangent[2]]
-                )
-                previous_keypoint.cubic_amplitudes_mm[1] = math_utils.vector_norm3(start_tangent)
+                previous_keypoint.cubic_vectors[1] = (-start_tangent).normalized().to_list()
+                previous_keypoint.cubic_amplitudes_mm[1] = start_tangent.norm()
 
         next_row = row + 1
         if next_row < len(keypoints):
             next_keypoint = keypoints[next_row]
             if next_keypoint.mode == KeypointMotionMode.CUBIC:
-                next_keypoint.cubic_vectors[0] = math_utils.normalize3(
-                    [-end_tangent[0], -end_tangent[1], -end_tangent[2]]
-                )
-                next_keypoint.cubic_amplitudes_mm[0] = math_utils.vector_norm3(end_tangent)
+                next_keypoint.cubic_vectors[0] = (-end_tangent).normalized().to_list()
+                next_keypoint.cubic_amplitudes_mm[0] = end_tangent.norm()
 
     def _on_active_dialog_preview_keypoint_changed(self, preview_keypoint: TrajectoryKeypoint) -> None:
         if self._active_dialog_mode == "add":
