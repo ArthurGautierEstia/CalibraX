@@ -86,6 +86,8 @@ class TrajectoryCollisionBuilderTests(unittest.TestCase):
         self.assertEqual(1, len(result.samples))
         self.assertEqual(TrajectorySampleErrorCode.NONE, result.samples[0].error_code)
         self.assertEqual([], result.samples[0].collisions)
+        self.assertIsNotNone(result.samples[0].kinematics)
+        self.assertTrue(bool(result.samples[0].kinematics.corrected_matrices))
 
     def test_workspace_collision_sets_sample_and_segment_status(self):
         robot_model, tool_model, workspace_model, builder = self._build_builder()

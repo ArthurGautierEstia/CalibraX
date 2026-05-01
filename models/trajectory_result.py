@@ -1,6 +1,7 @@
 from enum import Enum
 
 from models.trajectory_keypoint import KeypointMotionMode, TrajectoryKeypoint
+from models.types import TrajectorySampleKinematics
 from utils.mgi import MgiConfigKey
 
 
@@ -106,6 +107,7 @@ class TrajectorySample:
         self.time = 0.0
         self.joints = [0.0] * 6
         self.pose = [0.0] * 6
+        self.kinematics: TrajectorySampleKinematics | None = None
         self.reachable = True
         self.configuration: MgiConfigKey | None = None
         self.velocity = 0.0

@@ -13,7 +13,7 @@ from models.trajectory_keypoint import (
     TrajectoryKeypoint,
 )
 from models.trajectory_options import TrajectoryBezierDegree
-from models.types import Pose6, XYZ3
+from models.types import Pose6, TrajectorySampleKinematics, XYZ3
 from models.trajectory_result import (
     TrajectoryDynamicViolation,
     TrajectoryDynamicViolationKind,
@@ -183,8 +183,7 @@ class TrajectoryBuilder:
         fk_result = self.robot_model.compute_fk_joints(joints_deg, tool=self.tool_model.get_tool())
         if fk_result is None:
             return None
-        _, _, dh_pose, _, _ = fk_result
-        return dh_pose.to_list()
+        return fk_result.dh_pose.to_list()
 
     def _resolve_reference_config(self, reference_sample: TrajectorySample | None) -> MgiConfigKey:
         config_identifier = self.robot_model.get_config_identifier()
@@ -996,6 +995,9 @@ class TrajectoryBuilder:
             sample.reachable = False
             sample.error_code = TrajectorySampleErrorCode.POINT_UNREACHABLE
             sample.configuration = None
+            sample.kinematics = None
+        else:
+            sample.kinematics = TrajectorySampleKinematics.from_fk_result(fk_result)
 
         dt = self.sample_dt_s
         if previous_sample is not None:
@@ -1615,6 +1617,11 @@ class TrajectoryBuilder:
                 sample.error_code = TrajectorySampleErrorCode.POINT_UNREACHABLE
                 sample.configuration = None
                 sample.joints = [0.0] * 6
+                sample.kinematics = None
+            else:
+                sample.kinematics = TrajectorySampleKinematics.from_fk_result(fk_result)
+        if not sample.reachable:
+            sample.kinematics = None
 
         if previous_sample is None:
             TrajectoryBuilder._reset_cartesian_dynamics(sample)
@@ -1664,10 +1671,11 @@ class TrajectoryBuilder:
             sample.error_code = TrajectorySampleErrorCode.POINT_UNREACHABLE
             sample.configuration = None
             sample.pose = [0.0] * 6
+            sample.kinematics = None
             sample.mgi_solutions = {}
         else:
-            _, _, dh_pose, _, _ = fk_result
-            sample.pose = dh_pose.to_list()
+            sample.kinematics = TrajectorySampleKinematics.from_fk_result(fk_result)
+            sample.pose = fk_result.dh_pose.to_list()
             while len(sample.pose) < 6:
                 sample.pose.append(0.0)
 

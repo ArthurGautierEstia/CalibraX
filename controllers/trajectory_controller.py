@@ -158,7 +158,7 @@ class TrajectoryController(QObject):
             if fk_result is None:
                 self.viewer3d_controller.hide_robot_ghost()
                 return
-            _, corrected_matrices, _, _, _ = fk_result
+            corrected_matrices = fk_result.corrected_matrices
 
         self.viewer3d_controller.update_robot_ghost_with_matrices(joints, corrected_matrices)
 

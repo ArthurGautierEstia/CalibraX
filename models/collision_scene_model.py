@@ -113,8 +113,7 @@ class CollisionSceneModel(QObject):
         if fk_result is None:
             return []
 
-        _dh_matrices, corrected_matrices, _dh_pose, _corrected_pose, _deviation = fk_result
-        return [np.array(matrix, dtype=float) for matrix in corrected_matrices]
+        return [np.array(matrix, dtype=float) for matrix in fk_result.corrected_matrices]
 
     def _build_robot_world_colliders(
         self,

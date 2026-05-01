@@ -23,5 +23,5 @@ def resolve_keypoint_xyz(
     fk_result = robot_model.compute_fk_joints(keypoint.joint_target, tool=tool)
     if fk_result is None:
         return None
-    _, _, pose, _, _ = fk_result
+    pose = fk_result.dh_pose
     return XYZ3(pose.x, pose.y, pose.z)

@@ -192,7 +192,11 @@ class TrajectoryCollisionAnalyzer:
         if not sample.reachable:
             return []
 
-        corrected_matrices = self.context.kinematics.compute_corrected_matrices(sample.joints)
+        corrected_matrices = None
+        if sample.kinematics is not None:
+            corrected_matrices = sample.kinematics.corrected_matrices
+        if corrected_matrices is None:
+            corrected_matrices = self.context.kinematics.compute_corrected_matrices(sample.joints)
         if corrected_matrices is None:
             return []
 

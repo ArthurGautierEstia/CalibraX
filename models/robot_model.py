@@ -3,7 +3,7 @@ from typing import List, Tuple
 import math
 from utils.mgi import *
 import utils.math_utils as math_utils
-from models.types import Pose6
+from models.types import FkResult, Pose6
 from models.collider_models import (
     default_axis_colliders,
 )
@@ -387,7 +387,7 @@ class RobotModel(QObject):
         q5: float,
         q6: float,
         tool: RobotTool | None = None,
-    ):
+    ) -> FkResult:
         """Calcule le MGD avec la liste complète des matrices de transformation
     
         Args:
@@ -467,9 +467,15 @@ class RobotModel(QObject):
         ori_dev = corrected_ori - dh_ori
         deviation = Pose6(pos_dev[0], pos_dev[1], pos_dev[2], ori_dev[0], ori_dev[1], ori_dev[2])
         
-        return dh_matrices, corrected_matrices, dh_pose, corrected_pose, deviation
+        return FkResult(
+            dh_matrices=dh_matrices,
+            corrected_matrices=corrected_matrices,
+            dh_pose=dh_pose,
+            corrected_pose=corrected_pose,
+            deviation=deviation,
+        )
 
-    def compute_fk_joints(self, joints: list[float], tool: RobotTool | None = None):
+    def compute_fk_joints(self, joints: list[float], tool: RobotTool | None = None) -> FkResult | None:
         if len(joints) < 6:
             return None
         return self.compute_fk(joints[0], joints[1], joints[2], joints[3], joints[4], joints[5], tool=tool)
@@ -488,16 +494,18 @@ class RobotModel(QObject):
         self._update_current_axis_config()
         # update TCP from FK
 
-        dh_matrices, corrected_matrices, dh_pose, corrected_pose, _ = self.compute_fk_joints(
+        fk_result = self.compute_fk_joints(
             self.joint_values,
             tool=tool,
         )
+        if fk_result is None:
+            return
 
-        self.current_tcp_dh_matrices = dh_matrices
-        self.current_tcp_corrected_dh_matrices = corrected_matrices
+        self.current_tcp_dh_matrices = fk_result.dh_matrices
+        self.current_tcp_corrected_dh_matrices = fk_result.corrected_matrices
 
-        self._set_tcp_pose(dh_pose)
-        self._set_corrected_tcp_pose(corrected_pose, True)
+        self._set_tcp_pose(fk_result.dh_pose)
+        self._set_corrected_tcp_pose(fk_result.corrected_pose, True)
 
         self._tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(
             self.tcp_pose.a,

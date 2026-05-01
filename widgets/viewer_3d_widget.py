@@ -1233,8 +1233,7 @@ class Viewer3DWidget(QWidget):
         if fk_result is None:
             return []
 
-        _, corrected_matrices, _, _, _ = fk_result
-        return corrected_matrices
+        return fk_result.corrected_matrices
 
     def load_robot_mesh(self, stl_path: str, transform_matrix, color: tuple[int, int, int]):
         # (Copier le code original ici, pas de changement)
@@ -1430,7 +1429,8 @@ class Viewer3DWidget(QWidget):
             )
             if fk_result is None:
                 return
-            dh_matrices, corrected_matrices, _, _, _ = fk_result
+            dh_matrices = fk_result.dh_matrices
+            corrected_matrices = fk_result.corrected_matrices
 
         self.last_dh_matrices = dh_matrices
         self.last_corrected_matrices = corrected_matrices
@@ -1951,8 +1951,7 @@ class Viewer3DWidget(QWidget):
             self.hide_robot_ghost()
             return
 
-        _, corrected_matrices, _, _, _ = fk_result
-        self.update_robot_ghost_from_matrices(corrected_matrices)
+        self.update_robot_ghost_from_matrices(fk_result.corrected_matrices)
 
     def update_robot_ghost_from_matrices(self, corrected_matrices: list):
         if not corrected_matrices:

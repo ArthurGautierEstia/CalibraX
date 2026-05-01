@@ -170,12 +170,14 @@ def _compute_jacobienne_numerique(q_deg: list[float],
         q_minus[j] -= epsilon_deg
 
         # --- MGD corrigé pour les deux perturbations ---
-        _, corrected_plus, _, _, _ = robot_model.compute_fk_joints(q_plus, tool=tool)
-        _, corrected_minus, _, _, _ = robot_model.compute_fk_joints(q_minus, tool=tool)
+        fk_plus = robot_model.compute_fk_joints(q_plus, tool=tool)
+        fk_minus = robot_model.compute_fk_joints(q_minus, tool=tool)
+        if fk_plus is None or fk_minus is None:
+            raise ValueError("compute_fk_joints returned None during Jacobian finite differences")
 
         # Matrice TCP corrigée (dernier élément = flange + outil)
-        T_plus = corrected_plus[-1]
-        T_minus = corrected_minus[-1]
+        T_plus = fk_plus.corrected_matrices[-1]
+        T_minus = fk_minus.corrected_matrices[-1]
 
         # --- Différence de position (mm/rad) ---
         delta_pos = (T_plus[:3, 3] - T_minus[:3, 3]) / (2.0 * epsilon_rad)
@@ -298,7 +300,7 @@ def mgi_jacobien(target: list[float],
             resultat.message = "Erreur : compute_fk_joints a retourné None"
             return resultat
 
-        _, corrected_matrices, _, _, _ = fk_result
+        corrected_matrices = fk_result.corrected_matrices
         T_actuel = corrected_matrices[-1]  # TCP corrigé (flange + outil)
 
         # ----------------------------------------------------------------

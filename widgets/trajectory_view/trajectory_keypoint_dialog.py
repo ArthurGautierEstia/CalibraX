@@ -511,8 +511,7 @@ class TrajectoryKeypointDialog(QDialog):
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
             fk_result = self.robot_model.compute_fk_joints(home_joints, tool=self.tool_model.get_tool())
             if fk_result is not None:
-                _, _, home_pose, _, _ = fk_result
-                self._set_cartesian_target_from_base_pose(home_pose)
+                self._set_cartesian_target_from_base_pose(fk_result.dh_pose)
             else:
                 self._set_cartesian_target_from_base_pose(self.robot_model.get_tcp_pose())
             self._emit_ghost_update()
@@ -586,8 +585,7 @@ class TrajectoryKeypointDialog(QDialog):
         )
         if fk_result is None:
             return
-        _, _, pose, _, _ = fk_result
-        self._set_cartesian_target_from_base_pose(pose)
+        self._set_cartesian_target_from_base_pose(fk_result.dh_pose)
         self._set_cartesian_error("")
 
     def _emit_live_preview(self) -> None:
@@ -616,10 +614,9 @@ class TrajectoryKeypointDialog(QDialog):
         fk_result = self.robot_model.compute_fk_joints(joints, tool=self.tool_model.get_tool())
         if fk_result is None:
             return payload
-        _, corrected_matrices, pose, _, _ = fk_result
-        self._set_cartesian_target_from_base_pose(pose)
+        self._set_cartesian_target_from_base_pose(fk_result.dh_pose)
         self._set_cartesian_error("")
-        payload["corrected_matrices"] = corrected_matrices
+        payload["corrected_matrices"] = fk_result.corrected_matrices
         return payload
 
     def _set_cartesian_error(self, message: str) -> None:
@@ -844,7 +841,7 @@ class TrajectoryKeypointDialog(QDialog):
         )
         if fk_result is None:
             return None
-        _, _, pose, _, _ = fk_result
+        pose = fk_result.dh_pose
         return XYZ3(pose.x, pose.y, pose.z)
 
     def _get_previous_segment_end_tangent_for_auto(self) -> XYZ3 | None:
