@@ -1,16 +1,30 @@
+import io
 import unittest
+from contextlib import redirect_stdout
 
 from models.robot_model import RobotModel
 from models.primitive_collider_models import PrimitiveColliderData, PrimitiveColliderShape
 from models.tool_model import ToolModel
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.trajectory_result import (
+    TrajectoryCollisionDiagnostic,
     TrajectoryCollisionDomain,
     TrajectoryComputationStatus,
+    SegmentResult,
+    TrajectoryResult,
     TrajectorySampleErrorCode,
 )
 from models.workspace_model import WorkspaceModel
+from controllers.trajectory_controller import TrajectoryController
 from utils.trajectory_builder import TrajectoryBuilder
+from utils.trajectory_collision_analyzer import (
+    TrajectoryCollisionAnalyzer,
+    TrajectoryCollisionAnalysisResult,
+    TrajectoryCollisionCancelToken,
+    TrajectoryCollisionContext,
+    TrajectoryCollisionSampleResult,
+    apply_trajectory_collision_result,
+)
 
 
 def _primitive(shape: PrimitiveColliderShape, radius: float = 50.0) -> PrimitiveColliderData:
@@ -34,6 +48,15 @@ def _joint_keypoint(joints: list[float]) -> TrajectoryKeypoint:
     )
 
 
+def _trajectory_from_segment(status: TrajectoryComputationStatus, segment: SegmentResult) -> TrajectoryResult:
+    trajectory = TrajectoryResult()
+    trajectory.segments.append(segment)
+    if status != TrajectoryComputationStatus.SUCCESS:
+        trajectory.status = status
+        trajectory.first_error_segment_index = 0
+    return trajectory
+
+
 class TrajectoryCollisionBuilderTests(unittest.TestCase):
     def _build_builder(self) -> tuple[RobotModel, ToolModel, WorkspaceModel, TrajectoryBuilder]:
         robot_model = RobotModel()
@@ -41,6 +64,18 @@ class TrajectoryCollisionBuilderTests(unittest.TestCase):
         workspace_model = WorkspaceModel()
         builder = TrajectoryBuilder(robot_model, tool_model, workspace_model)
         return robot_model, tool_model, workspace_model, builder
+
+    def _analyze_and_apply(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        workspace_model: WorkspaceModel,
+        trajectory: TrajectoryResult,
+    ) -> bool:
+        context = TrajectoryCollisionContext.from_models(robot_model, tool_model, workspace_model)
+        analyzer = TrajectoryCollisionAnalyzer(context)
+        result = analyzer.analyze_trajectory(1, trajectory, TrajectoryCollisionCancelToken())
+        return apply_trajectory_collision_result(trajectory, result)
 
     def test_sample_without_collision_stays_valid(self):
         robot_model, _tool_model, _workspace_model, builder = self._build_builder()
@@ -53,27 +88,43 @@ class TrajectoryCollisionBuilderTests(unittest.TestCase):
         self.assertEqual([], result.samples[0].collisions)
 
     def test_workspace_collision_sets_sample_and_segment_status(self):
-        robot_model, _tool_model, workspace_model, builder = self._build_builder()
+        robot_model, tool_model, workspace_model, builder = self._build_builder()
         workspace_model.set_workspace_collision_zones([_primitive(PrimitiveColliderShape.BOX)])
 
-        result = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        segment = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        trajectory = _trajectory_from_segment(segment.status, segment)
 
-        self.assertEqual(TrajectoryComputationStatus.COLLISION_DETECTED, result.status)
-        self.assertEqual(TrajectorySampleErrorCode.COLLISION_DETECTED, result.samples[0].error_code)
+        self.assertEqual(TrajectoryComputationStatus.SUCCESS, trajectory.status)
+        self.assertEqual(TrajectorySampleErrorCode.NONE, segment.samples[0].error_code)
+
+        applied = self._analyze_and_apply(robot_model, tool_model, workspace_model, trajectory)
+
+        self.assertTrue(applied)
+        self.assertEqual(TrajectoryComputationStatus.COLLISION_DETECTED, trajectory.status)
+        self.assertEqual(TrajectoryComputationStatus.COLLISION_DETECTED, segment.status)
+        self.assertEqual(TrajectorySampleErrorCode.COLLISION_DETECTED, segment.samples[0].error_code)
         self.assertTrue(
-            any(collision.domain == TrajectoryCollisionDomain.WORKSPACE for collision in result.samples[0].collisions)
+            any(collision.domain == TrajectoryCollisionDomain.WORKSPACE for collision in segment.samples[0].collisions)
         )
 
     def test_robot_tool_collision_sets_sample_and_segment_status(self):
         robot_model, tool_model, _workspace_model, builder = self._build_builder()
         tool_model.set_tool_colliders([_primitive(PrimitiveColliderShape.SPHERE, radius=60.0)])
 
-        result = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        segment = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        trajectory = _trajectory_from_segment(segment.status, segment)
 
-        self.assertEqual(TrajectoryComputationStatus.COLLISION_DETECTED, result.status)
-        self.assertEqual(TrajectorySampleErrorCode.COLLISION_DETECTED, result.samples[0].error_code)
+        self.assertEqual(TrajectoryComputationStatus.SUCCESS, trajectory.status)
+        self.assertEqual(TrajectorySampleErrorCode.NONE, segment.samples[0].error_code)
+
+        applied = self._analyze_and_apply(robot_model, tool_model, _workspace_model, trajectory)
+
+        self.assertTrue(applied)
+        self.assertEqual(TrajectoryComputationStatus.COLLISION_DETECTED, trajectory.status)
+        self.assertEqual(TrajectoryComputationStatus.COLLISION_DETECTED, segment.status)
+        self.assertEqual(TrajectorySampleErrorCode.COLLISION_DETECTED, segment.samples[0].error_code)
         self.assertTrue(
-            any(collision.domain == TrajectoryCollisionDomain.ROBOT_TOOL for collision in result.samples[0].collisions)
+            any(collision.domain == TrajectoryCollisionDomain.ROBOT_TOOL for collision in segment.samples[0].collisions)
         )
 
     def test_workspace_and_robot_tool_collisions_are_both_reported(self):
@@ -81,13 +132,74 @@ class TrajectoryCollisionBuilderTests(unittest.TestCase):
         workspace_model.set_workspace_collision_zones([_primitive(PrimitiveColliderShape.BOX)])
         tool_model.set_tool_colliders([_primitive(PrimitiveColliderShape.SPHERE, radius=60.0)])
 
-        result = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        segment = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        trajectory = _trajectory_from_segment(segment.status, segment)
 
-        domains = {collision.domain for collision in result.samples[0].collisions}
+        applied = self._analyze_and_apply(robot_model, tool_model, workspace_model, trajectory)
+
+        self.assertTrue(applied)
+        domains = {collision.domain for collision in segment.samples[0].collisions}
         self.assertEqual(
             {TrajectoryCollisionDomain.WORKSPACE, TrajectoryCollisionDomain.ROBOT_TOOL},
             domains,
         )
+
+    def test_cancelled_collision_analysis_does_not_mutate_trajectory(self):
+        robot_model, tool_model, workspace_model, builder = self._build_builder()
+        workspace_model.set_workspace_collision_zones([_primitive(PrimitiveColliderShape.BOX)])
+        segment = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        trajectory = _trajectory_from_segment(segment.status, segment)
+        context = TrajectoryCollisionContext.from_models(robot_model, tool_model, workspace_model)
+        analyzer = TrajectoryCollisionAnalyzer(context)
+        cancel_token = TrajectoryCollisionCancelToken()
+        cancel_token.request_cancel()
+
+        result = analyzer.analyze_trajectory(1, trajectory, cancel_token)
+        applied = apply_trajectory_collision_result(trajectory, result)
+
+        self.assertTrue(result.cancelled)
+        self.assertFalse(applied)
+        self.assertEqual(TrajectoryComputationStatus.SUCCESS, trajectory.status)
+        self.assertEqual(TrajectorySampleErrorCode.NONE, segment.samples[0].error_code)
+
+    def test_stale_collision_worker_result_is_ignored_by_controller(self):
+        _robot_model, _tool_model, _workspace_model, builder = self._build_builder()
+        segment = builder.compute_first_segment([0.0] * 6, _joint_keypoint([0.0] * 6), 0.0)
+        trajectory = _trajectory_from_segment(segment.status, segment)
+        collision = TrajectoryCollisionDiagnostic(
+            domain=TrajectoryCollisionDomain.WORKSPACE,
+            owner_a="robot",
+            name_a="Robot collider J1",
+            source_index_a=0,
+            owner_b="workspace",
+            name_b="Zone collision",
+            source_index_b=0,
+        )
+        stale_result = TrajectoryCollisionAnalysisResult(
+            job_id=1,
+            cancelled=False,
+            has_collision=True,
+            sample_results=[
+                TrajectoryCollisionSampleResult(
+                    segment_index=0,
+                    sample_index=0,
+                    collisions=[collision],
+                )
+            ],
+        )
+        controller = TrajectoryController.__new__(TrajectoryController)
+        controller._active_collision_job_id = 2
+        controller._collision_job_traj_ids = {1: 1}
+        controller._collision_job_total_start_s = {}
+        controller._collision_job_detect_start_s = {}
+        controller.current_trajectory = trajectory
+
+        with redirect_stdout(io.StringIO()):
+            TrajectoryController._on_collision_worker_completed(controller, 1, stale_result)
+
+        self.assertEqual(TrajectoryComputationStatus.SUCCESS, trajectory.status)
+        self.assertEqual(TrajectorySampleErrorCode.NONE, segment.samples[0].error_code)
+        self.assertEqual([], segment.samples[0].collisions)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from pathlib import Path
 import time
 import os
 
-from PyQt6.QtCore import QObject, QTimer, Qt
+from PyQt6.QtCore import QObject, QThread, QTimer, Qt
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.robot_model import RobotModel
@@ -22,6 +22,13 @@ from models.trajectory_result import (
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.reference_frame import ReferenceFrame
 from utils.trajectory_builder import TrajectoryBuilder
+from utils.trajectory_collision_analyzer import (
+    TrajectoryCollisionAnalysisResult,
+    TrajectoryCollisionCancelToken,
+    TrajectoryCollisionContext,
+    TrajectoryCollisionWorker,
+    apply_trajectory_collision_result,
+)
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from utils.trajectory_status import build_trajectory_issue_messages, build_trajectory_warning_messages
 from utils.reference_frame_utils import (
@@ -80,6 +87,14 @@ class TrajectoryController(QObject):
         self._is_keypoint_preview_active = False
         self._selected_keypoint_index: int | None = None
         self._editing_keypoint_index: int | None = None
+        self._collision_job_sequence = 0
+        self._active_collision_job_id: int | None = None
+        self._collision_threads: list[QThread] = []
+        self._collision_workers: list[TrajectoryCollisionWorker] = []
+        self._trajectory_generation_sequence = 0
+        self._collision_job_traj_ids: dict[int, int] = {}
+        self._collision_job_total_start_s: dict[int, float] = {}
+        self._collision_job_detect_start_s: dict[int, float] = {}
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
         self._playback_timer = QTimer(self)
@@ -418,6 +433,18 @@ class TrajectoryController(QObject):
             )
 
     def _recompute_trajectory(self, keypoints_override: list[TrajectoryKeypoint] | None = None) -> None:
+        self._trajectory_generation_sequence += 1
+        traj_id = self._trajectory_generation_sequence
+        total_start_s = time.perf_counter()
+        running_worker_count = len(self._collision_workers)
+        worker_free = running_worker_count == 0
+        self._log_benchmark("---------------")
+        self._log_benchmark(f"desir de faire une traj traj_id={traj_id}")
+        self._log_benchmark(
+            "worker free="
+            f"{worker_free} active_job_id={self._active_collision_job_id} running_workers={running_worker_count}"
+        )
+        self._cancel_collision_analysis()
         self._stop_playback()
         self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
         self.trajectory_builder.set_jerk_check_enabled(self.config_widget.is_jerk_check_enabled())
@@ -427,6 +454,8 @@ class TrajectoryController(QObject):
         else:
             keypoints = [keypoint.clone() for keypoint in keypoints_override]
         self._displayed_keypoints = [keypoint.clone() for keypoint in keypoints]
+        generation_start_s = time.perf_counter()
+        self._log_benchmark(f"generating traj... traj_id={traj_id}")
         if not keypoints:
             self.current_trajectory = TrajectoryResult()
             self.config_widget.set_trajectory_context(self.current_trajectory)
@@ -434,6 +463,17 @@ class TrajectoryController(QObject):
             self.current_sample_times = []
             self._reset_trajectory_visuals()
             self._update_trajectory_issue_messages()
+            generation_ms = self._elapsed_ms(generation_start_s)
+            self._log_benchmark(f"done : {generation_ms:.3f} ms traj_id={traj_id} samples=0")
+            self._log_benchmark(f"detect collision skipped... traj_id={traj_id} reason=no_samples")
+            total_end_s = time.perf_counter()
+            total_ms = self._duration_ms(total_start_s, total_end_s)
+            self._log_benchmark(
+                "temps total start->end : "
+                f"{total_ms:.3f} ms traj_id={traj_id} "
+                f"total_start_perf_s={total_start_s:.9f} total_end_perf_s={total_end_s:.9f} "
+                f"trajectory_object_id={id(self.current_trajectory)}"
+            )
             return
 
         current_joints = self.robot_model.get_joints()
@@ -451,12 +491,30 @@ class TrajectoryController(QObject):
         self.config_widget.set_trajectory_context(self.current_trajectory)
         self.current_samples = self._flatten_samples(self.current_trajectory)
         self.current_sample_times = [sample.time for sample in self.current_samples]
+        generation_ms = self._elapsed_ms(generation_start_s)
+        self._log_benchmark(
+            f"done : {generation_ms:.3f} ms traj_id={traj_id} "
+            f"trajectory_object_id={id(self.current_trajectory)} samples={len(self.current_samples)}"
+        )
         self._update_graphs()
         self._update_3d_trajectory_path()
         self._update_3d_keypoint_overlays()
         self._update_timeline()
         self._update_trajectory_issue_messages()
         self._apply_time_value(0.0, force_real_robot=False)
+        self._start_collision_analysis(traj_id, total_start_s)
+
+    @staticmethod
+    def _elapsed_ms(start_s: float) -> float:
+        return (time.perf_counter() - float(start_s)) * 1000.0
+
+    @staticmethod
+    def _duration_ms(start_s: float, end_s: float) -> float:
+        return (float(end_s) - float(start_s)) * 1000.0
+
+    @staticmethod
+    def _log_benchmark(message: str) -> None:
+        print(f"[trajectory-benchmark] {message}", flush=True)
 
     @staticmethod
     def _build_segments(keypoints: list[TrajectoryKeypoint]) -> list[TrajectorySegment]:
@@ -470,6 +528,137 @@ class TrajectoryController(QObject):
         for segment in trajectory.segments:
             samples.extend(segment.samples)
         return samples
+
+    def _cancel_collision_analysis(self) -> None:
+        if self._collision_workers:
+            self._log_benchmark(
+                f"requete de cancel active_job_id={self._active_collision_job_id} "
+                f"worker_count={len(self._collision_workers)}"
+            )
+        self._active_collision_job_id = None
+        for worker in list(self._collision_workers):
+            worker.request_cancel()
+
+    def _start_collision_analysis(self, traj_id: int, total_start_s: float) -> None:
+        if not self.current_samples:
+            self._log_benchmark(f"detect collision skipped... traj_id={traj_id} reason=no_samples")
+            total_end_s = time.perf_counter()
+            total_ms = self._duration_ms(total_start_s, total_end_s)
+            self._log_benchmark(
+                "temps total start->end : "
+                f"{total_ms:.3f} ms traj_id={traj_id} "
+                f"total_start_perf_s={total_start_s:.9f} total_end_perf_s={total_end_s:.9f} "
+                f"trajectory_object_id={id(self.current_trajectory)}"
+            )
+            return
+
+        self._collision_job_sequence += 1
+        job_id = self._collision_job_sequence
+        self._active_collision_job_id = job_id
+        self._collision_job_traj_ids[job_id] = int(traj_id)
+        self._collision_job_total_start_s[job_id] = float(total_start_s)
+        self._collision_job_detect_start_s[job_id] = time.perf_counter()
+        self._log_benchmark(
+            f"detect collision started... traj_id={traj_id} job_id={job_id} "
+            f"trajectory_object_id={id(self.current_trajectory)} samples={len(self.current_samples)}"
+        )
+
+        context = TrajectoryCollisionContext.from_models(
+            self.robot_model,
+            self.tool_model,
+            self.workspace_model,
+        )
+        cancel_token = TrajectoryCollisionCancelToken()
+        worker = TrajectoryCollisionWorker(
+            job_id=job_id,
+            trajectory=self.current_trajectory,
+            context=context,
+            cancel_token=cancel_token,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.completed.connect(self._on_collision_worker_completed)
+        worker.cancelled.connect(self._on_collision_worker_cancelled)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(
+            lambda thread_ref=thread, worker_ref=worker: self._forget_collision_worker(thread_ref, worker_ref)
+        )
+
+        self._collision_threads.append(thread)
+        self._collision_workers.append(worker)
+        thread.start()
+
+    def _on_collision_worker_completed(self, job_id: int, payload: object) -> None:
+        if job_id != self._active_collision_job_id:
+            self._log_benchmark(
+                f"detect collision done ignored stale job_id={job_id} active_job_id={self._active_collision_job_id}"
+            )
+            self._clear_collision_job_benchmark(job_id)
+            return
+        self._active_collision_job_id = None
+        if not isinstance(payload, TrajectoryCollisionAnalysisResult):
+            self._clear_collision_job_benchmark(job_id)
+            return
+        detect_start_s = self._collision_job_detect_start_s.get(job_id)
+        total_start_s = self._collision_job_total_start_s.get(job_id)
+        traj_id = self._collision_job_traj_ids.get(job_id)
+        if detect_start_s is not None:
+            self._log_benchmark(
+                f"done : {self._elapsed_ms(detect_start_s):.3f} ms "
+                f"traj_id={traj_id} job_id={job_id} has_collision={payload.has_collision}"
+            )
+        if total_start_s is not None:
+            total_end_s = time.perf_counter()
+            self._log_benchmark(
+                "temps total start->end : "
+                f"{self._duration_ms(total_start_s, total_end_s):.3f} ms traj_id={traj_id} "
+                f"job_id={job_id} total_start_perf_s={total_start_s:.9f} "
+                f"total_end_perf_s={total_end_s:.9f} "
+                f"trajectory_object_id={id(self.current_trajectory)}"
+            )
+        self._clear_collision_job_benchmark(job_id)
+
+        applied = apply_trajectory_collision_result(self.current_trajectory, payload)
+        if not applied:
+            return
+
+        self.config_widget.set_trajectory_context(self.current_trajectory)
+        self._update_graphs()
+        self._update_3d_trajectory_path()
+        self._update_trajectory_issue_messages()
+
+    def _on_collision_worker_cancelled(self, job_id: int) -> None:
+        traj_id = self._collision_job_traj_ids.get(job_id)
+        detect_start_s = self._collision_job_detect_start_s.get(job_id)
+        if detect_start_s is None:
+            self._log_benchmark(f"worker canceled traj_id={traj_id} job_id={job_id}")
+        else:
+            self._log_benchmark(
+                f"worker canceled traj_id={traj_id} job_id={job_id} "
+                f"after={self._elapsed_ms(detect_start_s):.3f} ms"
+            )
+        self._clear_collision_job_benchmark(job_id)
+        if job_id == self._active_collision_job_id:
+            self._active_collision_job_id = None
+
+    def _clear_collision_job_benchmark(self, job_id: int) -> None:
+        self._collision_job_traj_ids.pop(job_id, None)
+        self._collision_job_total_start_s.pop(job_id, None)
+        self._collision_job_detect_start_s.pop(job_id, None)
+
+    def _forget_collision_worker(
+        self,
+        thread: QThread,
+        worker: TrajectoryCollisionWorker,
+    ) -> None:
+        if thread in self._collision_threads:
+            self._collision_threads.remove(thread)
+        if worker in self._collision_workers:
+            self._collision_workers.remove(worker)
 
     def _update_graphs(self) -> None:
         articular_panel = self.graphs_widget.get_articular_panel()

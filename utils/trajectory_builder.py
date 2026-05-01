@@ -15,8 +15,6 @@ from models.trajectory_keypoint import (
 from models.trajectory_options import TrajectoryBezierDegree
 from models.types import Pose6, XYZ3
 from models.trajectory_result import (
-    TrajectoryCollisionDiagnostic,
-    TrajectoryCollisionDomain,
     TrajectoryDynamicViolation,
     TrajectoryDynamicViolationKind,
     TrajectoryDynamicViolationSeverity,
@@ -31,12 +29,6 @@ from models.trajectory_result import (
 )
 from utils.bezier3 import Bezier3Coefficients3D
 from utils.bezier5 import Bezier5Coefficients3D
-from utils.collision_utils import (
-    CollisionPair,
-    CollisionWorldCache,
-    build_world_frame_transforms,
-    resolve_flange_world_transform,
-)
 import utils.math_utils as math_utils
 from utils.reference_frame_utils import convert_pose_to_base_frame
 from utils.mgi import MGI, MgiConfigKey, MgiResult, MgiResultItem, MgiResultStatus, ConfigurationIdentifier
@@ -94,8 +86,6 @@ class TrajectoryBuilder:
         self._working_mgi_solver: MGI | None = None
         self._robot_allowed_configs: set[MgiConfigKey] | None = None
         self._joint_weights: list[float] | None = None
-        self._collision_world_cache: CollisionWorldCache | None = None
-        self._collision_cache_revisions: tuple[int, int, int] | None = None
 
     def set_time_smoothing_enabled(self, enabled: bool) -> None:
         self.smooth_time_enabled = bool(enabled)
@@ -105,28 +95,6 @@ class TrajectoryBuilder:
 
     def set_jerk_check_enabled(self, enabled: bool) -> None:
         self.jerk_check_enabled = bool(enabled)
-
-    def _get_collision_cache_revisions(self) -> tuple[int, int, int]:
-        return (
-            int(self.workspace_model.get_workspace_structure_revision()),
-            int(self.robot_model.get_axis_colliders_revision()),
-            int(self.tool_model.get_tool_colliders_revision()),
-        )
-
-    def _ensure_collision_world_cache(self) -> CollisionWorldCache:
-        revisions = self._get_collision_cache_revisions()
-        if self._collision_world_cache is None:
-            self._collision_world_cache = CollisionWorldCache()
-
-        if revisions != self._collision_cache_revisions:
-            self._collision_world_cache.set_workspace_collision_zones(
-                self.workspace_model.get_workspace_collision_zones()
-            )
-            self._collision_world_cache.set_robot_axis_templates(self.robot_model.get_axis_collider_data())
-            self._collision_world_cache.set_tool_templates(self.tool_model.get_tool_collider_data())
-            self._collision_cache_revisions = revisions
-
-        return self._collision_world_cache
 
     @staticmethod
     def linear_speed_mps_to_mmps(speed_mps: float) -> float:
@@ -176,26 +144,6 @@ class TrajectoryBuilder:
         if error_code == TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION:
             return TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION
         return TrajectoryComputationStatus.SUCCESS
-
-    @staticmethod
-    def _collision_diagnostics_from_pairs(
-        pairs: list[CollisionPair],
-        domain: TrajectoryCollisionDomain,
-    ) -> list[TrajectoryCollisionDiagnostic]:
-        diagnostics: list[TrajectoryCollisionDiagnostic] = []
-        for pair in pairs:
-            diagnostics.append(
-                TrajectoryCollisionDiagnostic(
-                    domain=domain,
-                    owner_a=pair.shape_a.owner,
-                    name_a=pair.shape_a.name,
-                    source_index_a=pair.shape_a.source_index,
-                    owner_b=pair.shape_b.owner,
-                    name_b=pair.shape_b.name,
-                    source_index_b=pair.shape_b.source_index,
-                )
-            )
-        return diagnostics
 
     @staticmethod
     def _copy_joints_6(values: list[float]) -> list[float]:
@@ -715,46 +663,6 @@ class TrajectoryBuilder:
             allowed_configs,
         )
 
-    def _apply_collision_detection_if_needed(
-        self,
-        sample: TrajectorySample,
-        corrected_matrices: list[np.ndarray] | None,
-    ) -> None:
-        sample.collisions = []
-        if sample.error_code != TrajectorySampleErrorCode.NONE:
-            return
-        if not sample.reachable:
-            return
-        if not corrected_matrices:
-            return
-
-        collision_cache = self._ensure_collision_world_cache()
-        frame_world_transforms = build_world_frame_transforms(
-            corrected_matrices,
-            self.workspace_model.get_robot_base_transform_world(),
-        )
-        flange_world_transform = resolve_flange_world_transform(frame_world_transforms)
-        collision_cache.update_dynamic_world_shapes(frame_world_transforms, flange_world_transform)
-
-        diagnostics = TrajectoryBuilder._collision_diagnostics_from_pairs(
-            collision_cache.find_workspace_collisions(),
-            TrajectoryCollisionDomain.WORKSPACE,
-        )
-        diagnostics.extend(
-            TrajectoryBuilder._collision_diagnostics_from_pairs(
-                collision_cache.find_robot_tool_collisions(
-                    self.tool_model.get_evaluated_robot_axis_colliders()
-                ),
-                TrajectoryCollisionDomain.ROBOT_TOOL,
-            )
-        )
-        if not diagnostics:
-            return
-
-        sample.collisions = diagnostics
-        sample.error_code = TrajectorySampleErrorCode.COLLISION_DETECTED
-        sample.error_axis = None
-
     @staticmethod
     def _update_joint_stats(segment_result: SegmentResult, sample: TrajectorySample) -> None:
         for axis in range(6):
@@ -1084,10 +992,7 @@ class TrajectoryBuilder:
         sample.collisions = []
 
         fk_result = self.robot_model.compute_fk_joints(sample.joints, tool=self.tool_model.get_tool())
-        if fk_result is not None:
-            _, corrected_matrices, _, _, _ = fk_result
-            self._apply_collision_detection_if_needed(sample, corrected_matrices)
-        else:
+        if fk_result is None:
             sample.reachable = False
             sample.error_code = TrajectorySampleErrorCode.POINT_UNREACHABLE
             sample.configuration = None
@@ -1116,7 +1021,6 @@ class TrajectoryBuilder:
         self._working_mgi_solver = MGI(self.robot_model.mgi_params, self.tool_model.get_tool())
         self._robot_allowed_configs = set(self.robot_model.get_allowed_configurations())
         self._joint_weights = [float(v) for v in self.robot_model.get_joint_weights()[:6]]
-        self._ensure_collision_world_cache()
         try:
             previous_sample: TrajectorySample | None = None
             start_time_s = 0.0
@@ -1182,7 +1086,6 @@ class TrajectoryBuilder:
         to_keypoint: TrajectoryKeypoint,
         start_time_s: float = 0.0,
     ) -> SegmentResult:
-        self._ensure_collision_world_cache()
         joints_6 = TrajectoryBuilder._copy_joints_6(current_joints)
         config_identifier = self.robot_model.get_config_identifier()
         identified_config = MgiConfigKey.identify_configuration_deg(joints_6, config_identifier)
@@ -1690,7 +1593,6 @@ class TrajectoryBuilder:
         sample.pose[5] = float(orientation_abc[2])
 
         mgi_result = self._compute_mgi_for_pose(sample.pose, previous_sample)
-        corrected_matrices: list[np.ndarray] | None = None
         sample.mgi_solutions = TrajectoryBuilder._compact_mgi_solutions(mgi_result, allowed_configs)
         selected_solution = self._select_best_solution(mgi_result, previous_sample, allowed_configs)
         if selected_solution is None:
@@ -1713,10 +1615,6 @@ class TrajectoryBuilder:
                 sample.error_code = TrajectorySampleErrorCode.POINT_UNREACHABLE
                 sample.configuration = None
                 sample.joints = [0.0] * 6
-            else:
-                _, corrected_matrices, _, _, _ = fk_result
-
-        self._apply_collision_detection_if_needed(sample, corrected_matrices)
 
         if previous_sample is None:
             TrajectoryBuilder._reset_cartesian_dynamics(sample)
@@ -1759,8 +1657,6 @@ class TrajectoryBuilder:
         sample = TrajectorySample()
         sample.time = float(time_s)
         sample.joints = TrajectoryBuilder._copy_joints_6(joints_deg)
-        corrected_matrices: list[np.ndarray] | None = None
-
         # B) Compute pose from FK and expose configuration reachability metadata.
         fk_result = self.robot_model.compute_fk_joints(sample.joints, tool=self.tool_model.get_tool())
         if fk_result is None:
@@ -1770,7 +1666,7 @@ class TrajectoryBuilder:
             sample.pose = [0.0] * 6
             sample.mgi_solutions = {}
         else:
-            _, corrected_matrices, dh_pose, _, _ = fk_result
+            _, _, dh_pose, _, _ = fk_result
             sample.pose = dh_pose.to_list()
             while len(sample.pose) < 6:
                 sample.pose.append(0.0)
@@ -1793,8 +1689,6 @@ class TrajectoryBuilder:
                 sample.reachable = True
                 sample.error_code = TrajectorySampleErrorCode.NONE
                 sample.configuration = config_key
-
-        self._apply_collision_detection_if_needed(sample, corrected_matrices)
 
         # C) Compute cartesian/articular dynamics from previous sample.
         if previous_sample is None:
