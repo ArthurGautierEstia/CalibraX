@@ -49,7 +49,8 @@ class Viewer3DController(QObject):
             self.robot_model,
             self.workspace_model,
             self.viewer_3d_widget.get_overlay_cartesian_widget(),
-            self,
+            parent=self,
+            orientation_limits_deg=(-360.0, 360.0),
         )
 
         self._setup_connections()

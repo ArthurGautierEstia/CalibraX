@@ -18,6 +18,7 @@ class CartesianWidgetController(QObject):
         robot_model: RobotModel,
         workspace_model: WorkspaceModel,
         cartesian_control_widget: CartesianControlWidget,
+        orientation_limits_deg: tuple[float, float] = (-180.0, 180.0),
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -25,6 +26,10 @@ class CartesianWidgetController(QObject):
         self.robot_model = robot_model
         self.workspace_model = workspace_model
         self.cartesian_control_widget = cartesian_control_widget
+        self._orientation_limits_deg: tuple[float, float] = (
+            float(orientation_limits_deg[0]),
+            float(orientation_limits_deg[1]),
+        )
         self.new_target = Pose6.zeros()
         self._limits_cache_key: tuple | None = None
         self._limits_cache_value: list[tuple[float, float]] | None = None
@@ -90,7 +95,9 @@ class CartesianWidgetController(QObject):
 
     def _apply_cartesian_slider_limits(self) -> None:
         xyz_limits = self._get_display_cartesian_slider_limits_xyz()
-        self.cartesian_control_widget.update_axis_limits(list(xyz_limits[:3]) + [(-180.0, 180.0)] * 3)
+        self.cartesian_control_widget.update_axis_limits(
+            list(xyz_limits[:3]) + [self._orientation_limits_deg] * 3
+        )
 
     def _get_display_cartesian_slider_limits_xyz(self) -> list[tuple[float, float]]:
         xyz_limits = [
