@@ -24,6 +24,11 @@ def norm3(x: float, y: float, z: float) -> float:
     return float(np.sqrt(x * x + y * y + z * z))
 
 
+def compute_3d_error_mm(x_mm: float, y_mm: float, z_mm: float) -> float:
+    """Compute the resulting 3D positional error in millimeters from XYZ components."""
+    return norm3(x_mm, y_mm, z_mm)
+
+
 def vector_norm3(v: list[float] | tuple[float, float, float]) -> float:
     """Euclidean norm of [x, y, z]."""
     if len(v) < 3:

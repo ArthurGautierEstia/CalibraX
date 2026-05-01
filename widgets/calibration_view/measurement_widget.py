@@ -2,7 +2,8 @@ from typing import Dict, List, Optional, Any
 from PyQt6.QtWidgets import (
     QLayout, QWidget, QVBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
-    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox, QSizePolicy, QHBoxLayout, QCheckBox
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox, QSizePolicy, QHBoxLayout, QCheckBox, QHeaderView,
+    QGroupBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QEvent
 from PyQt6.QtGui import QFont
@@ -15,6 +16,8 @@ class DHCellWidget(QWidget):
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
+        self._raw_value = ""
+        self._unit_suffix = ""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(4)
@@ -35,10 +38,15 @@ class DHCellWidget(QWidget):
         self.setLayout(layout)
 
     def set_value(self, value: str) -> None:
-        self.label.setText(value)
+        self._raw_value = value
+        self._refresh_label_text()
 
     def get_value(self) -> str:
-        return self.label.text()
+        return self._raw_value
+
+    def set_unit_suffix(self, unit_suffix: str) -> None:
+        self._unit_suffix = unit_suffix
+        self._refresh_label_text()
 
     def set_checked(self, checked: bool) -> None:
         self.checkbox.setChecked(checked)
@@ -54,6 +62,12 @@ class DHCellWidget(QWidget):
             self.label.setStyleSheet("color: #ff8c00; font-weight: 700;")
         else:
             self.label.setStyleSheet("")
+
+    def _refresh_label_text(self) -> None:
+        if self._raw_value and self._unit_suffix:
+            self.label.setText(f"{self._raw_value} {self._unit_suffix}")
+            return
+        self.label.setText(self._raw_value)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
@@ -80,6 +94,7 @@ class MeasurementWidget(QWidget):
     repere_selected = pyqtSignal(str)
     rotation_type_changed = pyqtSignal(str)
     dh_checkboxes_changed = pyqtSignal()
+    corrections_changed = pyqtSignal(list)
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
@@ -90,9 +105,8 @@ class MeasurementWidget(QWidget):
         """Initialise l'interface du widget"""
         main_layout = QVBoxLayout(self)
 
-        titre = QLabel("Mesures robot")
-        titre.setStyleSheet("font-size: 14px; font-weight: bold;")
-        main_layout.addWidget(titre)
+        import_group = QGroupBox("Import des mesures")
+        import_layout = QVBoxLayout(import_group)
 
         top_layout = QGridLayout()
 
@@ -115,7 +129,7 @@ class MeasurementWidget(QWidget):
         top_layout.setColumnStretch(3, 1)
         top_layout.setColumnStretch(4, 1)
 
-        main_layout.addLayout(top_layout)
+        import_layout.addLayout(top_layout)
 
         middle_layout = QHBoxLayout()
 
@@ -135,7 +149,7 @@ class MeasurementWidget(QWidget):
         middle_layout.addWidget(self.table_me, 1)
         middle_layout.setStretch(1, 2)
 
-        main_layout.addLayout(middle_layout)
+        import_layout.addLayout(middle_layout)
 
         buttons_layout = QHBoxLayout()
 
@@ -153,14 +167,14 @@ class MeasurementWidget(QWidget):
         self.btn_clear.setEnabled(False)
         buttons_layout.addWidget(self.btn_clear)
 
-        main_layout.addLayout(buttons_layout)
+        import_layout.addLayout(buttons_layout)
+        main_layout.addWidget(import_group)
 
-        dh_title = QLabel("Table DH Mesurée")
-        dh_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        main_layout.addWidget(dh_title)
+        dh_group = QGroupBox("Paramètres DHM mesurés")
+        dh_group_layout = QVBoxLayout(dh_group)
 
         self.table_dh_measured = QTableWidget(6, 4)
-        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (deg)", "d (mm)", "theta (deg)", "r (mm)"])
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
         self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -169,27 +183,74 @@ class MeasurementWidget(QWidget):
         self.table_dh_measured.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(120)
         self.table_dh_measured.setEnabled(False)
+        self.table_dh_measured.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-        self.table_tcp_offsets = QTableWidget(3, 2)
-        self.table_tcp_offsets.setHorizontalHeaderLabels(["TCP", "Offsets"])
-        self.table_tcp_offsets.setVerticalHeaderLabels(["X", "Y", "Z"])
+        self.table_tcp_offsets = QTableWidget(4, 1)
+        self.table_tcp_offsets.setHorizontalHeaderLabels(["Impact sur TCP"])
+        self.table_tcp_offsets.setVerticalHeaderLabels(["X", "Y", "Z", "3D"])
         self.table_tcp_offsets.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_tcp_offsets.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_tcp_offsets.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_tcp_offsets.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table_tcp_offsets.horizontalHeader().setDefaultSectionSize(110)
+        self.table_tcp_offsets.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table_tcp_offsets.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_tcp_offsets.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table_tcp_offsets.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table_tcp_offsets.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        self.checkbox_segment_lengths: QCheckBox | None = None
+        self.checkbox_axis_origins: QCheckBox | None = None
+        self.checkbox_parallelism: QCheckBox | None = None
+        self._updating_corrections_from_model = False
 
         self._initialize_dh_cells()
         self._freeze_dh_table_height()
 
         dh_tables_layout = QHBoxLayout()
-        dh_tables_layout.addWidget(self.table_dh_measured, 3)
-        dh_tables_layout.addWidget(self.table_tcp_offsets, 2)
-        main_layout.addLayout(dh_tables_layout)
+        dh_tables_layout.addWidget(self.table_dh_measured, 1)
+        tcp_side_layout = QVBoxLayout()
+        tcp_side_layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        tcp_side_layout.addWidget(self.table_tcp_offsets, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.checkbox_segment_lengths = QCheckBox("Longueurs de segments")
+        self.checkbox_segment_lengths.toggled.connect(
+            lambda checked: self._set_dh_group_checked([1, 3], checked)
+        )
+        self.checkbox_segment_lengths.setEnabled(False)
+        tcp_side_layout.addWidget(self.checkbox_segment_lengths, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.checkbox_axis_origins = QCheckBox("Origines d'axes")
+        self.checkbox_axis_origins.toggled.connect(
+            lambda checked: self._set_dh_group_checked([2], checked)
+        )
+        self.checkbox_axis_origins.setEnabled(False)
+        tcp_side_layout.addWidget(self.checkbox_axis_origins, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.checkbox_parallelism = QCheckBox("Parallélisme")
+        self.checkbox_parallelism.toggled.connect(
+            lambda checked: self._set_dh_group_checked([0], checked)
+        )
+        self.checkbox_parallelism.setEnabled(False)
+        tcp_side_layout.addWidget(self.checkbox_parallelism, 0, Qt.AlignmentFlag.AlignLeft)
+        tcp_side_layout.addStretch(1)
+
+        dh_tables_layout.addSpacing(12)
+        dh_tables_layout.addLayout(tcp_side_layout, 0)
+        dh_tables_layout.setAlignment(tcp_side_layout, Qt.AlignmentFlag.AlignLeft)
+        dh_group_layout.addLayout(dh_tables_layout)
 
         self._initialize_tcp_offsets_table()
-        self.setLayout(main_layout)
+        main_layout.addWidget(dh_group)
 
+        correction_group = QGroupBox("Correction 6D")
+        correction_layout = QVBoxLayout(correction_group)
+        self.table_corr = QTableWidget(6, 6)
+        self.table_corr.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
+        self.table_corr.setHorizontalHeaderLabels(["Tx(mm)", "Ty(mm)", "Tz(mm)", "Rx(°)", "Ry(°)", "Rz(°)"])
+        self.table_corr.horizontalHeader().setDefaultSectionSize(80)
+        self.table_corr.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_corr.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_corr.itemChanged.connect(self._on_correction_item_changed)
         buttons2_layout = QHBoxLayout()
         self.btn_toggle_check = QPushButton("Tout sélectionner")
         self.btn_toggle_check.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -203,7 +264,10 @@ class MeasurementWidget(QWidget):
         self.btn_apply_measured.setEnabled(False)
         buttons2_layout.addWidget(self.btn_apply_measured, 1)
 
-        main_layout.addLayout(buttons2_layout)
+        dh_group_layout.addLayout(buttons2_layout)
+        correction_layout.addWidget(self.table_corr)
+        main_layout.addWidget(correction_group)
+        self.setLayout(main_layout)
 
     def _is_dh_cell_disabled(self, row: int, col: int) -> bool:
         # Existing locked cells
@@ -219,6 +283,60 @@ class MeasurementWidget(QWidget):
             return True
 
         return False
+
+    def _set_dh_group_checked(self, columns: List[int], checked: bool) -> None:
+        for row in range(self.table_dh_measured.rowCount()):
+            for col in columns:
+                cell_widget = self.table_dh_measured.cellWidget(row, col)
+                if isinstance(cell_widget, DHCellWidget) and cell_widget.isEnabled():
+                    cell_widget.set_checked(checked)
+        self._sync_group_checkboxes()
+        self._update_toggle_check_button_text()
+        self._update_apply_button_state()
+        self.dh_checkboxes_changed.emit()
+
+    def _is_dh_group_fully_checked(self, columns: List[int]) -> bool:
+        has_enabled_cell = False
+        for row in range(self.table_dh_measured.rowCount()):
+            for col in columns:
+                cell_widget = self.table_dh_measured.cellWidget(row, col)
+                if isinstance(cell_widget, DHCellWidget) and cell_widget.isEnabled():
+                    has_enabled_cell = True
+                    if not cell_widget.is_checked():
+                        return False
+        return has_enabled_cell
+
+    def _set_group_checkbox_state(self, checkbox: QCheckBox, checked: bool) -> None:
+        checkbox.blockSignals(True)
+        checkbox.setChecked(checked)
+        checkbox.blockSignals(False)
+
+    def _sync_group_checkboxes(self) -> None:
+        if (
+            self.checkbox_segment_lengths is None
+            or self.checkbox_axis_origins is None
+            or self.checkbox_parallelism is None
+        ):
+            return
+        self._set_group_checkbox_state(
+            self.checkbox_segment_lengths,
+            self._is_dh_group_fully_checked([1, 3]),
+        )
+        self._set_group_checkbox_state(
+            self.checkbox_axis_origins,
+            self._is_dh_group_fully_checked([2]),
+        )
+        self._set_group_checkbox_state(
+            self.checkbox_parallelism,
+            self._is_dh_group_fully_checked([0]),
+        )
+
+    def _get_dh_column_unit_suffix(self, col: int) -> str:
+        if col in (0, 2):
+            return "°"
+        if col in (1, 3):
+            return "mm"
+        return ""
 
     def _on_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         self.repere_selected.emit(item.text(0))
@@ -242,6 +360,12 @@ class MeasurementWidget(QWidget):
     def _format_value(self, value: float, decimals: int = 4) -> str:
         formatted = f"{value:.{decimals}f}"
         return f"0.{'0' * decimals}" if formatted == f"-0.{'0' * decimals}" else formatted
+
+    def _format_value_with_unit(self, value: float, unit_suffix: str, decimals: int = 4) -> str:
+        formatted_value = self._format_value(value, decimals)
+        if not unit_suffix:
+            return formatted_value
+        return f"{formatted_value} {unit_suffix}"
 
     def populate_tree(self, repere_names: List[str]) -> None:
         self.tree.clear()
@@ -352,6 +476,7 @@ class MeasurementWidget(QWidget):
         self.table_dh_measured.clearContents()
         self._initialize_dh_cells()
         self._initialize_tcp_offsets_table()
+        self._sync_group_checkboxes()
 
     def set_measure_filename(self, filename) -> None:
         self.lineEdit_measure_filename.setText(filename)
@@ -371,12 +496,14 @@ class MeasurementWidget(QWidget):
             for j in range(4):
                 cell_widget = self.table_dh_measured.cellWidget(i, j)
                 if isinstance(cell_widget, DHCellWidget):
+                    cell_widget.set_unit_suffix(self._get_dh_column_unit_suffix(j))
                     cell_widget.set_value(self._format_value(dh_matrix[i, j], 4))
 
         for i in range(3, 6):
             for j in range(4):
                 cell_widget = self.table_dh_measured.cellWidget(i, j)
                 if isinstance(cell_widget, DHCellWidget):
+                    cell_widget.set_unit_suffix(self._get_dh_column_unit_suffix(j))
                     cell_widget.set_value("")
 
         self.table_dh_measured.blockSignals(False)
@@ -401,6 +528,7 @@ class MeasurementWidget(QWidget):
                     if self._is_dh_cell_disabled(row, col):
                         cell_widget.set_enabled_state(False)
                     cell_widget.checkbox.stateChanged.connect(self._emit_dh_checkboxes_changed)
+                    cell_widget.set_unit_suffix(self._get_dh_column_unit_suffix(col))
                     cell_widget.set_value(formatted_value)
                     self.table_dh_measured.setCellWidget(row, col, cell_widget)
             else:
@@ -409,6 +537,7 @@ class MeasurementWidget(QWidget):
                     if self._is_dh_cell_disabled(row, col):
                         cell_widget.set_enabled_state(False)
                     cell_widget.checkbox.stateChanged.connect(self._emit_dh_checkboxes_changed)
+                    cell_widget.set_unit_suffix(self._get_dh_column_unit_suffix(col))
                     cell_widget.set_value("")
                     self.table_dh_measured.setCellWidget(row, col, cell_widget)
 
@@ -417,6 +546,7 @@ class MeasurementWidget(QWidget):
 
         self.table_dh_measured.update()
         self.table_dh_measured.blockSignals(False)
+        self._sync_group_checkboxes()
         self.dh_checkboxes_changed.emit()
 
         print(f"Table DH Mesuree remplie avec {len([d for d in dh_deviations if d])} articulations")
@@ -442,7 +572,9 @@ class MeasurementWidget(QWidget):
                 if self._is_dh_cell_disabled(row, col):
                     cell_widget.set_enabled_state(False)
                 cell_widget.checkbox.stateChanged.connect(self._emit_dh_checkboxes_changed)
+                cell_widget.set_unit_suffix(self._get_dh_column_unit_suffix(col))
                 self.table_dh_measured.setCellWidget(row, col, cell_widget)
+        self._sync_group_checkboxes()
 
     def _freeze_dh_table_height(self) -> None:
         header_height = self.table_dh_measured.horizontalHeader().height()
@@ -454,19 +586,52 @@ class MeasurementWidget(QWidget):
         self.table_tcp_offsets.blockSignals(True)
         self.table_tcp_offsets.clearContents()
         for row in range(self.table_tcp_offsets.rowCount()):
-            for col in range(self.table_tcp_offsets.columnCount()):
-                self.table_tcp_offsets.setItem(row, col, self._make_centered_item(self._format_value(0.0, 4)))
+            self.table_tcp_offsets.setItem(
+                row,
+                0,
+                self._make_centered_item(self._format_value_with_unit(0.0, "mm", 2)),
+            )
         self.table_tcp_offsets.blockSignals(False)
+        self._update_tcp_offsets_table_geometry()
 
-    def set_tcp_offsets_values(self, tcp_xyz: List[float], offsets_xyz: List[float]) -> None:
-        columns = [tcp_xyz, offsets_xyz]
+    def set_tcp_offsets_values(
+        self,
+        offsets_xyz: List[float],
+        offset_3d_mm: float,
+    ) -> None:
+        offset_values_mm = [float(v) for v in offsets_xyz[:3]]
+        while len(offset_values_mm) < 3:
+            offset_values_mm.append(0.0)
+        offset_values_mm.append(float(offset_3d_mm))
+
         self.table_tcp_offsets.blockSignals(True)
-        for col in range(2):
-            col_values = columns[col] if col < len(columns) else [0.0, 0.0, 0.0]
-            for row in range(3):
-                value = float(col_values[row]) if row < len(col_values) else 0.0
-                self.table_tcp_offsets.setItem(row, col, self._make_centered_item(self._format_value(value, 4)))
+        for row in range(4):
+            value = float(offset_values_mm[row]) if row < len(offset_values_mm) else 0.0
+            display_value = self._format_value_with_unit(value, "mm", 2)
+            self.table_tcp_offsets.setItem(row, 0, self._make_centered_item(display_value))
         self.table_tcp_offsets.blockSignals(False)
+        self._update_tcp_offsets_table_geometry()
+
+    def _update_tcp_offsets_table_geometry(self) -> None:
+        self.table_tcp_offsets.resizeRowsToContents()
+        header_width = self.table_tcp_offsets.verticalHeader().width()
+        column_width = max(
+            self.table_tcp_offsets.sizeHintForColumn(0),
+            self.checkbox_segment_lengths.sizeHint().width() if self.checkbox_segment_lengths is not None else 0,
+            self.checkbox_axis_origins.sizeHint().width() if self.checkbox_axis_origins is not None else 0,
+            self.checkbox_parallelism.sizeHint().width() if self.checkbox_parallelism is not None else 0,
+        )
+        frame_width = 2 * self.table_tcp_offsets.frameWidth()
+        extra_padding = 8
+        total_width = header_width + column_width + frame_width + extra_padding
+        header_height = self.table_tcp_offsets.horizontalHeader().height()
+        rows_height = sum(
+            self.table_tcp_offsets.rowHeight(row)
+            for row in range(self.table_tcp_offsets.rowCount())
+        )
+        total_height = header_height + rows_height + frame_width
+        self.table_tcp_offsets.setFixedWidth(total_width)
+        self.table_tcp_offsets.setFixedHeight(total_height)
 
     def get_dh_checkboxes_state(self) -> Dict[str, bool]:
         states = {}
@@ -532,6 +697,7 @@ class MeasurementWidget(QWidget):
         self.dh_checkboxes_changed.emit()
 
     def _emit_dh_checkboxes_changed(self, *_args) -> None:
+        self._sync_group_checkboxes()
         self._update_toggle_check_button_text()
         self._update_apply_button_state()
         self.dh_checkboxes_changed.emit()
@@ -554,14 +720,54 @@ class MeasurementWidget(QWidget):
             measured.append(row_values)
         return measured
 
+    def set_corrections(self, corrections: List[List[float]]) -> None:
+        self._updating_corrections_from_model = True
+        try:
+            for row in range(6):
+                correction_row = corrections[row] if row < len(corrections) else []
+                for col in range(6):
+                    value = str(correction_row[col]) if col < len(correction_row) else "0"
+                    item = self.table_corr.item(row, col)
+                    if item is None:
+                        self.table_corr.setItem(row, col, QTableWidgetItem(value))
+                    else:
+                        item.setText(value)
+        finally:
+            self._updating_corrections_from_model = False
+
+    def get_corrections(self) -> List[List[float]]:
+        corrections: List[List[float]] = []
+        for row in range(6):
+            correction_row: List[float] = []
+            for col in range(6):
+                item = self.table_corr.item(row, col)
+                try:
+                    correction_value = float(item.text()) if item and item.text().strip() != "" else 0.0
+                except ValueError:
+                    correction_value = 0.0
+                correction_row.append(correction_value)
+            corrections.append(correction_row)
+        return corrections
+
+    def _on_correction_item_changed(self, *_args) -> None:
+        if self._updating_corrections_from_model:
+            return
+        self.corrections_changed.emit(self.get_corrections())
+
     def set_measured_controls_enabled(self, enabled: bool) -> None:
         """Active ou désactive les contrôles des valeurs mesurées"""
         self.table_dh_measured.setEnabled(enabled)
         self.btn_toggle_check.setEnabled(enabled)
         self.btn_set_as_ref.setEnabled(enabled)
         self.btn_clear.setEnabled(enabled)
+        self.checkbox_segment_lengths.setEnabled(enabled)
+        self.checkbox_axis_origins.setEnabled(enabled)
+        self.checkbox_parallelism.setEnabled(enabled)
         # Désactiver le bouton appliquer lors du clear
         if not enabled:
+            self.checkbox_segment_lengths.setChecked(False)
+            self.checkbox_axis_origins.setChecked(False)
+            self.checkbox_parallelism.setChecked(False)
             self.btn_apply_measured.setEnabled(False)
         # Désactiver le bouton importer si des mesures sont présentes
         self.btn_import_me.setEnabled(not enabled)

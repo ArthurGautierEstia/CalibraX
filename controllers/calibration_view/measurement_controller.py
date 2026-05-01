@@ -308,6 +308,10 @@ class MeasurementController(QObject):
         T = T @ self.robot_model.get_T_tool(self.tool_model.get_tool())
         return T[:3, 3].astype(float)
 
+    def _get_calibration_joints_deg(self) -> list[float]:
+        """Return the configured calibration joint position used for imported measurements."""
+        return self.robot_model.get_position_calibration()
+
     def _build_selected_dh_params(self, theoretical_dh: list[list[float]]) -> list[list[float]]:
         """Merge theoretical DH with checked measured values from calibration table."""
         selected = [list(row[:4]) for row in theoretical_dh[:6]]
@@ -333,15 +337,19 @@ class MeasurementController(QObject):
     def _update_tcp_offsets_from_selection(self) -> None:
         theoretical_dh = self.robot_model.get_dh_params()
         selected_dh = self._build_selected_dh_params(theoretical_dh)
-        joints_deg = self.robot_model.get_joints()
-
-        tcp_theoretical = self._compute_tcp_xyz_from_dh(theoretical_dh, joints_deg)
-        tcp_selected = self._compute_tcp_xyz_from_dh(selected_dh, joints_deg)
-        offsets = tcp_selected - tcp_theoretical
+        calibration_joints_deg = self._get_calibration_joints_deg()
+        tcp_nominal = self._compute_tcp_xyz_from_dh(theoretical_dh, calibration_joints_deg)
+        tcp_selected = self._compute_tcp_xyz_from_dh(selected_dh, calibration_joints_deg)
+        offsets = tcp_nominal - tcp_selected
+        offset_3d_mm = math_utils.compute_3d_error_mm(
+            float(offsets[0]),
+            float(offsets[1]),
+            float(offsets[2]),
+        )
 
         self.measurement_widget.set_tcp_offsets_values(
-            [float(v) for v in tcp_selected.tolist()],
             [float(v) for v in offsets.tolist()],
+            offset_3d_mm,
         )
 
     def _order_measurements_for_dh(self, measurements: list[Dict[str, float]]) -> list[Dict[str, float]]:
@@ -462,8 +470,9 @@ class MeasurementController(QObject):
         if len(cumulative) > 7:
             cumulative = cumulative[:7]
 
-        # Get the current joint positions from robot model
-        q_measured = self.robot_model.get_joints()
+        # Imported measurement frames are assumed to come from the configured
+        # calibration pose, not from the robot's current interactive pose.
+        q_measured = self._get_calibration_joints_deg()
         axis_reversed = self.robot_model.get_axis_reversed()
         q_effective = [q_measured[i] * axis_reversed[i] for i in range(6)]
 

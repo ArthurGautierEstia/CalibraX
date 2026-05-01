@@ -1,11 +1,11 @@
 from PyQt6.QtCore import QObject
 
 from models.robot_model import RobotModel
-from widgets.calibration_view.correction_table_widget import CorrectionTableWidget
+from widgets.calibration_view.measurement_widget import MeasurementWidget
 
 
 class CorrectionTableController(QObject):
-    def __init__(self, robot_model: RobotModel, correction_table_widget: CorrectionTableWidget, parent: QObject = None):
+    def __init__(self, robot_model: RobotModel, correction_table_widget: MeasurementWidget, parent: QObject = None):
         super().__init__(parent)
 
         self.robot_model = robot_model
