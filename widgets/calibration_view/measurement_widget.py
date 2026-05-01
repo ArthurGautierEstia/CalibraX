@@ -105,14 +105,14 @@ class MeasurementWidget(QWidget):
         """Initialise l'interface du widget"""
         main_layout = QVBoxLayout(self)
 
-        import_group = QGroupBox("Import des mesures")
+        import_group = QGroupBox("Import des mesures géométriques")
         import_layout = QVBoxLayout(import_group)
 
         top_layout = QGridLayout()
 
         self.lineEdit_measure_filename = QLineEdit()
         self.lineEdit_measure_filename.setReadOnly(False)
-        self.lineEdit_measure_filename.setPlaceholderText("Fichier de mesure")
+        self.lineEdit_measure_filename.setPlaceholderText("Fichier de mesure .csv")
         top_layout.addWidget(self.lineEdit_measure_filename, 0, 0)
 
         label_2 = QLabel("Convention d'angles : ")
@@ -153,7 +153,7 @@ class MeasurementWidget(QWidget):
 
         buttons_layout = QHBoxLayout()
 
-        self.btn_import_me = QPushButton("Importer")
+        self.btn_import_me = QPushButton("Importer .csv")
         self.btn_import_me.clicked.connect(self.import_measurements_requested.emit)
         buttons_layout.addWidget(self.btn_import_me)
 
@@ -162,7 +162,7 @@ class MeasurementWidget(QWidget):
         self.btn_set_as_ref.setEnabled(False)
         buttons_layout.addWidget(self.btn_set_as_ref)
 
-        self.btn_clear = QPushButton("Effacer")
+        self.btn_clear = QPushButton("Vider")
         self.btn_clear.clicked.connect(self.clear_measurements_requested.emit)
         self.btn_clear.setEnabled(False)
         buttons_layout.addWidget(self.btn_clear)
@@ -242,7 +242,7 @@ class MeasurementWidget(QWidget):
         self._initialize_tcp_offsets_table()
         main_layout.addWidget(dh_group)
 
-        correction_group = QGroupBox("Correction 6D")
+        correction_group = QGroupBox("Table de corrections 6x6D")
         correction_layout = QVBoxLayout(correction_group)
         self.table_corr = QTableWidget(6, 6)
         self.table_corr.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)

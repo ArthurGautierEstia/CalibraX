@@ -44,9 +44,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.tabs.addTab(self.robot_view, "Robot")
-        self.tabs.addTab(self.workspace_view, "Workspace")
-        self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.cartesian_control_view, "MGI")
+        self.tabs.addTab(self.calibration_view, "Calibration")
+        self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
