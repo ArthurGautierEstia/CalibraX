@@ -345,7 +345,7 @@ class TrajectoryKeypointDialog(QDialog):
         config_tab_layout.addWidget(config_group)
 
         self.main_tabs.addTab(self.target_tab, "Target")
-        self.main_tabs.addTab(self.cubic_tab, "Cubique")
+        self.main_tabs.addTab(self.cubic_tab, "Tangentes")
         self.main_tabs.addTab(self.config_tab, "Configs")
         layout.addWidget(self.main_tabs)
         layout.addWidget(self.cubic_auto_update_adjacent_checkbox)
@@ -1294,9 +1294,7 @@ class TrajectoryKeypointDialog(QDialog):
             self.main_tabs.setTabEnabled(cubic_tab_index, show_interp_tab)
             if hasattr(self.main_tabs, "setTabVisible"):
                 self.main_tabs.setTabVisible(cubic_tab_index, show_interp_tab)
-            if show_interp_tab:
-                self.main_tabs.setCurrentWidget(self.cubic_tab)
-            elif self.main_tabs.currentIndex() == cubic_tab_index:
+            if not show_interp_tab and self.main_tabs.currentIndex() == cubic_tab_index:
                 self.main_tabs.setCurrentWidget(self.target_tab)
         self.cubic_group.setVisible(is_cubic)
         self.linear_group.setVisible(is_linear)
