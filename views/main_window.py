@@ -41,6 +41,11 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
 
+    def show_maximized_on_startup(self) -> None:
+        """Affiche la fenetre en mode maximise, sans passer en plein ecran."""
+        self.show()
+        self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+
     def _setup_ui(self) -> None:
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
