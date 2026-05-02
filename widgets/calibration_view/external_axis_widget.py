@@ -89,7 +89,7 @@ class ExternalAxisWidget(QWidget):
         self.file_label.setStyleSheet("border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;")
         self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         import_layout.addWidget(self.file_label, 1)
-        self.btn_import = QPushButton("Importer (.txt)")
+        self.btn_import = QPushButton("Importer .txt")
         self.btn_import.clicked.connect(self._import_measurements)
         import_layout.addWidget(self.btn_import, 1)
         self.btn_clear = QPushButton("Vider")

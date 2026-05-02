@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Any
 from PyQt6.QtWidgets import (
     QLayout, QWidget, QVBoxLayout, QGridLayout, QLabel,
-    QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
+    QPushButton, QTreeWidget, QTreeWidgetItem,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox, QSizePolicy, QHBoxLayout, QCheckBox, QHeaderView,
     QGroupBox
 )
@@ -59,14 +59,11 @@ class DHCellWidget(QWidget):
 
     def _update_label_style(self, checked: bool) -> None:
         if checked:
-            self.label.setStyleSheet("color: #ff8c00; font-weight: 700;")
+            self.label.setStyleSheet("color: #ff8c00;")
         else:
             self.label.setStyleSheet("")
 
     def _refresh_label_text(self) -> None:
-        if self._raw_value and self._unit_suffix:
-            self.label.setText(f"{self._raw_value} {self._unit_suffix}")
-            return
         self.label.setText(self._raw_value)
 
     def mousePressEvent(self, event) -> None:
@@ -110,10 +107,12 @@ class MeasurementWidget(QWidget):
 
         top_layout = QGridLayout()
 
-        self.lineEdit_measure_filename = QLineEdit()
-        self.lineEdit_measure_filename.setReadOnly(False)
-        self.lineEdit_measure_filename.setPlaceholderText("Fichier de mesure .csv")
-        top_layout.addWidget(self.lineEdit_measure_filename, 0, 0)
+        self.file_label = QLabel("Aucun fichier chargé")
+        self.file_label.setStyleSheet(
+            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
+        )
+        self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top_layout.addWidget(self.file_label, 0, 0)
 
         label_2 = QLabel("Convention d'angles : ")
         label_2.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
@@ -144,8 +143,11 @@ class MeasurementWidget(QWidget):
         self.table_me.setVerticalHeaderLabels(["Translation (mm)", "Rotation (°)", "X axis", "Y axis", "Z axis"])
         self.table_me.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_me.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_me.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table_me.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table_me.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_me.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table_me.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         middle_layout.addWidget(self.table_me, 1)
         middle_layout.setStretch(1, 2)
 
@@ -168,25 +170,27 @@ class MeasurementWidget(QWidget):
         buttons_layout.addWidget(self.btn_clear)
 
         import_layout.addLayout(buttons_layout)
+        self._freeze_measurements_table_height()
+        import_group.setMinimumHeight(self.table_me.height() + 150)
         main_layout.addWidget(import_group)
 
         dh_group = QGroupBox("Paramètres DHM mesurés")
         dh_group_layout = QVBoxLayout(dh_group)
 
         self.table_dh_measured = QTableWidget(6, 4)
-        self.table_dh_measured.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
+        self.table_dh_measured.setHorizontalHeaderLabels(["alpha (°)", "d (mm)", "theta (°)", "r (mm)"])
         self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh_measured.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table_dh_measured.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_dh_measured.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table_dh_measured.horizontalHeader().setDefaultSectionSize(120)
+        self.table_dh_measured.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_dh_measured.setEnabled(False)
         self.table_dh_measured.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.table_tcp_offsets = QTableWidget(4, 1)
-        self.table_tcp_offsets.setHorizontalHeaderLabels(["Impact sur TCP"])
+        self.table_tcp_offsets.setHorizontalHeaderLabels(["Erreur au TCP"])
         self.table_tcp_offsets.setVerticalHeaderLabels(["X", "Y", "Z", "3D"])
         self.table_tcp_offsets.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_tcp_offsets.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -250,6 +254,9 @@ class MeasurementWidget(QWidget):
         self.table_corr.horizontalHeader().setDefaultSectionSize(80)
         self.table_corr.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_corr.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_corr.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table_corr.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table_corr.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.table_corr.itemChanged.connect(self._on_correction_item_changed)
         buttons2_layout = QHBoxLayout()
         self.btn_toggle_check = QPushButton("Tout sélectionner")
@@ -265,6 +272,8 @@ class MeasurementWidget(QWidget):
         buttons2_layout.addWidget(self.btn_apply_measured, 1)
 
         dh_group_layout.addLayout(buttons2_layout)
+        self._freeze_corrections_table_height()
+        correction_group.setMinimumHeight(self.table_corr.height() + 90)
         correction_layout.addWidget(self.table_corr)
         main_layout.addWidget(correction_group)
         self.setLayout(main_layout)
@@ -470,7 +479,7 @@ class MeasurementWidget(QWidget):
         self.table_me.blockSignals(False)
 
     def clear_measurements(self) -> None:
-        self.lineEdit_measure_filename.clear()
+        self.file_label.setText("Aucun fichier chargé")
         self.tree.clear()
         self.table_me.clearContents()
         self.table_dh_measured.clearContents()
@@ -479,7 +488,7 @@ class MeasurementWidget(QWidget):
         self._sync_group_checkboxes()
 
     def set_measure_filename(self, filename) -> None:
-        self.lineEdit_measure_filename.setText(filename)
+        self.file_label.setText(filename if filename else "Aucun fichier chargé")
 
     def get_current_repere_name(self) -> Optional[str]:
         current_item = self.tree.currentItem()
@@ -580,7 +589,22 @@ class MeasurementWidget(QWidget):
         header_height = self.table_dh_measured.horizontalHeader().height()
         rows_height = sum(self.table_dh_measured.rowHeight(row) for row in range(self.table_dh_measured.rowCount()))
         frame_height = 2 * self.table_dh_measured.frameWidth()
-        self.table_dh_measured.setFixedHeight(header_height + rows_height + frame_height)
+        extra_padding = 10
+        self.table_dh_measured.setFixedHeight(header_height + rows_height + frame_height + extra_padding)
+
+    def _freeze_measurements_table_height(self) -> None:
+        self.table_me.resizeRowsToContents()
+        header_height = self.table_me.horizontalHeader().height()
+        rows_height = sum(self.table_me.rowHeight(row) for row in range(self.table_me.rowCount()))
+        frame_height = 2 * self.table_me.frameWidth()
+        self.table_me.setFixedHeight(header_height + rows_height + frame_height)
+
+    def _freeze_corrections_table_height(self) -> None:
+        self.table_corr.resizeRowsToContents()
+        header_height = self.table_corr.horizontalHeader().height()
+        rows_height = sum(self.table_corr.rowHeight(row) for row in range(self.table_corr.rowCount()))
+        frame_height = 2 * self.table_corr.frameWidth()
+        self.table_corr.setFixedHeight(header_height + rows_height + frame_height)
 
     def _initialize_tcp_offsets_table(self) -> None:
         self.table_tcp_offsets.blockSignals(True)

@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QScrollArea
 from widgets.calibration_view.measurement_widget import MeasurementWidget
 from widgets.calibration_view.optimized_widget import OptimizedWidget
 from widgets.calibration_view.external_axis_widget import ExternalAxisWidget
@@ -28,7 +28,10 @@ class CalibrationView(QWidget):
         geometrique_tab = QWidget()
         geometrique_layout = QVBoxLayout(geometrique_tab)
         geometrique_layout.setSpacing(5)
-        geometrique_layout.addWidget(self.measurement_widget)
+        geometrique_scroll_area = QScrollArea(geometrique_tab)
+        geometrique_scroll_area.setWidgetResizable(True)
+        geometrique_scroll_area.setWidget(self.measurement_widget)
+        geometrique_layout.addWidget(geometrique_scroll_area)
         self.tab_widget.addTab(geometrique_tab, "Géométrique")
         
         # Onglet Optimisée
