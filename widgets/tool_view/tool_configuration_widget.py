@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -56,6 +56,7 @@ class ToolConfigurationWidget(QWidget):
     AXIS_COLLIDER_COUNT = 6
     UNIT_DEG = "°"
     UNIT_MM = "mm"
+    NUMERIC_VALUE_ROLE = Qt.ItemDataRole.UserRole
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -308,22 +309,84 @@ class ToolConfigurationWidget(QWidget):
         self._tool_collider_type_combos.append(type_combo)
 
         pose = collider.pose
-        cells = {
-            ToolConfigurationWidget.COL_PRIM_NAME: collider.name,
-            ToolConfigurationWidget.COL_PRIM_X: self._format_value_with_unit(float(pose.x), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_Y: self._format_value_with_unit(float(pose.y), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_Z: self._format_value_with_unit(float(pose.z), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_A: self._format_value_with_unit(float(pose.a), ToolConfigurationWidget.UNIT_DEG),
-            ToolConfigurationWidget.COL_PRIM_B: self._format_value_with_unit(float(pose.b), ToolConfigurationWidget.UNIT_DEG),
-            ToolConfigurationWidget.COL_PRIM_C: self._format_value_with_unit(float(pose.c), ToolConfigurationWidget.UNIT_DEG),
-            ToolConfigurationWidget.COL_PRIM_SIZE_X: self._format_value_with_unit(float(collider.size_x), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_SIZE_Y: self._format_value_with_unit(float(collider.size_y), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_SIZE_Z: self._format_value_with_unit(float(collider.size_z), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_RADIUS: self._format_value_with_unit(float(collider.radius), ToolConfigurationWidget.UNIT_MM),
-            ToolConfigurationWidget.COL_PRIM_HEIGHT: self._format_value_with_unit(float(collider.height), ToolConfigurationWidget.UNIT_MM),
-        }
-        for column, value in cells.items():
-            self.table_tool_colliders.setItem(row, column, QTableWidgetItem(value))
+        self.table_tool_colliders.setItem(row, ToolConfigurationWidget.COL_PRIM_NAME, QTableWidgetItem(collider.name))
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_X,
+            float(pose.x),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_Y,
+            float(pose.y),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_Z,
+            float(pose.z),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_A,
+            float(pose.a),
+            ToolConfigurationWidget.UNIT_DEG,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_B,
+            float(pose.b),
+            ToolConfigurationWidget.UNIT_DEG,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_C,
+            float(pose.c),
+            ToolConfigurationWidget.UNIT_DEG,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_SIZE_X,
+            float(collider.size_x),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_SIZE_Y,
+            float(collider.size_y),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_SIZE_Z,
+            float(collider.size_z),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_RADIUS,
+            float(collider.radius),
+            ToolConfigurationWidget.UNIT_MM,
+        )
+        self._set_table_item_with_unit(
+            self.table_tool_colliders,
+            row,
+            ToolConfigurationWidget.COL_PRIM_HEIGHT,
+            float(collider.height),
+            ToolConfigurationWidget.UNIT_MM,
+        )
 
     def _on_pick_tool_cad(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -494,21 +557,74 @@ class ToolConfigurationWidget(QWidget):
         return f"{value} {unit}"
 
     @staticmethod
-    def _format_table_item_with_unit(table: QTableWidget, item: QTableWidgetItem, unit: str) -> None:
+    def _numeric_unit_suffixes() -> tuple[str, ...]:
+        return (
+            ToolConfigurationWidget.UNIT_DEG,
+            ToolConfigurationWidget.UNIT_MM,
+        )
+
+    @staticmethod
+    def _parse_table_numeric_text(text: str, default: float = 0.0) -> float:
+        numeric_text = str(text).strip()
+        if numeric_text == "":
+            return default
+        for unit in ToolConfigurationWidget._numeric_unit_suffixes():
+            if numeric_text.endswith(unit):
+                numeric_text = numeric_text[: -len(unit)].strip()
+                break
+        return safe_float(numeric_text, default)
+
+    @staticmethod
+    def _set_item_numeric_value(item: QTableWidgetItem, value: float) -> None:
+        item.setData(ToolConfigurationWidget.NUMERIC_VALUE_ROLE, float(value))
+
+    @staticmethod
+    def _clear_item_numeric_value(item: QTableWidgetItem) -> None:
+        item.setData(ToolConfigurationWidget.NUMERIC_VALUE_ROLE, None)
+
+    @staticmethod
+    def _make_table_item_with_unit(value: float | int | str, unit: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(ToolConfigurationWidget._format_value_with_unit(value, unit))
+        raw_value = str(value).strip()
+        if raw_value != "":
+            numeric_value = ToolConfigurationWidget._parse_table_numeric_text(raw_value, 0.0)
+            ToolConfigurationWidget._set_item_numeric_value(item, numeric_value)
+        return item
+
+    @staticmethod
+    def _set_table_item_with_unit(
+        table: QTableWidget,
+        row: int,
+        column: int,
+        value: float | int | str,
+        unit: str,
+    ) -> None:
+        table.setItem(row, column, ToolConfigurationWidget._make_table_item_with_unit(value, unit))
+
+    @staticmethod
+    def _format_table_item_with_unit(table: QTableWidget, item: QTableWidgetItem, unit: str) -> float:
         raw_text = item.text().strip()
         if raw_text == "":
-            return
-        numeric_value = safe_float(raw_text, 0.0)
+            ToolConfigurationWidget._clear_item_numeric_value(item)
+            return 0.0
+        numeric_value = ToolConfigurationWidget._parse_table_numeric_text(raw_text, 0.0)
         table.blockSignals(True)
         try:
             item.setText(ToolConfigurationWidget._format_value_with_unit(numeric_value, unit))
+            ToolConfigurationWidget._set_item_numeric_value(item, numeric_value)
         finally:
             table.blockSignals(False)
+        return numeric_value
 
     @staticmethod
     def _cell_to_float(table: QTableWidget, row: int, column: int, default: float = 0.0) -> float:
         item = table.item(row, column)
-        return safe_float(item.text() if item else "", default)
+        if item is None:
+            return default
+        numeric_data = item.data(ToolConfigurationWidget.NUMERIC_VALUE_ROLE)
+        if numeric_data is not None:
+            return safe_float(numeric_data, default)
+        return ToolConfigurationWidget._parse_table_numeric_text(item.text(), default)
 
     def set_tool(self, tool: RobotTool) -> None:
         self._tool = self._copy_tool(tool)

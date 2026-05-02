@@ -7,7 +7,6 @@ from models.robot_model import RobotModel
 from models.robot_configuration_file import RobotConfigurationFile
 from utils.file_io import FileIOHandler
 from utils.popup import show_error_popup
-from utils.str_utils import str_to_float
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 
 class RobotConfigurationController(QObject):
@@ -79,9 +78,8 @@ class RobotConfigurationController(QObject):
     def _on_view_name_changed(self) -> None:
         self.robot_model.set_robot_name(self.robot_configuration_widget.get_robot_name())
 
-    def _on_view_dh_value_changed(self, row: int, col: int, value: str) -> None:
-        fval = str_to_float(value)
-        self.robot_model.set_dh_param(row, col, fval)
+    def _on_view_dh_value_changed(self, row: int, col: int, value: float) -> None:
+        self.robot_model.set_dh_param(row, col, float(value))
 
     def _on_view_measured_dh_enabled_changed(self, enabled: bool) -> None:
         self.robot_model.set_measured_dh_enabled(enabled)
