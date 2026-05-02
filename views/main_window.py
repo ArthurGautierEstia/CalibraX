@@ -8,6 +8,7 @@ from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
 from views.joint_control_view import JointControlView
 from views.robot_view import RobotView
+from views.tool_view import ToolView
 from views.trajectory_view import TrajectoryView
 from views.workspace_view import WorkspaceView
 from widgets.viewer_3d_widget import Viewer3DWidget
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         self._initial_splitter_sizes_applied = False
 
         self.robot_view = RobotView()
+        self.tool_view = ToolView()
         self.workspace_view = WorkspaceView()
         self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
@@ -44,10 +46,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.tabs.addTab(self.robot_view, "Robot")
-        self.tabs.addTab(self.cartesian_control_view, "MGI")
+        self.tabs.addTab(self.tool_view, "Tool")
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
+
+        self.robot_view.get_configuration_widget().add_tab(self.cartesian_control_view, "MGI")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
         self.main_splitter.setHandleWidth(6)
@@ -91,6 +95,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue de calibration du robot"""
         return self.calibration_view
 
+    def get_tool_view(self) -> ToolView:
+        """Retourne la vue de configuration du tool."""
+        return self.tool_view
+
     def get_workspace_view(self) -> WorkspaceView:
         """Retourne la vue workspace."""
         return self.workspace_view
@@ -118,9 +126,9 @@ class MainWindow(QMainWindow):
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
         for control_view in (
-            self.cartesian_control_view,
             self.trajectory_view,
         ):
             tab_index = self.tabs.indexOf(control_view)
             if tab_index >= 0:
                 self.tabs.setTabEnabled(tab_index, robot_has_configuration)
+        self.robot_view.get_configuration_widget().set_tab_enabled("MGI", robot_has_configuration)
