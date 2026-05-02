@@ -25,7 +25,7 @@ class TrajectoryGraphsWidget(QWidget):
         self.display_mode_combo = QComboBox()
         self.position_checkbox = QCheckBox("Position")
         self.velocity_checkbox = QCheckBox("Vitesse")
-        self.acceleration_checkbox = QCheckBox("Acceleration")
+        self.acceleration_checkbox = QCheckBox("Accéleration")
         self.jerk_checkbox = QCheckBox("Jerk")
         self._detachable_panels = QWidget(self)
 
