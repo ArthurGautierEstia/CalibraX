@@ -76,7 +76,7 @@ class TrajectoryConfigWidget(QWidget):
         self.tool_model = tool_model
         self.workspace_model = workspace_model
 
-        self.keypoints_table = QTableWidget(0, 11)
+        self.keypoints_table = QTableWidget(0, 10)
         self.btn_add = QPushButton("Ajouter")
         self.btn_edit = QPushButton("Editer")
         self.btn_go_to = QPushButton("Aller à")
@@ -138,16 +138,16 @@ class TrajectoryConfigWidget(QWidget):
         layout.addLayout(options_row)
 
         self.keypoints_table.setHorizontalHeaderLabels([
-            "#", "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
+            "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
         ])
 
         header = self.keypoints_table.horizontalHeader()
         header.setMinimumSectionSize(60)
 
-        for col in range(0, 10):
+        for col in range(0, 9):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
                 
         self.keypoints_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.keypoints_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -652,7 +652,6 @@ class TrajectoryConfigWidget(QWidget):
             configs_txt = self._configuration_text(keypoint)
 
             values = [
-                str(idx + 1),
                 (
                     f"CART({keypoint.cartesian_frame.value})"
                     if keypoint.target_type == KeypointTargetType.CARTESIAN
