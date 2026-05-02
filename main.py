@@ -70,7 +70,7 @@ class CalibraxApplication:
         self.app.setPalette(palette)
 
     def run(self):
-        self.main_window.showMaximized()
+        self.main_window.show_maximized_on_startup()
         QTimer.singleShot(0, self.main_controller.bootstrap_startup)
         sys.exit(self.app.exec())
 

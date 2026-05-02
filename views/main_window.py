@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.main_splitter: QSplitter | None = None
         self._initial_splitter_sizes_applied = False
+        self._maximize_on_first_show = False
 
         self.robot_view = RobotView()
         self.tool_view = ToolView()
@@ -43,8 +44,8 @@ class MainWindow(QMainWindow):
 
     def show_maximized_on_startup(self) -> None:
         """Affiche la fenetre en mode maximise, sans passer en plein ecran."""
+        self._maximize_on_first_show = True
         self.show()
-        self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
 
     def _setup_ui(self) -> None:
         central_widget = QWidget(self)
@@ -77,6 +78,9 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if self._maximize_on_first_show:
+            self._maximize_on_first_show = False
+            QTimer.singleShot(0, self.showMaximized)
         self._apply_initial_splitter_sizes()
 
     def _apply_initial_splitter_sizes(self) -> None:
@@ -130,6 +134,7 @@ class MainWindow(QMainWindow):
 
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
+        self.robot_view.get_configuration_widget().set_all_tabs_enabled(robot_has_configuration)
         for control_view in (
             self.trajectory_view,
         ):
