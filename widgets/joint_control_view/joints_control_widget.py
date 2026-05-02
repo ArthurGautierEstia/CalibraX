@@ -274,6 +274,10 @@ class JointsControlWidget(QWidget):
         for spinbox in self.spinboxes_q:
             spinbox.setSingleStep(normalized_step)
 
+    def set_spinbox_keyboard_tracking(self, enabled: bool) -> None:
+        for spinbox in self.spinboxes_q:
+            spinbox.setKeyboardTracking(bool(enabled))
+
     def set_jog_increment(self, value: float) -> None:
         self.set_spinbox_single_step(max(0.001, float(value)) * 0.1)
 

@@ -370,6 +370,10 @@ class CartesianControlWidget(QWidget):
         for spinbox in self.spinboxes_cart:
             spinbox.setSingleStep(normalized_step)
 
+    def set_spinbox_keyboard_tracking(self, enabled: bool) -> None:
+        for spinbox in self.spinboxes_cart:
+            spinbox.setKeyboardTracking(bool(enabled))
+
     def set_jog_increment(self, value: float) -> None:
         normalized_value = max(0.001, float(value))
         for index, spinbox in enumerate(self.spinboxes_cart):

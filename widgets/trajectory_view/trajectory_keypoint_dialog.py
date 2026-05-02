@@ -97,6 +97,8 @@ class TrajectoryKeypointDialog(QDialog):
 
         self.cartesian_target_widget = CartesianControlWidget(compact=True)
         self.joint_target_widget = JointsControlWidget(compact=True)
+        self.cartesian_target_widget.set_spinbox_keyboard_tracking(False)
+        self.joint_target_widget.set_spinbox_keyboard_tracking(False)
         self.cartesian_error_label = QLabel("")
         self.cartesian_solutions_table_left = QTableWidget()
         self.cartesian_solutions_table_right = QTableWidget()
@@ -369,6 +371,9 @@ class TrajectoryKeypointDialog(QDialog):
         layout.addWidget(self.trajectory_warning_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        for button in buttons.buttons():
+            button.setAutoDefault(False)
+            button.setDefault(False)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
