@@ -55,11 +55,16 @@ class Viewer3DController(QObject):
 
         self._setup_connections()
         self._initialize_overlay_controls()
+        self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
         self.viewer_3d_widget.update_workspace(self.workspace_model)
         self.viewer_3d_widget.update_collision_scene(self.collision_scene_model)
 
     def _setup_connections(self) -> None:
         self.robot_model.tcp_pose_changed.connect(self._update_tcp_pose)
+        self.robot_model.dh_params_changed.connect(self._on_robot_kinematics_changed)
+        self.robot_model.measured_dh_params_changed.connect(self._on_robot_kinematics_changed)
+        self.robot_model.measured_dh_enabled_changed.connect(self._on_robot_kinematics_changed)
+        self.robot_model.joints_changed.connect(self._on_robot_kinematics_changed)
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
 
         self.tool_model.tool_changed.connect(self._on_tool_state_changed)
@@ -78,6 +83,9 @@ class Viewer3DController(QObject):
         self.viewer_3d_widget.get_overlay_cartesian_widget().spinbox_jog_released.connect(self._on_overlay_cartesian_released)
 
     def _update_tcp_pose(self) -> None:
+        self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
+
+    def _on_robot_kinematics_changed(self) -> None:
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
 
     def _on_robot_cad_models_changed(self) -> None:

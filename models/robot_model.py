@@ -36,7 +36,7 @@ class RobotModel(QObject):
         (-1000.0, 1000.0),
         (-1000.0, 1000.0),
     ]
-    DEFAULT_ROBOT_CAD_MODELS: List[str] = [f"./robots_stl/rocky{i}.stl" for i in range(7)]
+    DEFAULT_ROBOT_CAD_MODELS: List[str] = [""] * 7
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
     POSITION_CALIBRATION: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
@@ -1092,6 +1092,74 @@ class RobotModel(QObject):
     def to_configuration_file(self) -> RobotConfigurationFile:
         """Construit un objet de configuration depuis l'etat courant."""
         return RobotConfigurationFile.from_robot_model(self)
+
+    def reset_to_unconfigured_state(self) -> None:
+        """Remet le robot dans l'etat initial correspondant a aucune configuration chargee."""
+        self._inhibit_compute_fk = True
+
+        self.robot_name = ""
+        self.has_configuration = False
+        self.current_config_file = None
+
+        self.axis_limits = list(RobotModel.DEFAULT_AXIS_LIMITS)
+        self.cartesian_slider_limits_xyz = list(RobotModel.DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
+        self.axis_speed_limits = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
+        self.axis_accel_limits = list(RobotModel.DEFAULT_AXIS_ACCEL_LIMITS)
+        self.axis_jerk_limits = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
+        self.robot_cad_models = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
+        self.axis_colliders = [collider.copy() for collider in RobotModel.DEFAULT_AXIS_COLLIDERS]
+        self._axis_colliders_revision += 1
+
+        self.home_position = list(RobotModel.DEFAULT_HOME_POSITION)
+        self.position_zero = list(RobotModel.POSITION_ZERO)
+        self.position_calibration = list(RobotModel.POSITION_CALIBRATION)
+
+        self.joint_values = [0.0] * 6
+        self.joint_values_not_inverted = [0.0] * 6
+        self.axis_reversed = [1] * 6
+        self.joint_weights = [1.0] * 6
+
+        self.dh_params = [[0.0, 0.0, 0.0, 0.0] for _ in range(6)]
+        self.measured_dh_params = [[0.0, 0.0, 0.0, 0.0] for _ in range(6)]
+        self.measured_dh_enabled = False
+        self.current_tcp_dh_matrices = []
+        self.current_tcp_corrected_dh_matrices = []
+        self.corrections = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(6)]
+
+        self.measurements_filename = ""
+        self.measurements = []
+        self.measurement_points = []
+
+        self.MGI_solver.set_geometric_params(RobotModel._mgi_build_geometric_params(self.dh_params))
+        self.MGI_solver.set_axis_limits(RobotModel._mgi_build_axis_limits(self.axis_limits))
+        self.MGI_solver.set_invert_table(RobotModel._mgi_build_invert_table(self.axis_reversed))
+        self.current_tcp_mgi_result = MgiResult()
+        self.current_axis_config = MgiConfigKey.FUN
+        self._set_tcp_pose(Pose6.zeros())
+        self._set_corrected_tcp_pose(Pose6.zeros(), True)
+        self._tcp_rotation_matrix = math_utils.euler_to_rotation_matrix(0.0, 0.0, 0.0)
+
+        self._inhibit_compute_fk = False
+        self.configuration_changed.emit()
+        self.robot_name_changed.emit(self.robot_name)
+        self.dh_params_changed.emit()
+        self.measured_dh_params_changed.emit()
+        self.measured_dh_enabled_changed.emit()
+        self.axis_limits_changed.emit()
+        self.cartesian_slider_limits_changed.emit()
+        self.axis_speed_limits_changed.emit()
+        self.axis_accel_limits_changed.emit()
+        self.axis_jerk_limits_changed.emit()
+        self.axis_reversed_changed.emit()
+        self.joint_weights_changed.emit()
+        self.robot_cad_models_changed.emit()
+        self.cad_models_changed.emit()
+        self.axis_colliders_changed.emit()
+        self.corrections_changed.emit()
+        self.joints_changed.emit()
+        self.tcp_pose_changed.emit()
+        self.measurements_changed.emit()
+        self.measurements_points_changed.emit()
 
     def load_from_configuration_file(self, config: RobotConfigurationFile, file_name: str = None):
         """Charge l'etat du robot depuis un objet de configuration."""

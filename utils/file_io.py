@@ -1,29 +1,36 @@
 import json
-from PyQt6.QtWidgets import QWidget, QFileDialog
 from typing import Any
 
+from PyQt6.QtWidgets import QFileDialog, QWidget
+
+
 class FileIOHandler:
-    """Gestion des opérations d'import/export de fichiers"""
-    
+    """Gestion des operations d'import/export de fichiers."""
+
     @staticmethod
-    def save_json(parent: QWidget, title: str, data: dict[str, Any], directory: str=None):
-        """Sauvegarde des données en JSON"""
+    def save_json(parent: QWidget, title: str, data: dict[str, Any], directory: str = None):
+        """Sauvegarde des donnees en JSON via une boite de dialogue."""
         file_name, _ = QFileDialog.getSaveFileName(parent, title, directory, "JSON Files (*.json)")
         if file_name:
-            with open(file_name, "w") as f:
-                json.dump(data, f, indent=4)
+            FileIOHandler.write_json(file_name, data)
             return file_name
         return None
-    
+
     @staticmethod
-    def select_file(parent: QWidget, title: str=None, directory: str=None, filter: str=None):
-        """Ouvre une boîte de dialogue pour sélectionner un fichier"""
+    def write_json(file_name: str, data: dict[str, Any]) -> None:
+        """Sauvegarde des donnees JSON directement dans un fichier."""
+        with open(file_name, "w") as f:
+            json.dump(data, f, indent=4)
+
+    @staticmethod
+    def select_file(parent: QWidget, title: str = None, directory: str = None, filter: str = None):
+        """Ouvre une boite de dialogue pour selectionner un fichier."""
         file_name, _ = QFileDialog.getOpenFileName(parent, title, directory, filter)
         return file_name
 
     @staticmethod
     def load_json(file_name: str):
-        """Charge des données depuis un JSON"""
+        """Charge des donnees depuis un JSON."""
         if file_name:
             try:
                 with open(file_name, "r") as f:
@@ -33,8 +40,8 @@ class FileIOHandler:
                 print(f"Erreur lors du chargement: {e}")
                 return None, None
         return None, None
-    
+
     @staticmethod
-    def select_and_load_json(parent: QWidget, title: str=None, directory: str=None):
-        """Sélectionne et charge un fichier JSON"""
+    def select_and_load_json(parent: QWidget, title: str = None, directory: str = None):
+        """Selectionne et charge un fichier JSON."""
         return FileIOHandler.load_json(FileIOHandler.select_file(parent, title, directory, "JSON Files (*.json)"))

@@ -1183,9 +1183,10 @@ class Viewer3DWidget(QWidget):
         self._tool_model = tool_model
         self.begin_loading_feedback("Chargement CAO robot...")
         try:
-            matrices = self._resolve_cad_matrices(robot_model, tool_model)
-            self.last_corrected_matrices = matrices
-            self.add_robot_links(matrices)
+            dh_matrices, corrected_matrices = self._resolve_robot_matrices(robot_model, tool_model)
+            self.last_dh_matrices = dh_matrices
+            self.last_corrected_matrices = corrected_matrices
+            self.add_robot_links(corrected_matrices)
             if self.transparency_enabled:
                 self.set_transparency(True, emit_signal=False)
             self._cad_loaded = True
@@ -1202,12 +1203,15 @@ class Viewer3DWidget(QWidget):
 
         self.begin_loading_feedback("Chargement CAO tool...")
         try:
-            matrices = self._resolve_cad_matrices(robot_model, tool_model)
-            self.last_corrected_matrices = matrices
-            ghost_matrices = self.last_ghost_corrected_matrices if self.last_ghost_corrected_matrices else matrices
+            dh_matrices, corrected_matrices = self._resolve_robot_matrices(robot_model, tool_model)
+            self.last_dh_matrices = dh_matrices
+            self.last_corrected_matrices = corrected_matrices
+            ghost_matrices = (
+                self.last_ghost_corrected_matrices if self.last_ghost_corrected_matrices else corrected_matrices
+            )
             tool_cad_model = self._resolve_tool_cad_model()
 
-            self._replace_tool_link(matrices, tool_cad_model, ghost=False)
+            self._replace_tool_link(corrected_matrices, tool_cad_model, ghost=False)
             self._replace_tool_link(ghost_matrices, tool_cad_model, ghost=True)
 
             if self.transparency_enabled:
@@ -1216,24 +1220,25 @@ class Viewer3DWidget(QWidget):
         finally:
             self.end_loading_feedback()
 
-    def _resolve_cad_matrices(
+    def _resolve_robot_matrices(
         self,
         robot_model: RobotModel,
         tool_model: ToolModel | None = None,
-    ) -> list[np.ndarray]:
-        matrices = robot_model.get_current_tcp_corrected_dh_matrices()
-        if matrices:
-            return matrices
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        dh_matrices = robot_model.get_current_tcp_dh_matrices()
+        corrected_matrices = robot_model.get_current_tcp_corrected_dh_matrices()
+        if dh_matrices and corrected_matrices:
+            return dh_matrices, corrected_matrices
 
-        if self.last_corrected_matrices:
-            return self.last_corrected_matrices
+        if self.last_dh_matrices and self.last_corrected_matrices:
+            return self.last_dh_matrices, self.last_corrected_matrices
 
         active_tool = tool_model.get_tool() if tool_model is not None else None
         fk_result = robot_model.compute_fk_joints(robot_model.get_joints(), tool=active_tool)
         if fk_result is None:
-            return []
+            return [], []
 
-        return fk_result.corrected_matrices
+        return fk_result.dh_matrices, fk_result.corrected_matrices
 
     def load_robot_mesh(self, stl_path: str, transform_matrix, color: tuple[int, int, int]):
         # (Copier le code original ici, pas de changement)

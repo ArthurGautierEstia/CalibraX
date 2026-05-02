@@ -32,7 +32,9 @@ from widgets.toggle_switch_widget import ToggleSwitchWidget
 
 
 class RobotConfigurationWidget(QWidget):
+    new_config_requested = pyqtSignal()
     load_config_requested = pyqtSignal()
+    save_as_config_requested = pyqtSignal()
     text_changed_requested = pyqtSignal()
     export_config_requested = pyqtSignal()
     measured_dh_enabled_changed = pyqtSignal(bool)
@@ -90,6 +92,14 @@ class RobotConfigurationWidget(QWidget):
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         top_layout.addWidget(title_label)
 
+        status_row = QHBoxLayout()
+        status_row.addStretch()
+        self.status_label = QLabel("Configuration non enregistree")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        status_row.addWidget(self.status_label)
+        top_layout.addLayout(status_row)
+
         header_layout = QGridLayout()
         self.line_edit_robot_name = QLineEdit()
         self.line_edit_robot_name.setPlaceholderText("Nom du robot")
@@ -100,9 +110,17 @@ class RobotConfigurationWidget(QWidget):
         self.btn_load.clicked.connect(self.load_config_requested.emit)
         header_layout.addWidget(self.btn_load, 0, 1)
 
+        self.btn_new = QPushButton("Nouveau")
+        self.btn_new.clicked.connect(self.new_config_requested.emit)
+        header_layout.addWidget(self.btn_new, 0, 2)
+
         self.btn_export = QPushButton("Enregistrer")
         self.btn_export.clicked.connect(self.export_config_requested.emit)
-        header_layout.addWidget(self.btn_export, 0, 2)
+        header_layout.addWidget(self.btn_export, 0, 3)
+
+        self.btn_save_as = QPushButton("Enregistrer sous")
+        self.btn_save_as.clicked.connect(self.save_as_config_requested.emit)
+        header_layout.addWidget(self.btn_save_as, 0, 4)
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
@@ -115,6 +133,10 @@ class RobotConfigurationWidget(QWidget):
         main_layout.addLayout(top_layout, 1)
 
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
+
+    def set_configuration_status(self, text: str, color: str) -> None:
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
 
     def add_tab(self, widget: QWidget, title: str) -> None:
         existing_index = self._extra_tab_indexes.get(title, -1)

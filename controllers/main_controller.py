@@ -17,7 +17,6 @@ from models.collision_scene_model import CollisionSceneModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
-from utils.popup import show_error_popup
 from views.main_window import MainWindow
 
 
@@ -116,13 +115,6 @@ class MainController(QObject):
         )
 
     def _on_apply_measured_dh_requested(self) -> None:
-        if not self.robot_model.get_has_configuration():
-            show_error_popup(
-                "Erreur",
-                "Veuillez charger une configuration robot.",
-            )
-            return
-
         measured_dh = self.calibration_controller.measurement_controller.get_selected_measured_dh_params()
         self.robot_model.set_measured_dh_params(measured_dh)
         self.robot_model.set_measured_dh_enabled(True)
