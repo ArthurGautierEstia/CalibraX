@@ -78,6 +78,7 @@ class RobotConfigurationWidget(QWidget):
         self.robot_cad_line_edits: list[QLineEdit] = []
         self.table_axis_colliders: QTableWidget | None = None
         self.table_cartesian_slider_limits: QTableWidget | None = None
+        self._extra_tab_indexes: dict[str, int] = {}
         self.setup_ui()
 
     def setup_ui(self) -> None:
@@ -113,6 +114,18 @@ class RobotConfigurationWidget(QWidget):
         main_layout.addLayout(top_layout, 1)
 
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
+
+    def add_tab(self, widget: QWidget, title: str) -> None:
+        existing_index = self._extra_tab_indexes.get(title, -1)
+        if existing_index >= 0:
+            self.tabs.removeTab(existing_index)
+        tab_index = self.tabs.addTab(widget, title)
+        self._extra_tab_indexes[title] = tab_index
+
+    def set_tab_enabled(self, title: str, enabled: bool) -> None:
+        tab_index = self._extra_tab_indexes.get(title, -1)
+        if tab_index >= 0:
+            self.tabs.setTabEnabled(tab_index, enabled)
 
     def _build_dh_tab(self) -> QWidget:
         tab = QWidget()

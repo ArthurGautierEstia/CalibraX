@@ -47,10 +47,11 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.robot_view, "Robot")
         self.tabs.addTab(self.tool_view, "Tool")
-        self.tabs.addTab(self.cartesian_control_view, "MGI")
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
+
+        self.robot_view.get_configuration_widget().add_tab(self.cartesian_control_view, "MGI")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
         self.main_splitter.setHandleWidth(6)
@@ -125,9 +126,9 @@ class MainWindow(QMainWindow):
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
         for control_view in (
-            self.cartesian_control_view,
             self.trajectory_view,
         ):
             tab_index = self.tabs.indexOf(control_view)
             if tab_index >= 0:
                 self.tabs.setTabEnabled(tab_index, robot_has_configuration)
+        self.robot_view.get_configuration_widget().set_tab_enabled("MGI", robot_has_configuration)
