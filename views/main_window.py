@@ -8,6 +8,7 @@ from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
 from views.joint_control_view import JointControlView
 from views.robot_view import RobotView
+from views.tool_view import ToolView
 from views.trajectory_view import TrajectoryView
 from views.workspace_view import WorkspaceView
 from widgets.viewer_3d_widget import Viewer3DWidget
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         self._initial_splitter_sizes_applied = False
 
         self.robot_view = RobotView()
+        self.tool_view = ToolView()
         self.workspace_view = WorkspaceView()
         self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
@@ -44,6 +46,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.tabs.addTab(self.robot_view, "Robot")
+        self.tabs.addTab(self.tool_view, "Tool")
         self.tabs.addTab(self.cartesian_control_view, "MGI")
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.workspace_view, "Workspace")
@@ -90,6 +93,10 @@ class MainWindow(QMainWindow):
     def get_calibration_view(self) -> CalibrationView:
         """Retourne la vue de calibration du robot"""
         return self.calibration_view
+
+    def get_tool_view(self) -> ToolView:
+        """Retourne la vue de configuration du tool."""
+        return self.tool_view
 
     def get_workspace_view(self) -> WorkspaceView:
         """Retourne la vue workspace."""

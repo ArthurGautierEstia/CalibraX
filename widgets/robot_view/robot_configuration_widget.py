@@ -6,64 +6,42 @@ import os
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
-    QGroupBox,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QDoubleSpinBox,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
-    QCheckBox,
 )
-from models.collider_models import (
-    default_axis_colliders,
-)
-from models.primitive_collider_models import (
-    AxisDirection,
-    PrimitiveColliderData,
-    PrimitiveColliderShape,
-    RobotAxisColliderData,
-)
-from models.types import Pose6, XYZ3
-from widgets.toggle_switch_widget import ToggleSwitchWidget
-from widgets.robot_view.tool_widget import ToolWidget
+
+from models.collider_models import default_axis_colliders
+from models.primitive_collider_models import AxisDirection, RobotAxisColliderData
+from models.types import XYZ3
 from utils.math_utils import safe_float
-from utils.mgi import RobotTool
-from models.tool_config_file import ToolConfigFile
+from widgets.toggle_switch_widget import ToggleSwitchWidget
 
 
 class RobotConfigurationWidget(QWidget):
-    """Widget principal de configuration robot (DH + axes + positions + CAD)."""
-
     load_config_requested = pyqtSignal()
     text_changed_requested = pyqtSignal()
     export_config_requested = pyqtSignal()
     measured_dh_enabled_changed = pyqtSignal(bool)
 
     dh_value_changed = pyqtSignal(int, int, str)
-    tool_changed = pyqtSignal(RobotTool)
     axis_colliders_config_changed = pyqtSignal(list)
-
     axis_config_changed = pyqtSignal(list, list, list, list, list, list)
     positions_config_changed = pyqtSignal(list, list, list)
-
     robot_cad_models_changed = pyqtSignal(list)
-    tool_cad_model_changed = pyqtSignal(str)
-    tool_cad_offset_rz_changed = pyqtSignal(float)
-    tool_colliders_changed = pyqtSignal(list)
-    tool_evaluated_robot_axis_colliders_changed = pyqtSignal(list)
-    tool_profiles_directory_changed = pyqtSignal(str)
-    selected_tool_profile_changed = pyqtSignal(str)
 
     COL_AXIS_MIN = 0
     COL_AXIS_MAX = 1
@@ -84,21 +62,6 @@ class RobotConfigurationWidget(QWidget):
     COL_AXIS_COLLIDER_OFFSET_Y = 5
     COL_AXIS_COLLIDER_OFFSET_Z = 6
 
-    COL_PRIM_ENABLED = 0
-    COL_PRIM_NAME = 1
-    COL_PRIM_TYPE = 2
-    COL_PRIM_X = 3
-    COL_PRIM_Y = 4
-    COL_PRIM_Z = 5
-    COL_PRIM_A = 6
-    COL_PRIM_B = 7
-    COL_PRIM_C = 8
-    COL_PRIM_SIZE_X = 9
-    COL_PRIM_SIZE_Y = 10
-    COL_PRIM_SIZE_Z = 11
-    COL_PRIM_RADIUS = 12
-    COL_PRIM_HEIGHT = 13
-
     AXIS_COLLIDER_COUNT = 6
     ROBOT_CAD_COUNT = 7
     UNIT_DEG = "°"
@@ -113,32 +76,19 @@ class RobotConfigurationWidget(QWidget):
         self.axis_collider_enabled_checkboxes: list[QCheckBox] = []
         self.axis_collider_direction_combos: list[QComboBox] = []
         self.robot_cad_line_edits: list[QLineEdit] = []
-        self.tool_cad_line_edit: QLineEdit | None = None
-        self.tool_cad_offset_rz_spin: QDoubleSpinBox | None = None
         self.table_axis_colliders: QTableWidget | None = None
         self.table_cartesian_slider_limits: QTableWidget | None = None
-        self.table_tool_colliders: QTableWidget | None = None
-        self._tool_collider_type_combos: list[QComboBox] = []
-        self._tool_collider_enabled_checkboxes: list[QCheckBox] = []
-        self._tool_evaluated_robot_axis_colliders_checkboxes: list[QCheckBox] = []
-        self.tool_profiles_dir_line_edit: QLineEdit | None = None
-        self.tool_profiles_combo: QComboBox | None = None
-        self.tool_name_line_edit: QLineEdit | None = None
-        self._tool_profile_loading = False
-        self._tool_profile_files: dict[str, str] = {}
         self.setup_ui()
 
     def setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
-
         top_layout = QVBoxLayout()
 
-        title = QLabel("Configuration robot")
-        title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        top_layout.addWidget(title)
+        title_label = QLabel("Configuration robot")
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        top_layout.addWidget(title_label)
 
         header_layout = QGridLayout()
-
         self.line_edit_robot_name = QLineEdit()
         self.line_edit_robot_name.setPlaceholderText("Nom du robot")
         self.line_edit_robot_name.textChanged.connect(self.text_changed_requested.emit)
@@ -151,37 +101,24 @@ class RobotConfigurationWidget(QWidget):
         self.btn_export = QPushButton("Enregistrer")
         self.btn_export.clicked.connect(self.export_config_requested.emit)
         header_layout.addWidget(self.btn_export, 0, 2)
-
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_dh_tab(), "DHM")
         self.tabs.addTab(self._build_axis_tab(), "Axes")
-        self.tabs.addTab(self._build_tool_section(), "Tool")
         self.tabs.addTab(self._build_axis_colliders_tab(), "Colliders")
         self.tabs.addTab(self._build_positions_tab(), "Positions")
         self.tabs.addTab(self._build_cad_tab(), "CAD Files")
         top_layout.addWidget(self.tabs)
-
         main_layout.addLayout(top_layout, 1)
 
-        self.tool_widget = ToolWidget()
-        self.tool_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.tool_widget.tool_changed.connect(self._on_tool_changed)
-        self.tool_widget_container_layout.addWidget(self.tool_widget)
-        self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)
-        self.set_tool_colliders([])
-        self.set_tool_evaluated_robot_axis_colliders([True] * RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
 
     def _build_dh_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        self.measured_dh_toggle = ToggleSwitchWidget(
-            off_label="Robot d'usine",
-            on_label="Robot mesuré",
-        )
+        self.measured_dh_toggle = ToggleSwitchWidget(off_label="Robot d'usine", on_label="Robot mesuré")
         self.measured_dh_toggle.setChecked(False)
         self.measured_dh_toggle.setEnabled(False)
         self.measured_dh_toggle.toggled.connect(self._on_measured_dh_toggle_changed)
@@ -191,7 +128,6 @@ class RobotConfigurationWidget(QWidget):
 
         nominal_group = QGroupBox("Valeurs nominales")
         nominal_layout = QVBoxLayout(nominal_group)
-
         self.table_dh = QTableWidget(6, 4)
         self.table_dh.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
         self.table_dh.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
@@ -204,15 +140,11 @@ class RobotConfigurationWidget(QWidget):
 
         measured_group = QGroupBox("Valeurs mesurées")
         measured_layout = QVBoxLayout(measured_group)
-        measured_label = QLabel("Valeurs mesurées")
-
         self.table_dh_measured = QTableWidget(6, 4)
         self.table_dh_measured.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
         self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.table_dh_measured.setHorizontalHeaderLabels(["alpha", "d", "theta", "r"])
-        self.table_dh_measured.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(90)
         self.table_dh_measured.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_dh_measured.setEnabled(False)
@@ -227,24 +159,13 @@ class RobotConfigurationWidget(QWidget):
         layout = QVBoxLayout(tab)
 
         self.table_axis = QTableWidget(6, 6)
-        self.table_axis.setHorizontalHeaderLabels(
-            [
-                "Min",
-                "Max",
-                "Vitesse max",
-                "Accel max",
-                "Jerk max",
-                "Inverse",
-            ]
-        )
+        self.table_axis.setHorizontalHeaderLabels(["Min", "Max", "Vitesse max", "Accel max", "Jerk max", "Inverse"])
         self.table_axis.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_axis.horizontalHeader().setDefaultSectionSize(135)
 
         self.axis_reversed_checkboxes.clear()
         for row in range(6):
-            accel_item = QTableWidgetItem("")
-            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL, accel_item)
-
+            self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL, QTableWidgetItem(""))
             checkbox = QCheckBox()
             checkbox.stateChanged.connect(self._emit_axis_config_changed)
             self.table_axis.setCellWidget(row, RobotConfigurationWidget.COL_AXIS_REVERSED, checkbox)
@@ -259,7 +180,6 @@ class RobotConfigurationWidget(QWidget):
         axis_button_layout.addWidget(reset_accel_button)
         axis_button_layout.addStretch()
         layout.addLayout(axis_button_layout)
-
         return tab
 
     def _build_axis_colliders_tab(self) -> QWidget:
@@ -268,21 +188,9 @@ class RobotConfigurationWidget(QWidget):
 
         robot_group = QGroupBox("Colliders des axes robot")
         robot_layout = QVBoxLayout(robot_group)
-
         self.table_axis_colliders = QTableWidget(RobotConfigurationWidget.AXIS_COLLIDER_COUNT, 7)
-        self.table_axis_colliders.setHorizontalHeaderLabels(
-            [
-                "Actif",
-                "Axe cylindre",
-                "Rayon",
-                "Hauteur",
-                "X",
-                "Y",
-                "Z",
-            ]
-        )
-        vertical_labels = [f"q{i + 1}" for i in range(6)]
-        self.table_axis_colliders.setVerticalHeaderLabels(vertical_labels)
+        self.table_axis_colliders.setHorizontalHeaderLabels(["Actif", "Axe cylindre", "Rayon", "Hauteur", "X", "Y", "Z"])
+        self.table_axis_colliders.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_axis_colliders.horizontalHeader().setDefaultSectionSize(120)
 
         self.axis_collider_enabled_checkboxes.clear()
@@ -297,67 +205,13 @@ class RobotConfigurationWidget(QWidget):
             direction_combo.addItems(["X", "Y", "Z"])
             direction_combo.setCurrentText("Z")
             direction_combo.currentIndexChanged.connect(self._emit_axis_colliders_config_changed)
-            self.table_axis_colliders.setCellWidget(
-                row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_DIRECTION,
-                direction_combo,
-            )
+            self.table_axis_colliders.setCellWidget(row, RobotConfigurationWidget.COL_AXIS_COLLIDER_DIRECTION, direction_combo)
             self.axis_collider_direction_combos.append(direction_combo)
 
         self.table_axis_colliders.itemChanged.connect(self._on_axis_colliders_item_changed)
         robot_layout.addWidget(self.table_axis_colliders)
         layout.addWidget(robot_group, 1)
-
-        tool_group = QGroupBox("Colliders de l'outil")
-        tool_layout = QVBoxLayout(tool_group)
-
-        evaluated_colliders_layout = QHBoxLayout()
-        evaluated_colliders_layout.addWidget(QLabel("Colliders robot à évaluer pour ce tool"))
-        self._tool_evaluated_robot_axis_colliders_checkboxes.clear()
-        for axis in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
-            checkbox = QCheckBox(f"J{axis + 1}")
-            checkbox.setChecked(True)
-            checkbox.stateChanged.connect(self._emit_tool_evaluated_robot_axis_colliders_changed)
-            self._tool_evaluated_robot_axis_colliders_checkboxes.append(checkbox)
-            evaluated_colliders_layout.addWidget(checkbox)
-        evaluated_colliders_layout.addStretch()
-        tool_layout.addLayout(evaluated_colliders_layout)
-
-        self.table_tool_colliders = QTableWidget(0, 14)
-        self.table_tool_colliders.setHorizontalHeaderLabels(
-            [
-                "Actif",
-                "Nom",
-                "Type",
-                "X",
-                "Y",
-                "Z",
-                "A",
-                "B",
-                "C",
-                "Size X",
-                "Size Y",
-                "Size Z",
-                "Rayon",
-                "Hauteur",
-            ]
-        )
-        self.table_tool_colliders.horizontalHeader().setDefaultSectionSize(90)
-        self.table_tool_colliders.itemChanged.connect(self._on_tool_colliders_item_changed)
-        tool_layout.addWidget(self.table_tool_colliders)
-
-        colliders_btn_layout = QHBoxLayout()
-        add_tool_collider_btn = QPushButton("Ajouter")
-        add_tool_collider_btn.clicked.connect(self._on_add_tool_collider_clicked)
-        colliders_btn_layout.addWidget(add_tool_collider_btn)
-
-        remove_tool_collider_btn = QPushButton("Supprimer")
-        remove_tool_collider_btn.clicked.connect(self._on_remove_tool_collider_clicked)
-        colliders_btn_layout.addWidget(remove_tool_collider_btn)
-        colliders_btn_layout.addStretch()
-        tool_layout.addLayout(colliders_btn_layout)
-
-        layout.addWidget(tool_group, 1)
+        layout.addStretch()
         return tab
 
     def _build_positions_tab(self) -> QWidget:
@@ -366,15 +220,8 @@ class RobotConfigurationWidget(QWidget):
 
         positions_group = QGroupBox("Paramétrage des positions")
         positions_layout = QVBoxLayout(positions_group)
-
         self.table_positions = QTableWidget(6, 3)
-        self.table_positions.setHorizontalHeaderLabels(
-            [
-                "Position 0",
-                "Position calibration",
-                "Position home",
-            ]
-        )
+        self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position calibration", "Position home"])
         self.table_positions.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_positions.horizontalHeader().setDefaultSectionSize(180)
         self.table_positions.itemChanged.connect(self._on_positions_item_changed)
@@ -391,13 +238,11 @@ class RobotConfigurationWidget(QWidget):
         self.table_cartesian_slider_limits.itemChanged.connect(self._on_cartesian_slider_limits_item_changed)
         cartesian_layout.addWidget(self.table_cartesian_slider_limits)
         layout.addWidget(cartesian_group, 1)
-
         return tab
 
     def _build_cad_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
         description = QLabel("Selection des fichiers STL pour chaque lien robot.")
         description.setWordWrap(True)
         layout.addWidget(description)
@@ -411,96 +256,23 @@ class RobotConfigurationWidget(QWidget):
 
         grid = QGridLayout()
         self.robot_cad_line_edits.clear()
-
         for index in range(RobotConfigurationWidget.ROBOT_CAD_COUNT):
-            row = index
             label = QLabel(f"Lien {index}")
             path_line = QLineEdit()
             path_line.setReadOnly(True)
-
             browse_button = QPushButton("Parcourir")
             browse_button.clicked.connect(lambda _, i=index: self._on_pick_robot_cad(i))
-
             clear_button = QPushButton("Vider")
             clear_button.clicked.connect(lambda _, i=index: self._on_clear_robot_cad(i))
-
             self.robot_cad_line_edits.append(path_line)
-
-            grid.addWidget(label, row, 0)
-            grid.addWidget(path_line, row, 1)
-            grid.addWidget(browse_button, row, 2)
-            grid.addWidget(clear_button, row, 3)
+            grid.addWidget(label, index, 0)
+            grid.addWidget(path_line, index, 1)
+            grid.addWidget(browse_button, index, 2)
+            grid.addWidget(clear_button, index, 3)
 
         layout.addLayout(grid)
         layout.addStretch()
-
         return tab
-
-    def _build_tool_section(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-
-        profiles_grid = QGridLayout()
-
-        profiles_grid.addWidget(QLabel("Dossier tools"), 0, 0)
-        self.tool_profiles_dir_line_edit = QLineEdit()
-        self.tool_profiles_dir_line_edit.setReadOnly(True)
-        profiles_grid.addWidget(self.tool_profiles_dir_line_edit, 0, 1)
-
-        pick_tools_dir_btn = QPushButton("Sélectionner dossier")
-        pick_tools_dir_btn.clicked.connect(self._on_pick_tool_profiles_directory)
-        profiles_grid.addWidget(pick_tools_dir_btn, 0, 2)
-
-        refresh_tools_btn = QPushButton("Rafraichir")
-        refresh_tools_btn.clicked.connect(self._refresh_tool_profiles)
-        profiles_grid.addWidget(refresh_tools_btn, 0, 3)
-
-        profiles_grid.addWidget(QLabel("Tool"), 1, 0)
-        self.tool_profiles_combo = QComboBox()
-        self.tool_profiles_combo.currentIndexChanged.connect(self._on_selected_tool_profile_changed)
-        profiles_grid.addWidget(self.tool_profiles_combo, 1, 1)
-
-        save_tool_btn = QPushButton("Enregistrer tool")
-        save_tool_btn.clicked.connect(self._on_save_tool_profile)
-        profiles_grid.addWidget(save_tool_btn, 1, 2)
-
-        self.tool_name_line_edit = QLineEdit()
-        self.tool_name_line_edit.setPlaceholderText("Nom du tool")
-        profiles_grid.addWidget(self.tool_name_line_edit, 1, 3)
-
-        layout.addLayout(profiles_grid)
-
-        self.tool_widget_container_layout = QVBoxLayout()
-        layout.addLayout(self.tool_widget_container_layout)
-
-        tool_cad_grid = QGridLayout()
-        tool_cad_grid.addWidget(QLabel("CAO tool"), 0, 0)
-        self.tool_cad_line_edit = QLineEdit()
-        self.tool_cad_line_edit.setReadOnly(True)
-        tool_cad_grid.addWidget(self.tool_cad_line_edit, 0, 1)
-
-        tool_browse_button = QPushButton("Parcourir")
-        tool_browse_button.clicked.connect(self._on_pick_tool_cad)
-        tool_cad_grid.addWidget(tool_browse_button, 0, 2)
-
-        tool_clear_button = QPushButton("Vider")
-        tool_clear_button.clicked.connect(self._on_clear_tool_cad)
-        tool_cad_grid.addWidget(tool_clear_button, 0, 3)
-
-        tool_cad_grid.addWidget(QLabel("Offset Rz tool"), 1, 0)
-        self.tool_cad_offset_rz_spin = QDoubleSpinBox()
-        self.tool_cad_offset_rz_spin.setRange(-360.0, 360.0)
-        self.tool_cad_offset_rz_spin.setDecimals(2)
-        self.tool_cad_offset_rz_spin.setSingleStep(1.0)
-        self.tool_cad_offset_rz_spin.setSuffix(f" {RobotConfigurationWidget.UNIT_DEG}")
-        self.tool_cad_offset_rz_spin.valueChanged.connect(self.tool_cad_offset_rz_changed.emit)
-        tool_cad_grid.addWidget(self.tool_cad_offset_rz_spin, 1, 1)
-
-        layout.addLayout(tool_cad_grid)
-
-        layout.addStretch()
-
-        return widget
 
     def _on_dh_cell_changed(self, row: int, col: int) -> None:
         item = self.table_dh.item(row, col)
@@ -520,161 +292,38 @@ class RobotConfigurationWidget(QWidget):
             self._format_table_item_with_unit(self.table_axis, item, RobotConfigurationWidget.UNIT_DEG_PER_S3)
         self._emit_axis_config_changed()
 
-    def _on_cartesian_slider_limits_item_changed(self, _item: QTableWidgetItem) -> None:
-        self._format_table_item_with_unit(
-            self.table_cartesian_slider_limits,
-            _item,
-            RobotConfigurationWidget.UNIT_MM,
-        )
+    def _on_cartesian_slider_limits_item_changed(self, item: QTableWidgetItem) -> None:
+        self._format_table_item_with_unit(self.table_cartesian_slider_limits, item, RobotConfigurationWidget.UNIT_MM)
         self._emit_axis_config_changed()
 
     def _on_reset_axis_accel_limits_clicked(self) -> None:
         self._reset_axis_accel_limits_to_calculated_defaults()
         self._emit_axis_config_changed()
 
-    def _on_axis_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
-        self._format_table_item_with_unit(self.table_axis_colliders, _item, RobotConfigurationWidget.UNIT_MM)
+    def _on_axis_colliders_item_changed(self, item: QTableWidgetItem) -> None:
+        self._format_table_item_with_unit(self.table_axis_colliders, item, RobotConfigurationWidget.UNIT_MM)
         self._emit_axis_colliders_config_changed()
 
-    def _on_tool_colliders_item_changed(self, _item: QTableWidgetItem) -> None:
-        if _item.column() in (
-            RobotConfigurationWidget.COL_PRIM_X,
-            RobotConfigurationWidget.COL_PRIM_Y,
-            RobotConfigurationWidget.COL_PRIM_Z,
-            RobotConfigurationWidget.COL_PRIM_SIZE_X,
-            RobotConfigurationWidget.COL_PRIM_SIZE_Y,
-            RobotConfigurationWidget.COL_PRIM_SIZE_Z,
-            RobotConfigurationWidget.COL_PRIM_RADIUS,
-            RobotConfigurationWidget.COL_PRIM_HEIGHT,
-        ):
-            self._format_table_item_with_unit(self.table_tool_colliders, _item, RobotConfigurationWidget.UNIT_MM)
-        elif _item.column() in (
-            RobotConfigurationWidget.COL_PRIM_A,
-            RobotConfigurationWidget.COL_PRIM_B,
-            RobotConfigurationWidget.COL_PRIM_C,
-        ):
-            self._format_table_item_with_unit(self.table_tool_colliders, _item, RobotConfigurationWidget.UNIT_DEG)
-        self.tool_colliders_changed.emit(self.get_tool_colliders())
-
-    def _emit_tool_evaluated_robot_axis_colliders_changed(self) -> None:
-        self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
-
-    def _on_add_tool_collider_clicked(self) -> None:
-        self._insert_tool_collider_row(
-            PrimitiveColliderData(
-                name=f"Tool collider {self.table_tool_colliders.rowCount() + 1 if self.table_tool_colliders is not None else 1}",
-                enabled=True,
-                shape=PrimitiveColliderShape.CYLINDER,
-                pose=Pose6.zeros(),
-                size_x=100.0,
-                size_y=100.0,
-                size_z=100.0,
-                radius=40.0,
-                height=120.0,
-            )
-        )
-        self.tool_colliders_changed.emit(self.get_tool_colliders())
-
-    def _on_remove_tool_collider_clicked(self) -> None:
-        if self.table_tool_colliders is None:
-            return
-        row = self.table_tool_colliders.currentRow()
-        if row < 0:
-            row = self.table_tool_colliders.rowCount() - 1
-        if row < 0:
-            return
-
-        self.table_tool_colliders.blockSignals(True)
-        try:
-            self.table_tool_colliders.removeRow(row)
-            if 0 <= row < len(self._tool_collider_enabled_checkboxes):
-                self._tool_collider_enabled_checkboxes.pop(row)
-            if 0 <= row < len(self._tool_collider_type_combos):
-                self._tool_collider_type_combos.pop(row)
-        finally:
-            self.table_tool_colliders.blockSignals(False)
-
-        self.tool_colliders_changed.emit(self.get_tool_colliders())
-
-    def _insert_tool_collider_row(self, collider: PrimitiveColliderData) -> None:
-        if self.table_tool_colliders is None:
-            return
-
-        row = self.table_tool_colliders.rowCount()
-        self.table_tool_colliders.insertRow(row)
-
-        enabled_checkbox = QCheckBox()
-        enabled_checkbox.setChecked(collider.enabled)
-        enabled_checkbox.stateChanged.connect(lambda _state: self.tool_colliders_changed.emit(self.get_tool_colliders()))
-        self.table_tool_colliders.setCellWidget(row, RobotConfigurationWidget.COL_PRIM_ENABLED, enabled_checkbox)
-        self._tool_collider_enabled_checkboxes.append(enabled_checkbox)
-
-        type_combo = QComboBox()
-        type_combo.addItems(["box", "cylinder", "sphere"])
-        shape_value = collider.shape.value
-        type_combo.setCurrentText(shape_value)
-        type_combo.currentIndexChanged.connect(lambda _idx: self.tool_colliders_changed.emit(self.get_tool_colliders()))
-        self.table_tool_colliders.setCellWidget(row, RobotConfigurationWidget.COL_PRIM_TYPE, type_combo)
-        self._tool_collider_type_combos.append(type_combo)
-
-        pose = collider.pose
-        cells = {
-            RobotConfigurationWidget.COL_PRIM_NAME: collider.name,
-            RobotConfigurationWidget.COL_PRIM_X: self._format_value_with_unit(float(pose.x), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_Y: self._format_value_with_unit(float(pose.y), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_Z: self._format_value_with_unit(float(pose.z), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_A: self._format_value_with_unit(float(pose.a), RobotConfigurationWidget.UNIT_DEG),
-            RobotConfigurationWidget.COL_PRIM_B: self._format_value_with_unit(float(pose.b), RobotConfigurationWidget.UNIT_DEG),
-            RobotConfigurationWidget.COL_PRIM_C: self._format_value_with_unit(float(pose.c), RobotConfigurationWidget.UNIT_DEG),
-            RobotConfigurationWidget.COL_PRIM_SIZE_X: self._format_value_with_unit(float(collider.size_x), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_SIZE_Y: self._format_value_with_unit(float(collider.size_y), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_SIZE_Z: self._format_value_with_unit(float(collider.size_z), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_RADIUS: self._format_value_with_unit(float(collider.radius), RobotConfigurationWidget.UNIT_MM),
-            RobotConfigurationWidget.COL_PRIM_HEIGHT: self._format_value_with_unit(float(collider.height), RobotConfigurationWidget.UNIT_MM),
-        }
-        for column, value in cells.items():
-            self.table_tool_colliders.setItem(row, column, QTableWidgetItem(value))
-
-    def _on_positions_item_changed(self, _item: QTableWidgetItem) -> None:
-        self._format_table_item_with_unit(self.table_positions, _item, RobotConfigurationWidget.UNIT_DEG)
-        self.positions_config_changed.emit(
-            self.get_home_position(),
-            self.get_position_zero(),
-            self.get_position_calibration(),
-        )
+    def _on_positions_item_changed(self, item: QTableWidgetItem) -> None:
+        self._format_table_item_with_unit(self.table_positions, item, RobotConfigurationWidget.UNIT_DEG)
+        self.positions_config_changed.emit(self.get_home_position(), self.get_position_zero(), self.get_position_calibration())
 
     def _on_pick_robot_cad(self, index: int) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Sélectionner une CAO",
-            self._get_cad_start_directory(),
-            "STL files (*.stl);;All files (*)",
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, "Sélectionner une CAO", self._get_cad_start_directory(), "STL files (*.stl);;All files (*)")
         if not file_path:
             return
-
         self.robot_cad_line_edits[index].setText(self._normalize_cad_path(file_path))
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
 
     def _on_pick_multiple_robot_cad(self) -> None:
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Sélectionner plusieurs CAD Files",
-            self._get_cad_start_directory(),
-            "STL files (*.stl);;All files (*)",
-        )
+        file_paths, _ = QFileDialog.getOpenFileNames(self, "Sélectionner plusieurs CAD Files", self._get_cad_start_directory(), "STL files (*.stl);;All files (*)")
         if not file_paths:
             return
-
         cad_paths = [self._normalize_cad_path(path) for path in file_paths]
         max_count = RobotConfigurationWidget.ROBOT_CAD_COUNT
         if len(cad_paths) > max_count:
             cad_paths = cad_paths[:max_count]
-            QMessageBox.information(
-                self,
-                "Sélection limitée",
-                f"Seulement {max_count} fichiers sont utilisés (indices 0 à {max_count - 1}).",
-            )
+            QMessageBox.information(self, "Sélection limitée", f"Seulement {max_count} fichiers sont utilisés (indices 0 à {max_count - 1}).")
 
         start_index = 0
         if len(cad_paths) < max_count:
@@ -682,10 +331,7 @@ class RobotConfigurationWidget(QWidget):
             start_index, ok = QInputDialog.getInt(
                 self,
                 "Index de départ",
-                (
-                    f"{len(cad_paths)} fichiers sélectionnes.\n"
-                    f"Choisissez l'index de départ pour l'affectation ({0} à {max_start})."
-                ),
+                f"{len(cad_paths)} fichiers sélectionnés.\nChoisissez l'index de départ pour l'affectation ({0} à {max_start}).",
                 0,
                 0,
                 max_start,
@@ -698,202 +344,11 @@ class RobotConfigurationWidget(QWidget):
             target_index = start_index + offset
             if 0 <= target_index < max_count:
                 self.robot_cad_line_edits[target_index].setText(cad_path)
-
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
 
     def _on_clear_robot_cad(self, index: int) -> None:
         self.robot_cad_line_edits[index].setText("")
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
-
-    def _on_pick_tool_cad(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Sélectionner une CAD File pour le tool",
-            self._get_cad_start_directory(),
-            "STL files (*.stl);;All files (*)",
-        )
-        if not file_path:
-            return
-
-        self.tool_cad_line_edit.setText(self._normalize_cad_path(file_path))
-        self.tool_cad_model_changed.emit(self.get_tool_cad_model())
-
-    def _on_clear_tool_cad(self) -> None:
-        self.tool_cad_line_edit.setText("")
-        self.tool_cad_model_changed.emit("")
-
-    def _on_tool_changed(self, tool: RobotTool) -> None:
-        self.tool_changed.emit(tool)
-
-    def _on_pick_tool_profiles_directory(self) -> None:
-        current_directory = self.get_tool_profiles_directory()
-        start_directory = self._resolve_filesystem_path(current_directory) if current_directory else self._get_tools_start_directory()
-        selected_dir = QFileDialog.getExistingDirectory(
-            self,
-            "Sélectionner le dossier des tools",
-            start_directory,
-        )
-        if not selected_dir:
-            return
-        self.set_tool_profiles_directory(selected_dir, emit_change=True)
-
-    def _on_selected_tool_profile_changed(self, _index: int) -> None:
-        if self._tool_profile_loading or self.tool_profiles_combo is None:
-            return
-        file_path = self.tool_profiles_combo.currentData()
-        if not file_path:
-            self.selected_tool_profile_changed.emit("")
-            return
-        self.selected_tool_profile_changed.emit(self._normalize_project_path(str(file_path)))
-
-    def _refresh_tool_profiles(self) -> None:
-        if self.tool_profiles_combo is None or self.tool_profiles_dir_line_edit is None:
-            return
-
-        selected_data = self.tool_profiles_combo.currentData()
-        tools_dir = self._resolve_filesystem_path(self.tool_profiles_dir_line_edit.text().strip())
-
-        self._tool_profile_loading = True
-        self._tool_profile_files.clear()
-        self.tool_profiles_combo.clear()
-        self.tool_profiles_combo.addItem("Aucun outil", "")
-
-        if os.path.isdir(tools_dir):
-            for file_name in sorted(os.listdir(tools_dir)):
-                if not file_name.lower().endswith(".json"):
-                    continue
-                profile_name = os.path.splitext(file_name)[0]
-                profile_path = os.path.join(tools_dir, file_name)
-                self._tool_profile_files[profile_name] = profile_path
-                self.tool_profiles_combo.addItem(profile_name, profile_path)
-
-        if selected_data:
-            found_index = self.tool_profiles_combo.findData(selected_data)
-            self.tool_profiles_combo.setCurrentIndex(found_index if found_index >= 0 else 0)
-        else:
-            self.tool_profiles_combo.setCurrentIndex(0)
-
-        self._tool_profile_loading = False
-
-    def _load_tool_profile(self, file_path: str) -> bool:
-        try:
-            profile = ToolConfigFile.load(file_path)
-        except (OSError, ValueError, TypeError) as exc:
-            QMessageBox.warning(self, "Tool invalide", f"Impossible de charger {file_path}.\n{exc}")
-            return False
-
-        profile_name = profile.name if profile.name else os.path.splitext(os.path.basename(file_path))[0]
-        if self.tool_name_line_edit is not None:
-            self.tool_name_line_edit.setText(profile_name)
-
-        loaded_tool = profile.to_robot_tool()
-        self.tool_widget.set_tool(loaded_tool)
-        self.tool_changed.emit(loaded_tool)
-
-        self.set_tool_cad_model(profile.tool_cad_model)
-        self.tool_cad_model_changed.emit(self.get_tool_cad_model())
-
-        self.set_tool_cad_offset_rz(profile.tool_cad_offset_rz)
-        self.tool_cad_offset_rz_changed.emit(profile.tool_cad_offset_rz)
-        self.set_tool_colliders(profile.tool_colliders)
-        self.tool_colliders_changed.emit(self.get_tool_colliders())
-        self.set_tool_evaluated_robot_axis_colliders(profile.evaluated_robot_axis_colliders)
-        self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
-        return True
-
-    def _on_save_tool_profile(self) -> None:
-        if self.tool_profiles_dir_line_edit is None:
-            return
-
-        tools_dir = self._resolve_filesystem_path(self.tool_profiles_dir_line_edit.text().strip())
-        if not tools_dir:
-            QMessageBox.information(self, "Dossier manquant", "Sélectionnez d'abord un dossier de tools.")
-            return
-
-        if not os.path.isdir(tools_dir):
-            try:
-                os.makedirs(tools_dir, exist_ok=True)
-            except OSError as exc:
-                QMessageBox.warning(self, "Dossier invalide", f"Impossible de créer le dossier:\n{tools_dir}\n{exc}")
-                return
-
-        raw_name = self.tool_name_line_edit.text().strip() if self.tool_name_line_edit is not None else ""
-        if not raw_name:
-            QMessageBox.information(self, "Nom manquant", "Saisissez un nom de tool avant d'enregistrer.")
-            return
-
-        if self._has_forbidden_filename_chars(raw_name):
-            QMessageBox.warning(
-                self,
-                "Nom invalide",
-                "Le nom du tool contient des caractères interdits pour un nom de fichier.",
-            )
-            return
-
-        safe_name = self._sanitize_tool_file_name(raw_name)
-        if not safe_name:
-            QMessageBox.warning(self, "Nom invalide", "Le nom du tool ne peut pas etre utilisé comme nom de fichier.")
-            return
-
-        output_path = os.path.join(tools_dir, f"{safe_name}.json")
-        existing_profile_path = ""
-        if self.tool_profiles_combo is not None and self.tool_profiles_combo.currentData():
-            existing_profile_path = str(self.tool_profiles_combo.currentData())
-
-        if os.path.exists(output_path):
-            same_path = (
-                existing_profile_path
-                and os.path.normcase(os.path.abspath(existing_profile_path))
-                == os.path.normcase(os.path.abspath(output_path))
-            )
-            if not same_path:
-                QMessageBox.warning(
-                    self,
-                    "Nom déjà utilisé",
-                    f"Un tool existe déjà avec ce nom dans le dossier:\n{output_path}",
-                )
-                return
-
-        profile = ToolConfigFile.from_robot_tool(
-            raw_name,
-            self.get_tool(),
-            self.get_tool_cad_model(),
-            self.get_tool_cad_offset_rz(),
-            self.get_tool_colliders(),
-            self.get_tool_evaluated_robot_axis_colliders(),
-        )
-        try:
-            profile.save(output_path)
-        except (OSError, ValueError, TypeError) as exc:
-            QMessageBox.warning(self, "Erreur sauvegarde", f"Impossible d'enregistrer {output_path}.\n{exc}")
-            return
-
-        self._refresh_tool_profiles()
-        if self.tool_profiles_combo is not None:
-            match_index = self.tool_profiles_combo.findData(output_path)
-            if match_index >= 0:
-                self.tool_profiles_combo.setCurrentIndex(match_index)
-
-    def _apply_no_tool_profile(self, emit_signals: bool = True) -> None:
-        if self.tool_name_line_edit is not None:
-            self.tool_name_line_edit.setText("Aucun outil")
-
-        no_tool = RobotTool()
-        self.tool_widget.set_tool(no_tool)
-        if emit_signals:
-            self.tool_changed.emit(no_tool)
-        self.set_tool_cad_model("")
-        if emit_signals:
-            self.tool_cad_model_changed.emit("")
-        self.set_tool_cad_offset_rz(0.0)
-        if emit_signals:
-            self.tool_cad_offset_rz_changed.emit(0.0)
-        self.set_tool_colliders([])
-        if emit_signals:
-            self.tool_colliders_changed.emit([])
-        self.set_tool_evaluated_robot_axis_colliders([True] * RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
-        if emit_signals:
-            self.tool_evaluated_robot_axis_colliders_changed.emit(self.get_tool_evaluated_robot_axis_colliders())
 
     def _cell_to_float(self, table: QTableWidget, row: int, column: int, default: float = 0.0) -> float:
         item = table.item(row, column)
@@ -904,13 +359,7 @@ class RobotConfigurationWidget(QWidget):
         return f"{value} {unit}"
 
     @staticmethod
-    def _set_table_item_with_unit(
-        table: QTableWidget,
-        row: int,
-        column: int,
-        value: float | int | str,
-        unit: str,
-    ) -> None:
+    def _set_table_item_with_unit(table: QTableWidget, row: int, column: int, value: float | int | str, unit: str) -> None:
         table.setItem(row, column, QTableWidgetItem(RobotConfigurationWidget._format_value_with_unit(value, unit)))
 
     @staticmethod
@@ -964,40 +413,6 @@ class RobotConfigurationWidget(QWidget):
         return current_dir
 
     @staticmethod
-    def _get_tools_start_directory() -> str:
-        current_dir = os.getcwd()
-        tools_dir = os.path.join(current_dir, "configurations", "tools")
-        os.makedirs(tools_dir, exist_ok=True)
-        if os.path.isdir(tools_dir):
-            return tools_dir
-        tools_dir = os.path.join(current_dir, "tools")
-        if os.path.isdir(tools_dir):
-            return tools_dir
-        return current_dir
-
-    @staticmethod
-    def _sanitize_tool_file_name(name: str) -> str:
-        forbidden = '<>:"/\\|?*'
-        safe = name.replace(" ", "_")
-        safe = "".join("_" if char in forbidden else char for char in safe).strip().strip(".")
-        return safe
-
-    @staticmethod
-    def _has_forbidden_filename_chars(name: str) -> bool:
-        forbidden = '<>:"/\\|?*'
-        return any(char in forbidden for char in str(name))
-
-    @staticmethod
-    def _resolve_filesystem_path(path: str) -> str:
-        if not path:
-            return ""
-        return os.path.abspath(path)
-
-    @staticmethod
-    def _default_tools_directory() -> str:
-        return "./user_data/tools"
-
-    @staticmethod
     def _normalize_cad_path(file_path: str) -> str:
         return RobotConfigurationWidget._normalize_project_path(file_path)
 
@@ -1005,20 +420,16 @@ class RobotConfigurationWidget(QWidget):
     def _normalize_project_path(path: str) -> str:
         absolute_path = os.path.abspath(path)
         project_root = os.path.abspath(os.getcwd())
-
         try:
             common_path = os.path.commonpath([project_root, absolute_path])
         except ValueError:
             return absolute_path
-
         if common_path != project_root:
             return absolute_path
-
         try:
             relative_path = os.path.relpath(absolute_path, project_root)
         except ValueError:
             return absolute_path
-
         relative_path = relative_path.replace("\\", "/")
         if relative_path == ".":
             return "./"
@@ -1058,7 +469,6 @@ class RobotConfigurationWidget(QWidget):
     def set_measured_dh_params(self, params: list[list[float]]) -> None:
         if self.table_dh_measured is None:
             return
-
         self.table_dh_measured.blockSignals(True)
         try:
             for row in range(6):
@@ -1115,37 +525,11 @@ class RobotConfigurationWidget(QWidget):
                 jerk = axis_jerk_limits[row] if row < len(axis_jerk_limits) else 0.0
                 accel = axis_accel_limits[row] if row < len(axis_accel_limits) else math.sqrt(max(0.0, float(speed)) * max(0.0, float(jerk)))
                 reversed_axis = axis_reversed[row] if row < len(axis_reversed) else 1
-
-                self._set_table_item_with_unit(
-                    self.table_axis,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_MIN,
-                    min_val,
-                    RobotConfigurationWidget.UNIT_DEG,
-                )
-                self._set_table_item_with_unit(
-                    self.table_axis,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_MAX,
-                    max_val,
-                    RobotConfigurationWidget.UNIT_DEG,
-                )
-                self._set_table_item_with_unit(
-                    self.table_axis,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_SPEED,
-                    speed,
-                    RobotConfigurationWidget.UNIT_DEG_PER_S,
-                )
+                self._set_table_item_with_unit(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MIN, min_val, RobotConfigurationWidget.UNIT_DEG)
+                self._set_table_item_with_unit(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MAX, max_val, RobotConfigurationWidget.UNIT_DEG)
+                self._set_table_item_with_unit(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, speed, RobotConfigurationWidget.UNIT_DEG_PER_S)
                 self._set_axis_accel_cell(row, float(accel))
-                self._set_table_item_with_unit(
-                    self.table_axis,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_JERK,
-                    jerk,
-                    RobotConfigurationWidget.UNIT_DEG_PER_S3,
-                )
-
+                self._set_table_item_with_unit(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, jerk, RobotConfigurationWidget.UNIT_DEG_PER_S3)
                 checkbox = self.axis_reversed_checkboxes[row]
                 checkbox.blockSignals(True)
                 checkbox.setChecked(reversed_axis == -1)
@@ -1155,12 +539,13 @@ class RobotConfigurationWidget(QWidget):
         self.set_cartesian_slider_limits_xyz(cartesian_slider_limits_xyz)
 
     def get_axis_limits(self) -> list[tuple[float, float]]:
-        limits: list[tuple[float, float]] = []
-        for row in range(6):
-            min_val = self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MIN, -180.0)
-            max_val = self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MAX, 180.0)
-            limits.append((min_val, max_val))
-        return limits
+        return [
+            (
+                self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MIN, -180.0),
+                self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_MAX, 180.0),
+            )
+            for row in range(6)
+        ]
 
     def get_axis_speed_limits(self) -> list[float]:
         return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0) for row in range(6)]
@@ -1171,7 +556,6 @@ class RobotConfigurationWidget(QWidget):
     def set_cartesian_slider_limits_xyz(self, limits: list[tuple[float, float]]) -> None:
         if self.table_cartesian_slider_limits is None:
             return
-
         defaults = [(-1000.0, 1000.0)] * 3
         self.table_cartesian_slider_limits.blockSignals(True)
         try:
@@ -1180,27 +564,14 @@ class RobotConfigurationWidget(QWidget):
                 if row < len(limits):
                     min_val = float(limits[row][0])
                     max_val = float(limits[row][1])
-                self._set_table_item_with_unit(
-                    self.table_cartesian_slider_limits,
-                    row,
-                    0,
-                    min_val,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
-                self._set_table_item_with_unit(
-                    self.table_cartesian_slider_limits,
-                    row,
-                    1,
-                    max_val,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
+                self._set_table_item_with_unit(self.table_cartesian_slider_limits, row, 0, min_val, RobotConfigurationWidget.UNIT_MM)
+                self._set_table_item_with_unit(self.table_cartesian_slider_limits, row, 1, max_val, RobotConfigurationWidget.UNIT_MM)
         finally:
             self.table_cartesian_slider_limits.blockSignals(False)
 
     def get_cartesian_slider_limits_xyz(self) -> list[tuple[float, float]]:
         if self.table_cartesian_slider_limits is None:
             return [(-1000.0, 1000.0)] * 3
-
         defaults = [(-1000.0, 1000.0)] * 3
         limits: list[tuple[float, float]] = []
         for row in range(3):
@@ -1214,167 +585,70 @@ class RobotConfigurationWidget(QWidget):
         return [self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_JERK, 0.0) for row in range(6)]
 
     def get_axis_reversed(self) -> list[int]:
-        reversed_values: list[int] = []
-        for row in range(6):
-            checkbox = self.axis_reversed_checkboxes[row]
-            reversed_values.append(-1 if checkbox.isChecked() else 1)
-        return reversed_values
+        return [-1 if checkbox.isChecked() else 1 for checkbox in self.axis_reversed_checkboxes]
 
     def set_axis_colliders(self, axis_colliders: list[RobotAxisColliderData]) -> None:
         if self.table_axis_colliders is None:
             return
-
         if not all(isinstance(collider, RobotAxisColliderData) for collider in axis_colliders):
             raise TypeError("axis_colliders must contain RobotAxisColliderData")
         if axis_colliders and len(axis_colliders) != RobotConfigurationWidget.AXIS_COLLIDER_COUNT:
             raise ValueError("axis_colliders must contain 6 values")
+
         normalized = axis_colliders if axis_colliders else default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
         self.table_axis_colliders.blockSignals(True)
         try:
             for row in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
                 collider = normalized[row]
-                enabled = collider.enabled
-                direction_axis = collider.direction_axis
-                radius = collider.radius
-                height = collider.height
-                offset_xyz = collider.offset_xyz
-                offset_x = float(offset_xyz.x)
-                offset_y = float(offset_xyz.y)
-                offset_z = float(offset_xyz.z)
-
                 checkbox = self.axis_collider_enabled_checkboxes[row]
                 checkbox.blockSignals(True)
-                checkbox.setChecked(enabled)
+                checkbox.setChecked(collider.enabled)
                 checkbox.blockSignals(False)
 
                 direction_combo = self.axis_collider_direction_combos[row]
                 direction_combo.blockSignals(True)
-                direction_combo.setCurrentText(direction_axis.value.upper())
+                direction_combo.setCurrentText(collider.direction_axis.value.upper())
                 direction_combo.blockSignals(False)
 
-                self._set_table_item_with_unit(
-                    self.table_axis_colliders,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_RADIUS,
-                    radius,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
-                self._set_table_item_with_unit(
-                    self.table_axis_colliders,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_HEIGHT,
-                    height,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
-                self._set_table_item_with_unit(
-                    self.table_axis_colliders,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X,
-                    offset_x,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
-                self._set_table_item_with_unit(
-                    self.table_axis_colliders,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y,
-                    offset_y,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
-                self._set_table_item_with_unit(
-                    self.table_axis_colliders,
-                    row,
-                    RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z,
-                    offset_z,
-                    RobotConfigurationWidget.UNIT_MM,
-                )
+                self._set_table_item_with_unit(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_RADIUS, collider.radius, RobotConfigurationWidget.UNIT_MM)
+                self._set_table_item_with_unit(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_HEIGHT, collider.height, RobotConfigurationWidget.UNIT_MM)
+                self._set_table_item_with_unit(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X, float(collider.offset_xyz.x), RobotConfigurationWidget.UNIT_MM)
+                self._set_table_item_with_unit(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y, float(collider.offset_xyz.y), RobotConfigurationWidget.UNIT_MM)
+                self._set_table_item_with_unit(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z, float(collider.offset_xyz.z), RobotConfigurationWidget.UNIT_MM)
         finally:
             self.table_axis_colliders.blockSignals(False)
 
     def get_axis_colliders(self) -> list[RobotAxisColliderData]:
         if self.table_axis_colliders is None:
             return default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT)
-
         values: list[RobotAxisColliderData] = []
         for row in range(RobotConfigurationWidget.AXIS_COLLIDER_COUNT):
-            enabled = self.axis_collider_enabled_checkboxes[row].isChecked()
-            direction_axis = AxisDirection(self.axis_collider_direction_combos[row].currentText().strip().lower())
-
-            radius = self._cell_to_float(
-                self.table_axis_colliders,
-                row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_RADIUS,
-                40.0,
-            )
-            height = self._cell_to_float(
-                self.table_axis_colliders,
-                row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_HEIGHT,
-                200.0,
-            )
-            offset_x = self._cell_to_float(
-                self.table_axis_colliders,
-                row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X,
-                0.0,
-            )
-            offset_y = self._cell_to_float(
-                self.table_axis_colliders,
-                row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y,
-                0.0,
-            )
-            offset_z = self._cell_to_float(
-                self.table_axis_colliders,
-                row,
-                RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z,
-                0.0,
-            )
             values.append(
                 RobotAxisColliderData(
                     axis_index=row,
-                    enabled=enabled,
-                    direction_axis=direction_axis,
-                    radius=max(0.0, radius),
-                    height=float(height),
-                    offset_xyz=XYZ3(float(offset_x), float(offset_y), float(offset_z)),
+                    enabled=self.axis_collider_enabled_checkboxes[row].isChecked(),
+                    direction_axis=AxisDirection(self.axis_collider_direction_combos[row].currentText().strip().lower()),
+                    radius=max(0.0, self._cell_to_float(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_RADIUS, 40.0)),
+                    height=float(self._cell_to_float(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_HEIGHT, 200.0)),
+                    offset_xyz=XYZ3(
+                        float(self._cell_to_float(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_X, 0.0)),
+                        float(self._cell_to_float(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Y, 0.0)),
+                        float(self._cell_to_float(self.table_axis_colliders, row, RobotConfigurationWidget.COL_AXIS_COLLIDER_OFFSET_Z, 0.0)),
+                    ),
                 )
             )
         return values
 
-    def set_positions_config(
-        self,
-        home_position: list[float],
-        position_zero: list[float],
-        position_calibration: list[float],
-    ) -> None:
+    def set_positions_config(self, home_position: list[float], position_zero: list[float], position_calibration: list[float]) -> None:
         self.table_positions.blockSignals(True)
         try:
             for row in range(6):
                 zero_value = position_zero[row] if row < len(position_zero) else 0.0
                 calibration_value = position_calibration[row] if row < len(position_calibration) else 0.0
                 home_value = home_position[row] if row < len(home_position) else 0.0
-
-                self._set_table_item_with_unit(
-                    self.table_positions,
-                    row,
-                    RobotConfigurationWidget.COL_POS_ZERO,
-                    zero_value,
-                    RobotConfigurationWidget.UNIT_DEG,
-                )
-                self._set_table_item_with_unit(
-                    self.table_positions,
-                    row,
-                    RobotConfigurationWidget.COL_POS_CALIBRATION,
-                    calibration_value,
-                    RobotConfigurationWidget.UNIT_DEG,
-                )
-                self._set_table_item_with_unit(
-                    self.table_positions,
-                    row,
-                    RobotConfigurationWidget.COL_POS_HOME,
-                    home_value,
-                    RobotConfigurationWidget.UNIT_DEG,
-                )
+                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_ZERO, zero_value, RobotConfigurationWidget.UNIT_DEG)
+                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_CALIBRATION, calibration_value, RobotConfigurationWidget.UNIT_DEG)
+                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_HOME, home_value, RobotConfigurationWidget.UNIT_DEG)
         finally:
             self.table_positions.blockSignals(False)
 
@@ -1394,179 +668,3 @@ class RobotConfigurationWidget(QWidget):
 
     def get_robot_cad_models(self) -> list[str]:
         return [line_edit.text().strip() for line_edit in self.robot_cad_line_edits]
-
-    def set_tool_cad_model(self, tool_cad_model: str | None) -> None:
-        if self.tool_cad_line_edit is None:
-            return
-        self.tool_cad_line_edit.setText("" if tool_cad_model is None else str(tool_cad_model))
-
-    def get_tool_cad_model(self) -> str:
-        if self.tool_cad_line_edit is None:
-            return ""
-        return self.tool_cad_line_edit.text().strip()
-
-    def set_tool_cad_offset_rz(self, offset_deg: float) -> None:
-        if self.tool_cad_offset_rz_spin is None:
-            return
-        self.tool_cad_offset_rz_spin.blockSignals(True)
-        self.tool_cad_offset_rz_spin.setValue(float(offset_deg))
-        self.tool_cad_offset_rz_spin.blockSignals(False)
-
-    def get_tool_cad_offset_rz(self) -> float:
-        if self.tool_cad_offset_rz_spin is None:
-            return 0.0
-        return float(self.tool_cad_offset_rz_spin.value())
-
-    def set_tool_colliders(self, tool_colliders: list[PrimitiveColliderData]) -> None:
-        if self.table_tool_colliders is None:
-            return
-        if not all(isinstance(collider, PrimitiveColliderData) for collider in tool_colliders):
-            raise TypeError("tool_colliders must contain PrimitiveColliderData")
-        normalized = [collider.copy() for collider in tool_colliders]
-        self.table_tool_colliders.blockSignals(True)
-        try:
-            self.table_tool_colliders.setRowCount(0)
-            self._tool_collider_enabled_checkboxes.clear()
-            self._tool_collider_type_combos.clear()
-            for collider in normalized:
-                self._insert_tool_collider_row(collider)
-        finally:
-            self.table_tool_colliders.blockSignals(False)
-
-    def get_tool_colliders(self) -> list[PrimitiveColliderData]:
-        if self.table_tool_colliders is None:
-            return []
-        values: list[PrimitiveColliderData] = []
-        for row in range(self.table_tool_colliders.rowCount()):
-            enabled_widget = self.table_tool_colliders.cellWidget(row, RobotConfigurationWidget.COL_PRIM_ENABLED)
-            enabled = bool(enabled_widget.isChecked()) if isinstance(enabled_widget, QCheckBox) else True
-
-            shape_widget = self.table_tool_colliders.cellWidget(row, RobotConfigurationWidget.COL_PRIM_TYPE)
-            shape = (
-                PrimitiveColliderShape(str(shape_widget.currentText()).strip().lower())
-                if isinstance(shape_widget, QComboBox)
-                else PrimitiveColliderShape.CYLINDER
-            )
-
-            pose = Pose6(
-                self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_X, 0.0),
-                self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_Y, 0.0),
-                self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_Z, 0.0),
-                self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_A, 0.0),
-                self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_B, 0.0),
-                self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_C, 0.0),
-            )
-
-            name_item = self.table_tool_colliders.item(row, RobotConfigurationWidget.COL_PRIM_NAME)
-            name = name_item.text().strip() if name_item is not None else f"Tool collider {row + 1}"
-            if name == "":
-                name = f"Tool collider {row + 1}"
-
-            values.append(
-                PrimitiveColliderData(
-                    name=name,
-                    enabled=enabled,
-                    shape=shape,
-                    pose=pose,
-                    size_x=max(
-                        0.0,
-                        self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_SIZE_X, 100.0),
-                    ),
-                    size_y=max(
-                        0.0,
-                        self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_SIZE_Y, 100.0),
-                    ),
-                    size_z=max(
-                        0.0,
-                        self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_SIZE_Z, 100.0),
-                    ),
-                    radius=max(
-                        0.0,
-                        self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_RADIUS, 40.0),
-                    ),
-                    height=max(
-                        0.0,
-                        self._cell_to_float(self.table_tool_colliders, row, RobotConfigurationWidget.COL_PRIM_HEIGHT, 120.0),
-                    ),
-                )
-            )
-
-        return values
-
-    @staticmethod
-    def _copy_tool_evaluated_robot_axis_colliders(values: list[bool]) -> list[bool]:
-        if len(values) != RobotConfigurationWidget.AXIS_COLLIDER_COUNT:
-            raise ValueError("tool evaluated robot axis colliders must contain 6 values")
-        return [bool(value) for value in values]
-
-    def set_tool_evaluated_robot_axis_colliders(self, values: list[bool]) -> None:
-        normalized = RobotConfigurationWidget._copy_tool_evaluated_robot_axis_colliders(values)
-        for axis, checkbox in enumerate(self._tool_evaluated_robot_axis_colliders_checkboxes):
-            checkbox.blockSignals(True)
-            checkbox.setChecked(normalized[axis])
-            checkbox.blockSignals(False)
-
-    def get_tool_evaluated_robot_axis_colliders(self) -> list[bool]:
-        if not self._tool_evaluated_robot_axis_colliders_checkboxes:
-            return [True] * RobotConfigurationWidget.AXIS_COLLIDER_COUNT
-        return [checkbox.isChecked() for checkbox in self._tool_evaluated_robot_axis_colliders_checkboxes[:6]]
-
-    def set_tool_profiles_directory(self, directory: str | None, emit_change: bool = False) -> None:
-        if self.tool_profiles_dir_line_edit is None:
-            return
-        normalized = "" if directory is None else str(directory).strip()
-        if not normalized:
-            normalized = self._default_tools_directory()
-        normalized = self._normalize_project_path(normalized)
-        resolved_directory = self._resolve_filesystem_path(normalized)
-        if resolved_directory:
-            os.makedirs(resolved_directory, exist_ok=True)
-        self.tool_profiles_dir_line_edit.setText(normalized)
-        self._refresh_tool_profiles()
-        if emit_change:
-            self.tool_profiles_directory_changed.emit(normalized)
-
-    def get_tool_profiles_directory(self) -> str:
-        if self.tool_profiles_dir_line_edit is None:
-            return self._default_tools_directory()
-        current = self.tool_profiles_dir_line_edit.text().strip()
-        return current if current else self._default_tools_directory()
-
-    def set_selected_tool_profile(self, profile_path: str | None) -> None:
-        if self.tool_profiles_combo is None:
-            return
-        target = "" if profile_path is None else str(profile_path).strip()
-        self._tool_profile_loading = True
-        try:
-            if not target:
-                self.tool_profiles_combo.setCurrentIndex(0)
-                return
-
-            target_abs = os.path.normcase(os.path.abspath(self._resolve_filesystem_path(target)))
-            target_index = -1
-            for idx in range(self.tool_profiles_combo.count()):
-                item_data = self.tool_profiles_combo.itemData(idx)
-                if not item_data:
-                    continue
-                item_abs = os.path.normcase(os.path.abspath(str(item_data)))
-                if item_abs == target_abs:
-                    target_index = idx
-                    break
-
-            self.tool_profiles_combo.setCurrentIndex(target_index if target_index >= 0 else 0)
-        finally:
-            self._tool_profile_loading = False
-
-    def get_selected_tool_profile(self) -> str:
-        if self.tool_profiles_combo is None:
-            return ""
-        current_data = self.tool_profiles_combo.currentData()
-        if not current_data:
-            return ""
-        return self._normalize_project_path(str(current_data))
-
-    def set_tool(self, tool: RobotTool) -> None:
-        self.tool_widget.set_tool(tool)
-
-    def get_tool(self) -> RobotTool:
-        return self.tool_widget.get_tool()

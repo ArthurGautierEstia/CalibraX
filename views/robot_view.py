@@ -18,12 +18,7 @@ class RobotView(QWidget):
         """Configure l'interface utilisateur pour la vue du robot"""
         layout = QVBoxLayout(self)
         layout.setSpacing(5)
-
-        scroll_area = QScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(self.configuration_widget)
-
-        layout.addWidget(scroll_area)
+        layout.addWidget(self.configuration_widget)
     
     def get_configuration_widget(self) -> RobotConfigurationWidget:
         return self.configuration_widget

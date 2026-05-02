@@ -58,7 +58,12 @@ class MainController(QObject):
             self,
         )
 
-        self.robot_controller = RobotController(robot_model, tool_model, main_window.get_robot_view())
+        self.robot_controller = RobotController(
+            robot_model,
+            tool_model,
+            main_window.get_robot_view(),
+            main_window.get_tool_view(),
+        )
         self.calibration_controller = CalibrationController(robot_model, tool_model, main_window.get_calibration_view())
         self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view())
         self.cartesian_control_controller = CartesianControlController(

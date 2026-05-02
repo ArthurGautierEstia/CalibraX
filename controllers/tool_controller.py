@@ -9,14 +9,14 @@ from models.primitive_collider_models import PrimitiveColliderData
 from models.tool_config_file import ToolConfigFile
 from models.tool_model import ToolModel
 from utils.mgi import RobotTool
-from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
+from widgets.tool_view.tool_configuration_widget import ToolConfigurationWidget
 
 
 class ToolController(QObject):
     def __init__(
         self,
         tool_model: ToolModel,
-        robot_configuration_widget: RobotConfigurationWidget,
+        robot_configuration_widget: ToolConfigurationWidget,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
