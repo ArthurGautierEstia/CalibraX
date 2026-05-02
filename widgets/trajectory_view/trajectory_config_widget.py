@@ -418,6 +418,7 @@ class TrajectoryConfigWidget(QWidget):
                 cartesian_target=last_keypoint.cartesian_target.copy(),
                 cartesian_frame=last_keypoint.cartesian_frame,
                 joint_target=list(last_keypoint.joint_target),
+                mode=last_keypoint.mode,
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),
             )
         else:
