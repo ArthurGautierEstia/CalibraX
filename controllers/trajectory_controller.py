@@ -2,7 +2,6 @@ import csv
 from bisect import bisect_left
 from pathlib import Path
 import time
-import os
 
 from PyQt6.QtCore import QObject, QThread, QTimer, Qt
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
@@ -32,6 +31,7 @@ from utils.trajectory_validity_analyzer import (
 )
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from utils.trajectory_status import build_trajectory_issue_messages, build_trajectory_warning_messages
+from utils.trajectory_paths import get_trajectories_directory
 from utils.reference_frame_utils import (
     convert_pose_from_base_frame,
     convert_pose_to_base_frame,
@@ -340,12 +340,6 @@ class TrajectoryController(QObject):
             )
         return "|".join(parts)
 
-    @staticmethod
-    def _preferred_trajectories_dir() -> str:
-        current_dir = os.getcwd()
-        trajectories_dir = os.path.join(current_dir, "trajectories")
-        return trajectories_dir if os.path.exists(trajectories_dir) else current_dir
-
     def _on_export_trajectory_requested(self) -> None:
         if not self.current_samples:
             QMessageBox.warning(
@@ -355,8 +349,8 @@ class TrajectoryController(QObject):
             )
             return
 
-        start_dir = self._preferred_trajectories_dir()
-        default_path = str(Path(start_dir) / "trajectory_samples.csv") if start_dir else "trajectory_samples.csv"
+        start_dir = get_trajectories_directory(create=True)
+        default_path = str(Path(start_dir) / "trajectory_samples.csv")
         path, _ = QFileDialog.getSaveFileName(
             self.trajectory_view,
             "Exporter la trajectoire calculée",

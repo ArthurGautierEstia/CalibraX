@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional
-import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -41,6 +40,7 @@ from models.workspace_model import WorkspaceModel
 from models.trajectory_result import TrajectoryResult
 from widgets.trajectory_view.trajectory_keypoint_dialog import TrajectoryKeypointDialog
 from utils.reference_frame_utils import convert_pose_from_base_frame
+from utils.trajectory_paths import get_trajectories_directory
 
 
 class TrajectoryConfigWidget(QWidget):
@@ -186,11 +186,6 @@ class TrajectoryConfigWidget(QWidget):
 
     def _emit_keypoints_changed(self) -> None:
         self.keypoints_changed.emit(self.get_keypoints())
-
-    def _preferred_trajectories_dir(self) -> str:
-        current_dir = os.getcwd()
-        traj_dir = os.path.join(current_dir, "trajectories")
-        return traj_dir if os.path.exists(traj_dir) else current_dir
 
     def _emit_selection_changed(self) -> None:
         self.keypointSelectionChanged.emit(self._selected_row())
@@ -538,7 +533,7 @@ class TrajectoryConfigWidget(QWidget):
         self._move_selected_keypoint(1)
 
     def _on_import_clicked(self) -> None:
-        start_dir = self._preferred_trajectories_dir()
+        start_dir = str(get_trajectories_directory(create=False))
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Importer une trajectoire",
@@ -577,8 +572,8 @@ class TrajectoryConfigWidget(QWidget):
     def _on_export_clicked(self) -> None:
         if not self._keypoints:
             return
-        start_dir = self._preferred_trajectories_dir()
-        default_path = str(Path(start_dir) / "trajectory_keypoints.json") if start_dir else "trajectory_keypoints.json"
+        start_dir = get_trajectories_directory(create=True)
+        default_path = str(Path(start_dir) / "trajectory_keypoints.json")
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Exporter une trajectoire",
