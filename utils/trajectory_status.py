@@ -24,11 +24,11 @@ def _axes_label(axes: set[int]) -> str:
 
 def _dynamic_kind_message(kind: TrajectoryDynamicViolationKind) -> str:
     if kind == TrajectoryDynamicViolationKind.SPEED:
-        return "vitesse depassee"
+        return "vitesse dépassée"
     if kind == TrajectoryDynamicViolationKind.ACCELERATION:
-        return "acceleration estimee depassee"
+        return "accéleration estimee dépassée"
     if kind == TrajectoryDynamicViolationKind.JERK:
-        return "jerk depasse"
+        return "jerk dépassé"
     return kind.value
 
 
@@ -58,9 +58,9 @@ def status_to_message(status: TrajectoryComputationStatus, axis: int | None = No
     if status == TrajectoryComputationStatus.TCP_WORKSPACE_EXIT:
         return "TCP hors zone de travail"
     if status == TrajectoryComputationStatus.SPEED_LIMIT_EXCEEDED:
-        return f"vitesse depassee ({_axis_label(axis)})"
+        return f"vitesse dépassée ({_axis_label(axis)})"
     if status == TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED:
-        return f"jerk depasse ({_axis_label(axis)})"
+        return f"jerk dépassé ({_axis_label(axis)})"
     if status == TrajectoryComputationStatus.NO_COMMON_ALLOWED_CONFIGURATION:
         return "aucune configuration autorisee commune"
     if status == TrajectoryComputationStatus.FORBIDDEN_CONFIGURATION:
@@ -80,9 +80,9 @@ def sample_error_to_message(error_code: TrajectorySampleErrorCode, axis: int | N
     if error_code == TrajectorySampleErrorCode.TCP_WORKSPACE_EXIT:
         return "TCP hors zone de travail"
     if error_code == TrajectorySampleErrorCode.SPEED_LIMIT_EXCEEDED:
-        return f"vitesse depassee ({_axis_label(axis)})"
+        return f"vitesse dépassée ({_axis_label(axis)})"
     if error_code == TrajectorySampleErrorCode.JERK_LIMIT_EXCEEDED:
-        return f"jerk depasse ({_axis_label(axis)})"
+        return f"jerk dépassé ({_axis_label(axis)})"
     if error_code == TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION:
         return "configuration interdite"
     return error_code.value
