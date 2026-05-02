@@ -50,7 +50,7 @@ class RobotConfigurationWidget(QWidget):
     export_config_requested = pyqtSignal()
     measured_dh_enabled_changed = pyqtSignal(bool)
 
-    dh_value_changed = pyqtSignal(int, int, float)
+    dh_value_changed = pyqtSignal(int, int, str)
     tool_changed = pyqtSignal(RobotTool)
     axis_colliders_config_changed = pyqtSignal(list)
 
@@ -106,7 +106,6 @@ class RobotConfigurationWidget(QWidget):
     UNIT_DEG_PER_S = "°/s"
     UNIT_DEG_PER_S2 = "°/s^2"
     UNIT_DEG_PER_S3 = "°/s^3"
-    NUMERIC_VALUE_ROLE = Qt.ItemDataRole.UserRole
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -507,8 +506,8 @@ class RobotConfigurationWidget(QWidget):
         item = self.table_dh.item(row, col)
         if item is not None:
             unit = RobotConfigurationWidget.UNIT_DEG if col in (0, 2) else RobotConfigurationWidget.UNIT_MM
-            numeric_value = self._format_table_item_with_unit(self.table_dh, item, unit)
-            self.dh_value_changed.emit(row, col, numeric_value)
+            self._format_table_item_with_unit(self.table_dh, item, unit)
+            self.dh_value_changed.emit(row, col, item.text())
 
     def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
         if item.column() == RobotConfigurationWidget.COL_AXIS_ACCEL:
@@ -619,84 +618,22 @@ class RobotConfigurationWidget(QWidget):
         self._tool_collider_type_combos.append(type_combo)
 
         pose = collider.pose
-        self.table_tool_colliders.setItem(row, RobotConfigurationWidget.COL_PRIM_NAME, QTableWidgetItem(collider.name))
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_X,
-            float(pose.x),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_Y,
-            float(pose.y),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_Z,
-            float(pose.z),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_A,
-            float(pose.a),
-            RobotConfigurationWidget.UNIT_DEG,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_B,
-            float(pose.b),
-            RobotConfigurationWidget.UNIT_DEG,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_C,
-            float(pose.c),
-            RobotConfigurationWidget.UNIT_DEG,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_SIZE_X,
-            float(collider.size_x),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_SIZE_Y,
-            float(collider.size_y),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_SIZE_Z,
-            float(collider.size_z),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_RADIUS,
-            float(collider.radius),
-            RobotConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            RobotConfigurationWidget.COL_PRIM_HEIGHT,
-            float(collider.height),
-            RobotConfigurationWidget.UNIT_MM,
-        )
+        cells = {
+            RobotConfigurationWidget.COL_PRIM_NAME: collider.name,
+            RobotConfigurationWidget.COL_PRIM_X: self._format_value_with_unit(float(pose.x), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_Y: self._format_value_with_unit(float(pose.y), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_Z: self._format_value_with_unit(float(pose.z), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_A: self._format_value_with_unit(float(pose.a), RobotConfigurationWidget.UNIT_DEG),
+            RobotConfigurationWidget.COL_PRIM_B: self._format_value_with_unit(float(pose.b), RobotConfigurationWidget.UNIT_DEG),
+            RobotConfigurationWidget.COL_PRIM_C: self._format_value_with_unit(float(pose.c), RobotConfigurationWidget.UNIT_DEG),
+            RobotConfigurationWidget.COL_PRIM_SIZE_X: self._format_value_with_unit(float(collider.size_x), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_SIZE_Y: self._format_value_with_unit(float(collider.size_y), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_SIZE_Z: self._format_value_with_unit(float(collider.size_z), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_RADIUS: self._format_value_with_unit(float(collider.radius), RobotConfigurationWidget.UNIT_MM),
+            RobotConfigurationWidget.COL_PRIM_HEIGHT: self._format_value_with_unit(float(collider.height), RobotConfigurationWidget.UNIT_MM),
+        }
+        for column, value in cells.items():
+            self.table_tool_colliders.setItem(row, column, QTableWidgetItem(value))
 
     def _on_positions_item_changed(self, _item: QTableWidgetItem) -> None:
         self._format_table_item_with_unit(self.table_positions, _item, RobotConfigurationWidget.UNIT_DEG)
@@ -960,54 +897,11 @@ class RobotConfigurationWidget(QWidget):
 
     def _cell_to_float(self, table: QTableWidget, row: int, column: int, default: float = 0.0) -> float:
         item = table.item(row, column)
-        if item is None:
-            return default
-        numeric_data = item.data(RobotConfigurationWidget.NUMERIC_VALUE_ROLE)
-        if numeric_data is not None:
-            return safe_float(numeric_data, default)
-        return RobotConfigurationWidget._parse_table_numeric_text(item.text(), default)
+        return safe_float(item.text() if item else "", default)
 
     @staticmethod
     def _format_value_with_unit(value: float | int | str, unit: str) -> str:
         return f"{value} {unit}"
-
-    @staticmethod
-    def _numeric_unit_suffixes() -> tuple[str, ...]:
-        return (
-            RobotConfigurationWidget.UNIT_DEG_PER_S3,
-            RobotConfigurationWidget.UNIT_DEG_PER_S2,
-            RobotConfigurationWidget.UNIT_DEG_PER_S,
-            RobotConfigurationWidget.UNIT_DEG,
-            RobotConfigurationWidget.UNIT_MM,
-        )
-
-    @staticmethod
-    def _parse_table_numeric_text(text: str, default: float = 0.0) -> float:
-        numeric_text = str(text).strip()
-        if numeric_text == "":
-            return default
-        for unit in RobotConfigurationWidget._numeric_unit_suffixes():
-            if numeric_text.endswith(unit):
-                numeric_text = numeric_text[: -len(unit)].strip()
-                break
-        return safe_float(numeric_text, default)
-
-    @staticmethod
-    def _set_item_numeric_value(item: QTableWidgetItem, value: float) -> None:
-        item.setData(RobotConfigurationWidget.NUMERIC_VALUE_ROLE, float(value))
-
-    @staticmethod
-    def _clear_item_numeric_value(item: QTableWidgetItem) -> None:
-        item.setData(RobotConfigurationWidget.NUMERIC_VALUE_ROLE, None)
-
-    @staticmethod
-    def _make_table_item_with_unit(value: float | int | str, unit: str) -> QTableWidgetItem:
-        item = QTableWidgetItem(RobotConfigurationWidget._format_value_with_unit(value, unit))
-        raw_value = str(value).strip()
-        if raw_value != "":
-            numeric_value = RobotConfigurationWidget._parse_table_numeric_text(raw_value, 0.0)
-            RobotConfigurationWidget._set_item_numeric_value(item, numeric_value)
-        return item
 
     @staticmethod
     def _set_table_item_with_unit(
@@ -1017,22 +911,19 @@ class RobotConfigurationWidget(QWidget):
         value: float | int | str,
         unit: str,
     ) -> None:
-        table.setItem(row, column, RobotConfigurationWidget._make_table_item_with_unit(value, unit))
+        table.setItem(row, column, QTableWidgetItem(RobotConfigurationWidget._format_value_with_unit(value, unit)))
 
     @staticmethod
-    def _format_table_item_with_unit(table: QTableWidget, item: QTableWidgetItem, unit: str) -> float:
+    def _format_table_item_with_unit(table: QTableWidget, item: QTableWidgetItem, unit: str) -> None:
         raw_text = item.text().strip()
         if raw_text == "":
-            RobotConfigurationWidget._clear_item_numeric_value(item)
-            return 0.0
-        numeric_value = RobotConfigurationWidget._parse_table_numeric_text(raw_text, 0.0)
+            return
+        numeric_value = safe_float(raw_text, 0.0)
         table.blockSignals(True)
         try:
             item.setText(RobotConfigurationWidget._format_value_with_unit(numeric_value, unit))
-            RobotConfigurationWidget._set_item_numeric_value(item, numeric_value)
         finally:
             table.blockSignals(False)
-        return numeric_value
 
     def _calculate_default_axis_accel_for_row(self, row: int) -> float:
         speed = max(0.0, self._cell_to_float(self.table_axis, row, RobotConfigurationWidget.COL_AXIS_SPEED, 0.0))
@@ -1044,21 +935,17 @@ class RobotConfigurationWidget(QWidget):
         if accel_item is None:
             accel_item = QTableWidgetItem("")
             self.table_axis.setItem(row, RobotConfigurationWidget.COL_AXIS_ACCEL, accel_item)
-        self._set_item_numeric_value(accel_item, accel)
         accel_item.setText(self._format_value_with_unit(f"{accel:.3f}", RobotConfigurationWidget.UNIT_DEG_PER_S2))
 
-    def _format_axis_accel_item(self, item: QTableWidgetItem) -> float:
+    def _format_axis_accel_item(self, item: QTableWidgetItem) -> None:
         if item.text().strip() == "":
-            self._clear_item_numeric_value(item)
-            return 0.0
-        accel = max(0.0, self._parse_table_numeric_text(item.text(), 0.0))
+            return
+        accel = max(0.0, safe_float(item.text(), 0.0))
         self.table_axis.blockSignals(True)
         try:
             item.setText(self._format_value_with_unit(f"{accel:.3f}", RobotConfigurationWidget.UNIT_DEG_PER_S2))
-            self._set_item_numeric_value(item, accel)
         finally:
             self.table_axis.blockSignals(False)
-        return accel
 
     def _reset_axis_accel_limits_to_calculated_defaults(self) -> None:
         self.table_axis.blockSignals(True)
@@ -1200,12 +1087,13 @@ class RobotConfigurationWidget(QWidget):
             self.table_dh.setEnabled(not checked)
         self.measured_dh_enabled_changed.emit(checked)
 
-    def get_dh_params(self) -> list[list[float]]:
-        params: list[list[float]] = []
+    def get_dh_params(self) -> list[list[str]]:
+        params: list[list[str]] = []
         for row in range(6):
-            row_values: list[float] = []
+            row_values: list[str] = []
             for col in range(4):
-                row_values.append(self._cell_to_float(self.table_dh, row, col, 0.0))
+                item = self.table_dh.item(row, col)
+                row_values.append(item.text() if item else "")
             params.append(row_values)
         return params
 
