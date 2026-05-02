@@ -1112,6 +1112,14 @@ class TrajectoryKeypointDialog(QDialog):
         else:
             self._linear_speed_mps = self._clamp(current, 0.0, 2.0)
 
+    def _set_configuration_policy_without_signal(self, policy: ConfigurationPolicy) -> None:
+        policy_idx = self.config_policy_combo.findData(policy.value)
+        if policy_idx < 0:
+            return
+        self.config_policy_combo.blockSignals(True)
+        self.config_policy_combo.setCurrentIndex(policy_idx)
+        self.config_policy_combo.blockSignals(False)
+
     def _try_minimize_window_size(self) -> None:
         # Keep a stable minimum width and let Qt handle height changes.
         # Forcing adjustSize/resize during combobox switches can trigger
@@ -1140,6 +1148,7 @@ class TrajectoryKeypointDialog(QDialog):
                 self._sync_joint_target_from_cartesian_target()
             elif previous_type == KeypointTargetType.JOINT and new_type == KeypointTargetType.CARTESIAN:
                 self._sync_cartesian_target_from_joint_target()
+                self._set_configuration_policy_without_signal(ConfigurationPolicy.AUTO)
         self._update_target_editors()
         self._refresh_cartesian_solutions_table()
         self._try_minimize_window_size()
