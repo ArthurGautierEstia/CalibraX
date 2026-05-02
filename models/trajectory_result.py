@@ -1,6 +1,7 @@
 from enum import Enum
 
 from models.trajectory_keypoint import KeypointMotionMode, TrajectoryKeypoint
+from models.types import TrajectorySampleKinematics
 from utils.mgi import MgiConfigKey
 
 
@@ -11,6 +12,7 @@ class TrajectoryComputationStatus(Enum):
     JERK_LIMIT_EXCEEDED = "JERK_LIMIT_EXCEEDED"
     CONFIGURATION_JUMP = "CONFIGURATION_JUMP"
     COLLISION_DETECTED = "COLLISION_DETECTED"
+    TCP_WORKSPACE_EXIT = "TCP_WORKSPACE_EXIT"
     NO_COMMON_ALLOWED_CONFIGURATION = "NO_COMMON_ALLOWED_CONFIGURATION"
     FORBIDDEN_CONFIGURATION = "FORBIDDEN_CONFIGURATION"
 
@@ -22,6 +24,7 @@ class TrajectorySampleErrorCode(Enum):
     JERK_LIMIT_EXCEEDED = "JERK_LIMIT_EXCEEDED"
     CONFIGURATION_JUMP = "CONFIGURATION_JUMP"
     COLLISION_DETECTED = "COLLISION_DETECTED"
+    TCP_WORKSPACE_EXIT = "TCP_WORKSPACE_EXIT"
     FORBIDDEN_CONFIGURATION = "FORBIDDEN_CONFIGURATION"
 
 
@@ -106,6 +109,7 @@ class TrajectorySample:
         self.time = 0.0
         self.joints = [0.0] * 6
         self.pose = [0.0] * 6
+        self.kinematics: TrajectorySampleKinematics | None = None
         self.reachable = True
         self.configuration: MgiConfigKey | None = None
         self.velocity = 0.0

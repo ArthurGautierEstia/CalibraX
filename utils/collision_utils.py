@@ -8,6 +8,7 @@ import utils.math_utils as math_utils
 from models.types import Pose6
 from models.primitive_collider_models import (
     AxisDirection,
+    PrimitiveCollider,
     PrimitiveColliderData,
     PrimitiveColliderShape,
     RobotAxisColliderData,
@@ -174,6 +175,7 @@ class CollisionShapeTemplate:
 class CollisionWorldCache:
     def __init__(self) -> None:
         self.workspace_shapes_world: list[CollisionShape] = []
+        self.workspace_tcp_shapes_world: list[CollisionShape] = []
         self.robot_shape_templates: list[CollisionShapeTemplate] = []
         self.tool_shape_templates: list[CollisionShapeTemplate] = []
         self.robot_shapes_world: list[CollisionShape] = []
@@ -181,6 +183,9 @@ class CollisionWorldCache:
 
     def set_workspace_collision_zones(self, zones: list[PrimitiveColliderData]) -> None:
         self.workspace_shapes_world = build_workspace_collision_shapes(zones)
+
+    def set_workspace_tcp_zone_colliders(self, colliders: list[PrimitiveCollider]) -> None:
+        self.workspace_tcp_shapes_world = build_workspace_tcp_shapes(colliders)
 
     def set_robot_axis_templates(
         self,
@@ -250,6 +255,11 @@ class CollisionWorldCache:
         )
         return find_collisions(robot_shapes, self.tool_shapes_world)
 
+    def is_tcp_inside_workspace(self, tcp_world_xyz: np.ndarray) -> bool:
+        if not self.workspace_tcp_shapes_world:
+            return True
+        return any(contains_point(shape, tcp_world_xyz) for shape in self.workspace_tcp_shapes_world)
+
     @staticmethod
     def find_collisions(
         shapes_a: list[CollisionShape],
@@ -266,6 +276,17 @@ def build_workspace_collision_shapes(zones: list[PrimitiveColliderData]) -> list
         if not _is_enabled_valid_primitive(zone):
             continue
         shapes.append(_primitive_to_shape(zone, "workspace", zone.name, index))
+    return shapes
+
+
+def build_workspace_tcp_shapes(colliders: list[PrimitiveCollider]) -> list[CollisionShape]:
+    if not all(isinstance(collider, PrimitiveCollider) for collider in colliders):
+        raise TypeError("colliders must contain PrimitiveCollider")
+    shapes: list[CollisionShape] = []
+    for index, collider in enumerate(colliders):
+        if not _is_enabled_valid_collider(collider):
+            continue
+        shapes.append(_collider_to_shape(collider, index))
     return shapes
 
 
@@ -424,6 +445,29 @@ def intersects(shape_a: CollisionShape, shape_b: CollisionShape, max_iters: int 
     return _gjk(shape_a, shape_b, max_iters=max_iters)
 
 
+def contains_point(shape: CollisionShape, point_world: np.ndarray) -> bool:
+    point = np.asarray(point_world, dtype=float)
+    if point.shape != (3,):
+        point = point.reshape(3)
+    point_local = shape.rotation.T @ (point - shape.translation)
+
+    if shape.shape == PrimitiveColliderShape.BOX:
+        return (
+            -shape.size_x * 0.5 - EPSILON <= point_local[0] <= shape.size_x * 0.5 + EPSILON
+            and -shape.size_y * 0.5 - EPSILON <= point_local[1] <= shape.size_y * 0.5 + EPSILON
+            and -EPSILON <= point_local[2] <= shape.size_z + EPSILON
+        )
+
+    if shape.shape == PrimitiveColliderShape.CYLINDER:
+        radial_sq = float(point_local[0] * point_local[0] + point_local[1] * point_local[1])
+        return radial_sq <= (shape.radius + EPSILON) ** 2 and -EPSILON <= point_local[2] <= shape.height + EPSILON
+
+    if shape.shape == PrimitiveColliderShape.SPHERE:
+        return float(np.linalg.norm(point_local)) <= shape.radius + EPSILON
+
+    return False
+
+
 def primitive_extrusion_orientation(direction_axis: AxisDirection, positive_direction: bool = True) -> np.ndarray:
     if not isinstance(direction_axis, AxisDirection):
         raise TypeError("direction_axis must be an AxisDirection")
@@ -463,7 +507,35 @@ def _primitive_to_shape(
     )
 
 
+def _collider_to_shape(collider: PrimitiveCollider, source_index: int) -> CollisionShape:
+    return CollisionShape(
+        owner=collider.owner,
+        name=collider.name,
+        shape=collider.shape,
+        world_transform=collider.world_transform,
+        size_x=collider.size_x,
+        size_y=collider.size_y,
+        size_z=collider.size_z,
+        radius=collider.radius,
+        height=collider.height,
+        source_index=source_index,
+    )
+
+
 def _is_enabled_valid_primitive(collider: PrimitiveColliderData) -> bool:
+    if not collider.enabled:
+        return False
+    shape = collider.shape
+    if shape == PrimitiveColliderShape.BOX:
+        return collider.size_x > EPSILON and collider.size_y > EPSILON and collider.size_z > EPSILON
+    if shape == PrimitiveColliderShape.CYLINDER:
+        return collider.radius > EPSILON and collider.height > EPSILON
+    if shape == PrimitiveColliderShape.SPHERE:
+        return collider.radius > EPSILON
+    return False
+
+
+def _is_enabled_valid_collider(collider: PrimitiveCollider) -> bool:
     if not collider.enabled:
         return False
     shape = collider.shape
@@ -633,7 +705,9 @@ __all__ = [
     "build_tool_collision_shape_templates",
     "build_tool_collision_shapes",
     "build_workspace_collision_shapes",
+    "build_workspace_tcp_shapes",
     "build_world_frame_transforms",
+    "contains_point",
     "filter_robot_shapes_by_evaluated_axes",
     "find_collisions",
     "instantiate_collision_shapes_from_templates",
