@@ -137,6 +137,8 @@ class TrajectoryBuilder:
             return TrajectoryComputationStatus.CONFIGURATION_JUMP
         if error_code == TrajectorySampleErrorCode.COLLISION_DETECTED:
             return TrajectoryComputationStatus.COLLISION_DETECTED
+        if error_code == TrajectorySampleErrorCode.TCP_WORKSPACE_EXIT:
+            return TrajectoryComputationStatus.TCP_WORKSPACE_EXIT
         if error_code == TrajectorySampleErrorCode.SPEED_LIMIT_EXCEEDED:
             return TrajectoryComputationStatus.SPEED_LIMIT_EXCEEDED
         if error_code == TrajectorySampleErrorCode.JERK_LIMIT_EXCEEDED:

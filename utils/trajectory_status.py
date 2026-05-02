@@ -55,6 +55,8 @@ def status_to_message(status: TrajectoryComputationStatus, axis: int | None = No
         return f"saut de configuration detecte ({_axis_label(axis)})"
     if status == TrajectoryComputationStatus.COLLISION_DETECTED:
         return "collision detectee"
+    if status == TrajectoryComputationStatus.TCP_WORKSPACE_EXIT:
+        return "TCP hors zone de travail"
     if status == TrajectoryComputationStatus.SPEED_LIMIT_EXCEEDED:
         return f"vitesse depassee ({_axis_label(axis)})"
     if status == TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED:
@@ -75,6 +77,8 @@ def sample_error_to_message(error_code: TrajectorySampleErrorCode, axis: int | N
         return f"saut de configuration detecte ({_axis_label(axis)})"
     if error_code == TrajectorySampleErrorCode.COLLISION_DETECTED:
         return "collision detectee"
+    if error_code == TrajectorySampleErrorCode.TCP_WORKSPACE_EXIT:
+        return "TCP hors zone de travail"
     if error_code == TrajectorySampleErrorCode.SPEED_LIMIT_EXCEEDED:
         return f"vitesse depassee ({_axis_label(axis)})"
     if error_code == TrajectorySampleErrorCode.JERK_LIMIT_EXCEEDED:
@@ -140,6 +144,7 @@ def build_segment_issue_messages(segment: SegmentResult, segment_index: int) -> 
         TrajectorySampleErrorCode.FORBIDDEN_CONFIGURATION,
         TrajectorySampleErrorCode.CONFIGURATION_JUMP,
         TrajectorySampleErrorCode.COLLISION_DETECTED,
+        TrajectorySampleErrorCode.TCP_WORKSPACE_EXIT,
     ]
     for code in ordered_codes:
         if code not in first_axis_by_code:

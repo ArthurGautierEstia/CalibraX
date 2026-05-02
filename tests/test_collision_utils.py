@@ -17,6 +17,7 @@ from utils.collision_utils import (
     CollisionShape,
     CollisionWorldCache,
     build_tool_collision_shapes,
+    contains_point,
     filter_robot_shapes_by_evaluated_axes,
     intersects,
 )
@@ -181,6 +182,53 @@ class CollisionWorldCacheTests(unittest.TestCase):
         for before, shape in zip(workspace_transforms, cache.workspace_shapes_world):
             np.testing.assert_allclose(before, shape.world_transform)
         for before, shape in zip(tool_transforms, cache.tool_shapes_world):
+            np.testing.assert_allclose(before, shape.world_transform)
+
+    def test_point_containment_for_workspace_primitives(self):
+        box = _shape(PrimitiveColliderShape.BOX, size_x=2.0, size_y=4.0, size_z=6.0)
+        self.assertTrue(contains_point(box, np.array([1.0, 2.0, 6.0])))
+        self.assertFalse(contains_point(box, np.array([1.01, 0.0, 3.0])))
+        self.assertFalse(contains_point(box, np.array([0.0, 0.0, -0.01])))
+
+        sphere = _shape(PrimitiveColliderShape.SPHERE, radius=2.0)
+        self.assertTrue(contains_point(sphere, np.array([2.0, 0.0, 0.0])))
+        self.assertFalse(contains_point(sphere, np.array([2.01, 0.0, 0.0])))
+
+        cylinder = _shape(PrimitiveColliderShape.CYLINDER, radius=1.0, height=3.0)
+        self.assertTrue(contains_point(cylinder, np.array([1.0, 0.0, 3.0])))
+        self.assertFalse(contains_point(cylinder, np.array([1.01, 0.0, 1.0])))
+
+    def test_point_containment_uses_primitive_transform(self):
+        box = _shape(
+            PrimitiveColliderShape.BOX,
+            pose=[10.0, 0.0, 0.0, 90.0, 0.0, 0.0],
+            size_x=2.0,
+            size_y=2.0,
+            size_z=2.0,
+        )
+
+        self.assertTrue(contains_point(box, np.array([10.0, -1.0, 0.0])))
+        self.assertFalse(contains_point(box, np.array([10.0, -2.01, 0.0])))
+
+    def test_workspace_tcp_queries_do_not_rebuild_shapes(self):
+        cache = CollisionWorldCache()
+        cache.set_workspace_tcp_zone_colliders(
+            [
+                _primitive(
+                    PrimitiveColliderShape.SPHERE,
+                    name="TCP zone",
+                    radius=10.0,
+                ).build_collider()
+            ]
+        )
+        shape_ids = [id(shape) for shape in cache.workspace_tcp_shapes_world]
+        transforms = [shape.world_transform.copy() for shape in cache.workspace_tcp_shapes_world]
+
+        self.assertTrue(cache.is_tcp_inside_workspace(np.array([0.0, 0.0, 0.0])))
+        self.assertFalse(cache.is_tcp_inside_workspace(np.array([11.0, 0.0, 0.0])))
+
+        self.assertEqual(shape_ids, [id(shape) for shape in cache.workspace_tcp_shapes_world])
+        for before, shape in zip(transforms, cache.workspace_tcp_shapes_world):
             np.testing.assert_allclose(before, shape.world_transform)
 
     def test_robot_update_replaces_only_robot_shapes_and_ignores_disabled_colliders(self):
