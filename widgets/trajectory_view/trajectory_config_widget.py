@@ -183,6 +183,7 @@ class TrajectoryConfigWidget(QWidget):
         self.bezier_degree_combo.currentIndexChanged.connect(self._on_bezier_degree_changed)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
+        self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
 
     def _emit_keypoints_changed(self) -> None:
         self.keypoints_changed.emit(self.get_keypoints())
@@ -437,6 +438,12 @@ class TrajectoryConfigWidget(QWidget):
     def _on_edit_clicked(self) -> None:
         row = self._selected_row()
         if row is None:
+            return
+        self._open_keypoint_dialog("edit", row, self._keypoints[row].clone())
+
+    def _on_table_item_double_clicked(self, item: QTableWidgetItem) -> None:
+        row = item.row()
+        if row < 0 or row >= len(self._keypoints):
             return
         self._open_keypoint_dialog("edit", row, self._keypoints[row].clone())
 
