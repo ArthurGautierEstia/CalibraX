@@ -15,8 +15,8 @@ from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidg
 class RobotConfigurationController(QObject):
     DEFAULT_ROBOT_CONFIG_DIRECTORY = os.path.join("user_data", "configurations")
     STATUS_UNSAVED = "Configuration non enregistrée"
-    STATUS_MODIFIED = "Configuration modifiée"
-    STATUS_SAVED = "Configuration à jour"
+    STATUS_MODIFIED = "Modifications non enregistrées"
+    STATUS_SAVED = "Configuration enregistrée"
 
     configuration_loaded = pyqtSignal()
 
