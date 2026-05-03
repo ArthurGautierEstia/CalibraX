@@ -540,7 +540,7 @@ class TrajectoryConfigWidget(QWidget):
         self._move_selected_keypoint(1)
 
     def _on_import_clicked(self) -> None:
-        start_dir = str(get_trajectories_directory(create=False))
+        start_dir = str(get_trajectories_directory(create=True))
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Importer une trajectoire",
