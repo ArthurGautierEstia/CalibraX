@@ -99,51 +99,57 @@ class RobotConfigurationWidget(QWidget):
         title_row.addWidget(self.status_label)
         top_layout.addLayout(title_row)
 
-        header_layout = QGridLayout()
+        header_layout = QVBoxLayout()
+
+        fields_layout = QGridLayout()
         current_config_title_label = QLabel("Configuration courante :")
-        header_layout.addWidget(current_config_title_label, 0, 0)
+        fields_layout.addWidget(current_config_title_label, 0, 0)
 
         self.current_config_name_label = QLabel("Aucune configuration")
         self.current_config_name_label.setStyleSheet(
             "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
         )
         self.current_config_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.current_config_name_label.setMinimumWidth(320)
-        header_layout.addWidget(self.current_config_name_label, 0, 1)
+        self.current_config_name_label.setMinimumWidth(220)
+        fields_layout.addWidget(self.current_config_name_label, 0, 1)
 
         robot_name_title_label = QLabel("Nom du robot :")
-        header_layout.addWidget(robot_name_title_label, 1, 0)
+        fields_layout.addWidget(robot_name_title_label, 1, 0)
 
         self.line_edit_robot_name = QLineEdit()
         self.line_edit_robot_name.setPlaceholderText("Nom du robot")
         self.line_edit_robot_name.textChanged.connect(self.text_changed_requested.emit)
-        self.line_edit_robot_name.setMinimumWidth(320)
-        header_layout.addWidget(self.line_edit_robot_name, 1, 1)
+        self.line_edit_robot_name.setMinimumWidth(220)
+        fields_layout.addWidget(self.line_edit_robot_name, 1, 1)
+
+        fields_layout.setColumnStretch(0, 0)
+        fields_layout.setColumnStretch(1, 1)
+        header_layout.addLayout(fields_layout)
+
+        actions_layout = QHBoxLayout()
+        actions_layout.addStretch()
 
         self.btn_load = QPushButton("Charger")
         self.btn_load.clicked.connect(self.load_config_requested.emit)
         self.btn_load.setFixedWidth(120)
-        header_layout.addWidget(self.btn_load, 0, 3)
+        actions_layout.addWidget(self.btn_load)
 
         self.btn_new = QPushButton("Nouveau")
         self.btn_new.clicked.connect(self.new_config_requested.emit)
         self.btn_new.setFixedWidth(120)
-        header_layout.addWidget(self.btn_new, 0, 4)
+        actions_layout.addWidget(self.btn_new)
 
         self.btn_export = QPushButton("Enregistrer")
         self.btn_export.clicked.connect(self.export_config_requested.emit)
         self.btn_export.setFixedWidth(120)
-        header_layout.addWidget(self.btn_export, 1, 3)
+        actions_layout.addWidget(self.btn_export)
 
         self.btn_save_as = QPushButton("Enregistrer sous")
         self.btn_save_as.clicked.connect(self.save_as_config_requested.emit)
         self.btn_save_as.setFixedWidth(120)
-        header_layout.addWidget(self.btn_save_as, 1, 4)
-        header_layout.setColumnStretch(0, 0)
-        header_layout.setColumnStretch(1, 1)
-        header_layout.setColumnStretch(2, 1)
-        header_layout.setColumnStretch(3, 0)
-        header_layout.setColumnStretch(4, 0)
+        actions_layout.addWidget(self.btn_save_as)
+
+        header_layout.addLayout(actions_layout)
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
@@ -240,7 +246,8 @@ class RobotConfigurationWidget(QWidget):
         articular_layout.addWidget(self.table_axis)
 
         axis_button_layout = QHBoxLayout()
-        reset_accel_button = QPushButton("Recalculer accels par defaut")
+        reset_accel_button = QPushButton("Recalculer accélérations par defaut")
+        reset_accel_button.setToolTip("Acc = sqrt(Vmax * Jerkmax)")
         reset_accel_button.clicked.connect(self._on_reset_axis_accel_limits_clicked)
         axis_button_layout.addWidget(reset_accel_button)
         axis_button_layout.addStretch()
@@ -249,7 +256,7 @@ class RobotConfigurationWidget(QWidget):
 
         cartesian_group = QGroupBox("Limites cartésiennes")
         cartesian_layout = QVBoxLayout(cartesian_group)
-        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contr´le cartésien."))
+        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contrôle cartésien."))
         self.table_cartesian_slider_limits = QTableWidget(3, 2)
         self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min", "Max"])
         self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
