@@ -112,7 +112,7 @@ class RobotConfigurationWidget(QWidget):
         self.current_config_name_label.setStyleSheet(
             "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
         )
-        self.current_config_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.current_config_name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.current_config_name_label.setMinimumWidth(220)
         fields_layout.addWidget(self.current_config_name_label, 0, 1)
 
