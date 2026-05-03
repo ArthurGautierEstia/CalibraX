@@ -52,7 +52,7 @@ class RobotModel(QObject):
         (-1000.0, 1000.0),
         (-1000.0, 1000.0),
     ]
-    UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = [(0.0, 0.0) for _ in range(3)]
+    UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = list(DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [""] * 7
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     UNCONFIGURED_HOME_POSITION: List[float] = [0.0] * 6
