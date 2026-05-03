@@ -19,6 +19,8 @@ class TrajectoryActionsWidget(QWidget):
         super().__init__(parent)
 
         self._time_range = (0.0, 10.0)
+        self._editing_locked = False
+        self._analysis_pending = False
 
         self.btn_compute = QPushButton("Calculer")
         self.btn_home = QPushButton("Aller Home")
@@ -133,13 +135,22 @@ class TrajectoryActionsWidget(QWidget):
         self.warnings_label.show()
 
     def set_editing_locked(self, locked: bool) -> None:
-        enabled = not locked
-        self.btn_compute.setEnabled(enabled)
-        self.btn_export_trajectory.setEnabled(enabled)
-        self.btn_home.setEnabled(enabled)
-        self.btn_play.setEnabled(enabled)
-        self.btn_pause.setEnabled(enabled)
-        self.btn_stop.setEnabled(enabled)
-        self.cb_reverse.setEnabled(enabled)
-        self.cb_loop.setEnabled(enabled)
-        self.time_slider.setEnabled(enabled)
+        self._editing_locked = bool(locked)
+        self._refresh_enabled_state()
+
+    def set_analysis_pending(self, pending: bool) -> None:
+        self._analysis_pending = bool(pending)
+        self._refresh_enabled_state()
+
+    def _refresh_enabled_state(self) -> None:
+        editing_enabled = not self._editing_locked
+        playback_enabled = editing_enabled and not self._analysis_pending
+        self.btn_compute.setEnabled(editing_enabled)
+        self.btn_export_trajectory.setEnabled(playback_enabled)
+        self.btn_home.setEnabled(editing_enabled)
+        self.btn_play.setEnabled(playback_enabled)
+        self.btn_pause.setEnabled(playback_enabled)
+        self.btn_stop.setEnabled(playback_enabled)
+        self.cb_reverse.setEnabled(playback_enabled)
+        self.cb_loop.setEnabled(playback_enabled)
+        self.time_slider.setEnabled(playback_enabled)

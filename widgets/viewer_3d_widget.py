@@ -429,6 +429,12 @@ class Viewer3DWidget(QWidget):
         self.msg_label.adjustSize()
         self._position_overlays()
 
+    def set_trajectory_status_message(self, text: str) -> None:
+        self._set_label_msg(text)
+
+    def clear_trajectory_status_message(self) -> None:
+        self._clear_label_msg()
+
     def _toggle_robot_controls_overlay(self) -> None:
         self._robot_controls_collapsed = not self._robot_controls_collapsed
         self._refresh_robot_controls_overlay()

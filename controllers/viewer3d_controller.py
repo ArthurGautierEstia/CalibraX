@@ -295,3 +295,9 @@ class Viewer3DController(QObject):
 
     def clear_trajectory_edit_tangents(self) -> None:
         self.viewer_3d_widget.clear_trajectory_edit_tangents()
+
+    def set_trajectory_status_message(self, text: str) -> None:
+        self.viewer_3d_widget.set_trajectory_status_message(text)
+
+    def clear_trajectory_status_message(self) -> None:
+        self.viewer_3d_widget.clear_trajectory_status_message()
