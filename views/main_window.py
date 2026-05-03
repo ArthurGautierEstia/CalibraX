@@ -140,4 +140,3 @@ class MainWindow(QMainWindow):
             tab_index = self.tabs.indexOf(control_view)
             if tab_index >= 0:
                 self.tabs.setTabEnabled(tab_index, robot_has_configuration)
-        self.robot_view.get_configuration_widget().set_tab_enabled("MGI", robot_has_configuration)
