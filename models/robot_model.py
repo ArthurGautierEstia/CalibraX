@@ -3,11 +3,12 @@ from typing import List, Tuple
 import math
 from utils.mgi import *
 import utils.math_utils as math_utils
-from models.types import FkResult, Pose6
+from models.types import FkResult, Pose6, XYZ3
 from models.collider_models import (
     default_axis_colliders,
 )
 from models.primitive_collider_models import (
+    AxisDirection,
     RobotAxisColliderData,
 )
 from models.robot_configuration_file import RobotConfigurationFile
@@ -23,23 +24,42 @@ class RobotModel(QObject):
         (-120.0, 120.0),
         (-350.0, 350.0),
     ]
+    UNCONFIGURED_AXIS_LIMITS: List[Tuple[float, float]] = [(0.0, 0.0) for _ in range(6)]
     DEFAULT_AXIS_SPEED_LIMITS: List[float] = [300.0, 225.0, 255.0, 381.0, 311.0, 492.0]
+    UNCONFIGURED_AXIS_SPEED_LIMITS: List[float] = [0.0] * 6
     # Estimated defaults (deg/s^3), can be refined from real traces.
     DEFAULT_AXIS_JERK_LIMITS: List[float] = [6000.0, 5000.0, 5000.0, 7500.0, 6500.0, 9000.0]
+    UNCONFIGURED_AXIS_JERK_LIMITS: List[float] = [0.0] * 6
     DEFAULT_AXIS_ACCEL_LIMITS: List[float] = [
         round(math.sqrt(speed * jerk), 3)
         for speed, jerk in zip(DEFAULT_AXIS_SPEED_LIMITS, DEFAULT_AXIS_JERK_LIMITS)
     ]
+    UNCONFIGURED_AXIS_ACCEL_LIMITS: List[float] = [0.0] * 6
     DEFAULT_AXIS_COLLIDERS: List[RobotAxisColliderData] = default_axis_colliders(6)
+    UNCONFIGURED_AXIS_COLLIDERS: List[RobotAxisColliderData] = [
+        RobotAxisColliderData(
+            axis_index=index,
+            enabled=False,
+            direction_axis=AxisDirection.Z,
+            radius=0.0,
+            height=0.0,
+            offset_xyz=XYZ3(0.0, 0.0, 0.0),
+        )
+        for index in range(6)
+    ]
     DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = [
         (-1000.0, 1000.0),
         (-1000.0, 1000.0),
         (-1000.0, 1000.0),
     ]
+    UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = [(0.0, 0.0) for _ in range(3)]
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [""] * 7
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
+    UNCONFIGURED_HOME_POSITION: List[float] = [0.0] * 6
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
+    UNCONFIGURED_POSITION_ZERO: List[float] = [0.0] * 6
     POSITION_CALIBRATION: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
+    UNCONFIGURED_POSITION_CALIBRATION: List[float] = [0.0] * 6
     
     # ============================================================================
     # SIGNAUX
@@ -94,23 +114,23 @@ class RobotModel(QObject):
         # RÉGION: Paramètres des joints et axes
         # ====================================================================
         # Limites des axes (min, max) pour chaque joint
-        self.axis_limits: List[Tuple[float, float]] = list(RobotModel.DEFAULT_AXIS_LIMITS)
+        self.axis_limits: List[Tuple[float, float]] = list(RobotModel.UNCONFIGURED_AXIS_LIMITS)
         self.cartesian_slider_limits_xyz: List[Tuple[float, float]] = list(
-            RobotModel.DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ
+            RobotModel.UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ
         )
-        self.axis_speed_limits: List[float] = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
-        self.axis_accel_limits: List[float] = list(RobotModel.DEFAULT_AXIS_ACCEL_LIMITS)
-        self.axis_jerk_limits: List[float] = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
+        self.axis_speed_limits: List[float] = list(RobotModel.UNCONFIGURED_AXIS_SPEED_LIMITS)
+        self.axis_accel_limits: List[float] = list(RobotModel.UNCONFIGURED_AXIS_ACCEL_LIMITS)
+        self.axis_jerk_limits: List[float] = list(RobotModel.UNCONFIGURED_AXIS_JERK_LIMITS)
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
         self.axis_colliders: List[RobotAxisColliderData] = [
-            collider.copy() for collider in RobotModel.DEFAULT_AXIS_COLLIDERS
+            collider.copy() for collider in RobotModel.UNCONFIGURED_AXIS_COLLIDERS
         ]
         self._axis_colliders_revision: int = 0
                
         # Position home du robot
-        self.home_position: List[float] = list(RobotModel.DEFAULT_HOME_POSITION)
-        self.position_zero: List[float] = list(RobotModel.POSITION_ZERO)
-        self.position_calibration: List[float] = list(RobotModel.POSITION_CALIBRATION)
+        self.home_position: List[float] = list(RobotModel.UNCONFIGURED_HOME_POSITION)
+        self.position_zero: List[float] = list(RobotModel.UNCONFIGURED_POSITION_ZERO)
+        self.position_calibration: List[float] = list(RobotModel.UNCONFIGURED_POSITION_CALIBRATION)
         
         # Valeurs actuelles des joints (en degrés)
         self.joint_values: List[float] = [0, 0, 0, 0, 0, 0]
@@ -1101,18 +1121,18 @@ class RobotModel(QObject):
         self.has_configuration = False
         self.current_config_file = None
 
-        self.axis_limits = list(RobotModel.DEFAULT_AXIS_LIMITS)
-        self.cartesian_slider_limits_xyz = list(RobotModel.DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
-        self.axis_speed_limits = list(RobotModel.DEFAULT_AXIS_SPEED_LIMITS)
-        self.axis_accel_limits = list(RobotModel.DEFAULT_AXIS_ACCEL_LIMITS)
-        self.axis_jerk_limits = list(RobotModel.DEFAULT_AXIS_JERK_LIMITS)
+        self.axis_limits = list(RobotModel.UNCONFIGURED_AXIS_LIMITS)
+        self.cartesian_slider_limits_xyz = list(RobotModel.UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ)
+        self.axis_speed_limits = list(RobotModel.UNCONFIGURED_AXIS_SPEED_LIMITS)
+        self.axis_accel_limits = list(RobotModel.UNCONFIGURED_AXIS_ACCEL_LIMITS)
+        self.axis_jerk_limits = list(RobotModel.UNCONFIGURED_AXIS_JERK_LIMITS)
         self.robot_cad_models = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
-        self.axis_colliders = [collider.copy() for collider in RobotModel.DEFAULT_AXIS_COLLIDERS]
+        self.axis_colliders = [collider.copy() for collider in RobotModel.UNCONFIGURED_AXIS_COLLIDERS]
         self._axis_colliders_revision += 1
 
-        self.home_position = list(RobotModel.DEFAULT_HOME_POSITION)
-        self.position_zero = list(RobotModel.POSITION_ZERO)
-        self.position_calibration = list(RobotModel.POSITION_CALIBRATION)
+        self.home_position = list(RobotModel.UNCONFIGURED_HOME_POSITION)
+        self.position_zero = list(RobotModel.UNCONFIGURED_POSITION_ZERO)
+        self.position_calibration = list(RobotModel.UNCONFIGURED_POSITION_CALIBRATION)
 
         self.joint_values = [0.0] * 6
         self.joint_values_not_inverted = [0.0] * 6

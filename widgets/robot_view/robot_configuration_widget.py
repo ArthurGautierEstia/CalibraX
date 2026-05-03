@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 import os
@@ -88,39 +88,62 @@ class RobotConfigurationWidget(QWidget):
         main_layout = QVBoxLayout(self)
         top_layout = QVBoxLayout()
 
+        title_row = QHBoxLayout()
         title_label = QLabel("Configuration robot")
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        top_layout.addWidget(title_label)
-
-        status_row = QHBoxLayout()
-        status_row.addStretch()
-        self.status_label = QLabel("Configuration non enregistree")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+        self.status_label = QLabel("Configuration non enregistrée")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
-        status_row.addWidget(self.status_label)
-        top_layout.addLayout(status_row)
+        title_row.addWidget(self.status_label)
+        top_layout.addLayout(title_row)
 
         header_layout = QGridLayout()
+        current_config_title_label = QLabel("Configuration courante :")
+        header_layout.addWidget(current_config_title_label, 0, 0)
+
+        self.current_config_name_label = QLabel("Aucune configuration")
+        self.current_config_name_label.setStyleSheet(
+            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
+        )
+        self.current_config_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.current_config_name_label.setMinimumWidth(320)
+        header_layout.addWidget(self.current_config_name_label, 0, 1)
+
+        robot_name_title_label = QLabel("Nom du robot :")
+        header_layout.addWidget(robot_name_title_label, 1, 0)
+
         self.line_edit_robot_name = QLineEdit()
         self.line_edit_robot_name.setPlaceholderText("Nom du robot")
         self.line_edit_robot_name.textChanged.connect(self.text_changed_requested.emit)
-        header_layout.addWidget(self.line_edit_robot_name, 0, 0)
+        self.line_edit_robot_name.setMinimumWidth(320)
+        header_layout.addWidget(self.line_edit_robot_name, 1, 1)
 
         self.btn_load = QPushButton("Charger")
         self.btn_load.clicked.connect(self.load_config_requested.emit)
-        header_layout.addWidget(self.btn_load, 0, 1)
+        self.btn_load.setFixedWidth(120)
+        header_layout.addWidget(self.btn_load, 0, 3)
 
         self.btn_new = QPushButton("Nouveau")
         self.btn_new.clicked.connect(self.new_config_requested.emit)
-        header_layout.addWidget(self.btn_new, 0, 2)
+        self.btn_new.setFixedWidth(120)
+        header_layout.addWidget(self.btn_new, 0, 4)
 
         self.btn_export = QPushButton("Enregistrer")
         self.btn_export.clicked.connect(self.export_config_requested.emit)
-        header_layout.addWidget(self.btn_export, 0, 3)
+        self.btn_export.setFixedWidth(120)
+        header_layout.addWidget(self.btn_export, 1, 3)
 
         self.btn_save_as = QPushButton("Enregistrer sous")
         self.btn_save_as.clicked.connect(self.save_as_config_requested.emit)
-        header_layout.addWidget(self.btn_save_as, 0, 4)
+        self.btn_save_as.setFixedWidth(120)
+        header_layout.addWidget(self.btn_save_as, 1, 4)
+        header_layout.setColumnStretch(0, 0)
+        header_layout.setColumnStretch(1, 1)
+        header_layout.setColumnStretch(2, 1)
+        header_layout.setColumnStretch(3, 0)
+        header_layout.setColumnStretch(4, 0)
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
@@ -137,6 +160,9 @@ class RobotConfigurationWidget(QWidget):
     def set_configuration_status(self, text: str, color: str) -> None:
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+
+    def set_current_configuration_name(self, file_name: str) -> None:
+        self.current_config_name_label.setText(file_name)
 
     def add_tab(self, widget: QWidget, title: str) -> None:
         existing_index = self._extra_tab_indexes.get(title, -1)
@@ -223,7 +249,7 @@ class RobotConfigurationWidget(QWidget):
 
         cartesian_group = QGroupBox("Limites cartésiennes")
         cartesian_layout = QVBoxLayout(cartesian_group)
-        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contrôle cartésien."))
+        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contr´le cartésien."))
         self.table_cartesian_slider_limits = QTableWidget(3, 2)
         self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min", "Max"])
         self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
@@ -272,7 +298,7 @@ class RobotConfigurationWidget(QWidget):
         positions_group = QGroupBox("Paramétrage des positions")
         positions_layout = QVBoxLayout(positions_group)
         self.table_positions = QTableWidget(6, 3)
-        self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position calibration", "Position home"])
+        self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position de calibration", "Position home"])
         self.table_positions.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_positions.horizontalHeader().setDefaultSectionSize(180)
         self.table_positions.itemChanged.connect(self._on_positions_item_changed)
@@ -372,7 +398,7 @@ class RobotConfigurationWidget(QWidget):
             start_index, ok = QInputDialog.getInt(
                 self,
                 "Index de départ",
-                f"{len(cad_paths)} fichiers sélectionnés.\nChoisissez l'index de départ pour l'affectation ({0} à {max_start}).",
+                f"{len(cad_paths)} fichiers sélectionnés.\nChoisissez l'index de départ pour l'affectation ({0}   {max_start}).",
                 0,
                 0,
                 max_start,
