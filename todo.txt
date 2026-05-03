@@ -1,5 +1,0 @@
-# A faire
-- Evaluation des collisions
-- Evaluation des zones de travail
-- Protections des sauts quand on fait du jogging (on pourrait également faire la détection de collisions / zone de travail)
-- Dissocier
