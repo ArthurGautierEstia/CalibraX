@@ -194,6 +194,9 @@ class RobotConfigurationWidget(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        articular_group = QGroupBox("Limites articulaires")
+        articular_layout = QVBoxLayout(articular_group)
+
         self.table_axis = QTableWidget(6, 6)
         self.table_axis.setHorizontalHeaderLabels(["Min", "Max", "Vitesse max", "Accel max", "Jerk max", "Inverse"])
         self.table_axis.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
@@ -208,14 +211,26 @@ class RobotConfigurationWidget(QWidget):
             self.axis_reversed_checkboxes.append(checkbox)
 
         self.table_axis.itemChanged.connect(self._on_axis_item_changed)
-        layout.addWidget(self.table_axis)
+        articular_layout.addWidget(self.table_axis)
 
         axis_button_layout = QHBoxLayout()
         reset_accel_button = QPushButton("Recalculer accels par defaut")
         reset_accel_button.clicked.connect(self._on_reset_axis_accel_limits_clicked)
         axis_button_layout.addWidget(reset_accel_button)
         axis_button_layout.addStretch()
-        layout.addLayout(axis_button_layout)
+        articular_layout.addLayout(axis_button_layout)
+        layout.addWidget(articular_group, 1)
+
+        cartesian_group = QGroupBox("Limites cartésiennes")
+        cartesian_layout = QVBoxLayout(cartesian_group)
+        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contrôle cartésien."))
+        self.table_cartesian_slider_limits = QTableWidget(3, 2)
+        self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min", "Max"])
+        self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
+        self.table_cartesian_slider_limits.horizontalHeader().setDefaultSectionSize(120)
+        self.table_cartesian_slider_limits.itemChanged.connect(self._on_cartesian_slider_limits_item_changed)
+        cartesian_layout.addWidget(self.table_cartesian_slider_limits)
+        layout.addWidget(cartesian_group, 1)
         return tab
 
     def _build_axis_colliders_tab(self) -> QWidget:
@@ -264,16 +279,6 @@ class RobotConfigurationWidget(QWidget):
         positions_layout.addWidget(self.table_positions)
         layout.addWidget(positions_group, 1)
 
-        cartesian_group = QGroupBox("Plages des sliders cartésiens")
-        cartesian_layout = QVBoxLayout(cartesian_group)
-        cartesian_layout.addWidget(QLabel("Bornes X/Y/Z min/max du contrôle cartésien."))
-        self.table_cartesian_slider_limits = QTableWidget(3, 2)
-        self.table_cartesian_slider_limits.setHorizontalHeaderLabels(["Min", "Max"])
-        self.table_cartesian_slider_limits.setVerticalHeaderLabels(["X", "Y", "Z"])
-        self.table_cartesian_slider_limits.horizontalHeader().setDefaultSectionSize(120)
-        self.table_cartesian_slider_limits.itemChanged.connect(self._on_cartesian_slider_limits_item_changed)
-        cartesian_layout.addWidget(self.table_cartesian_slider_limits)
-        layout.addWidget(cartesian_group, 1)
         return tab
 
     def _build_cad_tab(self) -> QWidget:
