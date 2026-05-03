@@ -59,6 +59,7 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.axis_config_changed.connect(self._on_view_axis_config_changed)
         self.robot_configuration_widget.axis_colliders_config_changed.connect(self._on_view_axis_colliders_config_changed)
         self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
+        self.robot_configuration_widget.go_to_position_requested.connect(self._on_view_go_to_position_requested)
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
         self.robot_configuration_widget.new_config_requested.connect(self._on_view_new_config_requested)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
@@ -144,6 +145,11 @@ class RobotConfigurationController(QObject):
         self.robot_model.set_position_calibration(position_calibration)
         self.robot_model.set_home_position(home_position)
         self._refresh_configuration_status()
+
+    def _on_view_go_to_position_requested(self, joint_values: list[float]) -> None:
+        if len(joint_values) < 6:
+            return
+        self.robot_model.set_joints([float(value) for value in joint_values[:6]])
 
     def _on_view_robot_cad_models_changed(self, robot_cad_models: list[str]) -> None:
         self.robot_model.set_robot_cad_models(robot_cad_models)

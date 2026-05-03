@@ -43,6 +43,7 @@ class RobotConfigurationWidget(QWidget):
     axis_colliders_config_changed = pyqtSignal(list)
     axis_config_changed = pyqtSignal(list, list, list, list, list, list)
     positions_config_changed = pyqtSignal(list, list, list)
+    go_to_position_requested = pyqtSignal(list)
     robot_cad_models_changed = pyqtSignal(list)
 
     COL_AXIS_MIN = 0
@@ -55,6 +56,8 @@ class RobotConfigurationWidget(QWidget):
     COL_POS_ZERO = 0
     COL_POS_HOME = 1
     COL_POS_CALIBRATION = 2
+    POSITION_JOINT_COUNT = 6
+    POSITION_ACTION_ROW = POSITION_JOINT_COUNT
 
     COL_AXIS_COLLIDER_ENABLED = 0
     COL_AXIS_COLLIDER_DIRECTION = 1
@@ -304,11 +307,23 @@ class RobotConfigurationWidget(QWidget):
 
         positions_group = QGroupBox("Paramétrage des positions")
         positions_layout = QVBoxLayout(positions_group)
-        self.table_positions = QTableWidget(6, 3)
+        self.table_positions = QTableWidget(RobotConfigurationWidget.POSITION_JOINT_COUNT + 1, 3)
         self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position home", "Position de calibration"])
-        self.table_positions.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
+        self.table_positions.setVerticalHeaderLabels(
+            [f"q{i + 1}" for i in range(RobotConfigurationWidget.POSITION_JOINT_COUNT)] + ["Aller à"]
+        )
         self.table_positions.horizontalHeader().setDefaultSectionSize(180)
         self.table_positions.itemChanged.connect(self._on_positions_item_changed)
+
+        for column in (
+            RobotConfigurationWidget.COL_POS_ZERO,
+            RobotConfigurationWidget.COL_POS_HOME,
+            RobotConfigurationWidget.COL_POS_CALIBRATION,
+        ):
+            go_to_button = QPushButton("Aller à")
+            go_to_button.clicked.connect(lambda _, c=column: self._on_go_to_position_clicked(c))
+            self.table_positions.setCellWidget(RobotConfigurationWidget.POSITION_ACTION_ROW, column, go_to_button)
+
         positions_layout.addWidget(self.table_positions)
         layout.addWidget(positions_group, 1)
 
@@ -381,6 +396,9 @@ class RobotConfigurationWidget(QWidget):
     def _on_positions_item_changed(self, item: QTableWidgetItem) -> None:
         self._format_table_item_with_unit(self.table_positions, item, RobotConfigurationWidget.UNIT_DEG, True)
         self.positions_config_changed.emit(self.get_home_position(), self.get_position_zero(), self.get_position_calibration())
+
+    def _on_go_to_position_clicked(self, column: int) -> None:
+        self.go_to_position_requested.emit(self._get_position_column_values(column))
 
     def _on_pick_robot_cad(self, index: int) -> None:
         file_path, _ = QFileDialog.getOpenFileName(self, "Sélectionner une CAO", self._get_cad_start_directory(), "STL files (*.stl);;All files (*)")
@@ -779,7 +797,7 @@ class RobotConfigurationWidget(QWidget):
     def set_positions_config(self, home_position: list[float], position_zero: list[float], position_calibration: list[float]) -> None:
         self.table_positions.blockSignals(True)
         try:
-            for row in range(6):
+            for row in range(RobotConfigurationWidget.POSITION_JOINT_COUNT):
                 zero_value = position_zero[row] if row < len(position_zero) else 0.0
                 calibration_value = position_calibration[row] if row < len(position_calibration) else 0.0
                 home_value = home_position[row] if row < len(home_position) else 0.0
@@ -790,13 +808,19 @@ class RobotConfigurationWidget(QWidget):
             self.table_positions.blockSignals(False)
 
     def get_position_zero(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_ZERO, 0.0) for row in range(6)]
+        return self._get_position_column_values(RobotConfigurationWidget.COL_POS_ZERO)
 
     def get_position_calibration(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_CALIBRATION, 0.0) for row in range(6)]
+        return self._get_position_column_values(RobotConfigurationWidget.COL_POS_CALIBRATION)
 
     def get_home_position(self) -> list[float]:
-        return [self._cell_to_float(self.table_positions, row, RobotConfigurationWidget.COL_POS_HOME, 0.0) for row in range(6)]
+        return self._get_position_column_values(RobotConfigurationWidget.COL_POS_HOME)
+
+    def _get_position_column_values(self, column: int) -> list[float]:
+        return [
+            self._cell_to_float(self.table_positions, row, column, 0.0)
+            for row in range(RobotConfigurationWidget.POSITION_JOINT_COUNT)
+        ]
 
     def set_robot_cad_models(self, cad_models: list[str]) -> None:
         for index in range(RobotConfigurationWidget.ROBOT_CAD_COUNT):
