@@ -1,5 +1,5 @@
 {
-    "name": "Broche_7kW",
+    "name": "HSD 4597-NT",
     "tool": {
         "x": 10.0,
         "y": 0.0,
@@ -10,13 +10,68 @@
     },
     "tool_cad_model": "./default_data/tools_stl/Broche_N1039.stl",
     "tool_cad_offset_rz": 0.0,
-    "tool_colliders": [],
+    "tool_colliders": [
+        {
+            "name": "Tool collider 1",
+            "enabled": true,
+            "shape": "cylinder",
+            "pose": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size_x": 100.0,
+            "size_y": 100.0,
+            "size_z": 100.0,
+            "radius": 130.0,
+            "height": 150.0
+        },
+        {
+            "name": "Tool collider 2",
+            "enabled": true,
+            "shape": "box",
+            "pose": [
+                -410.0,
+                0.0,
+                -50.0,
+                0.0,
+                45.0,
+                0.0
+            ],
+            "size_x": 220.0,
+            "size_y": 220.0,
+            "size_z": 400.0,
+            "radius": 40.0,
+            "height": 120.0
+        },
+        {
+            "name": "Tool collider 3",
+            "enabled": true,
+            "shape": "cylinder",
+            "pose": [
+                -120.0,
+                0.0,
+                230.0,
+                0.0,
+                45.0,
+                0.0
+            ],
+            "size_x": 100.0,
+            "size_y": 100.0,
+            "size_z": 100.0,
+            "radius": 60.0,
+            "height": 200.0
+        }
+    ],
     "evaluated_robot_axis_colliders": [
         true,
         true,
         true,
-        true,
-        true,
-        true
+        false,
+        false,
+        false
     ]
 }

@@ -12,7 +12,6 @@ class ToolModel(QObject):
     DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
     DEFAULT_TOOL_COLLIDERS: list[PrimitiveColliderData] = []
     DEFAULT_EVALUATED_ROBOT_AXIS_COLLIDERS: list[bool] = [True] * 6
-    DEFAULT_TOOL_PROFILES_DIRECTORY: str = "./user_data/tools"
     DEFAULT_SELECTED_TOOL_PROFILE: str = ""
 
     tool_changed = pyqtSignal()
@@ -24,7 +23,6 @@ class ToolModel(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.tool = RobotTool()
-        self.tool_profiles_directory: str = ToolModel.DEFAULT_TOOL_PROFILES_DIRECTORY
         self.selected_tool_profile: str = ToolModel.DEFAULT_SELECTED_TOOL_PROFILE
         self.tool_cad_model: str = ToolModel.DEFAULT_TOOL_CAD_MODEL
         self.tool_cad_offset_rz: float = ToolModel.DEFAULT_TOOL_CAD_OFFSET_RZ
@@ -85,18 +83,6 @@ class ToolModel(QObject):
 
     def set_tool_pose(self, pose: Pose6) -> None:
         self.set_tool(self._pose_to_tool(pose))
-
-    def get_tool_profiles_directory(self) -> str:
-        return str(self.tool_profiles_directory)
-
-    def set_tool_profiles_directory(self, directory: str | None) -> None:
-        normalized = "" if directory is None else str(directory).strip()
-        if normalized == "":
-            normalized = ToolModel.DEFAULT_TOOL_PROFILES_DIRECTORY
-        if normalized == self.tool_profiles_directory:
-            return
-        self.tool_profiles_directory = normalized
-        self.tool_profile_changed.emit()
 
     def get_selected_tool_profile(self) -> str:
         return str(self.selected_tool_profile)

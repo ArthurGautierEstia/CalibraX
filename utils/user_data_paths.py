@@ -6,7 +6,6 @@ from pathlib import Path
 
 from controllers.calibration_view.measurement_controller import MeasurementController
 from controllers.robot_view.robot_configuration_controller import RobotConfigurationController
-from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from utils.trajectory_paths import get_trajectories_directory
 
@@ -42,7 +41,7 @@ def _resolve_project_directory(directory_path: str, root_dir: Path) -> Path:
 def _user_data_directories(root: Path) -> list[Path]:
     return [
         _resolve_project_directory(RobotConfigurationController.DEFAULT_ROBOT_CONFIG_DIRECTORY, root),
-        _resolve_project_directory(ToolModel.DEFAULT_TOOL_PROFILES_DIRECTORY, root),
+        _resolve_project_directory("user_data/tools", root),
         _resolve_project_directory(WorkspaceModel.DEFAULT_WORKSPACE_DIRECTORY, root),
         _resolve_project_directory(MeasurementController.DEFAULT_MEASUREMENTS_DIRECTORY, root),
         get_trajectories_directory(create=True, root_dir=root),

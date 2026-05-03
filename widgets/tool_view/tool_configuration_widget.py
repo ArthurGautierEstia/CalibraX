@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -30,13 +30,15 @@ from utils.mgi import RobotTool
 
 
 class ToolConfigurationWidget(QWidget):
+    new_tool_requested = pyqtSignal()
+    tool_name_changed = pyqtSignal(str)
     tool_changed = pyqtSignal(RobotTool)
     tool_cad_model_changed = pyqtSignal(str)
     tool_cad_offset_rz_changed = pyqtSignal(float)
     tool_colliders_changed = pyqtSignal(list)
     tool_evaluated_robot_axis_colliders_changed = pyqtSignal(list)
-    tool_profiles_directory_changed = pyqtSignal(str)
     selected_tool_profile_changed = pyqtSignal(str)
+    tool_profile_saved = pyqtSignal(str)
 
     COL_PRIM_ENABLED = 0
     COL_PRIM_NAME = 1
@@ -66,52 +68,97 @@ class ToolConfigurationWidget(QWidget):
         self._tool_collider_type_combos: list[QComboBox] = []
         self._tool_collider_enabled_checkboxes: list[QCheckBox] = []
         self._tool_evaluated_robot_axis_colliders_checkboxes: list[QCheckBox] = []
-        self.tool_profiles_dir_line_edit: QLineEdit | None = None
-        self.tool_profiles_combo: QComboBox | None = None
         self.tool_name_line_edit: QLineEdit | None = None
-        self._tool_profile_loading = False
-        self._tool_profile_files: dict[str, str] = {}
+        self.current_tool_profile_label: QLabel | None = None
+        self.status_label: QLabel | None = None
+        self._selected_tool_profile_path: str = ""
         self._tool = RobotTool()
         self._spin_boxes: dict[str, QDoubleSpinBox] = {}
         self._setup_ui()
-        self.set_tool_profiles_directory(self._default_tools_directory(), emit_change=False)
         self.set_tool_colliders([])
         self.set_tool_evaluated_robot_axis_colliders([True] * ToolConfigurationWidget.AXIS_COLLIDER_COUNT)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        profiles_grid = QGridLayout()
-        profiles_grid.addWidget(QLabel("Dossier tools"), 0, 0)
-        self.tool_profiles_dir_line_edit = QLineEdit()
-        self.tool_profiles_dir_line_edit.setReadOnly(True)
-        profiles_grid.addWidget(self.tool_profiles_dir_line_edit, 0, 1)
+        title_row = QHBoxLayout()
+        title_label = QLabel("Configuration tool")
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+        self.status_label = QLabel("Configuration non enregistrée")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(self.status_label)
+        layout.addLayout(title_row)
 
-        pick_tools_dir_btn = QPushButton("Sélectionner dossier")
-        pick_tools_dir_btn.clicked.connect(self._on_pick_tool_profiles_directory)
-        profiles_grid.addWidget(pick_tools_dir_btn, 0, 2)
+        header_layout = QVBoxLayout()
 
-        refresh_tools_btn = QPushButton("Rafraîchir")
-        refresh_tools_btn.clicked.connect(self._refresh_tool_profiles)
-        profiles_grid.addWidget(refresh_tools_btn, 0, 3)
+        fields_layout = QGridLayout()
+        fields_layout.addWidget(QLabel("Configuration courante :"), 0, 0)
+        self.current_tool_profile_label = QLabel("Aucune configuration")
+        self.current_tool_profile_label.setStyleSheet(
+            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
+        )
+        self.current_tool_profile_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.current_tool_profile_label.setMinimumWidth(220)
+        fields_layout.addWidget(self.current_tool_profile_label, 0, 1)
 
-        profiles_grid.addWidget(QLabel("Tool"), 1, 0)
-        self.tool_profiles_combo = QComboBox()
-        self.tool_profiles_combo.currentIndexChanged.connect(self._on_selected_tool_profile_changed)
-        profiles_grid.addWidget(self.tool_profiles_combo, 1, 1)
-
-        save_tool_btn = QPushButton("Enregistrer tool")
-        save_tool_btn.clicked.connect(self._on_save_tool_profile)
-        profiles_grid.addWidget(save_tool_btn, 1, 2)
-
+        fields_layout.addWidget(QLabel("Nom du tool :"), 1, 0)
         self.tool_name_line_edit = QLineEdit()
         self.tool_name_line_edit.setPlaceholderText("Nom du tool")
-        profiles_grid.addWidget(self.tool_name_line_edit, 1, 3)
-        layout.addLayout(profiles_grid)
+        self.tool_name_line_edit.setMinimumWidth(220)
+        self.tool_name_line_edit.textChanged.connect(self.tool_name_changed.emit)
+        fields_layout.addWidget(self.tool_name_line_edit, 1, 1)
+        fields_layout.setColumnStretch(0, 0)
+        fields_layout.setColumnStretch(1, 1)
+        header_layout.addLayout(fields_layout)
 
+        actions_layout = QHBoxLayout()
+        actions_layout.addStretch()
+
+        self.btn_load = QPushButton("Charger")
+        self.btn_load.setFixedWidth(120)
+        self.btn_load.clicked.connect(self._on_pick_tool_profile_file)
+        actions_layout.addWidget(self.btn_load)
+
+        self.btn_new = QPushButton("Nouveau")
+        self.btn_new.setFixedWidth(120)
+        self.btn_new.clicked.connect(self.new_tool_requested.emit)
+        actions_layout.addWidget(self.btn_new)
+
+        self.btn_save = QPushButton("Enregistrer")
+        self.btn_save.setFixedWidth(120)
+        self.btn_save.clicked.connect(self._on_save_tool_profile)
+        actions_layout.addWidget(self.btn_save)
+
+        self.btn_save_as = QPushButton("Enregistrer sous")
+        self.btn_save_as.setFixedWidth(120)
+        self.btn_save_as.clicked.connect(self._on_save_tool_profile_as)
+        actions_layout.addWidget(self.btn_save_as)
+
+        header_layout.addLayout(actions_layout)
+        layout.addLayout(header_layout)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._build_configuration_tab(), "Tool Frame")
+        tabs.addTab(self._build_cad_tab(), "CAD Files")
+        tabs.addTab(self._build_colliders_tab(), "Colliders")
+        layout.addWidget(tabs, 1)
+
+    def _build_configuration_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         layout.addWidget(self._build_tool_pose_group())
+        layout.addStretch()
+        return tab
 
-        tool_cad_grid = QGridLayout()
+    def _build_cad_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        tool_cad_group = QGroupBox("CAD tool")
+        tool_cad_grid = QGridLayout(tool_cad_group)
         tool_cad_grid.addWidget(QLabel("CAO tool"), 0, 0)
         self.tool_cad_line_edit = QLineEdit()
         self.tool_cad_line_edit.setReadOnly(True)
@@ -133,28 +180,44 @@ class ToolConfigurationWidget(QWidget):
         self.tool_cad_offset_rz_spin.setSuffix(f" {ToolConfigurationWidget.UNIT_DEG}")
         self.tool_cad_offset_rz_spin.valueChanged.connect(self.tool_cad_offset_rz_changed.emit)
         tool_cad_grid.addWidget(self.tool_cad_offset_rz_spin, 1, 1)
-        layout.addLayout(tool_cad_grid)
+        layout.addWidget(tool_cad_group)
+        layout.addStretch()
+        return tab
 
+    def _build_colliders_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         layout.addWidget(self._build_tool_colliders_group())
         layout.addStretch()
+        return tab
 
     def _build_tool_pose_group(self) -> QGroupBox:
-        group = QGroupBox("Configuration de l'outil")
+        group = QGroupBox("Configuration du TCP")
         group_layout = QVBoxLayout(group)
         description = QLabel("Paramètres de transformation de l'outil par rapport au flange du robot")
         description.setWordWrap(True)
         group_layout.addWidget(description)
 
+        spin_box_width = 120
+        label_width = 28
+
         inputs_layout = QHBoxLayout()
+
         trans_layout = QVBoxLayout()
-        trans_layout.addWidget(QLabel("Translation :"))
+        translation_label = QLabel("Translation :")
+        translation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        trans_layout.addWidget(translation_label)
         for axis in ["x", "y", "z"]:
             axis_layout = QHBoxLayout()
-            axis_layout.addWidget(QLabel(f"{axis.upper()}:"))
+            axis_label = QLabel(f"{axis.upper()}:")
+            axis_label.setFixedWidth(label_width)
+            axis_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            axis_layout.addWidget(axis_label)
             spin_box = QDoubleSpinBox()
             spin_box.setRange(-1000.0, 1000.0)
             spin_box.setSingleStep(0.1)
             spin_box.setDecimals(2)
+            spin_box.setFixedWidth(spin_box_width)
             spin_box.setSuffix(f" {ToolConfigurationWidget.UNIT_MM}")
             spin_box.valueChanged.connect(lambda value, ax=axis: self._on_tool_param_changed(ax, value))
             self._spin_boxes[axis] = spin_box
@@ -163,14 +226,20 @@ class ToolConfigurationWidget(QWidget):
         inputs_layout.addLayout(trans_layout)
 
         rot_layout = QVBoxLayout()
-        rot_layout.addWidget(QLabel("Rotation :"))
+        rotation_label = QLabel("Rotation :")
+        rotation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        rot_layout.addWidget(rotation_label)
         for axis in ["a", "b", "c"]:
             axis_layout = QHBoxLayout()
-            axis_layout.addWidget(QLabel(f"{axis.upper()}:"))
+            axis_label = QLabel(f"{axis.upper()}:")
+            axis_label.setFixedWidth(label_width)
+            axis_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            axis_layout.addWidget(axis_label)
             spin_box = QDoubleSpinBox()
             spin_box.setRange(-180.0, 180.0)
             spin_box.setSingleStep(0.1)
             spin_box.setDecimals(2)
+            spin_box.setFixedWidth(spin_box_width)
             spin_box.setSuffix(f" {ToolConfigurationWidget.UNIT_DEG}")
             spin_box.valueChanged.connect(lambda value, ax=axis: self._on_tool_param_changed(ax, value))
             self._spin_boxes[axis] = spin_box
@@ -178,10 +247,16 @@ class ToolConfigurationWidget(QWidget):
             rot_layout.addLayout(axis_layout)
         inputs_layout.addLayout(rot_layout)
 
+        inputs_layout.addStretch()
+        group_layout.addLayout(inputs_layout)
+
         reset_btn = QPushButton("Remettre à zéro")
         reset_btn.clicked.connect(self._reset_tool_to_identity)
-        inputs_layout.addWidget(reset_btn)
-        group_layout.addLayout(inputs_layout)
+        reset_layout = QHBoxLayout()
+        reset_layout.addStretch()
+        reset_layout.addWidget(reset_btn)
+        reset_layout.addStretch()
+        group_layout.addLayout(reset_layout)
         return group
 
     def _build_tool_colliders_group(self) -> QGroupBox:
@@ -310,83 +385,17 @@ class ToolConfigurationWidget(QWidget):
 
         pose = collider.pose
         self.table_tool_colliders.setItem(row, ToolConfigurationWidget.COL_PRIM_NAME, QTableWidgetItem(collider.name))
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_X,
-            float(pose.x),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_Y,
-            float(pose.y),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_Z,
-            float(pose.z),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_A,
-            float(pose.a),
-            ToolConfigurationWidget.UNIT_DEG,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_B,
-            float(pose.b),
-            ToolConfigurationWidget.UNIT_DEG,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_C,
-            float(pose.c),
-            ToolConfigurationWidget.UNIT_DEG,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_SIZE_X,
-            float(collider.size_x),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_SIZE_Y,
-            float(collider.size_y),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_SIZE_Z,
-            float(collider.size_z),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_RADIUS,
-            float(collider.radius),
-            ToolConfigurationWidget.UNIT_MM,
-        )
-        self._set_table_item_with_unit(
-            self.table_tool_colliders,
-            row,
-            ToolConfigurationWidget.COL_PRIM_HEIGHT,
-            float(collider.height),
-            ToolConfigurationWidget.UNIT_MM,
-        )
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_X, float(pose.x), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_Y, float(pose.y), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_Z, float(pose.z), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_A, float(pose.a), ToolConfigurationWidget.UNIT_DEG)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_B, float(pose.b), ToolConfigurationWidget.UNIT_DEG)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_C, float(pose.c), ToolConfigurationWidget.UNIT_DEG)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_SIZE_X, float(collider.size_x), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_SIZE_Y, float(collider.size_y), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_SIZE_Z, float(collider.size_z), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_RADIUS, float(collider.radius), ToolConfigurationWidget.UNIT_MM)
+        self._set_table_item_with_unit(self.table_tool_colliders, row, ToolConfigurationWidget.COL_PRIM_HEIGHT, float(collider.height), ToolConfigurationWidget.UNIT_MM)
 
     def _on_pick_tool_cad(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -404,69 +413,32 @@ class ToolConfigurationWidget(QWidget):
         self.tool_cad_line_edit.setText("")
         self.tool_cad_model_changed.emit("")
 
-    def _on_pick_tool_profiles_directory(self) -> None:
-        current_directory = self.get_tool_profiles_directory()
-        start_directory = self._resolve_filesystem_path(current_directory) if current_directory else self._get_tools_start_directory()
-        selected_dir = QFileDialog.getExistingDirectory(self, "Sélectionner le dossier des tools", start_directory)
-        if not selected_dir:
-            return
-        self.set_tool_profiles_directory(selected_dir, emit_change=True)
-
-    def _on_selected_tool_profile_changed(self, _index: int) -> None:
-        if self._tool_profile_loading or self.tool_profiles_combo is None:
-            return
-        file_path = self.tool_profiles_combo.currentData()
+    def _on_pick_tool_profile_file(self) -> None:
+        start_directory = self._resolve_filesystem_path(self.get_selected_tool_profile())
+        if not start_directory:
+            start_directory = self._get_tools_start_directory()
+        elif os.path.isfile(start_directory):
+            start_directory = os.path.dirname(start_directory)
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Charger une configuration tool",
+            start_directory,
+            "JSON files (*.json);;All files (*)",
+        )
         if not file_path:
-            self.selected_tool_profile_changed.emit("")
             return
-        self.selected_tool_profile_changed.emit(self._normalize_project_path(str(file_path)))
-
-    def _refresh_tool_profiles(self) -> None:
-        if self.tool_profiles_combo is None or self.tool_profiles_dir_line_edit is None:
-            return
-        selected_data = self.tool_profiles_combo.currentData()
-        tools_dir = self._resolve_filesystem_path(self.tool_profiles_dir_line_edit.text().strip())
-        self._tool_profile_loading = True
-        self._tool_profile_files.clear()
-        self.tool_profiles_combo.clear()
-        self.tool_profiles_combo.addItem("Aucun outil", "")
-        if os.path.isdir(tools_dir):
-            for file_name in sorted(os.listdir(tools_dir)):
-                if not file_name.lower().endswith(".json"):
-                    continue
-                profile_name = os.path.splitext(file_name)[0]
-                profile_path = os.path.join(tools_dir, file_name)
-                self._tool_profile_files[profile_name] = profile_path
-                self.tool_profiles_combo.addItem(profile_name, profile_path)
-        if selected_data:
-            found_index = self.tool_profiles_combo.findData(selected_data)
-            self.tool_profiles_combo.setCurrentIndex(found_index if found_index >= 0 else 0)
-        else:
-            self.tool_profiles_combo.setCurrentIndex(0)
-        self._tool_profile_loading = False
+        self.selected_tool_profile_changed.emit(self._normalize_project_path(file_path))
 
     def _on_save_tool_profile(self) -> None:
-        if self.tool_profiles_dir_line_edit is None:
+        output_path = self._resolve_filesystem_path(self.get_selected_tool_profile())
+        if not output_path or os.path.isdir(output_path):
+            self._on_save_tool_profile_as()
             return
-        tools_dir = self._resolve_filesystem_path(self.tool_profiles_dir_line_edit.text().strip())
-        if not tools_dir:
-            QMessageBox.information(self, "Dossier manquant", "Sélectionnez d'abord un dossier de tools.")
-            return
-        os.makedirs(tools_dir, exist_ok=True)
-        raw_name = self.tool_name_line_edit.text().strip() if self.tool_name_line_edit is not None else ""
-        if not raw_name:
-            QMessageBox.information(self, "Nom manquant", "Saisissez un nom de tool avant d'enregistrer.")
-            return
-        if self._has_forbidden_filename_chars(raw_name):
-            QMessageBox.warning(self, "Nom invalide", "Le nom du tool contient des caractères interdits pour un nom de fichier.")
-            return
-        safe_name = self._sanitize_tool_file_name(raw_name)
-        if not safe_name:
-            QMessageBox.warning(self, "Nom invalide", "Le nom du tool ne peut pas être utilisé comme nom de fichier.")
-            return
-        output_path = os.path.join(tools_dir, f"{safe_name}.json")
+        profile_name = self.tool_name_line_edit.text().strip() if self.tool_name_line_edit is not None else ""
+        if not profile_name:
+            profile_name = os.path.splitext(os.path.basename(output_path))[0]
         profile = ToolConfigFile.from_robot_tool(
-            raw_name,
+            profile_name,
             self.get_tool(),
             self.get_tool_cad_model(),
             self.get_tool_cad_offset_rz(),
@@ -478,20 +450,58 @@ class ToolConfigurationWidget(QWidget):
         except (OSError, ValueError, TypeError) as exc:
             QMessageBox.warning(self, "Erreur sauvegarde", f"Impossible d'enregistrer {output_path}.\n{exc}")
             return
-        self._refresh_tool_profiles()
-        if self.tool_profiles_combo is not None:
-            match_index = self.tool_profiles_combo.findData(output_path)
-            if match_index >= 0:
-                self.tool_profiles_combo.setCurrentIndex(match_index)
+        self.set_tool_name(profile_name)
+        self.set_selected_tool_profile(self._normalize_project_path(output_path))
+        self.tool_profile_saved.emit(self.get_selected_tool_profile())
+
+    def _on_save_tool_profile_as(self) -> None:
+        raw_name = self.tool_name_line_edit.text().strip() if self.tool_name_line_edit is not None else ""
+        suggested_name = self._sanitize_tool_file_name(raw_name) if raw_name else "tool"
+        start_directory = self._resolve_filesystem_path(self.get_selected_tool_profile())
+        if not start_directory:
+            start_directory = self._get_tools_start_directory()
+        elif os.path.isfile(start_directory):
+            start_directory = os.path.dirname(start_directory)
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Enregistrer une configuration tool",
+            os.path.join(start_directory, f"{suggested_name}.json"),
+            "JSON files (*.json);;All files (*)",
+        )
+        if not output_path:
+            return
+        if not output_path.lower().endswith(".json"):
+            output_path = f"{output_path}.json"
+        profile_name = raw_name if raw_name else os.path.splitext(os.path.basename(output_path))[0]
+        profile = ToolConfigFile.from_robot_tool(
+            profile_name,
+            self.get_tool(),
+            self.get_tool_cad_model(),
+            self.get_tool_cad_offset_rz(),
+            self.get_tool_colliders(),
+            self.get_tool_evaluated_robot_axis_colliders(),
+        )
+        try:
+            profile.save(output_path)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "Erreur sauvegarde", f"Impossible d'enregistrer {output_path}.\n{exc}")
+            return
+        self.set_tool_name(profile_name)
+        normalized_output_path = self._normalize_project_path(output_path)
+        self.set_selected_tool_profile(normalized_output_path)
+        self.selected_tool_profile_changed.emit(normalized_output_path)
+        self.tool_profile_saved.emit(normalized_output_path)
 
     @staticmethod
     def _get_cad_start_directory() -> str:
-        current_dir = os.getcwd()
-        return current_dir
+        return os.getcwd()
 
     @staticmethod
     def _get_tools_start_directory() -> str:
         current_dir = os.getcwd()
+        default_dir = os.path.join(current_dir, "user_data", "tools")
+        if os.path.isdir(default_dir):
+            return default_dir
         tools_dir = os.path.join(current_dir, "tools")
         if os.path.isdir(tools_dir):
             return tools_dir
@@ -513,10 +523,6 @@ class ToolConfigurationWidget(QWidget):
         if not path:
             return ""
         return os.path.abspath(path)
-
-    @staticmethod
-    def _default_tools_directory() -> str:
-        return "./user_data/tools"
 
     @staticmethod
     def _normalize_cad_path(file_path: str) -> str:
@@ -714,54 +720,31 @@ class ToolConfigurationWidget(QWidget):
             return [True] * ToolConfigurationWidget.AXIS_COLLIDER_COUNT
         return [checkbox.isChecked() for checkbox in self._tool_evaluated_robot_axis_colliders_checkboxes[:6]]
 
-    def set_tool_profiles_directory(self, directory: str | None, emit_change: bool = False) -> None:
-        if self.tool_profiles_dir_line_edit is None:
-            return
-        normalized = "" if directory is None else str(directory).strip()
-        if not normalized:
-            normalized = self._default_tools_directory()
-        normalized = self._normalize_project_path(normalized)
-        resolved_directory = self._resolve_filesystem_path(normalized)
-        if resolved_directory:
-            os.makedirs(resolved_directory, exist_ok=True)
-        self.tool_profiles_dir_line_edit.setText(normalized)
-        self._refresh_tool_profiles()
-        if emit_change:
-            self.tool_profiles_directory_changed.emit(normalized)
-
-    def get_tool_profiles_directory(self) -> str:
-        if self.tool_profiles_dir_line_edit is None:
-            return self._default_tools_directory()
-        current = self.tool_profiles_dir_line_edit.text().strip()
-        return current if current else self._default_tools_directory()
-
     def set_selected_tool_profile(self, profile_path: str | None) -> None:
-        if self.tool_profiles_combo is None:
-            return
         target = "" if profile_path is None else str(profile_path).strip()
-        self._tool_profile_loading = True
-        try:
-            if not target:
-                self.tool_profiles_combo.setCurrentIndex(0)
-                return
-            target_abs = os.path.normcase(os.path.abspath(self._resolve_filesystem_path(target)))
-            target_index = -1
-            for idx in range(self.tool_profiles_combo.count()):
-                item_data = self.tool_profiles_combo.itemData(idx)
-                if not item_data:
-                    continue
-                item_abs = os.path.normcase(os.path.abspath(str(item_data)))
-                if item_abs == target_abs:
-                    target_index = idx
-                    break
-            self.tool_profiles_combo.setCurrentIndex(target_index if target_index >= 0 else 0)
-        finally:
-            self._tool_profile_loading = False
+        self._selected_tool_profile_path = target
+        if self.current_tool_profile_label is not None:
+            self.current_tool_profile_label.setText(
+                "Aucune configuration" if not target else os.path.basename(str(target))
+            )
 
     def get_selected_tool_profile(self) -> str:
-        if self.tool_profiles_combo is None:
+        return self._selected_tool_profile_path
+
+    def set_configuration_status(self, text: str, color: str) -> None:
+        if self.status_label is None:
+            return
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+
+    def set_tool_name(self, name: str) -> None:
+        if self.tool_name_line_edit is None:
+            return
+        self.tool_name_line_edit.blockSignals(True)
+        self.tool_name_line_edit.setText(str(name))
+        self.tool_name_line_edit.blockSignals(False)
+
+    def get_tool_name(self) -> str:
+        if self.tool_name_line_edit is None:
             return ""
-        current_data = self.tool_profiles_combo.currentData()
-        if not current_data:
-            return ""
-        return self._normalize_project_path(str(current_data))
+        return self.tool_name_line_edit.text().strip()
