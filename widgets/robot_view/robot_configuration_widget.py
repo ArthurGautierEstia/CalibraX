@@ -53,8 +53,8 @@ class RobotConfigurationWidget(QWidget):
     COL_AXIS_REVERSED = 5
 
     COL_POS_ZERO = 0
-    COL_POS_CALIBRATION = 1
-    COL_POS_HOME = 2
+    COL_POS_HOME = 1
+    COL_POS_CALIBRATION = 2
 
     COL_AXIS_COLLIDER_ENABLED = 0
     COL_AXIS_COLLIDER_DIRECTION = 1
@@ -305,7 +305,7 @@ class RobotConfigurationWidget(QWidget):
         positions_group = QGroupBox("Paramétrage des positions")
         positions_layout = QVBoxLayout(positions_group)
         self.table_positions = QTableWidget(6, 3)
-        self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position de calibration", "Position home"])
+        self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position home", "Position de calibration"])
         self.table_positions.setVerticalHeaderLabels([f"q{i + 1}" for i in range(6)])
         self.table_positions.horizontalHeader().setDefaultSectionSize(180)
         self.table_positions.itemChanged.connect(self._on_positions_item_changed)
