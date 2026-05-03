@@ -106,9 +106,6 @@ class CollisionSceneModel(QObject):
         if matrices:
             return [np.array(matrix, dtype=float) for matrix in matrices]
 
-        if not self.robot_model.get_has_configuration():
-            return []
-
         fk_result = self.robot_model.compute_fk_joints(self.robot_model.get_joints())
         if fk_result is None:
             return []
