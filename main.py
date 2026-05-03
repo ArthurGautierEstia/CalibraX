@@ -10,6 +10,7 @@ from controllers.main_controller import MainController
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
+from utils.user_data_paths import ensure_user_data_directories
 from views.main_window import MainWindow
 
 
@@ -38,6 +39,7 @@ class CalibraxApplication:
     def __init__(self, startup_options: dict[str, str]):
         self.app = QApplication(sys.argv)
         self.apply_kuka_accent()
+        ensure_user_data_directories()
 
         current_dir = os.getcwd()
         icon_path = os.path.join(current_dir, "appicon.ico")
