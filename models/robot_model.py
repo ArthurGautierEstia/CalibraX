@@ -8,7 +8,6 @@ from models.collider_models import (
     default_axis_colliders,
 )
 from models.primitive_collider_models import (
-    AxisDirection,
     RobotAxisColliderData,
 )
 from models.robot_configuration_file import RobotConfigurationFile
@@ -37,15 +36,7 @@ class RobotModel(QObject):
     UNCONFIGURED_AXIS_ACCEL_LIMITS: List[float] = [0.0] * 6
     DEFAULT_AXIS_COLLIDERS: List[RobotAxisColliderData] = default_axis_colliders(6)
     UNCONFIGURED_AXIS_COLLIDERS: List[RobotAxisColliderData] = [
-        RobotAxisColliderData(
-            axis_index=index,
-            enabled=False,
-            direction_axis=AxisDirection.Z,
-            radius=0.0,
-            height=0.0,
-            offset_xyz=XYZ3(0.0, 0.0, 0.0),
-        )
-        for index in range(6)
+        collider.copy() for collider in DEFAULT_AXIS_COLLIDERS
     ]
     DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = [
         (-1000.0, 1000.0),

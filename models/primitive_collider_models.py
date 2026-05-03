@@ -274,16 +274,17 @@ def default_axis_colliders(axis_count: int = 6) -> list[RobotAxisColliderData]:
         AxisDirection.Z,
         AxisDirection.X,
         AxisDirection.Y,
-        AxisDirection.Y,
+        AxisDirection.Z,
         AxisDirection.Y,
         AxisDirection.Z,
     )
+    enabled_axis_indexes = {0, 1, 2, 4}
     return [
         RobotAxisColliderData(
             axis_index=index,
-            enabled=True,
+            enabled=index in enabled_axis_indexes,
             radius=40.0,
-            height=200.0,
+            height=100.0,
             direction_axis=default_directions[index] if index < 6 else AxisDirection.Z,
             offset_xyz=XYZ3.zeros(),
         )
