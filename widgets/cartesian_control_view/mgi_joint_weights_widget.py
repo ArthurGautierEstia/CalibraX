@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QDoubleSpinBox, QHBoxLayout
+    QWidget, QVBoxLayout, QLabel, QDoubleSpinBox, QHBoxLayout, QGroupBox
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -27,15 +27,13 @@ class MgiJointWeightsWidget(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-
-        title = QLabel("Poids des joints")
-        title.setStyleSheet("font-weight: bold;")
-        layout.addWidget(title)
+        group_box = QGroupBox("Poids des joints")
+        group_layout = QVBoxLayout(group_box)
 
         description = QLabel("Poids utilisés pour calculer la distance entre la position actuelle et les solutions MGI.\n"
                            "Un poids plus élevé pénalise davantage les mouvements de ce joint.")
         description.setWordWrap(True)
-        layout.addWidget(description)
+        group_layout.addWidget(description)
 
         for i in range(6):
             joint_layout = QHBoxLayout()
@@ -55,9 +53,10 @@ class MgiJointWeightsWidget(QWidget):
             self._spin_boxes.append(spin_box)
             joint_layout.addWidget(spin_box)
 
-            layout.addLayout(joint_layout)
+            group_layout.addLayout(joint_layout)
 
-        layout.addStretch()
+        group_layout.addStretch()
+        layout.addWidget(group_box)
 
     # ---------------------------------------------------------
     # Internals

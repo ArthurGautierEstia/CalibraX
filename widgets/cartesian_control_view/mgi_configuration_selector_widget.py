@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QCheckBox, QLabel
+    QWidget, QVBoxLayout, QCheckBox, QGroupBox
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -29,10 +29,8 @@ class MgiConfigurationSelectorWidget(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-
-        title = QLabel("Configurations MGI autorisées")
-        title.setStyleSheet("font-weight: bold;")
-        layout.addWidget(title)
+        group_box = QGroupBox("Configurations MGI autorisées")
+        group_layout = QVBoxLayout(group_box)
 
         for key in MgiConfigKey:
             cb = QCheckBox(self._config_label(key))
@@ -42,9 +40,10 @@ class MgiConfigurationSelectorWidget(QWidget):
             )
 
             self._checkboxes[key] = cb
-            layout.addWidget(cb)
+            group_layout.addWidget(cb)
 
-        layout.addStretch()
+        group_layout.addStretch()
+        layout.addWidget(group_box)
 
     # ---------------------------------------------------------
     # Internals

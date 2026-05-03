@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QMessageBox
 from controllers.calibration_controller import CalibrationController
 from controllers.cartesian_control_controller import CartesianControlController
 from controllers.joint_control_controller import JointControlController
+from controllers.mgi_controller import MgiController
 from controllers.robot_controller import RobotController
 from controllers.trajectory_controller import TrajectoryController
 from controllers.viewer3d_controller import Viewer3DController
@@ -66,11 +67,16 @@ class MainController(QObject):
         )
         self.calibration_controller = CalibrationController(robot_model, tool_model, main_window.get_calibration_view())
         self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view())
+        self.mgi_controller = MgiController(
+            robot_model,
+            main_window.get_mgi_view(),
+        )
         self.cartesian_control_controller = CartesianControlController(
             robot_model,
             tool_model,
             workspace_model,
             main_window.get_cartesian_control_view(),
+            self.mgi_controller,
         )
         self.viewer3d_controller = Viewer3DController(
             robot_model,

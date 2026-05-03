@@ -7,6 +7,7 @@ from models.workspace_model import WorkspaceModel
 from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
 from views.joint_control_view import JointControlView
+from views.mgi_view import MgiView
 from views.robot_view import RobotView
 from views.tool_view import ToolView
 from views.trajectory_view import TrajectoryView
@@ -36,6 +37,7 @@ class MainWindow(QMainWindow):
         self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
         self.cartesian_control_view = CartesianControlView()
+        self.mgi_view = MgiView()
         self.trajectory_view = TrajectoryView(robot_model, tool_model, workspace_model)
 
         self.viewer3d = Viewer3DWidget()
@@ -55,9 +57,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.tool_view, "Tool")
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.workspace_view, "Workspace")
+        self.tabs.addTab(self.mgi_view, "MGI")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
-
-        self.robot_view.get_configuration_widget().add_tab(self.cartesian_control_view, "MGI")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
         self.main_splitter.setHandleWidth(6)
@@ -120,6 +121,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue de controle cartesien"""
         return self.cartesian_control_view
 
+    def get_mgi_view(self) -> MgiView:
+        """Retourne la vue MGI."""
+        return self.mgi_view
+
     def get_trajectory_view(self) -> TrajectoryView:
         """Retourne la vue de trajectoire"""
         return self.trajectory_view
@@ -138,6 +143,7 @@ class MainWindow(QMainWindow):
             self.tool_view,
             self.calibration_view,
             self.workspace_view,
+            self.mgi_view,
             self.trajectory_view,
         ):
             tab_index = self.tabs.indexOf(control_view)
