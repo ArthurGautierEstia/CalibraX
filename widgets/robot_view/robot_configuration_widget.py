@@ -352,7 +352,7 @@ class RobotConfigurationWidget(QWidget):
         item = self.table_dh.item(row, col)
         if item is not None:
             unit = RobotConfigurationWidget.UNIT_DEG if col in (0, 2) else RobotConfigurationWidget.UNIT_MM
-            numeric_value = self._format_table_item_with_unit(self.table_dh, item, unit)
+            numeric_value = self._format_table_item_with_unit(self.table_dh, item, unit, True)
             self.dh_value_changed.emit(row, col, numeric_value)
 
     def _on_axis_item_changed(self, item: QTableWidgetItem) -> None:
@@ -375,11 +375,11 @@ class RobotConfigurationWidget(QWidget):
         self._emit_axis_config_changed()
 
     def _on_axis_colliders_item_changed(self, item: QTableWidgetItem) -> None:
-        self._format_table_item_with_unit(self.table_axis_colliders, item, RobotConfigurationWidget.UNIT_MM)
+        self._format_table_item_with_unit(self.table_axis_colliders, item, RobotConfigurationWidget.UNIT_MM, True)
         self._emit_axis_colliders_config_changed()
 
     def _on_positions_item_changed(self, item: QTableWidgetItem) -> None:
-        self._format_table_item_with_unit(self.table_positions, item, RobotConfigurationWidget.UNIT_DEG)
+        self._format_table_item_with_unit(self.table_positions, item, RobotConfigurationWidget.UNIT_DEG, True)
         self.positions_config_changed.emit(self.get_home_position(), self.get_position_zero(), self.get_position_calibration())
 
     def _on_pick_robot_cad(self, index: int) -> None:
@@ -480,9 +480,23 @@ class RobotConfigurationWidget(QWidget):
         table.setItem(row, column, RobotConfigurationWidget._make_table_item_with_unit(value, unit))
 
     @staticmethod
-    def _format_table_item_with_unit(table: QTableWidget, item: QTableWidgetItem, unit: str) -> float:
+    def _format_table_item_with_unit(
+        table: QTableWidget,
+        item: QTableWidgetItem,
+        unit: str,
+        restore_current_on_empty: bool = False,
+    ) -> float:
         raw_text = item.text().strip()
         if raw_text == "":
+            if restore_current_on_empty:
+                current_value = safe_float(item.data(RobotConfigurationWidget.NUMERIC_VALUE_ROLE), 0.0)
+                table.blockSignals(True)
+                try:
+                    item.setText(RobotConfigurationWidget._format_value_with_unit(current_value, unit))
+                    RobotConfigurationWidget._set_item_numeric_value(item, current_value)
+                finally:
+                    table.blockSignals(False)
+                return current_value
             RobotConfigurationWidget._clear_item_numeric_value(item)
             return 0.0
         numeric_value = RobotConfigurationWidget._parse_table_numeric_text(raw_text, 0.0)
