@@ -871,7 +871,10 @@ class Viewer3DWidget(QWidget):
                 item.setFont(font_normal)
                 item.setForeground(Qt.GlobalColor.darkGray)  # Gris foncé en normal
 
-        self.frame_overlay.set_frames_visibility(self.frames_visibility)
+        self.frame_overlay.set_frames_visibility(
+            self.frames_visibility,
+            self._robot_frame_labels(),
+        )
         self.workspace_frame_overlay.set_frames_visibility(
             self.workspace_frames_visibility,
             self._workspace_frame_labels,
@@ -913,7 +916,19 @@ class Viewer3DWidget(QWidget):
             label = labels[index].strip()
             if label:
                 return label
+        robot_labels = self._robot_frame_labels()
+        if 0 <= index < len(robot_labels):
+            return robot_labels[index]
         return f"Frame {index}"
+
+    def _robot_frame_labels(self) -> list[str]:
+        count = len(self.frames_visibility)
+        if count <= 0:
+            return []
+        labels = [f"Frame {index}" for index in range(count)]
+        labels[0] = "Robot Frame"
+        labels[-1] = "Tool Frame"
+        return labels
 
     def _set_frame_list_height(self, list_widget: QListWidget, count: int) -> None:
         row_height = max(22, list_widget.sizeHintForRow(0) if count > 0 else 22)
@@ -1140,6 +1155,7 @@ class Viewer3DWidget(QWidget):
         items = []
         for i, axis in enumerate(axes):
             plt = gl.GLLinePlotItem(pos=axis, color=couleurs[i], width=3, antialias=True)
+            plt.setGLOptions('additive')
             self.viewer.addItem(plt)
             items.append(plt)
         return items
@@ -1523,7 +1539,7 @@ class Viewer3DWidget(QWidget):
         self._clear_viewer_items(self._workspace_element_items)
         self._workspace_element_items.clear()
         self._workspace_frame_matrices = [np.eye(4, dtype=float)]
-        self._workspace_frame_labels = ["World"]
+        self._workspace_frame_labels = ["World Frame"]
 
         for element in self._workspace_elements:
             transform = element.world_transform
