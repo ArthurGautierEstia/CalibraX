@@ -10,6 +10,7 @@
     },
     "tool_cad_model": "./default_data/tools_stl/Torche_Soudure.stl",
     "tool_cad_offset_rz": 90.0,
+    "auto_load_on_startup": false,
     "tool_colliders": [
         {
             "name": "Tool collider 1",

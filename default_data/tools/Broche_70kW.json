@@ -1,0 +1,23 @@
+{
+    "name": "Broche_70kW",
+    "tool": {
+        "x": 2.5,
+        "y": 327.69,
+        "z": 227.4,
+        "a": 0.0,
+        "b": 0.0,
+        "c": 90.0
+    },
+    "tool_cad_model": "./default_data/tools_stl/Broche HSD.stl",
+    "tool_cad_offset_rz": 0.0,
+    "auto_load_on_startup": false,
+    "tool_colliders": [],
+    "evaluated_robot_axis_colliders": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+    ]
+}
