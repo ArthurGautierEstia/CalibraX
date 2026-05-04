@@ -139,13 +139,22 @@ class MainWindow(QMainWindow):
 
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
-        for control_view in (
+        always_enabled_views = (
             self.tool_view,
             self.calibration_view,
+        )
+        configuration_required_views = (
             self.workspace_view,
             self.mgi_view,
             self.trajectory_view,
-        ):
+        )
+
+        for control_view in always_enabled_views:
+            tab_index = self.tabs.indexOf(control_view)
+            if tab_index >= 0:
+                self.tabs.setTabEnabled(tab_index, True)
+
+        for control_view in configuration_required_views:
             tab_index = self.tabs.indexOf(control_view)
             if tab_index >= 0:
                 self.tabs.setTabEnabled(tab_index, robot_has_configuration)
