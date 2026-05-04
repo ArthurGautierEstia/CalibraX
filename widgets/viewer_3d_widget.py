@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 import pyqtgraph.opengl as gl
+from pyqtgraph.opengl import shaders as gl_shaders
 from pyqtgraph.Qt import QtGui
 import numpy as np
 from stl import mesh
@@ -105,9 +106,11 @@ class PrimitiveColliderState:
 class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
     display_state_changed = pyqtSignal(object)
+    CAD_SHADER_NAME = "calibrax_bright_shaded"
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
+        self._ensure_custom_shaders_registered()
         self.robot_links: list[gl.GLMeshItem] = []
         self.robot_ghost_links: list[gl.GLMeshItem] = []
         self._trajectory_path_items: list[gl.GLLinePlotItem] = []
@@ -1263,24 +1266,29 @@ class Viewer3DWidget(QWidget):
         return fk_result.dh_matrices, fk_result.corrected_matrices
 
     def load_robot_mesh(self, stl_path: str, transform_matrix, color: tuple[int, int, int]):
-        # (Copier le code original ici, pas de changement)
         try:
-            if not stl_path:
+            resolved_stl_path = self._resolve_filesystem_path(stl_path)
+            if not resolved_stl_path:
                 return None
-            if stl_path in self._missing_mesh_paths:
-                if os.path.exists(stl_path):
-                    self._missing_mesh_paths.remove(stl_path)
+            if resolved_stl_path in self._missing_mesh_paths:
+                if os.path.exists(resolved_stl_path):
+                    self._missing_mesh_paths.remove(resolved_stl_path)
                 else:
                     return None
-            mesh_data = self._mesh_data_cache.get(stl_path)
+            mesh_data = self._mesh_data_cache.get(resolved_stl_path)
             if mesh_data is None:
-                stl_mesh = mesh.Mesh.from_file(stl_path)
+                stl_mesh = mesh.Mesh.from_file(resolved_stl_path)
                 verts = stl_mesh.vectors.reshape(-1, 3)
                 faces = np.arange(len(verts)).reshape(-1, 3)
                 mesh_data = gl.MeshData(vertexes=verts, faces=faces)
-                self._mesh_data_cache[stl_path] = mesh_data
+                self._mesh_data_cache[resolved_stl_path] = mesh_data
 
-            mesh_item = gl.GLMeshItem(meshdata=mesh_data, smooth=True, color=color, shader='shaded')
+            mesh_item = gl.GLMeshItem(
+                meshdata=mesh_data,
+                smooth=True,
+                color=self._brighten_mesh_color(color),
+                shader=Viewer3DWidget.CAD_SHADER_NAME,
+            )
             T = transform_matrix
             qmat = QtGui.QMatrix4x4(
                 T[0,0], T[0,1], T[0,2], T[0,3],
@@ -1291,9 +1299,73 @@ class Viewer3DWidget(QWidget):
             mesh_item.setTransform(qmat)
             return mesh_item
         except Exception as e:
-            self._missing_mesh_paths.add(stl_path)
-            print(f"Erreur STL {stl_path}: {e}")
+            resolved_stl_path = self._resolve_filesystem_path(stl_path)
+            if resolved_stl_path:
+                self._missing_mesh_paths.add(resolved_stl_path)
+            print(f"Erreur STL {resolved_stl_path or stl_path}: {e}")
             return None
+
+    @staticmethod
+    def _resolve_filesystem_path(path: str) -> str:
+        normalized = str(path or "").strip()
+        if normalized == "":
+            return ""
+        if os.path.isabs(normalized):
+            return os.path.abspath(normalized)
+        return os.path.abspath(os.path.join(os.getcwd(), normalized))
+
+    @staticmethod
+    def _ensure_custom_shaders_registered() -> None:
+        if Viewer3DWidget.CAD_SHADER_NAME in gl_shaders.ShaderProgram.names:
+            return
+        gl_shaders.ShaderProgram(
+            Viewer3DWidget.CAD_SHADER_NAME,
+            [
+                gl_shaders.VertexShader(
+                    """
+                    uniform mat4 u_mvp;
+                    uniform mat3 u_normal;
+                    attribute vec4 a_position;
+                    attribute vec3 a_normal;
+                    attribute vec4 a_color;
+                    varying vec4 v_color;
+                    varying vec3 v_normal;
+                    void main() {
+                        v_normal = normalize(u_normal * a_normal);
+                        v_color = a_color;
+                        gl_Position = u_mvp * a_position;
+                    }
+                    """
+                ),
+                gl_shaders.FragmentShader(
+                    """
+                    #ifdef GL_ES
+                    precision mediump float;
+                    #endif
+                    varying vec4 v_color;
+                    varying vec3 v_normal;
+                    void main() {
+                        vec3 normal = normalize(v_normal);
+                        vec3 key_light = normalize(vec3(1.0, -0.8, -0.6));
+                        vec3 fill_light = normalize(vec3(-0.7, 0.45, -0.35));
+                        vec3 rim_light = normalize(vec3(0.15, 0.25, 1.0));
+                        float key = max(dot(normal, key_light), 0.0);
+                        float fill = max(dot(normal, fill_light), 0.0);
+                        float rim = pow(1.0 - max(dot(normal, rim_light), 0.0), 2.0);
+                        float lighting = 0.48 + key * 0.62 + fill * 0.28 + rim * 0.12;
+                        vec3 rgb = clamp(v_color.rgb * lighting, 0.0, 1.0);
+                        gl_FragColor = vec4(rgb, v_color.a);
+                    }
+                    """
+                ),
+            ],
+        )
+
+    @staticmethod
+    def _brighten_mesh_color(color: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        red, green, blue, alpha = color
+        brighten = lambda component: min(1.0, component * 0.82 + 0.18)
+        return (brighten(red), brighten(green), brighten(blue), alpha)
 
     def _resolve_robot_cad_models(self) -> list[str]:
         if self._robot_model is None:
