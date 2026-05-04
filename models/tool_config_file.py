@@ -92,6 +92,7 @@ class ToolConfigFile:
     tool: Pose6 = field(default_factory=Pose6.zeros)
     tool_cad_model: str = ""
     tool_cad_offset_rz: float = 0.0
+    auto_load_on_startup: bool = False
     tool_colliders: list[PrimitiveColliderData] = field(default_factory=list)
     evaluated_robot_axis_colliders: list[bool] = field(default_factory=lambda: [True] * 6)
 
@@ -106,6 +107,7 @@ class ToolConfigFile:
         self.tool = self.tool.copy()
         self.tool_cad_model = str(self.tool_cad_model)
         self.tool_cad_offset_rz = float(self.tool_cad_offset_rz)
+        self.auto_load_on_startup = bool(self.auto_load_on_startup)
         self.tool_colliders = [collider.copy() for collider in self.tool_colliders]
         self.evaluated_robot_axis_colliders = [bool(value) for value in self.evaluated_robot_axis_colliders]
 
@@ -129,6 +131,7 @@ class ToolConfigFile:
             tool=_parse_pose6_mapping(values["tool"], "tool"),
             tool_cad_model=str(values["tool_cad_model"]),
             tool_cad_offset_rz=safe_float(values["tool_cad_offset_rz"], 0.0),
+            auto_load_on_startup=bool(values.get("auto_load_on_startup", False)),
             tool_colliders=_parse_primitive_colliders(values["tool_colliders"], "tool_colliders"),
             evaluated_robot_axis_colliders=_parse_bool_list_6(
                 values["evaluated_robot_axis_colliders"],
@@ -149,6 +152,7 @@ class ToolConfigFile:
             },
             "tool_cad_model": self.tool_cad_model,
             "tool_cad_offset_rz": float(self.tool_cad_offset_rz),
+            "auto_load_on_startup": bool(self.auto_load_on_startup),
             "tool_colliders": [_primitive_collider_to_dict(collider) for collider in self.tool_colliders],
             "evaluated_robot_axis_colliders": [bool(value) for value in self.evaluated_robot_axis_colliders],
         }
@@ -163,6 +167,7 @@ class ToolConfigFile:
         robot_tool: RobotTool,
         tool_cad_model: str,
         tool_cad_offset_rz: float,
+        auto_load_on_startup: bool,
         tool_colliders: list[PrimitiveColliderData] | None = None,
         evaluated_robot_axis_colliders: list[bool] | None = None,
     ) -> ToolConfigFile:
@@ -178,6 +183,7 @@ class ToolConfigFile:
             ),
             tool_cad_model=tool_cad_model,
             tool_cad_offset_rz=float(tool_cad_offset_rz),
+            auto_load_on_startup=bool(auto_load_on_startup),
             tool_colliders=[] if tool_colliders is None else tool_colliders,
             evaluated_robot_axis_colliders=(
                 [True] * 6 if evaluated_robot_axis_colliders is None else evaluated_robot_axis_colliders

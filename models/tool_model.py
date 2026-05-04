@@ -10,6 +10,7 @@ from utils.mgi import RobotTool
 class ToolModel(QObject):
     DEFAULT_TOOL_CAD_MODEL: str = ""
     DEFAULT_TOOL_CAD_OFFSET_RZ: float = 0.0
+    DEFAULT_AUTO_LOAD_ON_STARTUP: bool = False
     DEFAULT_TOOL_COLLIDERS: list[PrimitiveColliderData] = []
     DEFAULT_EVALUATED_ROBOT_AXIS_COLLIDERS: list[bool] = [True] * 6
     DEFAULT_SELECTED_TOOL_PROFILE: str = ""
@@ -19,6 +20,7 @@ class ToolModel(QObject):
     tool_profile_changed = pyqtSignal()
     tool_colliders_changed = pyqtSignal()
     tool_evaluated_robot_axis_colliders_changed = pyqtSignal()
+    tool_startup_behavior_changed = pyqtSignal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -26,6 +28,7 @@ class ToolModel(QObject):
         self.selected_tool_profile: str = ToolModel.DEFAULT_SELECTED_TOOL_PROFILE
         self.tool_cad_model: str = ToolModel.DEFAULT_TOOL_CAD_MODEL
         self.tool_cad_offset_rz: float = ToolModel.DEFAULT_TOOL_CAD_OFFSET_RZ
+        self.auto_load_on_startup: bool = ToolModel.DEFAULT_AUTO_LOAD_ON_STARTUP
         self.tool_colliders: list[PrimitiveColliderData] = [collider.copy() for collider in ToolModel.DEFAULT_TOOL_COLLIDERS]
         self._tool_colliders_revision: int = 0
         self.evaluated_robot_axis_colliders: list[bool] = list(
@@ -113,6 +116,16 @@ class ToolModel(QObject):
             return
         self.tool_cad_offset_rz = normalized
         self.tool_visual_changed.emit()
+
+    def get_auto_load_on_startup(self) -> bool:
+        return bool(self.auto_load_on_startup)
+
+    def set_auto_load_on_startup(self, enabled: bool) -> None:
+        normalized = bool(enabled)
+        if normalized == self.auto_load_on_startup:
+            return
+        self.auto_load_on_startup = normalized
+        self.tool_startup_behavior_changed.emit()
 
     def get_tool_colliders(self) -> list[PrimitiveColliderData]:
         return self.get_tool_collider_data()

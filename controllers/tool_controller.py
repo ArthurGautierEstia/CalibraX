@@ -42,11 +42,15 @@ class ToolController(QObject):
         self.tool_model.tool_profile_changed.connect(self.update_tool_view)
         self.tool_model.tool_colliders_changed.connect(self.update_tool_view)
         self.tool_model.tool_evaluated_robot_axis_colliders_changed.connect(self.update_tool_view)
+        self.tool_model.tool_startup_behavior_changed.connect(self.update_tool_view)
 
         self.robot_configuration_widget.tool_changed.connect(self._on_view_tool_changed)
         self.robot_configuration_widget.tool_name_changed.connect(self._on_view_tool_name_changed)
         self.robot_configuration_widget.tool_cad_model_changed.connect(self._on_view_tool_cad_model_changed)
         self.robot_configuration_widget.tool_cad_offset_rz_changed.connect(self._on_view_tool_cad_offset_rz_changed)
+        self.robot_configuration_widget.tool_auto_load_on_startup_changed.connect(
+            self._on_view_tool_auto_load_on_startup_changed
+        )
         self.robot_configuration_widget.tool_colliders_changed.connect(self._on_view_tool_colliders_changed)
         self.robot_configuration_widget.tool_evaluated_robot_axis_colliders_changed.connect(
             self._on_view_tool_evaluated_robot_axis_colliders_changed
@@ -68,6 +72,10 @@ class ToolController(QObject):
 
     def _on_view_tool_cad_offset_rz_changed(self, offset_deg: float) -> None:
         self.tool_model.set_tool_cad_offset_rz(offset_deg)
+        self._refresh_configuration_status()
+
+    def _on_view_tool_auto_load_on_startup_changed(self, enabled: bool) -> None:
+        self.tool_model.set_auto_load_on_startup(enabled)
         self._refresh_configuration_status()
 
     def _on_view_tool_colliders_changed(self, tool_colliders: list[PrimitiveColliderData]) -> None:
@@ -93,6 +101,7 @@ class ToolController(QObject):
         self.tool_model.set_tool(RobotTool())
         self.tool_model.set_tool_cad_model("")
         self.tool_model.set_tool_cad_offset_rz(0.0)
+        self.tool_model.set_auto_load_on_startup(False)
         self.tool_model.set_tool_colliders([])
         self.tool_model.set_evaluated_robot_axis_colliders([True] * 6)
         self._mark_as_unsaved_reference()
@@ -102,6 +111,7 @@ class ToolController(QObject):
         self.robot_configuration_widget.set_tool(self.tool_model.get_tool())
         self.robot_configuration_widget.set_tool_cad_model(self.tool_model.get_tool_cad_model())
         self.robot_configuration_widget.set_tool_cad_offset_rz(self.tool_model.get_tool_cad_offset_rz())
+        self.robot_configuration_widget.set_tool_auto_load_on_startup(self.tool_model.get_auto_load_on_startup())
         self.robot_configuration_widget.set_tool_colliders(self.tool_model.get_tool_collider_data())
         self.robot_configuration_widget.set_tool_evaluated_robot_axis_colliders(
             self.tool_model.get_evaluated_robot_axis_colliders()
@@ -126,6 +136,7 @@ class ToolController(QObject):
         self.tool_model.set_tool(profile.to_robot_tool())
         self.tool_model.set_tool_cad_model(profile.tool_cad_model)
         self.tool_model.set_tool_cad_offset_rz(profile.tool_cad_offset_rz)
+        self.tool_model.set_auto_load_on_startup(profile.auto_load_on_startup)
         self.tool_model.set_tool_colliders(profile.tool_colliders)
         self.tool_model.set_evaluated_robot_axis_colliders(profile.evaluated_robot_axis_colliders)
         self._mark_as_loaded_reference()
@@ -150,6 +161,7 @@ class ToolController(QObject):
             self.tool_model.get_tool(),
             self.tool_model.get_tool_cad_model(),
             self.tool_model.get_tool_cad_offset_rz(),
+            self.tool_model.get_auto_load_on_startup(),
             self.tool_model.get_tool_collider_data(),
             self.tool_model.get_evaluated_robot_axis_colliders(),
         ).to_dict()

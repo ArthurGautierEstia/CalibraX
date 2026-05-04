@@ -35,6 +35,7 @@ class ToolConfigurationWidget(QWidget):
     tool_changed = pyqtSignal(RobotTool)
     tool_cad_model_changed = pyqtSignal(str)
     tool_cad_offset_rz_changed = pyqtSignal(float)
+    tool_auto_load_on_startup_changed = pyqtSignal(bool)
     tool_colliders_changed = pyqtSignal(list)
     tool_evaluated_robot_axis_colliders_changed = pyqtSignal(list)
     selected_tool_profile_changed = pyqtSignal(str)
@@ -64,6 +65,7 @@ class ToolConfigurationWidget(QWidget):
         super().__init__(parent)
         self.tool_cad_line_edit: QLineEdit | None = None
         self.tool_cad_offset_rz_spin: QDoubleSpinBox | None = None
+        self.tool_auto_load_on_startup_checkbox: QCheckBox | None = None
         self.table_tool_colliders: QTableWidget | None = None
         self._tool_collider_type_combos: list[QComboBox] = []
         self._tool_collider_enabled_checkboxes: list[QCheckBox] = []
@@ -180,6 +182,11 @@ class ToolConfigurationWidget(QWidget):
         self.tool_cad_offset_rz_spin.setSuffix(f" {ToolConfigurationWidget.UNIT_DEG}")
         self.tool_cad_offset_rz_spin.valueChanged.connect(self.tool_cad_offset_rz_changed.emit)
         tool_cad_grid.addWidget(self.tool_cad_offset_rz_spin, 1, 1)
+
+        self.tool_auto_load_on_startup_checkbox = QCheckBox("Charger automatiquement ce tool au demarrage")
+        self.tool_auto_load_on_startup_checkbox.setChecked(False)
+        self.tool_auto_load_on_startup_checkbox.toggled.connect(self.tool_auto_load_on_startup_changed.emit)
+        tool_cad_grid.addWidget(self.tool_auto_load_on_startup_checkbox, 2, 0, 1, 4)
         layout.addWidget(tool_cad_group)
         layout.addStretch()
         return tab
@@ -442,6 +449,7 @@ class ToolConfigurationWidget(QWidget):
             self.get_tool(),
             self.get_tool_cad_model(),
             self.get_tool_cad_offset_rz(),
+            self.get_tool_auto_load_on_startup(),
             self.get_tool_colliders(),
             self.get_tool_evaluated_robot_axis_colliders(),
         )
@@ -478,6 +486,7 @@ class ToolConfigurationWidget(QWidget):
             self.get_tool(),
             self.get_tool_cad_model(),
             self.get_tool_cad_offset_rz(),
+            self.get_tool_auto_load_on_startup(),
             self.get_tool_colliders(),
             self.get_tool_evaluated_robot_axis_colliders(),
         )
@@ -657,6 +666,18 @@ class ToolConfigurationWidget(QWidget):
 
     def get_tool_cad_offset_rz(self) -> float:
         return 0.0 if self.tool_cad_offset_rz_spin is None else float(self.tool_cad_offset_rz_spin.value())
+
+    def set_tool_auto_load_on_startup(self, enabled: bool) -> None:
+        if self.tool_auto_load_on_startup_checkbox is None:
+            return
+        self.tool_auto_load_on_startup_checkbox.blockSignals(True)
+        self.tool_auto_load_on_startup_checkbox.setChecked(bool(enabled))
+        self.tool_auto_load_on_startup_checkbox.blockSignals(False)
+
+    def get_tool_auto_load_on_startup(self) -> bool:
+        if self.tool_auto_load_on_startup_checkbox is None:
+            return False
+        return bool(self.tool_auto_load_on_startup_checkbox.isChecked())
 
     def set_tool_colliders(self, tool_colliders: list[PrimitiveColliderData]) -> None:
         if self.table_tool_colliders is None:
