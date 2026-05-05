@@ -222,7 +222,7 @@ class RobotConfigurationWidget(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        self.measured_dh_toggle = ToggleSwitchWidget(off_label="Robot d'usine", on_label="Robot mesuré")
+        self.measured_dh_toggle = ToggleSwitchWidget(off_label="Robot mesuré", on_label="Robot mesuré")
         self.measured_dh_toggle.setChecked(False)
         self.measured_dh_toggle.setEnabled(False)
         self.measured_dh_toggle.toggled.connect(self._on_measured_dh_toggle_changed)
@@ -251,7 +251,6 @@ class RobotConfigurationWidget(QWidget):
         self.table_dh_measured.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table_dh_measured.horizontalHeader().setDefaultSectionSize(90)
         self.table_dh_measured.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table_dh_measured.setEnabled(False)
         measured_layout.addWidget(self.table_dh_measured)
         tables_layout.addWidget(measured_group, 1)
 
