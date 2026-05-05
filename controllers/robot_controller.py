@@ -26,12 +26,16 @@ class RobotController(QObject):
         self.robot_view = robot_view
         self.tool_view = tool_view
 
-        self.dh_controller = RobotConfigurationController(self.robot_model, self.robot_view.get_configuration_widget())
+        self.tool_controller = ToolController(self.tool_model, self.tool_view.get_configuration_widget())
+        self.dh_controller = RobotConfigurationController(
+            self.robot_model,
+            self.robot_view.get_configuration_widget(),
+            tool_controller=self.tool_controller,
+        )
         self.mgi_configuration_controller = RobotMgiConfigurationController(
             self.robot_model,
             self.robot_view.get_mgi_configuration_widget(),
         )
-        self.tool_controller = ToolController(self.tool_model, self.tool_view.get_configuration_widget())
 
         self._setup_connections()
 

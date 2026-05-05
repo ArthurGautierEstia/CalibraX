@@ -48,6 +48,8 @@ class RobotConfigurationWidget(QWidget):
     go_to_position_requested = pyqtSignal(list)
     robot_cad_models_changed = pyqtSignal(list)
     robot_cad_colors_changed = pyqtSignal(list)
+    default_tool_profile_changed = pyqtSignal(str)
+    default_tool_profile_selected = pyqtSignal(str)
 
     COL_AXIS_MIN = 0
     COL_AXIS_MAX = 1
@@ -128,6 +130,22 @@ class RobotConfigurationWidget(QWidget):
         self.line_edit_robot_name.textChanged.connect(self.text_changed_requested.emit)
         self.line_edit_robot_name.setMinimumWidth(220)
         fields_layout.addWidget(self.line_edit_robot_name, 1, 1)
+
+        default_tool_title_label = QLabel("Tool par défaut :")
+        fields_layout.addWidget(default_tool_title_label, 2, 0)
+
+        default_tool_layout = QHBoxLayout()
+        self.line_edit_default_tool_profile = QLineEdit()
+        self.line_edit_default_tool_profile.setPlaceholderText("./default_data/tools/MonTool.json")
+        self.line_edit_default_tool_profile.textChanged.connect(self.default_tool_profile_changed.emit)
+        self.line_edit_default_tool_profile.editingFinished.connect(self._emit_default_tool_profile_selected)
+        default_tool_layout.addWidget(self.line_edit_default_tool_profile, 1)
+
+        self.btn_browse_default_tool_profile = QPushButton("Parcourir")
+        self.btn_browse_default_tool_profile.clicked.connect(self._on_pick_default_tool_profile)
+        default_tool_layout.addWidget(self.btn_browse_default_tool_profile)
+
+        fields_layout.addLayout(default_tool_layout, 2, 1)
 
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
@@ -452,6 +470,18 @@ class RobotConfigurationWidget(QWidget):
         self.robot_cad_line_edits[index].setText("")
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
 
+    def _on_pick_default_tool_profile(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Sélectionner un tool par défaut",
+            self._get_tool_start_directory(),
+            "JSON files (*.json);;All files (*)",
+        )
+        if not file_path:
+            return
+        self.line_edit_default_tool_profile.setText(self._normalize_project_path(file_path))
+        self._emit_default_tool_profile_selected()
+
     def _on_pick_robot_cad_color(self, index: int) -> None:
         current_hex = self.get_robot_cad_colors()[index]
         current_color = QColor(current_hex) if current_hex else QColor("#808080")
@@ -588,6 +618,14 @@ class RobotConfigurationWidget(QWidget):
         return current_dir
 
     @staticmethod
+    def _get_tool_start_directory() -> str:
+        current_dir = os.getcwd()
+        tools_dir = os.path.join(current_dir, "default_data", "tools")
+        if os.path.isdir(tools_dir):
+            return tools_dir
+        return current_dir
+
+    @staticmethod
     def _normalize_cad_path(file_path: str) -> str:
         return RobotConfigurationWidget._normalize_project_path(file_path)
 
@@ -628,6 +666,15 @@ class RobotConfigurationWidget(QWidget):
 
     def get_robot_name(self) -> str:
         return self.line_edit_robot_name.text()
+
+    def set_default_tool_profile(self, profile_path: str) -> None:
+        self.line_edit_default_tool_profile.setText(str(profile_path).strip())
+
+    def get_default_tool_profile(self) -> str:
+        return self.line_edit_default_tool_profile.text().strip()
+
+    def _emit_default_tool_profile_selected(self) -> None:
+        self.default_tool_profile_selected.emit(self.get_default_tool_profile())
 
     def set_dh_params(self, params: list[list[float]]) -> None:
         self.table_dh.blockSignals(True)

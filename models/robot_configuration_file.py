@@ -114,6 +114,7 @@ class RobotConfigurationFile:
     position_calibration: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
     robot_cad_colors: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_COLORS))
+    default_tool_profile: str = ""
 
     # Tracks which fields were present when loaded from JSON.
     present_fields: set[str] = field(default_factory=set, repr=False)
@@ -299,7 +300,11 @@ class RobotConfigurationFile:
         return set(MgiConfigKey)
 
     @classmethod
-    def from_robot_model(cls, robot_model: RobotModel) -> RobotConfigurationFile:
+    def from_robot_model(
+        cls,
+        robot_model: RobotModel,
+        default_tool_profile: str = "",
+    ) -> RobotConfigurationFile:
         return cls(
             name=robot_model.get_robot_name(),
             dh=[row[:] for row in robot_model.get_dh_params()[:6]],
@@ -318,6 +323,7 @@ class RobotConfigurationFile:
             position_calibration=robot_model.get_position_calibration(),
             robot_cad_models=robot_model.get_robot_cad_models(),
             robot_cad_colors=CadColorPalette(robot_model.get_robot_cad_colors()).to_hex_list(),
+            default_tool_profile=str(default_tool_profile).strip(),
             dh_measured=[row[:] for row in robot_model.get_measured_dh_params()[:6]],
             dh_measured_enabled=robot_model.get_measured_dh_enabled(),
             present_fields={
@@ -340,6 +346,7 @@ class RobotConfigurationFile:
                 "position_calibration",
                 "robot_cad_models",
                 "robot_cad_colors",
+                "default_tool_profile",
             },
         )
 
@@ -430,6 +437,7 @@ class RobotConfigurationFile:
                 len(DEFAULT_ROBOT_CAD_COLORS),
                 DEFAULT_ROBOT_CAD_COLORS,
             ).to_hex_list(),
+            default_tool_profile=str(data.get("default_tool_profile", "")).strip(),
             dh_measured=cls._parse_matrix(data.get("dh_measured"), 6, 4, 0.0),
             dh_measured_enabled=bool(data.get("dh_measured_enabled", False)),
             present_fields=present_fields,
@@ -456,6 +464,7 @@ class RobotConfigurationFile:
             "position_calibration": self.position_calibration[:6],
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
             "robot_cad_colors": list(self.robot_cad_colors[:7]),
+            "default_tool_profile": self.default_tool_profile,
         }
 
     def apply_to_robot_model(self, robot_model: RobotModel) -> None:

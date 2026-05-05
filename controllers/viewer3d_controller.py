@@ -66,6 +66,7 @@ class Viewer3DController(QObject):
         self.robot_model.measured_dh_enabled_changed.connect(self._on_robot_kinematics_changed)
         self.robot_model.joints_changed.connect(self._on_robot_kinematics_changed)
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
+        self.robot_model.robot_cad_colors_changed.connect(self._on_robot_cad_models_changed)
 
         self.tool_model.tool_changed.connect(self._on_tool_state_changed)
         self.tool_model.tool_visual_changed.connect(self._on_tool_visual_changed)

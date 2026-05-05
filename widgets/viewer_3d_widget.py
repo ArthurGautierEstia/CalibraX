@@ -1410,16 +1410,11 @@ class Viewer3DWidget(QWidget):
         # Rotation locale autour de l'axe Z du repere outil.
         return transform_matrix @ math_utils.homogeneous_rotation_z(offset_rz_deg, degrees=True)
 
-    @staticmethod
-    def _resolve_link_color(matrix_index: int) -> tuple[float, float, float, float]:
-        kuka_orange = (1.0, 0.4, 0.0, 0.5)
-        kuka_black = (0.1, 0.1, 0.1, 0.5)
-        kuka_grey = (0.5, 0.5, 0.5, 0.5)
-        if matrix_index == 0:
-            return kuka_black
-        if matrix_index == 6:
-            return kuka_grey
-        return kuka_orange
+    def _resolve_link_color(self, matrix_index: int) -> tuple[float, float, float, float]:
+        robot_cad_colors = self._resolve_robot_cad_colors()
+        if 0 <= matrix_index < len(robot_cad_colors):
+            return robot_cad_colors[matrix_index].to_rgb_float_tuple(alpha=0.5)
+        return CadColor("").to_rgb_float_tuple(alpha=0.5)
 
     def _build_cad_specs(self, matrices) -> list[tuple[int, str, tuple[float, float, float, float], bool]]:
         specs: list[tuple[int, str, tuple[float, float, float, float], bool]] = []

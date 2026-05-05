@@ -106,6 +106,9 @@ class ToolController(QObject):
         self.tool_model.set_evaluated_robot_axis_colliders([True] * 6)
         self._mark_as_unsaved_reference()
 
+    def reset_tool_configuration(self) -> None:
+        self._apply_empty_tool()
+
     def update_tool_view(self) -> None:
         self.robot_configuration_widget.set_selected_tool_profile(self.tool_model.get_selected_tool_profile())
         self.robot_configuration_widget.set_tool(self.tool_model.get_tool())

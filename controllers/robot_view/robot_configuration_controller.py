@@ -1,16 +1,23 @@
+from __future__ import annotations
+
 from PyQt6.QtCore import QObject
 from PyQt6.QtCore import pyqtSignal
 import json
 import os
+from typing import TYPE_CHECKING
 
 from models.primitive_collider_models import AxisDirection
 from models.primitive_collider_models import RobotAxisColliderData
 from models.robot_model import RobotModel
 from models.robot_configuration_file import RobotConfigurationFile
+from models.tool_config_file import ToolConfigFile
 from models.types import XYZ3
 from utils.file_io import FileIOHandler
 from utils.popup import show_error_popup
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
+
+if TYPE_CHECKING:
+    from controllers.tool_controller import ToolController
 
 
 class RobotConfigurationController(QObject):
@@ -23,10 +30,18 @@ class RobotConfigurationController(QObject):
 
     configuration_loaded = pyqtSignal()
 
-    def __init__(self, robot_model: RobotModel, robot_configuration_widget: RobotConfigurationWidget, parent: QObject = None):
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        robot_configuration_widget: RobotConfigurationWidget,
+        tool_controller: ToolController | None = None,
+        parent: QObject = None,
+    ):
         super().__init__(parent)
         self.robot_model = robot_model
         self.robot_configuration_widget = robot_configuration_widget
+        self.tool_controller = tool_controller
+        self._default_tool_profile = ""
         self._saved_snapshot: str | None = None
         self._has_saved_reference = False
         self._clean_status_text = RobotConfigurationController.STATUS_UNSAVED
@@ -63,6 +78,8 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.go_to_position_requested.connect(self._on_view_go_to_position_requested)
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
         self.robot_configuration_widget.robot_cad_colors_changed.connect(self._on_view_robot_cad_colors_changed)
+        self.robot_configuration_widget.default_tool_profile_changed.connect(self._on_view_default_tool_profile_changed)
+        self.robot_configuration_widget.default_tool_profile_selected.connect(self._on_view_default_tool_profile_selected)
         self.robot_configuration_widget.new_config_requested.connect(self._on_view_new_config_requested)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
         self.robot_configuration_widget.export_config_requested.connect(self._on_view_export_config_requested)
@@ -159,6 +176,15 @@ class RobotConfigurationController(QObject):
     def _on_view_robot_cad_colors_changed(self, robot_cad_colors: list[str]) -> None:
         self.robot_model.set_robot_cad_colors(robot_cad_colors)
 
+    def _on_view_default_tool_profile_changed(self, profile_path: str) -> None:
+        self._default_tool_profile = str(profile_path).strip()
+        self._refresh_configuration_status()
+
+    def _on_view_default_tool_profile_selected(self, profile_path: str) -> None:
+        self._default_tool_profile = str(profile_path).strip()
+        self._load_default_tool_profile(show_errors=True, only_if_enabled=False)
+        self._refresh_configuration_status()
+
     def _on_view_load_config_requested(self) -> None:
         self.load_configuration()
 
@@ -217,6 +243,7 @@ class RobotConfigurationController(QObject):
     def update_cad_view(self) -> None:
         self.robot_configuration_widget.set_robot_cad_models(self.robot_model.get_robot_cad_models())
         self.robot_configuration_widget.set_robot_cad_colors(self.robot_model.get_robot_cad_colors())
+        self.robot_configuration_widget.set_default_tool_profile(self._default_tool_profile)
 
     @staticmethod
     def _normalize_snapshot_value(value: object) -> object:
@@ -232,7 +259,10 @@ class RobotConfigurationController(QObject):
         return value
 
     def _capture_current_snapshot(self) -> str:
-        config_dict = RobotConfigurationFile.from_robot_model(self.robot_model).to_dict()
+        config_dict = RobotConfigurationFile.from_robot_model(
+            self.robot_model,
+            default_tool_profile=self._default_tool_profile,
+        ).to_dict()
         normalized_config_dict = RobotConfigurationController._normalize_snapshot_value(config_dict)
         return json.dumps(normalized_config_dict, sort_keys=True, ensure_ascii=True)
 
@@ -309,7 +339,10 @@ class RobotConfigurationController(QObject):
             self.save_configuration_as()
             return
 
-        config = RobotConfigurationFile.from_robot_model(self.robot_model)
+        config = RobotConfigurationFile.from_robot_model(
+            self.robot_model,
+            default_tool_profile=self._default_tool_profile,
+        )
         try:
             FileIOHandler.write_json(current_path, config.to_dict())
             self._mark_as_saved_reference()
@@ -321,7 +354,10 @@ class RobotConfigurationController(QObject):
 
     def save_configuration_as(self) -> None:
         configuration_dir = self._robot_configuration_directory()
-        config = RobotConfigurationFile.from_robot_model(self.robot_model)
+        config = RobotConfigurationFile.from_robot_model(
+            self.robot_model,
+            default_tool_profile=self._default_tool_profile,
+        )
         file_path = FileIOHandler.save_json(
             self.robot_configuration_widget,
             "Enregistrer une configuration robot",
@@ -336,6 +372,10 @@ class RobotConfigurationController(QObject):
 
     def new_configuration(self) -> None:
         self.robot_model.reset_to_unconfigured_state()
+        self._default_tool_profile = ""
+        self.robot_configuration_widget.set_default_tool_profile("")
+        if self.tool_controller is not None:
+            self.tool_controller.reset_tool_configuration()
         self._mark_as_unsaved_reference()
 
     def load_configuration_from_path(self, file_path: str, show_errors: bool = True) -> bool:
@@ -350,9 +390,31 @@ class RobotConfigurationController(QObject):
 
         config = RobotConfigurationFile.from_dict(data)
         self.robot_model.load_from_configuration_file(config, file_path)
+        self._default_tool_profile = str(config.default_tool_profile).strip()
+        self.robot_configuration_widget.set_default_tool_profile(self._default_tool_profile)
+        self._load_default_tool_profile(show_errors=show_errors, only_if_enabled=True)
         self._mark_as_loaded_reference()
         self.configuration_loaded.emit()
         return True
+
+    def _load_default_tool_profile(self, show_errors: bool, only_if_enabled: bool) -> None:
+        if self.tool_controller is None:
+            return
+        if not self._default_tool_profile:
+            self.tool_controller.reset_tool_configuration()
+            return
+        if only_if_enabled and not self._should_auto_load_tool_profile(self._default_tool_profile):
+            self.tool_controller.reset_tool_configuration()
+            return
+        self.tool_controller.load_tool_profile_from_path(self._default_tool_profile, show_errors=show_errors)
+
+    @staticmethod
+    def _should_auto_load_tool_profile(file_path: str) -> bool:
+        try:
+            loaded_profile = ToolConfigFile.load(file_path)
+        except (OSError, ValueError, TypeError):
+            return False
+        return bool(loaded_profile.auto_load_on_startup)
 
     @staticmethod
     def _robot_configuration_directory() -> str:
