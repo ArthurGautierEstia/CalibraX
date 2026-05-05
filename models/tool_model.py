@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from models.tool_config_file import ToolConfigFile
 from models.primitive_collider_models import PrimitiveColliderData
 from models.types import Pose6
 from utils.mgi import RobotTool
@@ -158,4 +159,54 @@ class ToolModel(QObject):
             return
         self.evaluated_robot_axis_colliders = normalized
         self.tool_evaluated_robot_axis_colliders_changed.emit()
+
+    def apply_tool_profile(self, profile_path: str, profile: ToolConfigFile) -> None:
+        if not isinstance(profile, ToolConfigFile):
+            raise TypeError("profile must be a ToolConfigFile")
+
+        normalized_profile_path = "" if profile_path is None else str(profile_path).strip()
+        normalized_tool = ToolModel._copy_tool(profile.to_robot_tool())
+        normalized_cad_model = str(profile.tool_cad_model)
+        normalized_cad_offset_rz = float(profile.tool_cad_offset_rz)
+        normalized_auto_load_on_startup = bool(profile.auto_load_on_startup)
+        normalized_tool_colliders = [collider.copy() for collider in profile.tool_colliders]
+        normalized_evaluated_robot_axis_colliders = ToolModel._copy_evaluated_robot_axis_colliders(
+            profile.evaluated_robot_axis_colliders
+        )
+
+        profile_changed = normalized_profile_path != self.selected_tool_profile
+        tool_changed = vars(normalized_tool) != vars(self.tool)
+        visual_changed = (
+            normalized_cad_model != self.tool_cad_model
+            or normalized_cad_offset_rz != self.tool_cad_offset_rz
+        )
+        startup_behavior_changed = normalized_auto_load_on_startup != self.auto_load_on_startup
+        colliders_changed = normalized_tool_colliders != self.tool_colliders
+        evaluated_robot_axis_colliders_changed = (
+            normalized_evaluated_robot_axis_colliders != self.evaluated_robot_axis_colliders
+        )
+
+        self.selected_tool_profile = normalized_profile_path
+        self.tool = normalized_tool
+        self.tool_cad_model = normalized_cad_model
+        self.tool_cad_offset_rz = normalized_cad_offset_rz
+        self.auto_load_on_startup = normalized_auto_load_on_startup
+        self.tool_colliders = normalized_tool_colliders
+        self.evaluated_robot_axis_colliders = normalized_evaluated_robot_axis_colliders
+
+        if colliders_changed:
+            self._tool_colliders_revision += 1
+
+        if profile_changed:
+            self.tool_profile_changed.emit()
+        if tool_changed:
+            self.tool_changed.emit()
+        if visual_changed:
+            self.tool_visual_changed.emit()
+        if startup_behavior_changed:
+            self.tool_startup_behavior_changed.emit()
+        if colliders_changed:
+            self.tool_colliders_changed.emit()
+        if evaluated_robot_axis_colliders_changed:
+            self.tool_evaluated_robot_axis_colliders_changed.emit()
 

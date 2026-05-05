@@ -4,10 +4,12 @@ import math
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QColorDialog,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -45,6 +47,7 @@ class RobotConfigurationWidget(QWidget):
     positions_config_changed = pyqtSignal(list, list, list)
     go_to_position_requested = pyqtSignal(list)
     robot_cad_models_changed = pyqtSignal(list)
+    robot_cad_colors_changed = pyqtSignal(list)
 
     COL_AXIS_MIN = 0
     COL_AXIS_MAX = 1
@@ -82,6 +85,7 @@ class RobotConfigurationWidget(QWidget):
         self.axis_collider_enabled_checkboxes: list[QCheckBox] = []
         self.axis_collider_direction_combos: list[QComboBox] = []
         self.robot_cad_line_edits: list[QLineEdit] = []
+        self.robot_cad_color_buttons: list[QPushButton] = []
         self.table_axis_colliders: QTableWidget | None = None
         self.table_cartesian_slider_limits: QTableWidget | None = None
         self._extra_tab_indexes: dict[str, int] = {}
@@ -345,19 +349,25 @@ class RobotConfigurationWidget(QWidget):
 
         grid = QGridLayout()
         self.robot_cad_line_edits.clear()
+        self.robot_cad_color_buttons.clear()
         for index in range(RobotConfigurationWidget.ROBOT_CAD_COUNT):
             label = QLabel(f"Lien {index}")
             path_line = QLineEdit()
             path_line.setReadOnly(True)
+            color_button = QPushButton()
+            color_button.setFixedSize(24, 24)
+            color_button.clicked.connect(lambda _, i=index: self._on_pick_robot_cad_color(i))
             browse_button = QPushButton("Parcourir")
             browse_button.clicked.connect(lambda _, i=index: self._on_pick_robot_cad(i))
             clear_button = QPushButton("Vider")
             clear_button.clicked.connect(lambda _, i=index: self._on_clear_robot_cad(i))
             self.robot_cad_line_edits.append(path_line)
+            self.robot_cad_color_buttons.append(color_button)
             grid.addWidget(label, index, 0)
             grid.addWidget(path_line, index, 1)
-            grid.addWidget(browse_button, index, 2)
-            grid.addWidget(clear_button, index, 3)
+            grid.addWidget(color_button, index, 2, alignment=Qt.AlignmentFlag.AlignLeft)
+            grid.addWidget(browse_button, index, 3)
+            grid.addWidget(clear_button, index, 4)
 
         layout.addLayout(grid)
         layout.addStretch()
@@ -441,6 +451,15 @@ class RobotConfigurationWidget(QWidget):
     def _on_clear_robot_cad(self, index: int) -> None:
         self.robot_cad_line_edits[index].setText("")
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
+
+    def _on_pick_robot_cad_color(self, index: int) -> None:
+        current_hex = self.get_robot_cad_colors()[index]
+        current_color = QColor(current_hex) if current_hex else QColor("#808080")
+        selected_color = QColorDialog.getColor(current_color, self, f"Choisir une couleur STL pour le lien {index}")
+        if not selected_color.isValid():
+            return
+        self._set_robot_cad_color_label(index, selected_color.name(QColor.NameFormat.HexRgb).upper())
+        self.robot_cad_colors_changed.emit(self.get_robot_cad_colors())
 
     def _cell_to_float(self, table: QTableWidget, row: int, column: int, default: float = 0.0) -> float:
         item = table.item(row, column)
@@ -829,3 +848,37 @@ class RobotConfigurationWidget(QWidget):
 
     def get_robot_cad_models(self) -> list[str]:
         return [line_edit.text().strip() for line_edit in self.robot_cad_line_edits]
+
+    def set_robot_cad_colors(self, cad_colors: list) -> None:
+        for index in range(RobotConfigurationWidget.ROBOT_CAD_COUNT):
+            if index < len(cad_colors):
+                raw_color = cad_colors[index]
+                color_hex = raw_color.to_hex() if hasattr(raw_color, "to_hex") else str(raw_color)
+            else:
+                color_hex = ""
+            self._set_robot_cad_color_label(index, color_hex)
+
+    def get_robot_cad_colors(self) -> list[str]:
+        values: list[str] = []
+        for button in self.robot_cad_color_buttons:
+            values.append(str(button.property("cad_color_hex") or "").strip().upper())
+        return values
+
+    def _set_robot_cad_color_label(self, index: int, color_hex: str) -> None:
+        if not (0 <= index < len(self.robot_cad_color_buttons)):
+            return
+        normalized_hex = str(color_hex).strip().upper()
+        button = self.robot_cad_color_buttons[index]
+        button.setText("")
+        if normalized_hex:
+            button.setStyleSheet(
+                f"min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; "
+                f"border: 1px solid #555; background-color: {normalized_hex};"
+            )
+            button.setProperty("cad_color_hex", normalized_hex)
+            return
+        button.setStyleSheet(
+            "min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; "
+            "border: 1px solid #777; background-color: transparent;"
+        )
+        button.setProperty("cad_color_hex", "")

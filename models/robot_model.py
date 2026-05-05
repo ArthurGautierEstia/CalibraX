@@ -3,7 +3,7 @@ from typing import List, Tuple
 import math
 from utils.mgi import *
 import utils.math_utils as math_utils
-from models.types import FkResult, Pose6, XYZ3
+from models.types import CadColor, CadColorPalette, FkResult, Pose6, XYZ3
 from models.collider_models import (
     default_axis_colliders,
 )
@@ -45,6 +45,7 @@ class RobotModel(QObject):
     ]
     UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = list(DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [""] * 7
+    DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES: List[str] = [""] * 7
     DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
     UNCONFIGURED_HOME_POSITION: List[float] = [0.0] * 6
     POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
@@ -69,6 +70,7 @@ class RobotModel(QObject):
 
     cad_models_changed = pyqtSignal()
     robot_cad_models_changed = pyqtSignal()
+    robot_cad_colors_changed = pyqtSignal()
     axis_colliders_changed = pyqtSignal()
 
     # Joints et axes
@@ -113,6 +115,11 @@ class RobotModel(QObject):
         self.axis_accel_limits: List[float] = list(RobotModel.UNCONFIGURED_AXIS_ACCEL_LIMITS)
         self.axis_jerk_limits: List[float] = list(RobotModel.UNCONFIGURED_AXIS_JERK_LIMITS)
         self.robot_cad_models: List[str] = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
+        self.robot_cad_colors: CadColorPalette = CadColorPalette.from_values(
+            RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES,
+            len(RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES),
+            RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES,
+        )
         self.axis_colliders: List[RobotAxisColliderData] = [
             collider.copy() for collider in RobotModel.UNCONFIGURED_AXIS_COLLIDERS
         ]
@@ -553,6 +560,10 @@ class RobotModel(QObject):
         """Retourne les chemins CAD du robot (base + axes)."""
         return [str(path) for path in self.robot_cad_models]
 
+    def get_robot_cad_colors(self) -> list[CadColor]:
+        """Retourne les couleurs CAD du robot (base + axes)."""
+        return self.robot_cad_colors.to_list()
+
     def set_robot_cad_models(self, cad_models: list[str]) -> None:
         """
         Définit les chemins CAD du robot (base + axes).
@@ -565,6 +576,18 @@ class RobotModel(QObject):
             return
         self.robot_cad_models = normalized
         self.robot_cad_models_changed.emit()
+        self.cad_models_changed.emit()
+
+    def set_robot_cad_colors(self, cad_colors: list[CadColor | str]) -> None:
+        normalized = CadColorPalette.from_values(
+            cad_colors,
+            len(RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES),
+            RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES,
+        )
+        if normalized == self.robot_cad_colors:
+            return
+        self.robot_cad_colors = normalized
+        self.robot_cad_colors_changed.emit()
         self.cad_models_changed.emit()
 
     def get_axis_colliders(self) -> list[RobotAxisColliderData]:
@@ -1118,6 +1141,11 @@ class RobotModel(QObject):
         self.axis_accel_limits = list(RobotModel.UNCONFIGURED_AXIS_ACCEL_LIMITS)
         self.axis_jerk_limits = list(RobotModel.UNCONFIGURED_AXIS_JERK_LIMITS)
         self.robot_cad_models = list(RobotModel.DEFAULT_ROBOT_CAD_MODELS)
+        self.robot_cad_colors = CadColorPalette.from_values(
+            RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES,
+            len(RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES),
+            RobotModel.DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES,
+        )
         self.axis_colliders = [collider.copy() for collider in RobotModel.UNCONFIGURED_AXIS_COLLIDERS]
         self._axis_colliders_revision += 1
 
@@ -1164,6 +1192,7 @@ class RobotModel(QObject):
         self.axis_reversed_changed.emit()
         self.joint_weights_changed.emit()
         self.robot_cad_models_changed.emit()
+        self.robot_cad_colors_changed.emit()
         self.cad_models_changed.emit()
         self.axis_colliders_changed.emit()
         self.corrections_changed.emit()

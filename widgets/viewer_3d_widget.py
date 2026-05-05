@@ -25,7 +25,7 @@ from models.collision_scene_model import CollisionSceneModel
 from models.primitive_collider_models import PrimitiveCollider, PrimitiveColliderData
 from models.robot_model import RobotModel
 from models.reference_frame import ReferenceFrame
-from models.types import Pose6, XYZ3
+from models.types import CadColor, Pose6, XYZ3
 from models.tool_model import ToolModel
 from models.workspace_cad_element import WorkspaceCadElement
 from models.workspace_model import WorkspaceModel
@@ -1380,6 +1380,11 @@ class Viewer3DWidget(QWidget):
             return ""
         return str(self._tool_model.get_tool_cad_model())
 
+    def _resolve_robot_cad_colors(self) -> list[CadColor]:
+        if self._robot_model is None:
+            return [CadColor("") for _ in range(7)]
+        return self._robot_model.get_robot_cad_colors()
+
     def _resolve_tool_cad_offset_rz(self) -> float:
         if self._tool_model is None:
             return 0.0
@@ -1533,6 +1538,11 @@ class Viewer3DWidget(QWidget):
 
         self.last_dh_matrices = dh_matrices
         self.last_corrected_matrices = corrected_matrices
+
+        expected_link_count = len(self._build_cad_specs(corrected_matrices))
+        if self._cad_loaded and len(self.robot_links) != expected_link_count:
+            self.add_robot_links(corrected_matrices)
+            self._cad_loaded = True
 
         self._refresh_robot_state_items()
         self._refresh_position_buttons()

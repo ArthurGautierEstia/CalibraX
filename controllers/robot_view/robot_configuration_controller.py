@@ -48,6 +48,7 @@ class RobotConfigurationController(QObject):
         self.robot_model.axis_reversed_changed.connect(self._on_robot_axis_config_changed)
         self.robot_model.allowed_config_changed.connect(self._on_robot_persistence_state_changed)
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
+        self.robot_model.robot_cad_colors_changed.connect(self._on_robot_cad_models_changed)
         self.robot_model.cartesian_slider_limits_changed.connect(self._on_robot_persistence_state_changed)
         self.robot_model.axis_colliders_changed.connect(self._on_robot_persistence_state_changed)
         self.robot_model.joint_weights_changed.connect(self._on_robot_persistence_state_changed)
@@ -61,6 +62,7 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.positions_config_changed.connect(self._on_view_positions_config_changed)
         self.robot_configuration_widget.go_to_position_requested.connect(self._on_view_go_to_position_requested)
         self.robot_configuration_widget.robot_cad_models_changed.connect(self._on_view_robot_cad_models_changed)
+        self.robot_configuration_widget.robot_cad_colors_changed.connect(self._on_view_robot_cad_colors_changed)
         self.robot_configuration_widget.new_config_requested.connect(self._on_view_new_config_requested)
         self.robot_configuration_widget.load_config_requested.connect(self._on_view_load_config_requested)
         self.robot_configuration_widget.export_config_requested.connect(self._on_view_export_config_requested)
@@ -154,6 +156,9 @@ class RobotConfigurationController(QObject):
     def _on_view_robot_cad_models_changed(self, robot_cad_models: list[str]) -> None:
         self.robot_model.set_robot_cad_models(robot_cad_models)
 
+    def _on_view_robot_cad_colors_changed(self, robot_cad_colors: list[str]) -> None:
+        self.robot_model.set_robot_cad_colors(robot_cad_colors)
+
     def _on_view_load_config_requested(self) -> None:
         self.load_configuration()
 
@@ -211,6 +216,7 @@ class RobotConfigurationController(QObject):
 
     def update_cad_view(self) -> None:
         self.robot_configuration_widget.set_robot_cad_models(self.robot_model.get_robot_cad_models())
+        self.robot_configuration_widget.set_robot_cad_colors(self.robot_model.get_robot_cad_colors())
 
     @staticmethod
     def _normalize_snapshot_value(value: object) -> object:

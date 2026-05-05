@@ -10,7 +10,7 @@ from models.primitive_collider_models import (
     AxisDirection,
     RobotAxisColliderData,
 )
-from models.types import XYZ3
+from models.types import CadColorPalette, XYZ3
 from utils.math_utils import safe_float
 from utils.mgi import MgiConfigKey
 
@@ -38,6 +38,7 @@ DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ: list[tuple[float, float]] = [
     (-1000.0, 1000.0),
 ]
 DEFAULT_ROBOT_CAD_MODELS: list[str] = [f"./default_data/robots_stl/rocky{i}.stl" for i in range(7)]
+DEFAULT_ROBOT_CAD_COLORS: list[str] = [""] * 7
 
 
 def _parse_axis_direction(value: Any) -> AxisDirection:
@@ -112,6 +113,7 @@ class RobotConfigurationFile:
     position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0])
     position_calibration: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
+    robot_cad_colors: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_COLORS))
 
     # Tracks which fields were present when loaded from JSON.
     present_fields: set[str] = field(default_factory=set, repr=False)
@@ -315,6 +317,7 @@ class RobotConfigurationFile:
             position_zero=robot_model.get_position_zero(),
             position_calibration=robot_model.get_position_calibration(),
             robot_cad_models=robot_model.get_robot_cad_models(),
+            robot_cad_colors=CadColorPalette(robot_model.get_robot_cad_colors()).to_hex_list(),
             dh_measured=[row[:] for row in robot_model.get_measured_dh_params()[:6]],
             dh_measured_enabled=robot_model.get_measured_dh_enabled(),
             present_fields={
@@ -336,6 +339,7 @@ class RobotConfigurationFile:
                 "position_zero",
                 "position_calibration",
                 "robot_cad_models",
+                "robot_cad_colors",
             },
         )
 
@@ -386,6 +390,8 @@ class RobotConfigurationFile:
 
         if "robot_cad_models" not in data and "robot_cad_files" in data:
             present_fields.add("robot_cad_models")
+        if "robot_cad_colors" not in present_fields:
+            present_fields.add("robot_cad_colors")
 
         allowed_configs = cls._parse_allowed_configs(data.get(allowed_raw_key)) if allowed_raw_key else set(MgiConfigKey)
         axis_speed_limits = cls._parse_axis_speed_limits(data.get("axis_speed_limits"))
@@ -419,6 +425,11 @@ class RobotConfigurationFile:
                 data.get("robot_cad_models", data.get("robot_cad_files")),
                 DEFAULT_ROBOT_CAD_MODELS,
             ),
+            robot_cad_colors=CadColorPalette.from_values(
+                cls._parse_string_list(data.get("robot_cad_colors"), DEFAULT_ROBOT_CAD_COLORS),
+                len(DEFAULT_ROBOT_CAD_COLORS),
+                DEFAULT_ROBOT_CAD_COLORS,
+            ).to_hex_list(),
             dh_measured=cls._parse_matrix(data.get("dh_measured"), 6, 4, 0.0),
             dh_measured_enabled=bool(data.get("dh_measured_enabled", False)),
             present_fields=present_fields,
@@ -444,6 +455,7 @@ class RobotConfigurationFile:
             "position_zero": self.position_zero[:6],
             "position_calibration": self.position_calibration[:6],
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
+            "robot_cad_colors": list(self.robot_cad_colors[:7]),
         }
 
     def apply_to_robot_model(self, robot_model: RobotModel) -> None:
@@ -479,6 +491,8 @@ class RobotConfigurationFile:
             robot_model.set_position_calibration(self.position_calibration)
         if "robot_cad_models" in self.present_fields:
             robot_model.set_robot_cad_models(self.robot_cad_models)
+        if "robot_cad_colors" in self.present_fields:
+            robot_model.set_robot_cad_colors(self.robot_cad_colors)
         if "dh_measured" in self.present_fields:
             robot_model.set_measured_dh_params(self.dh_measured)
         if "dh_measured_enabled" in self.present_fields:
