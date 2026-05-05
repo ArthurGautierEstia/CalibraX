@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
 
 from models.primitive_collider_models import PrimitiveColliderData
@@ -18,6 +18,7 @@ class ToolController(QObject):
     STATUS_SAVED = "Configuration tool enregistrée"
     STATUS_LOADED = "Configuration tool chargée"
     STATUS_UP_TO_DATE = "Configuration tool à jour"
+    validation_state_changed = pyqtSignal(bool)
 
     def __init__(
         self,
@@ -32,6 +33,7 @@ class ToolController(QObject):
         self._has_saved_reference = False
         self._clean_status_text = ToolController.STATUS_UNSAVED
         self._was_dirty_since_reference = False
+        self._validation_icon_visible = False
         self._setup_connections()
         self.update_tool_view()
         self._mark_as_unsaved_reference()
@@ -197,6 +199,10 @@ class ToolController(QObject):
         return self._saved_snapshot is None or current_snapshot != self._saved_snapshot
 
     def _refresh_configuration_status(self) -> None:
+        show_validation_icon = self._should_show_validation_icon()
+        if show_validation_icon != self._validation_icon_visible:
+            self._validation_icon_visible = show_validation_icon
+            self.validation_state_changed.emit(show_validation_icon)
         if not self._has_saved_reference:
             self.robot_configuration_widget.set_configuration_status(
                 ToolController.STATUS_UNSAVED,
@@ -220,3 +226,12 @@ class ToolController(QObject):
             self._clean_status_text,
             "#15803d",
         )
+
+    def _should_show_validation_icon(self) -> bool:
+        if not self._has_saved_reference:
+            return False
+        if self._is_dirty():
+            return True
+        if self._was_dirty_since_reference:
+            return True
+        return self._clean_status_text != ToolController.STATUS_UNSAVED

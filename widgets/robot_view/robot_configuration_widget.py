@@ -723,16 +723,8 @@ class RobotConfigurationWidget(QWidget):
     def set_measured_dh_table_enabled(self, enabled: bool) -> None:
         if self.measured_dh_toggle is not None:
             self.measured_dh_toggle.setChecked(enabled)
-        if self.table_dh_measured is not None:
-            self.table_dh_measured.setEnabled(enabled)
-        if self.table_dh is not None:
-            self.table_dh.setEnabled(not enabled)
 
     def _on_measured_dh_toggle_changed(self, checked: bool) -> None:
-        if self.table_dh_measured is not None:
-            self.table_dh_measured.setEnabled(checked)
-        if self.table_dh is not None:
-            self.table_dh.setEnabled(not checked)
         self.measured_dh_enabled_changed.emit(checked)
 
     def get_dh_params(self) -> list[list[float]]:

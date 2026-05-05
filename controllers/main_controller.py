@@ -105,6 +105,8 @@ class MainController(QObject):
         self.robot_model.measured_dh_params_changed.connect(self._schedule_session_save)
         self.robot_model.measured_dh_enabled_changed.connect(self._schedule_session_save)
         self.robot_controller.configuration_loaded.connect(self._on_config_loaded)
+        self.robot_controller.dh_controller.validation_state_changed.connect(self.main_window.set_robot_tab_validated)
+        self.robot_controller.tool_controller.validation_state_changed.connect(self.main_window.set_tool_tab_validated)
         self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
 
         self.tool_model.tool_changed.connect(self._on_tool_changed)
@@ -139,12 +141,16 @@ class MainController(QObject):
         session = self._load_session()
         startup = self._build_startup_payload(session)
 
+        robot_configuration_loaded = False
         config_path = self._resolve_existing_path(startup.get("config", ""))
         if config_path:
-            self.robot_controller.dh_controller.load_configuration_from_path(config_path, show_errors=False)
+            robot_configuration_loaded = self.robot_controller.dh_controller.load_configuration_from_path(
+                config_path,
+                show_errors=False,
+            )
 
         tool_path = self._resolve_existing_path(startup.get("tool", ""))
-        if tool_path and self._should_auto_load_tool_profile(tool_path):
+        if robot_configuration_loaded and tool_path and self._should_auto_load_tool_profile(tool_path):
             self.robot_controller.tool_controller.load_tool_profile_from_path(tool_path, show_errors=False)
 
         workspace_path = self._resolve_existing_path(startup.get("workspace", ""))

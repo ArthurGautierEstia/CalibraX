@@ -26,7 +26,7 @@ class ToggleSwitchWidget(QWidget):
         self._animation_progress = 0.0
 
         self._color_off = QColor("#999999")
-        self._color_on = QColor("#ff8c00")
+        self._color_on = QColor("#1ab439")
         self._color_disabled = QColor("#777777")
         self._color_circle = QColor("#ffffff")
         self._color_text = QColor("#ffffff")
@@ -149,7 +149,7 @@ class ToggleSwitchWidget(QWidget):
         painter.setBrush(self._color_circle)
         painter.drawEllipse(int(circle_x), int(circle_y), circle_diameter, circle_diameter)
 
-        painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+        painter.setFont(QFont("Arial", 9, QFont.Weight.Normal))
         painter.setPen(self._color_text if self.isEnabled() else self._color_text_disabled)
 
         text_rect = QRect(

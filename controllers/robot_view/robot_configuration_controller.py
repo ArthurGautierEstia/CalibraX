@@ -29,6 +29,7 @@ class RobotConfigurationController(QObject):
     STATUS_UP_TO_DATE = "Configuration robot à jour"
 
     configuration_loaded = pyqtSignal()
+    validation_state_changed = pyqtSignal(bool)
 
     def __init__(
         self,
@@ -46,6 +47,7 @@ class RobotConfigurationController(QObject):
         self._has_saved_reference = False
         self._clean_status_text = RobotConfigurationController.STATUS_UNSAVED
         self._was_dirty_since_reference = False
+        self._validation_icon_visible = False
         self._setup_connections()
         self._on_robot_configuration_changed()
         self._mark_as_unsaved_reference()
@@ -292,6 +294,10 @@ class RobotConfigurationController(QObject):
         return self._saved_snapshot is None or current_snapshot != self._saved_snapshot
 
     def _refresh_configuration_status(self) -> None:
+        show_validation_icon = self._should_show_validation_icon()
+        if show_validation_icon != self._validation_icon_visible:
+            self._validation_icon_visible = show_validation_icon
+            self.validation_state_changed.emit(show_validation_icon)
         if not self._has_saved_reference:
             self.robot_configuration_widget.set_configuration_status(
                 RobotConfigurationController.STATUS_UNSAVED,
@@ -316,6 +322,15 @@ class RobotConfigurationController(QObject):
             self._clean_status_text,
             "#15803d",
         )
+
+    def _should_show_validation_icon(self) -> bool:
+        if not self._has_saved_reference:
+            return False
+        if self._is_dirty():
+            return True
+        if self._was_dirty_since_reference:
+            return True
+        return self._clean_status_text != RobotConfigurationController.STATUS_UNSAVED
 
     def load_configuration(self) -> None:
         configuration_dir = self._robot_configuration_directory()
