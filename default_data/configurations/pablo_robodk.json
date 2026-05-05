@@ -325,5 +325,15 @@
         "./default_data/robots_stl/Pablo/pablo4.stl",
         "./default_data/robots_stl/Pablo/pablo5.stl",
         "./default_data/robots_stl/Pablo/pablo6.stl"
-    ]
+    ],
+    "robot_cad_colors": [
+        "#000000",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#4C4C4C"
+    ],
+    "default_tool_profile": "./default_data/tools/Broche_7kW.json"
 }

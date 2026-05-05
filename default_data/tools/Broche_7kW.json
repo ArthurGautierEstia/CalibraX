@@ -8,9 +8,9 @@
         "b": 45.0,
         "c": 0.0
     },
-    "tool_cad_model": "./default_data/tools_stl/Broche_N1039.stl",
+    "tool_cad_model": "./default_data/tools_stl/Broche_7kW.stl",
     "tool_cad_offset_rz": 0.0,
-    "auto_load_on_startup": false,
+    "auto_load_on_startup": true,
     "tool_colliders": [
         {
             "name": "Tool collider 1",

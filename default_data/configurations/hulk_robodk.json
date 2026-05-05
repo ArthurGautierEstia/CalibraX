@@ -1,0 +1,339 @@
+{
+    "name": [
+        "KR500-3 MT - Hulk"
+    ],
+    "dh": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "1045.0"
+        ],
+        [
+            "-90.0",
+            "500.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "1300.0",
+            "-90.0",
+            "0.0"
+        ],
+        [
+            "-90.0",
+            "-55.0",
+            "0.0",
+            "1025.0"
+        ],
+        [
+            "90.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "-90.0",
+            "0.0",
+            "180.0",
+            "290.0"
+        ]
+    ],
+    "dh_measured": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ]
+    ],
+    "dh_measured_enabled": false,
+    "corr": [
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ],
+        [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0"
+        ]
+    ],
+    "axis_limits": [
+        [
+            -185.0,
+            185.0
+        ],
+        [
+            -130.0,
+            20.0
+        ],
+        [
+            -94.0,
+            150.0
+        ],
+        [
+            -350.0,
+            350.0
+        ],
+        [
+            -118.0,
+            118.0
+        ],
+        [
+            -350.0,
+            350.0
+        ]
+    ],
+    "cartesian_slider_limits_xyz": [
+        [
+            -1362.0,
+            2825.0
+        ],
+        [
+            -2825.0,
+            2825.0
+        ],
+        [
+            -427.0,
+            3371.0
+        ]
+    ],
+    "axis_speed_limits": [
+        42.0,
+        42.0,
+        42.0,
+        76.0,
+        74.0,
+        123.0
+    ],
+    "axis_accel_limits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "axis_jerk_limits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "axis_colliders": [
+        {
+            "axis": 0,
+            "enabled": false,
+            "radius": 40.0,
+            "height": 100.0,
+            "direction_axis": "z",
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "axis": 1,
+            "enabled": false,
+            "radius": 40.0,
+            "height": 100.0,
+            "direction_axis": "x",
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "axis": 2,
+            "enabled": false,
+            "radius": 40.0,
+            "height": 100.0,
+            "direction_axis": "y",
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "axis": 3,
+            "enabled": false,
+            "radius": 40.0,
+            "height": 100.0,
+            "direction_axis": "z",
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "axis": 4,
+            "enabled": false,
+            "radius": 40.0,
+            "height": 100.0,
+            "direction_axis": "y",
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "axis": 5,
+            "enabled": false,
+            "radius": 40.0,
+            "height": 100.0,
+            "direction_axis": "z",
+            "offset_xyz": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    ],
+    "axis_reversed": [
+        -1,
+        1,
+        1,
+        1,
+        1,
+        1
+    ],
+    "joint_weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+    ],
+    "allowed_configs": [
+        "FUN",
+        "FUF",
+        "FDN",
+        "FDF",
+        "BUN",
+        "BUF",
+        "BDN",
+        "BDF"
+    ],
+    "home_position": [
+        0.0,
+        -65.0,
+        95.0,
+        0.0,
+        60.0,
+        0.0
+    ],
+    "position_zero": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "position_calibration": [
+        0.0,
+        -90.0,
+        90.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "robot_cad_models": [
+        "./default_data/robots_stl/Hulk/hulk0.stl",
+        "./default_data/robots_stl/Hulk/hulk1.stl",
+        "./default_data/robots_stl/Hulk/hulk2.stl",
+        "./default_data/robots_stl/Hulk/hulk3.stl",
+        "./default_data/robots_stl/Hulk/hulk4.stl",
+        "./default_data/robots_stl/Hulk/hulk5.stl",
+        "./default_data/robots_stl/Hulk/hulk6.stl"
+    ],
+    "robot_cad_colors": [
+        "#000000",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#4C4C4C"
+    ],
+    "default_tool_profile": "./default_data/tools/Broche_70kW.json"
+}

@@ -78,7 +78,7 @@
             "230.0"
         ]
     ],
-    "dh_measured_enabled": true,
+    "dh_measured_enabled": false,
     "corr": [
         [
             "0.0",
@@ -318,12 +318,22 @@
         0.0
     ],
     "robot_cad_models": [
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/comau_0.stl",
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/comau_1_v2.stl",
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/comau_2.stl",
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau_3.stl",
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau_4.stl",
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau_5.stl",
-        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau_6_v2.stl"
-    ]
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/comau0.stl",
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/comau1.stl",
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau2.stl",
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau3.stl",
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau4.stl",
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau5.stl",
+        "./default_data/robots_stl/Comau Smart5 NJ-165 3.0/Comau6.stl"
+    ],
+    "robot_cad_colors": [
+        "#000000",
+        "#FFFFFF",
+        "#FFFFFF",
+        "#FFFFFF",
+        "#FFFFFF",
+        "#FFFFFF",
+        "#4B4B4B"
+    ],
+    "default_tool_profile": ""
 }

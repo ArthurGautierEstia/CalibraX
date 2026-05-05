@@ -325,5 +325,15 @@
         "./default_data/robots_stl/Rocky/rocky4.stl",
         "./default_data/robots_stl/Rocky/rocky5.stl",
         "./default_data/robots_stl/Rocky/rocky6.stl"
-    ]
+    ],
+    "robot_cad_colors": [
+        "#000000",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#F67829",
+        "#676767"
+    ],
+    "default_tool_profile": "./default_data/tools/Torche_Soudure.json"
 }
