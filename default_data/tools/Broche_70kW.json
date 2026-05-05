@@ -8,7 +8,7 @@
         "b": 0.0,
         "c": 90.0
     },
-    "tool_cad_model": "./default_data/tools_stl/Broche_HSD.stl",
+    "tool_cad_model": "./default_data/tools_stl/Broche_70kW.stl",
     "tool_cad_offset_rz": 0.0,
     "auto_load_on_startup": true,
     "tool_colliders": [],
