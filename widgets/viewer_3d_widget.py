@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from OpenGL.GL import GL_DEPTH_COMPONENT, GL_FLOAT, glReadPixels
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -38,6 +39,239 @@ from utils.reference_frame_utils import (
     transform_matrix_base_to_world,
     transform_points_base_to_world,
 )
+
+
+class CalibraXGLViewWidget(gl.GLViewWidget):
+    def mousePressEvent(self, ev) -> None:
+        local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._orbit_pivot_point_world = self._pick_world_point(local_position)
+            self._orbit_pivot_screen_position = local_position
+            self._orbit_pivot_camera_distance = self._camera_distance_to_point(self._orbit_pivot_point_world)
+        super().mousePressEvent(ev)
+
+    def mouseReleaseEvent(self, ev) -> None:
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._orbit_pivot_point_world = None
+            self._orbit_pivot_screen_position = None
+            self._orbit_pivot_camera_distance = None
+        super().mouseReleaseEvent(ev)
+
+    def mouseMoveEvent(self, ev) -> None:
+        local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
+        if ev.buttons() & Qt.MouseButton.MiddleButton:
+            if not hasattr(self, "mousePos"):
+                self.mousePos = local_position
+            diff = local_position - self.mousePos
+            self.mousePos = local_position
+            self.pan(diff.x(), 0.0, diff.y(), relative="view-upright")
+            return
+
+        super().mouseMoveEvent(ev)
+        if not (ev.buttons() & Qt.MouseButton.LeftButton):
+            return
+        if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            return
+
+        orbit_pivot_point_world = getattr(self, "_orbit_pivot_point_world", None)
+        orbit_pivot_screen_position = getattr(self, "_orbit_pivot_screen_position", None)
+        orbit_pivot_camera_distance = getattr(self, "_orbit_pivot_camera_distance", None)
+        if (
+            orbit_pivot_point_world is None
+            or orbit_pivot_screen_position is None
+            or orbit_pivot_camera_distance is None
+        ):
+            return
+
+        self._recenter_to_keep_point_under_cursor(
+            orbit_pivot_screen_position,
+            orbit_pivot_point_world,
+            orbit_pivot_camera_distance,
+        )
+
+    def wheelEvent(self, ev) -> None:
+        local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
+        target_point_world = self._pick_world_point(local_position)
+
+        delta = ev.angleDelta().x()
+        if delta == 0:
+            delta = ev.angleDelta().y()
+
+        if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.opts["fov"] *= 0.999 ** delta
+        else:
+            self.opts["distance"] *= 0.999 ** delta
+
+        if target_point_world is not None:
+            self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
+
+        self.update()
+
+    def _pick_world_point(self, local_position) -> np.ndarray | None:
+        depth_value = self._read_depth_value(local_position)
+        if depth_value is None or depth_value >= 1.0:
+            return None
+        return self._unproject_view_point(local_position, depth_value)
+
+    def _recenter_to_keep_point_under_cursor(
+        self,
+        local_position,
+        target_point_world: np.ndarray,
+        camera_distance_to_target: float | None = None,
+    ) -> None:
+        ray = self._view_ray(local_position)
+        if ray is None:
+            return
+
+        camera_origin_world, ray_direction_world = ray
+        translation_world = self._compute_ray_translation(
+            camera_origin_world,
+            ray_direction_world,
+            target_point_world,
+            camera_distance_to_target,
+        )
+        self._translate_center(translation_world)
+
+    def _read_depth_value(self, local_position) -> float | None:
+        viewport_width, viewport_height = self._device_viewport_size()
+        screen_x = float(local_position.x()) * self.devicePixelRatioF()
+        screen_y = float(local_position.y()) * self.devicePixelRatioF()
+        pixel_x = int(round(screen_x))
+        pixel_y = int(round((viewport_height - 1) - screen_y))
+
+        if pixel_x < 0 or pixel_x >= viewport_width or pixel_y < 0 or pixel_y >= viewport_height:
+            return None
+
+        self.makeCurrent()
+        try:
+            depth_data = glReadPixels(pixel_x, pixel_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
+        except Exception:
+            return None
+        finally:
+            self.doneCurrent()
+
+        depth_array = np.asarray(depth_data, dtype=float).reshape(-1)
+        if depth_array.size == 0:
+            return None
+        return float(depth_array[0])
+
+    def _view_ray(self, local_position) -> tuple[np.ndarray, np.ndarray] | None:
+        near_point_world = self._unproject_view_point(local_position, 0.0)
+        far_point_world = self._unproject_view_point(local_position, 1.0)
+        if near_point_world is None or far_point_world is None:
+            return None
+
+        camera_position = self.cameraPosition()
+        camera_origin_world = np.array(
+            [
+                float(camera_position.x()),
+                float(camera_position.y()),
+                float(camera_position.z()),
+            ],
+            dtype=float,
+        )
+        ray_direction_world = far_point_world - camera_origin_world
+        ray_length = float(np.linalg.norm(ray_direction_world))
+        if ray_length <= 1e-9:
+            return None
+
+        return camera_origin_world, ray_direction_world / ray_length
+
+    def _unproject_view_point(self, local_position, depth_value: float) -> np.ndarray | None:
+        viewport_width, viewport_height = self._device_viewport_size()
+        if viewport_width <= 0 or viewport_height <= 0:
+            return None
+
+        screen_x = float(local_position.x()) * self.devicePixelRatioF()
+        screen_y = float(local_position.y()) * self.devicePixelRatioF()
+        x_ndc = (2.0 * screen_x / float(viewport_width)) - 1.0
+        y_ndc = 1.0 - (2.0 * screen_y / float(viewport_height))
+        z_ndc = (2.0 * float(depth_value)) - 1.0
+
+        projection_matrix = self.projectionMatrix(
+            region=(0, 0, viewport_width, viewport_height),
+            viewport=(0, 0, viewport_width, viewport_height),
+        )
+        inverted_matrix, invertible = (projection_matrix * self.viewMatrix()).inverted()
+        if not invertible:
+            return None
+
+        clip_position = QtGui.QVector4D(x_ndc, y_ndc, z_ndc, 1.0)
+        world_position = inverted_matrix.map(clip_position)
+        if abs(world_position.w()) <= 1e-9:
+            return None
+
+        w = float(world_position.w())
+        return np.array(
+            [
+                float(world_position.x()) / w,
+                float(world_position.y()) / w,
+                float(world_position.z()) / w,
+            ],
+            dtype=float,
+        )
+
+    def _device_viewport_size(self) -> tuple[int, int]:
+        pixel_ratio = self.devicePixelRatioF()
+        viewport_width = max(1, int(round(float(self.width()) * pixel_ratio)))
+        viewport_height = max(1, int(round(float(self.height()) * pixel_ratio)))
+        return viewport_width, viewport_height
+
+    def _translate_center(self, translation_world: np.ndarray) -> None:
+        current_center = self.opts["center"]
+        self.opts["center"] = QtGui.QVector3D(
+            float(current_center.x()) + float(translation_world[0]),
+            float(current_center.y()) + float(translation_world[1]),
+            float(current_center.z()) + float(translation_world[2]),
+        )
+
+    @staticmethod
+    def _compute_ray_translation(
+        camera_origin_world: np.ndarray,
+        ray_direction_world: np.ndarray,
+        target_point_world: np.ndarray,
+        camera_distance_to_target: float | None = None,
+    ) -> np.ndarray:
+        point_offset_world = target_point_world - camera_origin_world
+        distance_along_ray = float(np.dot(point_offset_world, ray_direction_world))
+        translation_world = point_offset_world - (distance_along_ray * ray_direction_world)
+        if camera_distance_to_target is None:
+            return translation_world
+
+        desired_distance = max(1e-9, float(camera_distance_to_target))
+        translation_world = translation_world + (
+            ray_direction_world * (distance_along_ray - desired_distance)
+        )
+        return translation_world
+
+    def _camera_distance_to_point(self, point_world: np.ndarray | None) -> float | None:
+        if point_world is None:
+            return None
+
+        camera_position = self.cameraPosition()
+        camera_position_world = np.array(
+            [
+                float(camera_position.x()),
+                float(camera_position.y()),
+                float(camera_position.z()),
+            ],
+            dtype=float,
+        )
+        return float(np.linalg.norm(np.array(point_world, dtype=float) - camera_position_world))
+
+    @staticmethod
+    def _compute_camera_spherical_coordinates(
+        camera_position_world: np.ndarray,
+        center_world: np.ndarray,
+    ) -> tuple[float, float, float]:
+        offset_world = camera_position_world - center_world
+        distance = float(np.linalg.norm(offset_world))
+        if distance <= 1e-9:
+            return 1e-9, 0.0, 0.0
+
+        elevation_deg = float(np.degrees(np.arcsin(np.clip(offset_world[2] / distance, -1.0, 1.0))))
+        azimuth_deg = float(np.degrees(np.arctan2(offset_world[1], offset_world[0])))
+        return distance, elevation_deg, azimuth_deg
 
 
 @dataclass(frozen=True)
@@ -176,7 +410,7 @@ class Viewer3DWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Viewer 3D
-        self.viewer = gl.GLViewWidget()
+        self.viewer = CalibraXGLViewWidget()
         self.viewer.opts['glOptions'] = 'translucent'
         self.viewer.opts['depth'] = True
         self.viewer.setCameraPosition(distance=2000, elevation=40, azimuth=45)
