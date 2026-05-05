@@ -91,6 +91,7 @@ class RobotConfigurationWidget(QWidget):
         self.table_axis_colliders: QTableWidget | None = None
         self.table_cartesian_slider_limits: QTableWidget | None = None
         self._extra_tab_indexes: dict[str, int] = {}
+        self._default_tool_profile_path: str = ""
         self.setup_ui()
 
     def setup_ui(self) -> None:
@@ -112,6 +113,7 @@ class RobotConfigurationWidget(QWidget):
 
         fields_layout = QGridLayout()
         current_config_title_label = QLabel("Configuration courante :")
+        current_config_title_label.setMinimumWidth(150)
         fields_layout.addWidget(current_config_title_label, 0, 0)
 
         self.current_config_name_label = QLabel("Aucune configuration")
@@ -123,6 +125,7 @@ class RobotConfigurationWidget(QWidget):
         fields_layout.addWidget(self.current_config_name_label, 0, 1)
 
         robot_name_title_label = QLabel("Nom du robot :")
+        robot_name_title_label.setMinimumWidth(150)
         fields_layout.addWidget(robot_name_title_label, 1, 0)
 
         self.line_edit_robot_name = QLineEdit()
@@ -131,21 +134,12 @@ class RobotConfigurationWidget(QWidget):
         self.line_edit_robot_name.setMinimumWidth(220)
         fields_layout.addWidget(self.line_edit_robot_name, 1, 1)
 
-        default_tool_title_label = QLabel("Tool par défaut :")
-        fields_layout.addWidget(default_tool_title_label, 2, 0)
-
-        default_tool_layout = QHBoxLayout()
-        self.line_edit_default_tool_profile = QLineEdit()
-        self.line_edit_default_tool_profile.setPlaceholderText("./default_data/tools/MonTool.json")
-        self.line_edit_default_tool_profile.textChanged.connect(self.default_tool_profile_changed.emit)
-        self.line_edit_default_tool_profile.editingFinished.connect(self._emit_default_tool_profile_selected)
-        default_tool_layout.addWidget(self.line_edit_default_tool_profile, 1)
-
-        self.btn_browse_default_tool_profile = QPushButton("Parcourir")
-        self.btn_browse_default_tool_profile.clicked.connect(self._on_pick_default_tool_profile)
-        default_tool_layout.addWidget(self.btn_browse_default_tool_profile)
-
-        fields_layout.addLayout(default_tool_layout, 2, 1)
+        self.default_tool_profile_label = QLabel("Aucun tool")
+        self.default_tool_profile_label.setStyleSheet(
+            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
+        )
+        self.default_tool_profile_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.default_tool_profile_label.setMinimumWidth(220)
 
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
@@ -175,6 +169,23 @@ class RobotConfigurationWidget(QWidget):
         actions_layout.addWidget(self.btn_save_as)
 
         header_layout.addLayout(actions_layout)
+        header_layout.addSpacing(8)
+
+        default_tool_row = QHBoxLayout()
+        default_tool_title_label = QLabel("Tool par défaut :")
+        default_tool_title_label.setMinimumWidth(150)
+        default_tool_row.addWidget(default_tool_title_label)
+        default_tool_row.addWidget(self.default_tool_profile_label, 1)
+        header_layout.addLayout(default_tool_row)
+
+        default_tool_browse_row = QHBoxLayout()
+        default_tool_browse_row.addStretch()
+        self.btn_browse_default_tool_profile = QPushButton("Parcourir")
+        self.btn_browse_default_tool_profile.clicked.connect(self._on_pick_default_tool_profile)
+        self.btn_browse_default_tool_profile.setFixedWidth(120)
+        default_tool_browse_row.addWidget(self.btn_browse_default_tool_profile)
+
+        header_layout.addLayout(default_tool_browse_row)
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
@@ -479,7 +490,9 @@ class RobotConfigurationWidget(QWidget):
         )
         if not file_path:
             return
-        self.line_edit_default_tool_profile.setText(self._normalize_project_path(file_path))
+        normalized_path = self._normalize_project_path(file_path)
+        self.set_default_tool_profile(normalized_path)
+        self.default_tool_profile_changed.emit(normalized_path)
         self._emit_default_tool_profile_selected()
 
     def _on_pick_robot_cad_color(self, index: int) -> None:
@@ -668,10 +681,13 @@ class RobotConfigurationWidget(QWidget):
         return self.line_edit_robot_name.text()
 
     def set_default_tool_profile(self, profile_path: str) -> None:
-        self.line_edit_default_tool_profile.setText(str(profile_path).strip())
+        normalized_path = str(profile_path).strip()
+        self._default_tool_profile_path = normalized_path
+        display_name = os.path.basename(normalized_path) if normalized_path else ""
+        self.default_tool_profile_label.setText(display_name if display_name else "Aucun tool")
 
     def get_default_tool_profile(self) -> str:
-        return self.line_edit_default_tool_profile.text().strip()
+        return self._default_tool_profile_path
 
     def _emit_default_tool_profile_selected(self) -> None:
         self.default_tool_profile_selected.emit(self.get_default_tool_profile())

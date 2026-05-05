@@ -97,7 +97,9 @@ class ToolConfigurationWidget(QWidget):
         header_layout = QVBoxLayout()
 
         fields_layout = QGridLayout()
-        fields_layout.addWidget(QLabel("Configuration courante :"), 0, 0)
+        current_tool_title_label = QLabel("Configuration courante :")
+        current_tool_title_label.setMinimumWidth(150)
+        fields_layout.addWidget(current_tool_title_label, 0, 0)
         self.current_tool_profile_label = QLabel("Aucune configuration")
         self.current_tool_profile_label.setStyleSheet(
             "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
@@ -106,7 +108,9 @@ class ToolConfigurationWidget(QWidget):
         self.current_tool_profile_label.setMinimumWidth(220)
         fields_layout.addWidget(self.current_tool_profile_label, 0, 1)
 
-        fields_layout.addWidget(QLabel("Nom du tool :"), 1, 0)
+        tool_name_title_label = QLabel("Nom du tool :")
+        tool_name_title_label.setMinimumWidth(150)
+        fields_layout.addWidget(tool_name_title_label, 1, 0)
         self.tool_name_line_edit = QLineEdit()
         self.tool_name_line_edit.setPlaceholderText("Nom du tool")
         self.tool_name_line_edit.setMinimumWidth(220)
