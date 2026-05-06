@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, QRect, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter
+from PyQt6.QtGui import QColor, QPainter, QPalette
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 
@@ -26,11 +26,9 @@ class ToggleSwitchWidget(QWidget):
         self._animation_progress = 0.0
 
         self._color_off = QColor("#999999")
-        self._color_on = QColor("#1ab439")
+        self._color_on = QColor("#ff8a00")
         self._color_disabled = QColor("#777777")
         self._color_circle = QColor("#ffffff")
-        self._color_text = QColor("#ffffff")
-        self._color_text_disabled = QColor("#d6d6d6")
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(220, 34)
@@ -137,6 +135,12 @@ class ToggleSwitchWidget(QWidget):
         track_rect = QRect(margin, (self.height() - track_height) // 2, track_width, track_height)
         circle_diameter = track_height - 4
 
+        text_rect = QRect(
+            track_rect.right() + 10,
+            0,
+            max(0, self.width() - track_rect.right() - margin - 10),
+            self.height(),
+        )
         track_color = self._color_on if self._checked else self._color_off
         if not self.isEnabled():
             track_color = self._color_disabled
@@ -147,18 +151,21 @@ class ToggleSwitchWidget(QWidget):
         circle_x = track_rect.x() + 2 + self._animation_progress * (track_width - circle_diameter - 4)
         circle_y = track_rect.y() + 2
         painter.setBrush(self._color_circle)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(int(circle_x), int(circle_y), circle_diameter, circle_diameter)
 
-        painter.setFont(QFont("Arial", 9, QFont.Weight.Normal))
-        painter.setPen(self._color_text if self.isEnabled() else self._color_text_disabled)
-
-        text_rect = QRect(
-            track_rect.right() + 10,
-            0,
-            self.width() - track_rect.right() - margin - 10,
-            self.height(),
+        painter.setPen(
+            self._palette_color(
+                enabled_role=QPalette.ColorRole.WindowText,
+                disabled_role=QPalette.ColorRole.WindowText,
+            )
         )
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.label)
+
+    def _palette_color(self, enabled_role: QPalette.ColorRole, disabled_role: QPalette.ColorRole) -> QColor:
+        if self.isEnabled():
+            return self.palette().color(enabled_role)
+        return self.palette().color(QPalette.ColorGroup.Disabled, disabled_role)
 
     checked = pyqtProperty(bool, fget=isChecked, fset=setChecked, notify=checkedChanged)
     offLabel = pyqtProperty(str, fget=offLabel, fset=setOffLabel)
