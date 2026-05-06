@@ -102,10 +102,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.opts["fov"] *= 0.999 ** delta
         else:
-            self.opts["distance"] *= 0.999 ** delta
-
-        if target_point_world is not None:
-            self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
+            self._dolly_along_cursor_ray(local_position, target_point_world, delta)
 
         self.update()
 
@@ -216,6 +213,23 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             plane_normal_world,
         )
 
+    def _dolly_along_cursor_ray(self, local_position, target_point_world: np.ndarray | None, wheel_delta: int) -> None:
+        if wheel_delta == 0:
+            return
+
+        ray = self._view_ray(local_position)
+        if ray is None:
+            return
+
+        camera_origin_world, ray_direction_world = ray
+        distance_to_target = self._camera_distance_to_point(target_point_world)
+        translation_distance = self._compute_dolly_translation_distance(distance_to_target, wheel_delta)
+        if abs(translation_distance) <= 1e-9:
+            return
+
+        translation_world = ray_direction_world * translation_distance
+        self._translate_center(translation_world)
+
     def _unproject_view_point(self, local_position, depth_value: float) -> np.ndarray | None:
         viewport_width, viewport_height = self._device_viewport_size()
         if viewport_width <= 0 or viewport_height <= 0:
@@ -316,6 +330,27 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             dtype=float,
         )
         return float(np.linalg.norm(np.array(point_world, dtype=float) - camera_position_world))
+
+    @staticmethod
+    def _compute_dolly_translation_distance(
+        distance_to_target: float | None,
+        wheel_delta: int,
+    ) -> float:
+        if wheel_delta == 0:
+            return 0.0
+
+        zoom_direction = 1.0 if wheel_delta > 0 else -1.0
+        if distance_to_target is None:
+            return zoom_direction * max(1.0, abs(float(wheel_delta)) * 0.25)
+
+        safe_distance = max(1e-6, float(distance_to_target))
+        proportional_step = safe_distance * (1.0 - (0.999 ** abs(int(wheel_delta))))
+        step_distance = max(1.0, proportional_step)
+
+        if zoom_direction > 0.0:
+            max_forward_step = max(0.0, safe_distance - 1e-3)
+            return min(step_distance, max_forward_step)
+        return -step_distance
 
     @staticmethod
     def _compute_camera_spherical_coordinates(
