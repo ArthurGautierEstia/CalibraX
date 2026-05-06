@@ -16,7 +16,6 @@ from controllers.workspace_controller import WorkspaceController
 from models.app_session_file import AppSessionFile, ViewerDisplayState
 from models.collision_scene_model import CollisionSceneModel
 from models.robot_model import RobotModel
-from models.tool_config_file import ToolConfigFile
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from views.main_window import MainWindow
@@ -113,8 +112,6 @@ class MainController(QObject):
         self.tool_model.tool_visual_changed.connect(self._schedule_session_save)
         self.tool_model.tool_profile_changed.connect(self._schedule_session_save)
         self.tool_model.tool_colliders_changed.connect(self._schedule_session_save)
-        self.tool_model.tool_startup_behavior_changed.connect(self._schedule_session_save)
-
         self.workspace_model.workspace_changed.connect(self._schedule_session_save)
         self.main_window.get_viewer3d().display_state_changed.connect(self._schedule_session_save)
         self.main_window.get_cartesian_control_view().get_cartesian_control_widget().reference_frame_changed.connect(
@@ -150,7 +147,7 @@ class MainController(QObject):
             )
 
         tool_path = self._resolve_existing_path(startup.get("tool", ""))
-        if robot_configuration_loaded and tool_path and self._should_auto_load_tool_profile(tool_path):
+        if not robot_configuration_loaded and tool_path:
             self.robot_controller.tool_controller.load_tool_profile_from_path(tool_path, show_errors=False)
 
         workspace_path = self._resolve_existing_path(startup.get("workspace", ""))
@@ -260,11 +257,3 @@ class MainController(QObject):
             return absolute_path
         return relative_path
 
-    @staticmethod
-    def _should_auto_load_tool_profile(file_path: str) -> bool:
-        try:
-            loaded_profile = ToolConfigFile.load(file_path)
-        except (OSError, ValueError, TypeError) as exc:
-            print(f"Impossible d'evaluer le chargement auto du tool {file_path}: {exc}")
-            return False
-        return bool(loaded_profile.auto_load_on_startup)

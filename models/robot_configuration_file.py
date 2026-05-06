@@ -115,6 +115,7 @@ class RobotConfigurationFile:
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
     robot_cad_colors: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_COLORS))
     default_tool_profile: str = ""
+    default_tool_auto_load_on_startup: bool = False
 
     # Tracks which fields were present when loaded from JSON.
     present_fields: set[str] = field(default_factory=set, repr=False)
@@ -304,6 +305,7 @@ class RobotConfigurationFile:
         cls,
         robot_model: RobotModel,
         default_tool_profile: str = "",
+        default_tool_auto_load_on_startup: bool = False,
     ) -> RobotConfigurationFile:
         return cls(
             name=robot_model.get_robot_name(),
@@ -324,6 +326,7 @@ class RobotConfigurationFile:
             robot_cad_models=robot_model.get_robot_cad_models(),
             robot_cad_colors=CadColorPalette(robot_model.get_robot_cad_colors()).to_hex_list(),
             default_tool_profile=str(default_tool_profile).strip(),
+            default_tool_auto_load_on_startup=bool(default_tool_auto_load_on_startup),
             dh_measured=[row[:] for row in robot_model.get_measured_dh_params()[:6]],
             dh_measured_enabled=robot_model.get_measured_dh_enabled(),
             present_fields={
@@ -347,6 +350,7 @@ class RobotConfigurationFile:
                 "robot_cad_models",
                 "robot_cad_colors",
                 "default_tool_profile",
+                "default_tool_auto_load_on_startup",
             },
         )
 
@@ -438,6 +442,7 @@ class RobotConfigurationFile:
                 DEFAULT_ROBOT_CAD_COLORS,
             ).to_hex_list(),
             default_tool_profile=str(data.get("default_tool_profile", "")).strip(),
+            default_tool_auto_load_on_startup=bool(data.get("default_tool_auto_load_on_startup", False)),
             dh_measured=cls._parse_matrix(data.get("dh_measured"), 6, 4, 0.0),
             dh_measured_enabled=bool(data.get("dh_measured_enabled", False)),
             present_fields=present_fields,
@@ -465,6 +470,7 @@ class RobotConfigurationFile:
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
             "robot_cad_colors": list(self.robot_cad_colors[:7]),
             "default_tool_profile": self.default_tool_profile,
+            "default_tool_auto_load_on_startup": self.default_tool_auto_load_on_startup,
         }
 
     def apply_to_robot_model(self, robot_model: RobotModel) -> None:

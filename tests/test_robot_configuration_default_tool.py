@@ -38,16 +38,31 @@ class RobotConfigurationDefaultToolTests(unittest.TestCase):
         config = RobotConfigurationFile.from_robot_model(
             robot_model,
             default_tool_profile="./default_data/tools/demo_tool.json",
+            default_tool_auto_load_on_startup=True,
         )
 
         exported = config.to_dict()
         reloaded = RobotConfigurationFile.from_dict(exported)
 
         self.assertEqual("./default_data/tools/demo_tool.json", reloaded.default_tool_profile)
+        self.assertTrue(reloaded.default_tool_auto_load_on_startup)
 
-    def test_loading_robot_configuration_loads_default_tool_profile_only_when_enabled(self) -> None:
+    def test_default_tool_combo_lists_tools_from_default_data_directory(self) -> None:
+        widget = RobotConfigurationWidget()
+
+        self.assertIsNotNone(widget.default_tool_profile_combo)
+        available_paths = {
+            str(widget.default_tool_profile_combo.itemData(index))
+            for index in range(widget.default_tool_profile_combo.count())
+        }
+
+        self.assertIn("./default_data/tools/Broche_70kW.json", available_paths)
+        self.assertIn("./default_data/tools/Broche_7kW.json", available_paths)
+        self.assertIn("./default_data/tools/Torche_Soudure.json", available_paths)
+
+    def test_loading_robot_configuration_loads_default_tool_profile_when_enabled(self) -> None:
         output_path = Path("tests") / "_tmp_robot_config_with_tool.json"
-        tool_path = Path("tests") / "_tmp_tool_profile_autoload.json"
+        tool_path = Path("tests") / "_tmp_tool_profile.json"
         robot_model = RobotModel()
         robot_model.set_robot_name("RobotWithTool")
         ToolConfigFile.from_robot_tool(
@@ -55,13 +70,13 @@ class RobotConfigurationDefaultToolTests(unittest.TestCase):
             RobotTool(),
             "",
             0.0,
-            True,
             [],
             [True] * 6,
         ).save(str(tool_path))
         config = RobotConfigurationFile.from_robot_model(
             robot_model,
             default_tool_profile=f"./{tool_path.as_posix()}",
+            default_tool_auto_load_on_startup=True,
         )
         config.save(str(output_path))
 
@@ -82,7 +97,7 @@ class RobotConfigurationDefaultToolTests(unittest.TestCase):
 
     def test_loading_robot_configuration_does_not_load_default_tool_profile_when_disabled(self) -> None:
         output_path = Path("tests") / "_tmp_robot_config_with_disabled_tool.json"
-        tool_path = Path("tests") / "_tmp_tool_profile_no_autoload.json"
+        tool_path = Path("tests") / "_tmp_tool_profile_disabled.json"
         robot_model = RobotModel()
         robot_model.set_robot_name("RobotWithDisabledTool")
         ToolConfigFile.from_robot_tool(
@@ -90,13 +105,13 @@ class RobotConfigurationDefaultToolTests(unittest.TestCase):
             RobotTool(),
             "",
             0.0,
-            False,
             [],
             [True] * 6,
         ).save(str(tool_path))
         config = RobotConfigurationFile.from_robot_model(
             robot_model,
             default_tool_profile=f"./{tool_path.as_posix()}",
+            default_tool_auto_load_on_startup=False,
         )
         config.save(str(output_path))
 
@@ -109,6 +124,7 @@ class RobotConfigurationDefaultToolTests(unittest.TestCase):
 
             self.assertTrue(loaded)
             self.assertEqual(f"./{tool_path.as_posix()}", widget.get_default_tool_profile())
+            self.assertFalse(widget.get_default_tool_auto_load_on_startup())
             self.assertEqual([], tool_controller.loaded_paths)
             self.assertEqual(1, tool_controller.reset_calls)
         finally:

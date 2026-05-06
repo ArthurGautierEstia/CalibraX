@@ -50,6 +50,7 @@ class RobotConfigurationWidget(QWidget):
     robot_cad_colors_changed = pyqtSignal(list)
     default_tool_profile_changed = pyqtSignal(str)
     default_tool_profile_selected = pyqtSignal(str)
+    default_tool_auto_load_on_startup_changed = pyqtSignal(bool)
 
     COL_AXIS_MIN = 0
     COL_AXIS_MAX = 1
@@ -92,6 +93,8 @@ class RobotConfigurationWidget(QWidget):
         self.table_cartesian_slider_limits: QTableWidget | None = None
         self._extra_tab_indexes: dict[str, int] = {}
         self._default_tool_profile_path: str = ""
+        self.default_tool_profile_combo: QComboBox | None = None
+        self.default_tool_auto_load_on_startup_checkbox: QCheckBox | None = None
         self.setup_ui()
 
     def setup_ui(self) -> None:
@@ -134,12 +137,10 @@ class RobotConfigurationWidget(QWidget):
         self.line_edit_robot_name.setMinimumWidth(220)
         fields_layout.addWidget(self.line_edit_robot_name, 1, 1)
 
-        self.default_tool_profile_label = QLabel("Aucun tool")
-        self.default_tool_profile_label.setStyleSheet(
-            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
-        )
-        self.default_tool_profile_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.default_tool_profile_label.setMinimumWidth(220)
+        self.default_tool_profile_combo = QComboBox()
+        self.default_tool_profile_combo.setMinimumWidth(220)
+        self.default_tool_profile_combo.currentIndexChanged.connect(self._on_default_tool_profile_combo_changed)
+        self._reload_default_tool_profile_options()
 
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
@@ -175,17 +176,17 @@ class RobotConfigurationWidget(QWidget):
         default_tool_title_label = QLabel("Tool par défaut :")
         default_tool_title_label.setMinimumWidth(150)
         default_tool_row.addWidget(default_tool_title_label)
-        default_tool_row.addWidget(self.default_tool_profile_label, 1)
+        default_tool_row.addWidget(self.default_tool_profile_combo, 1)
         header_layout.addLayout(default_tool_row)
 
-        default_tool_browse_row = QHBoxLayout()
-        default_tool_browse_row.addStretch()
-        self.btn_browse_default_tool_profile = QPushButton("Parcourir")
-        self.btn_browse_default_tool_profile.clicked.connect(self._on_pick_default_tool_profile)
-        self.btn_browse_default_tool_profile.setFixedWidth(120)
-        default_tool_browse_row.addWidget(self.btn_browse_default_tool_profile)
-
-        header_layout.addLayout(default_tool_browse_row)
+        self.default_tool_auto_load_on_startup_checkbox = QCheckBox(
+            "Charger ce tool au demarrage"
+        )
+        self.default_tool_auto_load_on_startup_checkbox.setChecked(False)
+        self.default_tool_auto_load_on_startup_checkbox.toggled.connect(
+            self.default_tool_auto_load_on_startup_changed.emit
+        )
+        header_layout.addWidget(self.default_tool_auto_load_on_startup_checkbox, alignment=Qt.AlignmentFlag.AlignRight)
         top_layout.addLayout(header_layout)
 
         self.tabs = QTabWidget()
@@ -480,18 +481,12 @@ class RobotConfigurationWidget(QWidget):
         self.robot_cad_line_edits[index].setText("")
         self.robot_cad_models_changed.emit(self.get_robot_cad_models())
 
-    def _on_pick_default_tool_profile(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Sélectionner un tool par défaut",
-            self._get_tool_start_directory(),
-            "JSON files (*.json);;All files (*)",
-        )
-        if not file_path:
+    def _on_default_tool_profile_combo_changed(self, _index: int) -> None:
+        if self.default_tool_profile_combo is None:
             return
-        normalized_path = self._normalize_project_path(file_path)
-        self.set_default_tool_profile(normalized_path)
-        self.default_tool_profile_changed.emit(normalized_path)
+        selected_path = str(self.default_tool_profile_combo.currentData() or "").strip()
+        self._default_tool_profile_path = selected_path
+        self.default_tool_profile_changed.emit(selected_path)
         self._emit_default_tool_profile_selected()
 
     def _on_pick_robot_cad_color(self, index: int) -> None:
@@ -682,11 +677,53 @@ class RobotConfigurationWidget(QWidget):
     def set_default_tool_profile(self, profile_path: str) -> None:
         normalized_path = str(profile_path).strip()
         self._default_tool_profile_path = normalized_path
-        display_name = os.path.basename(normalized_path) if normalized_path else ""
-        self.default_tool_profile_label.setText(display_name if display_name else "Aucun tool")
+        self._reload_default_tool_profile_options(selected_path=normalized_path)
 
     def get_default_tool_profile(self) -> str:
         return self._default_tool_profile_path
+
+    def _reload_default_tool_profile_options(self, selected_path: str | None = None) -> None:
+        if self.default_tool_profile_combo is None:
+            return
+        normalized_selected_path = self._default_tool_profile_path if selected_path is None else str(selected_path).strip()
+        tool_directory = self._get_tool_start_directory()
+        options: list[tuple[str, str]] = [("Aucun tool", "")]
+        if os.path.isdir(tool_directory):
+            for file_name in sorted(os.listdir(tool_directory), key=str.lower):
+                if not file_name.lower().endswith(".json"):
+                    continue
+                full_path = os.path.join(tool_directory, file_name)
+                if not os.path.isfile(full_path):
+                    continue
+                options.append((os.path.splitext(file_name)[0], self._normalize_project_path(full_path)))
+
+        self.default_tool_profile_combo.blockSignals(True)
+        try:
+            self.default_tool_profile_combo.clear()
+            selected_index = 0
+            for index, (label, path) in enumerate(options):
+                self.default_tool_profile_combo.addItem(label, path)
+                if path == normalized_selected_path:
+                    selected_index = index
+            if normalized_selected_path and all(path != normalized_selected_path for _, path in options):
+                fallback_label = os.path.splitext(os.path.basename(normalized_selected_path))[0] or normalized_selected_path
+                self.default_tool_profile_combo.addItem(fallback_label, normalized_selected_path)
+                selected_index = self.default_tool_profile_combo.count() - 1
+            self.default_tool_profile_combo.setCurrentIndex(selected_index)
+        finally:
+            self.default_tool_profile_combo.blockSignals(False)
+
+    def set_default_tool_auto_load_on_startup(self, enabled: bool) -> None:
+        if self.default_tool_auto_load_on_startup_checkbox is None:
+            return
+        self.default_tool_auto_load_on_startup_checkbox.blockSignals(True)
+        self.default_tool_auto_load_on_startup_checkbox.setChecked(bool(enabled))
+        self.default_tool_auto_load_on_startup_checkbox.blockSignals(False)
+
+    def get_default_tool_auto_load_on_startup(self) -> bool:
+        if self.default_tool_auto_load_on_startup_checkbox is None:
+            return False
+        return bool(self.default_tool_auto_load_on_startup_checkbox.isChecked())
 
     def _emit_default_tool_profile_selected(self) -> None:
         self.default_tool_profile_selected.emit(self.get_default_tool_profile())
