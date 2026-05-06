@@ -180,7 +180,7 @@ class RobotConfigurationWidget(QWidget):
         header_layout.addLayout(default_tool_row)
 
         self.default_tool_auto_load_on_startup_checkbox = QCheckBox(
-            "Charger ce tool au demarrage"
+            "Charger au demarrage"
         )
         self.default_tool_auto_load_on_startup_checkbox.setChecked(False)
         self.default_tool_auto_load_on_startup_checkbox.toggled.connect(
