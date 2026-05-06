@@ -46,6 +46,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_point_world = self._pick_world_point(local_position)
+            if self._orbit_pivot_point_world is None:
+                self._orbit_pivot_point_world = self._project_cursor_to_floor(local_position)
             self._orbit_pivot_screen_position = local_position
             self._orbit_pivot_camera_distance = self._camera_distance_to_point(self._orbit_pivot_point_world)
         super().mousePressEvent(ev)
@@ -211,6 +213,19 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             ray_direction_world,
             center_world,
             plane_normal_world,
+        )
+
+    def _project_cursor_to_floor(self, local_position) -> np.ndarray | None:
+        ray = self._view_ray(local_position)
+        if ray is None:
+            return None
+
+        camera_origin_world, ray_direction_world = ray
+        return self._intersect_ray_with_plane(
+            camera_origin_world,
+            ray_direction_world,
+            np.array([0.0, 0.0, 0.0], dtype=float),
+            np.array([0.0, 0.0, 1.0], dtype=float),
         )
 
     def _dolly_along_cursor_ray(self, local_position, target_point_world: np.ndarray | None, wheel_delta: int) -> None:
