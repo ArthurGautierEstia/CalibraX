@@ -51,13 +51,14 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._background_primary_color = QColor(45, 45, 48, 255)
         self._background_secondary_color = QColor(15, 15, 18, 255)
         self._perspective_enabled = True
+        self._grid_reference = None
         self.setBackgroundColor(self._background_primary_color)
 
     def mousePressEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_mode = "picked"
-            self._orbit_pivot_point_world = self._pick_world_point(local_position)
+            self._orbit_pivot_point_world = self._pick_orbit_world_point(local_position)
             if self._orbit_pivot_point_world is None:
                 self._orbit_pivot_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
                 self._orbit_pivot_mode = "origin"
@@ -164,6 +165,9 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
     def is_perspective_enabled(self) -> bool:
         return bool(self._perspective_enabled)
 
+    def set_grid_reference(self, grid_item) -> None:
+        self._grid_reference = grid_item
+
     def projectionMatrix(self, region, viewport):
         x0, y0, w, h = viewport
         dist = max(1e-6, float(self.opts["distance"]))
@@ -222,6 +226,34 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if depth_value is None or depth_value >= 1.0:
             return None
         return self._unproject_view_point(local_position, depth_value)
+
+    def _pick_orbit_world_point(self, local_position) -> np.ndarray | None:
+        if self._is_grid_topmost_at(local_position):
+            return None
+        return self._pick_world_point(local_position)
+
+    def _is_grid_topmost_at(self, local_position) -> bool:
+        grid_item = self._grid_reference
+        if grid_item is None:
+            return False
+
+        try:
+            items = self.itemsAt(region=(int(local_position.x()), int(local_position.y()), 1, 1))
+        except Exception:
+            return False
+        if not items:
+            return False
+        return all(self._belongs_to_grid(item, grid_item) for item in items)
+
+    @staticmethod
+    def _belongs_to_grid(item, grid_item) -> bool:
+        current_item = item
+        while current_item is not None:
+            if current_item is grid_item:
+                return True
+            parent_getter = getattr(current_item, "parentItem", None)
+            current_item = parent_getter() if callable(parent_getter) else None
+        return False
 
     def _recenter_to_keep_point_under_cursor(
         self,
@@ -1973,6 +2005,7 @@ class Viewer3DWidget(QWidget):
         if self._grid_item is not None:
             self._safe_remove_viewer_item(self._grid_item)
             self._grid_item = None
+            self.viewer.set_grid_reference(None)
 
         grid = gl.GLGridItem()
         grid.setSize(x=float(self._grid_size), y=float(self._grid_size), z=0.0)
@@ -1980,10 +2013,12 @@ class Viewer3DWidget(QWidget):
         grid.setColor((self._grid_color.red(), self._grid_color.green(), self._grid_color.blue(), self._grid_color.alpha()))
         self.viewer.addItem(grid)
         self._grid_item = grid
+        self.viewer.set_grid_reference(grid)
 
     def clear_viewer(self):
         self.viewer.clear()
         self._grid_item = None
+        self.viewer.set_grid_reference(None)
         self.add_grid()
         self._robot_frame_items = []
         self._workspace_frame_items = []
