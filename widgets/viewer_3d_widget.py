@@ -466,6 +466,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if target_point_world is None:
             target_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
         distance = max(1.0, float(self._camera_distance_to_point(target_point_world) or 1.0))
+        if not self.is_perspective_enabled():
+            return float(np.clip((distance / 2000.0) ** -0.15, 0.18, 1.15))
         return float(np.clip((distance / 2000.0) ** 0.85, 0.2, 6.0))
 
     def _orbit_around_fixed_pivot(
