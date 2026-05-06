@@ -8,6 +8,31 @@ from models.reference_frame import ReferenceFrame
 
 
 @dataclass
+class ViewerThemeState:
+    background_mode: str = "solid"
+    background_primary_color: str = "#2D2D30FF"
+    background_secondary_color: str = "#0F0F12FF"
+    grid_size: int = 4000
+    grid_spacing: int = 200
+    grid_color: str = "#96969664"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ViewerThemeState":
+        payload = data if isinstance(data, dict) else {}
+        return cls(
+            background_mode=str(payload.get("background_mode", "solid")),
+            background_primary_color=str(payload.get("background_primary_color", "#2D2D30FF")),
+            background_secondary_color=str(payload.get("background_secondary_color", "#0F0F12FF")),
+            grid_size=max(1, int(payload.get("grid_size", 4000))),
+            grid_spacing=max(1, int(payload.get("grid_spacing", 200))),
+            grid_color=str(payload.get("grid_color", "#96969664")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class ViewerDisplayState:
     cad_visible: bool = True
     transparency_enabled: bool = False
@@ -18,6 +43,8 @@ class ViewerDisplayState:
     workspace_collision_zones_visible: bool = True
     robot_colliders_visible: bool = True
     tool_colliders_visible: bool = True
+    theme: ViewerThemeState = field(default_factory=ViewerThemeState)
+    default_theme: ViewerThemeState | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ViewerDisplayState":
@@ -26,6 +53,7 @@ class ViewerDisplayState:
         frames_visibility = [bool(value) for value in raw_frames] if isinstance(raw_frames, list) else []
         raw_workspace_frames = payload.get("workspace_frames_visibility", [])
         workspace_frames_visibility = [bool(value) for value in raw_workspace_frames] if isinstance(raw_workspace_frames, list) else []
+        default_theme_payload = payload.get("default_theme")
         return cls(
             cad_visible=bool(payload.get("cad_visible", True)),
             transparency_enabled=bool(payload.get("transparency_enabled", False)),
@@ -36,10 +64,15 @@ class ViewerDisplayState:
             workspace_collision_zones_visible=bool(payload.get("workspace_collision_zones_visible", True)),
             robot_colliders_visible=bool(payload.get("robot_colliders_visible", True)),
             tool_colliders_visible=bool(payload.get("tool_colliders_visible", True)),
+            theme=ViewerThemeState.from_dict(payload.get("theme")),
+            default_theme=ViewerThemeState.from_dict(default_theme_payload) if isinstance(default_theme_payload, dict) else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["theme"] = self.theme.to_dict()
+        payload["default_theme"] = None if self.default_theme is None else self.default_theme.to_dict()
+        return payload
 
 
 @dataclass
