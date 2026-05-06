@@ -92,6 +92,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
     def wheelEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         target_point_world = self._pick_world_point(local_position)
+        if target_point_world is None:
+            target_point_world = self._project_cursor_to_center_depth(local_position)
 
         delta = ev.angleDelta().x()
         if delta == 0:
@@ -177,6 +179,43 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
         return camera_origin_world, ray_direction_world / ray_length
 
+    def _project_cursor_to_center_depth(self, local_position) -> np.ndarray | None:
+        ray = self._view_ray(local_position)
+        if ray is None:
+            return None
+
+        camera_origin_world, ray_direction_world = ray
+        camera_position = self.cameraPosition()
+        camera_position_world = np.array(
+            [
+                float(camera_position.x()),
+                float(camera_position.y()),
+                float(camera_position.z()),
+            ],
+            dtype=float,
+        )
+        current_center = self.opts["center"]
+        center_world = np.array(
+            [
+                float(current_center.x()),
+                float(current_center.y()),
+                float(current_center.z()),
+            ],
+            dtype=float,
+        )
+        camera_forward_world = center_world - camera_position_world
+        forward_norm = float(np.linalg.norm(camera_forward_world))
+        if forward_norm <= 1e-9:
+            return None
+
+        plane_normal_world = camera_forward_world / forward_norm
+        return self._intersect_ray_with_plane(
+            camera_origin_world,
+            ray_direction_world,
+            center_world,
+            plane_normal_world,
+        )
+
     def _unproject_view_point(self, local_position, depth_value: float) -> np.ndarray | None:
         viewport_width, viewport_height = self._device_viewport_size()
         if viewport_width <= 0 or viewport_height <= 0:
@@ -243,6 +282,25 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             ray_direction_world * (distance_along_ray - desired_distance)
         )
         return translation_world
+
+    @staticmethod
+    def _intersect_ray_with_plane(
+        ray_origin_world: np.ndarray,
+        ray_direction_world: np.ndarray,
+        plane_point_world: np.ndarray,
+        plane_normal_world: np.ndarray,
+    ) -> np.ndarray | None:
+        denominator = float(np.dot(ray_direction_world, plane_normal_world))
+        if abs(denominator) <= 1e-9:
+            return None
+
+        distance_along_ray = float(
+            np.dot(plane_point_world - ray_origin_world, plane_normal_world) / denominator
+        )
+        if distance_along_ray <= 1e-9:
+            return None
+
+        return ray_origin_world + (ray_direction_world * distance_along_ray)
 
     def _camera_distance_to_point(self, point_world: np.ndarray | None) -> float | None:
         if point_world is None:
