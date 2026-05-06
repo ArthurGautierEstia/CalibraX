@@ -352,21 +352,6 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             return min(step_distance, max_forward_step)
         return -step_distance
 
-    @staticmethod
-    def _compute_camera_spherical_coordinates(
-        camera_position_world: np.ndarray,
-        center_world: np.ndarray,
-    ) -> tuple[float, float, float]:
-        offset_world = camera_position_world - center_world
-        distance = float(np.linalg.norm(offset_world))
-        if distance <= 1e-9:
-            return 1e-9, 0.0, 0.0
-
-        elevation_deg = float(np.degrees(np.arcsin(np.clip(offset_world[2] / distance, -1.0, 1.0))))
-        azimuth_deg = float(np.degrees(np.arctan2(offset_world[1], offset_world[0])))
-        return distance, elevation_deg, azimuth_deg
-
-
 @dataclass(frozen=True)
 class WorkspaceElementState:
     name: str
