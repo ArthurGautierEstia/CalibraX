@@ -335,5 +335,6 @@
         "#F67829",
         "#676767"
     ],
-    "default_tool_profile": "./default_data/tools/Torche_Soudure.json"
+    "default_tool_profile": "./default_data/tools/Torche_Soudure.json",
+    "default_tool_auto_load_on_startup": true
 }

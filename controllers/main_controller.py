@@ -164,7 +164,7 @@ class MainController(QObject):
     def flush_session(self) -> None:
         session = AppSessionFile(
             robot_config_path=self._normalize_project_path(self.robot_model.get_current_config_file()),
-            tool_profile_path=self._normalize_project_path(self.tool_model.get_selected_tool_profile()),
+            tool_profile_path=self._session_tool_profile_path(),
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
             viewer_state=self.main_window.get_viewer3d().get_display_state(),
         )
@@ -213,6 +213,12 @@ class MainController(QObject):
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),
             "viewer_state": session.viewer_state if session is not None else None,
         }
+
+    def _session_tool_profile_path(self) -> str:
+        # The session only persists a standalone tool selection when no robot configuration is active.
+        if self.robot_model.get_current_config_file():
+            return ""
+        return self._normalize_project_path(self.tool_model.get_selected_tool_profile())
 
     def _resolve_session_path(self, path: str) -> str:
         if os.path.isabs(path):
