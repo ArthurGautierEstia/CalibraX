@@ -312,6 +312,10 @@ class MeasurementController(QObject):
         """Return the configured calibration joint position used for imported measurements."""
         return self.robot_model.get_position_calibration()
 
+    def _get_current_robot_joints_deg(self) -> list[float]:
+        """Return the current robot joint position used for live TCP error display."""
+        return self.robot_model.get_joints()
+
     def _build_selected_dh_params(self, theoretical_dh: list[list[float]]) -> list[list[float]]:
         """Merge theoretical DH with checked measured values from calibration table."""
         selected = [list(row[:4]) for row in theoretical_dh[:6]]
@@ -337,9 +341,9 @@ class MeasurementController(QObject):
     def _update_tcp_offsets_from_selection(self) -> None:
         theoretical_dh = self.robot_model.get_dh_params()
         selected_dh = self._build_selected_dh_params(theoretical_dh)
-        calibration_joints_deg = self._get_calibration_joints_deg()
-        tcp_nominal = self._compute_tcp_xyz_from_dh(theoretical_dh, calibration_joints_deg)
-        tcp_selected = self._compute_tcp_xyz_from_dh(selected_dh, calibration_joints_deg)
+        current_joints_deg = self._get_current_robot_joints_deg()
+        tcp_nominal = self._compute_tcp_xyz_from_dh(theoretical_dh, current_joints_deg)
+        tcp_selected = self._compute_tcp_xyz_from_dh(selected_dh, current_joints_deg)
         offsets = tcp_nominal - tcp_selected
         offset_3d_mm = math_utils.compute_3d_error_mm(
             float(offsets[0]),

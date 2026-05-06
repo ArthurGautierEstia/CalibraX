@@ -1,5 +1,6 @@
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtCore import QTimer, Qt, QSize
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QStyle, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -15,7 +16,20 @@ from views.workspace_view import WorkspaceView
 from widgets.viewer_3d_widget import Viewer3DWidget
 
 
+class MainTabsBar(QTabBar):
+    PRIMARY_TAB_COUNT = 6
+
+    def tabSizeHint(self, index: int) -> QSize:
+        default_size = super().tabSizeHint(index)
+        if index < MainTabsBar.PRIMARY_TAB_COUNT:
+            return default_size.expandedTo(QSize(100, 40))
+        return default_size
+
+
 class MainWindow(QMainWindow):
+    ROBOT_TAB_INDEX = 0
+    TOOL_TAB_INDEX = 1
+
     def __init__(
         self,
         robot_model: RobotModel,
@@ -27,6 +41,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Calibrax")
 
         self.tabs = QTabWidget()
+        self.tabs.setTabBar(MainTabsBar())
+        self._empty_tab_icon = QIcon()
+        self._validated_tab_icon: QIcon | None = None
         self.main_splitter: QSplitter | None = None
         self._initial_splitter_sizes_applied = False
         self._maximize_on_first_show = False
@@ -76,6 +93,23 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(central_widget)
         layout.addWidget(self.main_splitter)
+
+    def set_robot_tab_validated(self, is_validated: bool) -> None:
+        self._set_tab_validated(MainWindow.ROBOT_TAB_INDEX, is_validated)
+
+    def set_tool_tab_validated(self, is_validated: bool) -> None:
+        self._set_tab_validated(MainWindow.TOOL_TAB_INDEX, is_validated)
+
+    def _set_tab_validated(self, tab_index: int, is_validated: bool) -> None:
+        self.tabs.setTabIcon(
+            tab_index,
+            self._get_validated_tab_icon() if is_validated else self._empty_tab_icon,
+        )
+
+    def _get_validated_tab_icon(self) -> QIcon:
+        if self._validated_tab_icon is None:
+            self._validated_tab_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+        return self._validated_tab_icon
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
