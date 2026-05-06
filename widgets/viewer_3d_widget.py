@@ -11,9 +11,12 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QListWidget,
     QAbstractItemView,
+    QColorDialog,
+    QComboBox,
+    QSpinBox,
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint
-from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint, QPointF
+from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QLinearGradient, QPolygonF
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import shaders as gl_shaders
 from pyqtgraph.Qt import QtGui
@@ -42,19 +45,38 @@ from utils.reference_frame_utils import (
 
 
 class CalibraXGLViewWidget(gl.GLViewWidget):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._background_mode = "solid"
+        self._background_primary_color = QColor(45, 45, 48, 255)
+        self._background_secondary_color = QColor(15, 15, 18, 255)
+        self._perspective_enabled = True
+        self.setBackgroundColor(self._background_primary_color)
+
     def mousePressEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         if ev.button() == Qt.MouseButton.LeftButton:
+            self._orbit_pivot_mode = "picked"
             self._orbit_pivot_point_world = self._pick_world_point(local_position)
             if self._orbit_pivot_point_world is None:
-                self._orbit_pivot_point_world = self._project_cursor_to_floor(local_position)
+                if self.is_perspective_enabled():
+                    self._orbit_pivot_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
+                    self._orbit_pivot_mode = "origin"
+                else:
+                    self._orbit_pivot_point_world = self._project_cursor_to_floor(local_position)
+                    self._orbit_pivot_mode = "floor"
             self._orbit_pivot_screen_position = local_position
-            self._orbit_pivot_camera_distance = self._camera_distance_to_point(self._orbit_pivot_point_world)
+            self._orbit_pivot_camera_distance = (
+                self._camera_distance_to_point(self._orbit_pivot_point_world)
+                if self.is_perspective_enabled()
+                else None
+            )
         super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev) -> None:
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_point_world = None
+            self._orbit_pivot_mode = None
             self._orbit_pivot_screen_position = None
             self._orbit_pivot_camera_distance = None
         super().mouseReleaseEvent(ev)
@@ -69,6 +91,19 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self.pan(diff.x(), 0.0, diff.y(), relative="view-upright")
             return
 
+        if (
+            ev.buttons() & Qt.MouseButton.LeftButton
+            and not (ev.modifiers() & Qt.KeyboardModifier.ControlModifier)
+            and self.is_perspective_enabled()
+            and getattr(self, "_orbit_pivot_mode", None) == "origin"
+        ):
+            if not hasattr(self, "mousePos"):
+                self.mousePos = local_position
+            diff = local_position - self.mousePos
+            self.mousePos = local_position
+            self._orbit_around_fixed_pivot(np.array([0.0, 0.0, 0.0], dtype=float), -diff.x(), -diff.y())
+            return
+
         super().mouseMoveEvent(ev)
         if not (ev.buttons() & Qt.MouseButton.LeftButton):
             return
@@ -78,18 +113,20 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         orbit_pivot_point_world = getattr(self, "_orbit_pivot_point_world", None)
         orbit_pivot_screen_position = getattr(self, "_orbit_pivot_screen_position", None)
         orbit_pivot_camera_distance = getattr(self, "_orbit_pivot_camera_distance", None)
+        orbit_pivot_mode = getattr(self, "_orbit_pivot_mode", None)
         if (
             orbit_pivot_point_world is None
             or orbit_pivot_screen_position is None
-            or orbit_pivot_camera_distance is None
+            or (orbit_pivot_camera_distance is None and self.is_perspective_enabled() and orbit_pivot_mode == "picked")
         ):
             return
 
-        self._recenter_to_keep_point_under_cursor(
-            orbit_pivot_screen_position,
-            orbit_pivot_point_world,
-            orbit_pivot_camera_distance,
-        )
+        if orbit_pivot_mode != "origin":
+            self._recenter_to_keep_point_under_cursor(
+                orbit_pivot_screen_position,
+                orbit_pivot_point_world,
+                orbit_pivot_camera_distance,
+            )
 
     def wheelEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
@@ -104,9 +141,80 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.opts["fov"] *= 0.999 ** delta
         else:
-            self._dolly_along_cursor_ray(local_position, target_point_world, delta)
+            if self.is_perspective_enabled():
+                self._dolly_along_cursor_ray(local_position, target_point_world, delta)
+            else:
+                self._zoom_orthographic_toward_cursor(local_position, target_point_world, delta)
 
         self.update()
+
+    def set_background_style(self, mode: str, primary_color: QColor, secondary_color: QColor) -> None:
+        self._background_mode = "gradient" if mode == "gradient" else "solid"
+        self._background_primary_color = QColor(primary_color)
+        self._background_secondary_color = QColor(secondary_color)
+        if self._background_mode == "solid":
+            self.setBackgroundColor(self._background_primary_color)
+        self.update()
+
+    def set_perspective_enabled(self, enabled: bool) -> None:
+        self._perspective_enabled = bool(enabled)
+        self.update()
+
+    def is_perspective_enabled(self) -> bool:
+        return bool(self._perspective_enabled)
+
+    def projectionMatrix(self, region, viewport):
+        x0, y0, w, h = viewport
+        dist = max(1e-6, float(self.opts["distance"]))
+        fov = float(self.opts["fov"])
+        near_clip = max(1e-3, dist * 0.001)
+        far_clip = max(near_clip + 1.0, dist * 1000.0)
+
+        r = near_clip * np.tan(0.5 * np.radians(fov))
+        t = r * h / w
+
+        left = r * ((region[0] - x0) * (2.0 / w) - 1.0)
+        right = r * ((region[0] + region[2] - x0) * (2.0 / w) - 1.0)
+        bottom = t * ((region[1] - y0) * (2.0 / h) - 1.0)
+        top = t * ((region[1] + region[3] - y0) * (2.0 / h) - 1.0)
+
+        tr = QtGui.QMatrix4x4()
+        if self._perspective_enabled:
+            tr.frustum(left, right, bottom, top, near_clip, far_clip)
+        else:
+            ortho_scale = dist / near_clip
+            tr.ortho(
+                left * ortho_scale,
+                right * ortho_scale,
+                bottom * ortho_scale,
+                top * ortho_scale,
+                -far_clip,
+                far_clip,
+            )
+        return tr
+
+    def paintGL(self) -> None:
+        region = self.getViewport()
+        if self._background_mode != "gradient":
+            self.paint(region=region, viewport=region)
+            return
+
+        from OpenGL import GL
+
+        GL.glClearColor(0.0, 0.0, 0.0, 1.0)
+        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
+
+        painter = QPainter(self)
+        gradient = QLinearGradient(0, 0, 0, float(max(1, self.height())))
+        gradient.setColorAt(0.0, self._background_primary_color)
+        gradient.setColorAt(1.0, self._background_secondary_color)
+        painter.fillRect(self.rect(), gradient)
+        painter.end()
+
+        GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
+        self.setProjection(region, region)
+        self.setModelview()
+        self.drawItemTree(useItemNames=False)
 
     def _pick_world_point(self, local_position) -> np.ndarray | None:
         depth_value = self._read_depth_value(local_position)
@@ -162,21 +270,26 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if near_point_world is None or far_point_world is None:
             return None
 
-        camera_position = self.cameraPosition()
-        camera_origin_world = np.array(
-            [
-                float(camera_position.x()),
-                float(camera_position.y()),
-                float(camera_position.z()),
-            ],
-            dtype=float,
-        )
-        ray_direction_world = far_point_world - camera_origin_world
+        if self.is_perspective_enabled():
+            camera_position = self.cameraPosition()
+            ray_origin_world = np.array(
+                [
+                    float(camera_position.x()),
+                    float(camera_position.y()),
+                    float(camera_position.z()),
+                ],
+                dtype=float,
+            )
+            ray_direction_world = far_point_world - ray_origin_world
+        else:
+            ray_origin_world = near_point_world
+            ray_direction_world = far_point_world - near_point_world
+
         ray_length = float(np.linalg.norm(ray_direction_world))
         if ray_length <= 1e-9:
             return None
 
-        return camera_origin_world, ray_direction_world / ray_length
+        return ray_origin_world, ray_direction_world / ray_length
 
     def _project_cursor_to_center_depth(self, local_position) -> np.ndarray | None:
         ray = self._view_ray(local_position)
@@ -244,6 +357,96 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
         translation_world = ray_direction_world * translation_distance
         self._translate_center(translation_world)
+
+    def _zoom_orthographic_toward_cursor(
+        self,
+        local_position,
+        target_point_world: np.ndarray | None,
+        wheel_delta: int,
+    ) -> None:
+        if wheel_delta == 0:
+            return
+
+        zoom_factor = 0.999 ** wheel_delta
+        self.opts["distance"] = max(1.0, float(self.opts["distance"]) * zoom_factor)
+        if target_point_world is not None:
+            self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
+
+    def _orbit_around_fixed_pivot(
+        self,
+        pivot_point_world: np.ndarray,
+        azimuth_delta_deg: float,
+        elevation_delta_deg: float,
+    ) -> None:
+        camera_position = self.cameraPosition()
+        camera_position_world = np.array(
+            [
+                float(camera_position.x()),
+                float(camera_position.y()),
+                float(camera_position.z()),
+            ],
+            dtype=float,
+        )
+        current_center = self.opts["center"]
+        center_world = np.array(
+            [
+                float(current_center.x()),
+                float(current_center.y()),
+                float(current_center.z()),
+            ],
+            dtype=float,
+        )
+
+        rotated_camera_world = self._rotate_point_around_axis(
+            camera_position_world,
+            pivot_point_world,
+            np.array([0.0, 0.0, 1.0], dtype=float),
+            azimuth_delta_deg,
+        )
+        rotated_center_world = self._rotate_point_around_axis(
+            center_world,
+            pivot_point_world,
+            np.array([0.0, 0.0, 1.0], dtype=float),
+            azimuth_delta_deg,
+        )
+
+        view_direction_world = rotated_center_world - rotated_camera_world
+        right_axis_world = np.cross(view_direction_world, np.array([0.0, 0.0, 1.0], dtype=float))
+        right_axis_norm = float(np.linalg.norm(right_axis_world))
+        if right_axis_norm > 1e-9:
+            right_axis_world = right_axis_world / right_axis_norm
+            rotated_camera_world = self._rotate_point_around_axis(
+                rotated_camera_world,
+                pivot_point_world,
+                right_axis_world,
+                elevation_delta_deg,
+            )
+            rotated_center_world = self._rotate_point_around_axis(
+                rotated_center_world,
+                pivot_point_world,
+                right_axis_world,
+                elevation_delta_deg,
+            )
+
+        camera_to_center_world = rotated_camera_world - rotated_center_world
+        distance = float(np.linalg.norm(camera_to_center_world))
+        if distance <= 1e-9:
+            return
+
+        azimuth_deg = float(np.degrees(np.arctan2(camera_to_center_world[1], camera_to_center_world[0])))
+        elevation_deg = float(
+            np.degrees(np.arcsin(np.clip(camera_to_center_world[2] / distance, -1.0, 1.0)))
+        )
+        self.setCameraPosition(
+            pos=QtGui.QVector3D(
+                float(rotated_center_world[0]),
+                float(rotated_center_world[1]),
+                float(rotated_center_world[2]),
+            ),
+            distance=distance,
+            elevation=elevation_deg,
+            azimuth=azimuth_deg,
+        )
 
     def _unproject_view_point(self, local_position, depth_value: float) -> np.ndarray | None:
         viewport_width, viewport_height = self._device_viewport_size()
@@ -347,6 +550,29 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return float(np.linalg.norm(np.array(point_world, dtype=float) - camera_position_world))
 
     @staticmethod
+    def _rotate_point_around_axis(
+        point_world: np.ndarray,
+        pivot_point_world: np.ndarray,
+        axis_world: np.ndarray,
+        angle_deg: float,
+    ) -> np.ndarray:
+        axis_norm = float(np.linalg.norm(axis_world))
+        if axis_norm <= 1e-9 or abs(angle_deg) <= 1e-9:
+            return np.array(point_world, dtype=float)
+
+        axis_unit_world = axis_world / axis_norm
+        angle_rad = float(np.radians(angle_deg))
+        relative_point_world = np.array(point_world, dtype=float) - np.array(pivot_point_world, dtype=float)
+        cos_angle = float(np.cos(angle_rad))
+        sin_angle = float(np.sin(angle_rad))
+        rotated_relative_point_world = (
+            (relative_point_world * cos_angle)
+            + (np.cross(axis_unit_world, relative_point_world) * sin_angle)
+            + (axis_unit_world * np.dot(axis_unit_world, relative_point_world) * (1.0 - cos_angle))
+        )
+        return np.array(pivot_point_world, dtype=float) + rotated_relative_point_world
+
+    @staticmethod
     def _compute_dolly_translation_distance(
         distance_to_target: float | None,
         wheel_delta: int,
@@ -434,6 +660,13 @@ class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
     display_state_changed = pyqtSignal(object)
     CAD_SHADER_NAME = "calibrax_bright_shaded"
+    DEFAULT_BACKGROUND_MODE = "solid"
+    DEFAULT_BACKGROUND_PRIMARY_COLOR = QColor(45, 45, 48, 255)
+    DEFAULT_BACKGROUND_SECONDARY_COLOR = QColor(15, 15, 18, 255)
+    DEFAULT_GRID_SIZE = 4000
+    DEFAULT_GRID_SPACING = 200
+    DEFAULT_GRID_COLOR = QColor(150, 150, 150, 100)
+    ACTIVE_ICON_COLOR = QColor("#ff8c00")
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
@@ -496,6 +729,13 @@ class Viewer3DWidget(QWidget):
         self._loading_feedback_depth = 0
         self._position_match_tolerance_deg = 0.05
         self._robot_controls_collapsed = False
+        self._viewer_background_mode = self.DEFAULT_BACKGROUND_MODE
+        self._viewer_background_primary_color = QColor(self.DEFAULT_BACKGROUND_PRIMARY_COLOR)
+        self._viewer_background_secondary_color = QColor(self.DEFAULT_BACKGROUND_SECONDARY_COLOR)
+        self._grid_size = self.DEFAULT_GRID_SIZE
+        self._grid_spacing = self.DEFAULT_GRID_SPACING
+        self._grid_color = QColor(self.DEFAULT_GRID_COLOR)
+        self._grid_item: gl.GLGridItem | None = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -508,7 +748,11 @@ class Viewer3DWidget(QWidget):
         self.viewer.opts['depth'] = True
         self.viewer.setCameraPosition(distance=2000, elevation=40, azimuth=45)
         #self.viewer.setMinimumSize(900, 400)
-        self.viewer.setBackgroundColor(45, 45, 48, 255)
+        self.viewer.set_background_style(
+            self._viewer_background_mode,
+            self._viewer_background_primary_color,
+            self._viewer_background_secondary_color,
+        )
         layout.addWidget(self.viewer)
 
         # --- LISTE DES REPERES (Overlay ancré au bouton de liste) ---
@@ -570,6 +814,90 @@ class Viewer3DWidget(QWidget):
         frame_lists_layout.addWidget(self.robot_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.scene_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         self.frame_lists_overlay.hide()
+        self.viewer_style_overlay = QWidget(self.viewer)
+        self.viewer_style_overlay.setObjectName("viewerStyleOverlay")
+        self.viewer_style_overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.viewer_style_overlay.setStyleSheet("""
+            QWidget#viewerStyleOverlay {
+                background-color: rgba(0, 0, 0, 18);
+                border: 1px solid rgba(255, 255, 255, 20);
+                border-radius: 10px;
+            }
+            QWidget#viewerStyleOverlay QLabel {
+                color: rgba(230, 230, 230, 210);
+                font-size: 10px;
+                font-weight: 600;
+            }
+            QWidget#viewerStyleOverlay QComboBox,
+            QWidget#viewerStyleOverlay QSpinBox {
+                background-color: rgba(25, 25, 28, 130);
+                color: lightgray;
+                border: 1px solid rgba(255, 255, 255, 35);
+                border-radius: 6px;
+                padding: 3px 6px;
+                min-height: 24px;
+            }
+        """)
+        viewer_style_layout = QVBoxLayout(self.viewer_style_overlay)
+        viewer_style_layout.setContentsMargins(8, 8, 8, 8)
+        viewer_style_layout.setSpacing(6)
+        viewer_style_layout.addWidget(QLabel("Viewer", self.viewer_style_overlay))
+        self.background_mode_combo = QComboBox(self.viewer_style_overlay)
+        self.background_mode_combo.addItem("Solid", userData="solid")
+        self.background_mode_combo.addItem("Gradient", userData="gradient")
+        viewer_style_layout.addWidget(self._create_style_row("Fond", self.background_mode_combo))
+        self.btn_background_primary_color = self._create_color_picker_button("Couleur fond principale")
+        viewer_style_layout.addWidget(self._create_style_row("Couleur 1", self.btn_background_primary_color))
+        self.btn_background_secondary_color = self._create_color_picker_button("Couleur fond secondaire")
+        viewer_style_layout.addWidget(self._create_style_row("Couleur 2", self.btn_background_secondary_color))
+        self.grid_size_spin = QSpinBox(self.viewer_style_overlay)
+        self.grid_size_spin.setRange(200, 20000)
+        self.grid_size_spin.setSingleStep(100)
+        viewer_style_layout.addWidget(self._create_style_row("Grille taille", self.grid_size_spin))
+        self.grid_spacing_spin = QSpinBox(self.viewer_style_overlay)
+        self.grid_spacing_spin.setRange(10, 5000)
+        self.grid_spacing_spin.setSingleStep(10)
+        viewer_style_layout.addWidget(self._create_style_row("Grille pas", self.grid_spacing_spin))
+        self.btn_grid_color = self._create_color_picker_button("Couleur grille")
+        viewer_style_layout.addWidget(self._create_style_row("Grille couleur", self.btn_grid_color))
+        self.btn_reset_viewer_style = QPushButton("Default", self.viewer_style_overlay)
+        self.btn_reset_viewer_style.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reset_viewer_style.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 14);
+                color: rgba(235, 235, 235, 220);
+                border: 1px solid rgba(255, 255, 255, 24);
+                border-radius: 6px;
+                padding: 5px 8px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 22);
+            }
+        """)
+        viewer_style_layout.addWidget(self.btn_reset_viewer_style)
+        self.viewer_style_overlay.hide()
+        self.viewer_presets_overlay = QWidget(self.viewer)
+        self.viewer_presets_overlay.setObjectName("viewerPresetsOverlay")
+        self.viewer_presets_overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.viewer_presets_overlay.setStyleSheet("""
+            QWidget#viewerPresetsOverlay {
+                background-color: rgba(0, 0, 0, 18);
+                border: 1px solid rgba(255, 255, 255, 20);
+                border-radius: 10px;
+            }
+            QWidget#viewerPresetsOverlay QLabel {
+                color: rgba(230, 230, 230, 210);
+                font-size: 10px;
+                font-weight: 600;
+            }
+        """)
+        presets_layout = QVBoxLayout(self.viewer_presets_overlay)
+        presets_layout.setContentsMargins(8, 8, 8, 8)
+        presets_layout.setSpacing(6)
+        presets_row = QHBoxLayout()
+        presets_row.setContentsMargins(0, 0, 0, 0)
+        presets_row.setSpacing(6)
+        self.viewer_presets_overlay.hide()
         self.viewer_control_overlay = ViewerControlOverlayWidget(self.viewer)
         self.position_buttons_overlay = QWidget(self.viewer)
         self.position_buttons_overlay.setObjectName("viewerPositionOverlay")
@@ -609,6 +937,9 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_robot_controls = self._create_overlay_button("Contrôles robot", "robot_controls")
         self.btn_toggle_frame_lists = self._create_overlay_button("Liste de repères", "frame_list")
         self.btn_toggle_axes = self._create_overlay_button("Afficher / Masquer tous les repères", "axes")
+        self.btn_toggle_viewer_style = self._create_overlay_button("Style viewer", "appearance")
+        self.btn_toggle_view_presets = self._create_overlay_button("Vues prédéfinies", "view_cube")
+        self.btn_toggle_perspective = self._create_overlay_button("Perspective", "perspective")
         self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zone de travail", "tcp_zones")
         self.btn_toggle_workspace_collision_zones = self._create_overlay_button("Zone de collision", "collision_zones")
         self.btn_toggle_robot_colliders = self._create_overlay_button("Colliders robot", "robot_colliders")
@@ -622,6 +953,10 @@ class Viewer3DWidget(QWidget):
             self._create_toolbar_zone(
                 "Repères",
                 (self.btn_toggle_axes, self.btn_toggle_frame_lists),
+            ),
+            self._create_toolbar_zone(
+                "Vue",
+                (self.btn_toggle_viewer_style, self.btn_toggle_view_presets, self.btn_toggle_perspective),
             ),
             self._create_toolbar_zone(
                 "Zones",
@@ -678,10 +1013,45 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
         self.btn_toggle_frame_lists.clicked.connect(self._on_frame_lists_button_clicked)
+        self.btn_toggle_viewer_style.clicked.connect(self._on_viewer_style_button_clicked)
+        self.btn_toggle_view_presets.clicked.connect(self._on_view_presets_button_clicked)
+        self.btn_toggle_perspective.clicked.connect(self._on_perspective_button_clicked)
         self.btn_toggle_workspace_tcp_zones.clicked.connect(self._on_workspace_tcp_zones_button_clicked)
         self.btn_toggle_workspace_collision_zones.clicked.connect(self._on_workspace_collision_zones_button_clicked)
         self.btn_toggle_robot_colliders.clicked.connect(self._on_robot_colliders_button_clicked)
         self.btn_toggle_tool_colliders.clicked.connect(self._on_tool_colliders_button_clicked)
+        self.btn_view_right = self._create_overlay_button("Vue droite", "view_right", checkable=False, parent=self.viewer_presets_overlay)
+        self.btn_view_left = self._create_overlay_button("Vue gauche", "view_left", checkable=False, parent=self.viewer_presets_overlay)
+        self.btn_view_front = self._create_overlay_button("Vue devant", "view_front", checkable=False, parent=self.viewer_presets_overlay)
+        self.btn_view_back = self._create_overlay_button("Vue derrière", "view_back", checkable=False, parent=self.viewer_presets_overlay)
+        self.btn_view_top = self._create_overlay_button("Vue dessus", "view_top", checkable=False, parent=self.viewer_presets_overlay)
+        self.btn_view_bottom = self._create_overlay_button("Vue dessous", "view_bottom", checkable=False, parent=self.viewer_presets_overlay)
+        self.btn_view_isometric = self._create_overlay_button("Vue isométrique", "view_iso", checkable=False, parent=self.viewer_presets_overlay)
+        for button in (
+            self.btn_view_right,
+            self.btn_view_left,
+            self.btn_view_front,
+            self.btn_view_back,
+            self.btn_view_top,
+            self.btn_view_bottom,
+            self.btn_view_isometric,
+        ):
+            presets_row.addWidget(button)
+        presets_layout.addLayout(presets_row)
+        self.btn_view_right.clicked.connect(lambda: self._set_camera_preset("right"))
+        self.btn_view_left.clicked.connect(lambda: self._set_camera_preset("left"))
+        self.btn_view_front.clicked.connect(lambda: self._set_camera_preset("front"))
+        self.btn_view_back.clicked.connect(lambda: self._set_camera_preset("back"))
+        self.btn_view_top.clicked.connect(lambda: self._set_camera_preset("top"))
+        self.btn_view_bottom.clicked.connect(lambda: self._set_camera_preset("bottom"))
+        self.btn_view_isometric.clicked.connect(lambda: self._set_camera_preset("isometric"))
+        self.background_mode_combo.currentIndexChanged.connect(self._on_background_mode_changed)
+        self.btn_background_primary_color.clicked.connect(self._choose_background_primary_color)
+        self.btn_background_secondary_color.clicked.connect(self._choose_background_secondary_color)
+        self.grid_size_spin.valueChanged.connect(self._on_grid_size_changed)
+        self.grid_spacing_spin.valueChanged.connect(self._on_grid_spacing_changed)
+        self.btn_grid_color.clicked.connect(self._choose_grid_color)
+        self.btn_reset_viewer_style.clicked.connect(self._reset_viewer_style_defaults)
         self.btn_go_position_zero_overlay.clicked.connect(self.get_overlay_joints_widget().position_zero_requested.emit)
         self.btn_go_position_calibration_overlay.clicked.connect(
             self.get_overlay_joints_widget().position_calibration_requested.emit
@@ -690,6 +1060,7 @@ class Viewer3DWidget(QWidget):
         self._refresh_toolbar_buttons()
         self._refresh_position_buttons()
         self._refresh_robot_controls_overlay()
+        self._sync_viewer_style_controls()
 
     def _position_overlays(self):
         """Positionne la liste en haut a droite et le label en haut a gauche"""
@@ -714,6 +1085,31 @@ class Viewer3DWidget(QWidget):
                 ),
             )
             self.frame_lists_overlay.move(frame_overlay_x, overlay_y)
+        if hasattr(self, "btn_toggle_viewer_style") and hasattr(self, "viewer_style_overlay"):
+            self.viewer_style_overlay.adjustSize()
+            style_anchor_pos = self.btn_toggle_viewer_style.mapTo(self.viewer, QPoint(0, 0))
+            style_overlay_x = max(
+                margin,
+                min(
+                    self.viewer.width() - self.viewer_style_overlay.width() - margin,
+                    style_anchor_pos.x() + self.btn_toggle_viewer_style.width() - self.viewer_style_overlay.width(),
+                ),
+            )
+            style_overlay_y = style_anchor_pos.y() + self.btn_toggle_viewer_style.height() + 16
+            self.viewer_style_overlay.move(style_overlay_x, style_overlay_y)
+        if hasattr(self, "btn_toggle_view_presets") and hasattr(self, "viewer_presets_overlay"):
+            self.viewer_presets_overlay.adjustSize()
+            presets_anchor_pos = self.btn_toggle_view_presets.mapTo(self.viewer, QPoint(0, 0))
+            presets_anchor_center_x = presets_anchor_pos.x() + (self.btn_toggle_view_presets.width() // 2)
+            presets_overlay_x = max(
+                margin,
+                min(
+                    self.viewer.width() - self.viewer_presets_overlay.width() - margin,
+                    presets_anchor_center_x - (self.viewer_presets_overlay.width() // 2),
+                ),
+            )
+            presets_overlay_y = presets_anchor_pos.y() + self.btn_toggle_view_presets.height() + 16
+            self.viewer_presets_overlay.move(presets_overlay_x, presets_overlay_y)
         message_y = margin
         if hasattr(self, "toolbar_overlay"):
             message_y = self.toolbar_overlay.y() + self.toolbar_overlay.height() + 6
@@ -779,6 +1175,24 @@ class Viewer3DWidget(QWidget):
         if hasattr(self, "btn_toggle_robot_controls"):
             self._set_overlay_button_state(self.btn_toggle_robot_controls, controls_visible)
 
+    def _create_style_row(self, label_text: str, control: QWidget) -> QWidget:
+        row = QWidget(self.viewer_style_overlay)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        label = QLabel(label_text, row)
+        label.setFixedWidth(78)
+        layout.addWidget(label)
+        layout.addWidget(control, 1)
+        return row
+
+    def _create_color_picker_button(self, tooltip: str) -> QPushButton:
+        button = QPushButton("", self.viewer_style_overlay)
+        button.setToolTip(tooltip)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setFixedHeight(26)
+        return button
+
     def begin_loading_feedback(self, message: str) -> None:
         self._loading_feedback_depth += 1
         self._set_label_msg(message)
@@ -802,6 +1216,156 @@ class Viewer3DWidget(QWidget):
 
     def get_overlay_cartesian_widget(self):
         return self.viewer_control_overlay.get_cartesian_widget()
+
+    def _on_viewer_style_button_clicked(self) -> None:
+        should_show = not self.viewer_style_overlay.isVisible()
+        self.viewer_style_overlay.setVisible(should_show)
+        self._position_overlays()
+        self._refresh_toolbar_buttons()
+
+    def _on_view_presets_button_clicked(self) -> None:
+        should_show = not self.viewer_presets_overlay.isVisible()
+        self.viewer_presets_overlay.setVisible(should_show)
+        self._position_overlays()
+        self._refresh_toolbar_buttons()
+
+    def _on_perspective_button_clicked(self) -> None:
+        self.viewer.set_perspective_enabled(not self.viewer.is_perspective_enabled())
+        self._refresh_toolbar_buttons()
+
+    def _set_camera_preset(self, preset_kind: str) -> None:
+        cube_center, face_distance, bottom_distance, isometric_distance = self._get_view_cube_camera_parameters()
+        center_vector = QtGui.QVector3D(
+            float(cube_center[0]),
+            float(cube_center[1]),
+            float(cube_center[2]),
+        )
+
+        if preset_kind == "right":
+            self.viewer.setCameraPosition(pos=center_vector, distance=face_distance, elevation=0.0, azimuth=0.0)
+        elif preset_kind == "left":
+            self.viewer.setCameraPosition(pos=center_vector, distance=face_distance, elevation=0.0, azimuth=180.0)
+        elif preset_kind == "front":
+            self.viewer.setCameraPosition(pos=center_vector, distance=face_distance, elevation=0.0, azimuth=90.0)
+        elif preset_kind == "back":
+            self.viewer.setCameraPosition(pos=center_vector, distance=face_distance, elevation=0.0, azimuth=270.0)
+        elif preset_kind == "top":
+            self.viewer.setCameraPosition(pos=center_vector, distance=face_distance, elevation=90.0, azimuth=0.0)
+        elif preset_kind == "bottom":
+            self.viewer.setCameraPosition(pos=center_vector, distance=bottom_distance, elevation=-90.0, azimuth=0.0)
+        elif preset_kind == "isometric":
+            self.viewer.setCameraPosition(pos=center_vector, distance=isometric_distance, elevation=35.26438968, azimuth=45.0)
+
+        self.viewer_presets_overlay.hide()
+        self._refresh_toolbar_buttons()
+
+    def _get_view_cube_camera_parameters(self) -> tuple[np.ndarray, float, float, float]:
+        cube_size = max(100.0, float(self._grid_size))
+        half_size = cube_size * 0.5
+        cube_center = np.array([0.0, 0.0, half_size], dtype=float)
+        face_distance = half_size
+        bottom_distance = cube_size
+        isometric_distance = max(cube_size, np.sqrt(3.0) * half_size)
+        return cube_center, face_distance, bottom_distance, isometric_distance
+
+    def _on_background_mode_changed(self, _index: int) -> None:
+        self._viewer_background_mode = str(self.background_mode_combo.currentData())
+        self._apply_viewer_background_style()
+        self._refresh_viewer_style_controls()
+
+    def _choose_background_primary_color(self) -> None:
+        color = QColorDialog.getColor(self._viewer_background_primary_color, self, "Choisir la couleur du fond")
+        if not color.isValid():
+            return
+        self._viewer_background_primary_color = color
+        self._apply_viewer_background_style()
+        self._refresh_viewer_style_controls()
+
+    def _choose_background_secondary_color(self) -> None:
+        color = QColorDialog.getColor(self._viewer_background_secondary_color, self, "Choisir la seconde couleur du fond")
+        if not color.isValid():
+            return
+        self._viewer_background_secondary_color = color
+        self._apply_viewer_background_style()
+        self._refresh_viewer_style_controls()
+
+    def _on_grid_size_changed(self, value: int) -> None:
+        self._grid_size = int(value)
+        self._apply_grid_style()
+
+    def _on_grid_spacing_changed(self, value: int) -> None:
+        self._grid_spacing = int(value)
+        self._apply_grid_style()
+
+    def _choose_grid_color(self) -> None:
+        color = QColorDialog.getColor(self._grid_color, self, "Choisir la couleur de la grille")
+        if not color.isValid():
+            return
+        self._grid_color = color
+        self._apply_grid_style()
+        self._refresh_viewer_style_controls()
+
+    def _reset_viewer_style_defaults(self) -> None:
+        self._viewer_background_mode = self.DEFAULT_BACKGROUND_MODE
+        self._viewer_background_primary_color = QColor(self.DEFAULT_BACKGROUND_PRIMARY_COLOR)
+        self._viewer_background_secondary_color = QColor(self.DEFAULT_BACKGROUND_SECONDARY_COLOR)
+        self._grid_size = self.DEFAULT_GRID_SIZE
+        self._grid_spacing = self.DEFAULT_GRID_SPACING
+        self._grid_color = QColor(self.DEFAULT_GRID_COLOR)
+        self._apply_viewer_background_style()
+        self._apply_grid_style()
+        self._sync_viewer_style_controls()
+
+    def _sync_viewer_style_controls(self) -> None:
+        mode_index = self.background_mode_combo.findData(self._viewer_background_mode)
+        self.background_mode_combo.blockSignals(True)
+        self.background_mode_combo.setCurrentIndex(max(0, mode_index))
+        self.background_mode_combo.blockSignals(False)
+        self.grid_size_spin.blockSignals(True)
+        self.grid_size_spin.setValue(int(self._grid_size))
+        self.grid_size_spin.blockSignals(False)
+        self.grid_spacing_spin.blockSignals(True)
+        self.grid_spacing_spin.setValue(int(self._grid_spacing))
+        self.grid_spacing_spin.blockSignals(False)
+        self._refresh_viewer_style_controls()
+        self._apply_viewer_background_style()
+        self._apply_grid_style()
+
+    def _refresh_viewer_style_controls(self) -> None:
+        self._set_color_button_preview(self.btn_background_primary_color, self._viewer_background_primary_color)
+        self._set_color_button_preview(self.btn_background_secondary_color, self._viewer_background_secondary_color)
+        self._set_color_button_preview(self.btn_grid_color, self._grid_color)
+        is_gradient = self._viewer_background_mode == "gradient"
+        self.btn_background_secondary_color.setEnabled(is_gradient)
+
+    def _set_color_button_preview(self, button: QPushButton, color: QColor) -> None:
+        text_color = "#101010" if color.lightness() > 128 else "#f0f0f0"
+        button.setText(color.name().upper())
+        button.setStyleSheet(
+            f"""
+            QPushButton {{
+                background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()});
+                color: {text_color};
+                border: 1px solid rgba(255, 255, 255, 24);
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                border-color: rgba(255, 255, 255, 60);
+            }}
+            """
+        )
+
+    def _apply_viewer_background_style(self) -> None:
+        self.viewer.set_background_style(
+            self._viewer_background_mode,
+            self._viewer_background_primary_color,
+            self._viewer_background_secondary_color,
+        )
+
+    def _apply_grid_style(self) -> None:
+        self._rebuild_grid_item()
 
     def get_display_state(self) -> ViewerDisplayState:
         return ViewerDisplayState(
@@ -911,6 +1475,9 @@ class Viewer3DWidget(QWidget):
         self._set_overlay_button_state(self.btn_toggle_transparency, self.transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_axes, self.show_axes)
         self._set_overlay_button_state(self.btn_toggle_frame_lists, self._is_frame_lists_overlay_visible())
+        self._set_overlay_button_state(self.btn_toggle_viewer_style, self.viewer_style_overlay.isVisible())
+        self._set_overlay_button_state(self.btn_toggle_view_presets, self.viewer_presets_overlay.isVisible())
+        self._set_overlay_button_state(self.btn_toggle_perspective, self.viewer.is_perspective_enabled())
         self._set_overlay_button_state(self.btn_toggle_workspace_tcp_zones, self._workspace_tcp_zones_visible)
         self._set_overlay_button_state(self.btn_toggle_workspace_collision_zones, self._workspace_collision_zones_visible)
         self._set_overlay_button_state(self.btn_toggle_robot_colliders, self._robot_colliders_visible)
@@ -968,6 +1535,83 @@ class Viewer3DWidget(QWidget):
             for idx in range(6)
         )
 
+    def _draw_cube_view_icon(self, painter: QPainter, face_kind: str | None) -> None:
+        view_pen = QPen(painter.pen())
+        view_pen.setWidthF(1.15)
+        painter.setPen(view_pen)
+
+        front_face = QPolygonF([
+            QPointF(2.8, 5.8),
+            QPointF(13.2, 5.8),
+            QPointF(13.2, 15.6),
+            QPointF(2.8, 15.6),
+        ])
+        top_face = QPolygonF([
+            QPointF(2.8, 5.8),
+            QPointF(8.2, 1.8),
+            QPointF(17.9, 1.8),
+            QPointF(13.2, 5.8),
+        ])
+        right_face = QPolygonF([
+            QPointF(13.2, 5.8),
+            QPointF(17.9, 1.8),
+            QPointF(17.9, 11.8),
+            QPointF(13.2, 15.6),
+        ])
+
+        hidden_front_face = QPolygonF([
+            QPointF(8.2, 1.8),
+            QPointF(17.9, 1.8),
+            QPointF(17.9, 11.8),
+            QPointF(8.2, 11.8),
+        ])
+        hidden_right_face = QPolygonF([
+            QPointF(2.8, 5.8),
+            QPointF(8.2, 1.8),
+            QPointF(8.2, 11.8),
+            QPointF(2.8, 15.6),
+        ])
+
+        outline_brush = QBrush(Qt.BrushStyle.NoBrush)
+        highlight_brush = QBrush(QColor(self.ACTIVE_ICON_COLOR.red(), self.ACTIVE_ICON_COLOR.green(), self.ACTIVE_ICON_COLOR.blue(), 95))
+        highlight_brush_soft = QBrush(QColor(self.ACTIVE_ICON_COLOR.red(), self.ACTIVE_ICON_COLOR.green(), self.ACTIVE_ICON_COLOR.blue(), 70))
+
+        painter.setBrush(outline_brush)
+        painter.drawPolygon(top_face)
+        painter.drawPolygon(right_face)
+        painter.drawPolygon(front_face)
+
+        if face_kind == "top":
+            painter.setBrush(highlight_brush)
+            painter.drawPolygon(top_face)
+        elif face_kind == "right":
+            painter.setBrush(highlight_brush)
+            painter.drawPolygon(right_face)
+        elif face_kind in {"front", "view_cube"}:
+            painter.setBrush(highlight_brush)
+            painter.drawPolygon(front_face)
+        elif face_kind == "left":
+            painter.setBrush(highlight_brush_soft)
+            painter.drawPolygon(hidden_right_face)
+        elif face_kind == "back":
+            painter.setBrush(highlight_brush_soft)
+            painter.drawPolygon(hidden_front_face)
+        elif face_kind == "bottom":
+            painter.setBrush(highlight_brush_soft)
+            painter.drawRect(2, 13, 11, 2)
+        elif face_kind == "iso":
+            painter.setBrush(highlight_brush_soft)
+            painter.drawPolygon(top_face)
+            painter.setBrush(highlight_brush)
+            painter.drawPolygon(right_face)
+            painter.setBrush(highlight_brush_soft)
+            painter.drawPolygon(front_face)
+
+        painter.setBrush(outline_brush)
+        painter.drawPolygon(top_face)
+        painter.drawPolygon(right_face)
+        painter.drawPolygon(front_face)
+
     def _build_toolbar_icon(self, icon_kind: str, active: bool) -> QIcon:
         size = 20
         pixmap = QPixmap(size, size)
@@ -1006,6 +1650,38 @@ class Viewer3DWidget(QWidget):
             painter.drawEllipse(2, 4, 2, 2)
             painter.drawEllipse(2, 9, 2, 2)
             painter.drawEllipse(2, 14, 2, 2)
+        elif icon_kind == "appearance":
+            painter.drawRect(3, 4, 14, 12)
+            painter.drawLine(3, 9, 17, 9)
+            painter.drawLine(8, 4, 8, 16)
+            painter.drawEllipse(5, 6, 2, 2)
+            painter.drawEllipse(10, 11, 2, 2)
+        elif icon_kind == "view_cube":
+            self._draw_cube_view_icon(painter, "view_cube")
+        elif icon_kind == "perspective":
+            painter.drawRect(4, 5, 12, 10)
+            painter.drawLine(4, 5, 7, 3)
+            painter.drawLine(16, 5, 19, 3)
+            painter.drawLine(7, 3, 19, 3)
+            painter.drawLine(16, 15, 19, 13)
+            painter.drawLine(19, 3, 19, 13)
+            painter.drawLine(10, 8, 13, 8)
+            painter.drawLine(9, 10, 14, 10)
+            painter.drawLine(8, 12, 15, 12)
+        elif icon_kind == "view_right":
+            self._draw_cube_view_icon(painter, "right")
+        elif icon_kind == "view_left":
+            self._draw_cube_view_icon(painter, "left")
+        elif icon_kind == "view_front":
+            self._draw_cube_view_icon(painter, "front")
+        elif icon_kind == "view_back":
+            self._draw_cube_view_icon(painter, "back")
+        elif icon_kind == "view_top":
+            self._draw_cube_view_icon(painter, "top")
+        elif icon_kind == "view_bottom":
+            self._draw_cube_view_icon(painter, "bottom")
+        elif icon_kind == "view_iso":
+            self._draw_cube_view_icon(painter, "iso")
         elif icon_kind == "tcp_zones":
             painter.drawRoundedRect(3, 3, 14, 14, 3, 3)
             painter.drawLine(10, 6, 10, 14)
@@ -1281,14 +1957,23 @@ class Viewer3DWidget(QWidget):
         self._position_overlays()
 
     def add_grid(self):
+        self._rebuild_grid_item()
+
+    def _rebuild_grid_item(self) -> None:
+        if self._grid_item is not None:
+            self._safe_remove_viewer_item(self._grid_item)
+            self._grid_item = None
+
         grid = gl.GLGridItem()
-        grid.setSize(x=4000, y=4000, z=0)
-        grid.setSpacing(x=200, y=200, z=200)
-        grid.setColor((150, 150, 150, 100))
+        grid.setSize(x=float(self._grid_size), y=float(self._grid_size), z=0.0)
+        grid.setSpacing(x=float(self._grid_spacing), y=float(self._grid_spacing), z=float(self._grid_spacing))
+        grid.setColor((self._grid_color.red(), self._grid_color.green(), self._grid_color.blue(), self._grid_color.alpha()))
         self.viewer.addItem(grid)
+        self._grid_item = grid
 
     def clear_viewer(self):
         self.viewer.clear()
+        self._grid_item = None
         self.add_grid()
         self._robot_frame_items = []
         self._workspace_frame_items = []
