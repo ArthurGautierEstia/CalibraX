@@ -59,9 +59,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_mode = "picked"
             self._orbit_pivot_point_world = self._pick_orbit_world_point(local_position)
+            self._origin_orbit_anchor_world = None
             if self._orbit_pivot_point_world is None:
                 self._orbit_pivot_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
                 self._orbit_pivot_mode = "origin"
+                self._origin_orbit_anchor_world = self._project_cursor_to_floor(local_position)
+                if self._origin_orbit_anchor_world is None:
+                    self._origin_orbit_anchor_world = self._project_cursor_to_center_depth(local_position)
             self._orbit_pivot_screen_position = local_position
             self._orbit_pivot_camera_distance = (
                 self._camera_distance_to_point(self._orbit_pivot_point_world)
@@ -74,6 +78,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_point_world = None
             self._orbit_pivot_mode = None
+            self._origin_orbit_anchor_world = None
             self._orbit_pivot_screen_position = None
             self._orbit_pivot_camera_distance = None
         super().mouseReleaseEvent(ev)
@@ -103,7 +108,12 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self.mousePos = local_position
             diff = local_position - self.mousePos
             self.mousePos = local_position
-            self._orbit_around_fixed_pivot(np.array([0.0, 0.0, 0.0], dtype=float), -diff.x(), -diff.y())
+            rotation_factor = self._compute_origin_orbit_rotation_factor()
+            self._orbit_around_fixed_pivot(
+                np.array([0.0, 0.0, 0.0], dtype=float),
+                -diff.x() * rotation_factor,
+                -diff.y() * rotation_factor,
+            )
             return
 
         super().mouseMoveEvent(ev)
@@ -229,7 +239,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
     def _pick_orbit_world_point(self, local_position) -> np.ndarray | None:
         if self._is_grid_topmost_at(local_position):
-            return None
+            return self._pick_world_point_without_grid(local_position)
         return self._pick_world_point(local_position)
 
     def _is_grid_topmost_at(self, local_position) -> bool:
@@ -243,7 +253,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             return False
         if not items:
             return False
-        return all(self._belongs_to_grid(item, grid_item) for item in items)
+        return self._belongs_to_grid(items[0], grid_item)
 
     @staticmethod
     def _belongs_to_grid(item, grid_item) -> bool:
@@ -254,6 +264,39 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             parent_getter = getattr(current_item, "parentItem", None)
             current_item = parent_getter() if callable(parent_getter) else None
         return False
+
+    def _pick_world_point_without_grid(self, local_position) -> np.ndarray | None:
+        grid_item = self._grid_reference
+        if grid_item is None:
+            return None
+
+        viewport_width, viewport_height = self._device_viewport_size()
+        screen_x = float(local_position.x()) * self.devicePixelRatioF()
+        screen_y = float(local_position.y()) * self.devicePixelRatioF()
+        pixel_x = int(round(screen_x))
+        pixel_y = int(round((viewport_height - 1) - screen_y))
+        if pixel_x < 0 or pixel_x >= viewport_width or pixel_y < 0 or pixel_y >= viewport_height:
+            return None
+
+        grid_item.hide()
+        depth_value: float | None = None
+        try:
+            self.makeCurrent()
+            try:
+                region = (0, 0, viewport_width, viewport_height)
+                self.paint(region=region, viewport=region)
+                depth_data = glReadPixels(pixel_x, pixel_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
+            finally:
+                self.doneCurrent()
+            depth_array = np.asarray(depth_data, dtype=float).reshape(-1)
+            if depth_array.size > 0:
+                depth_value = float(depth_array[0])
+        finally:
+            grid_item.show()
+
+        if depth_value is None or depth_value >= 1.0:
+            return None
+        return self._unproject_view_point(local_position, depth_value)
 
     def _recenter_to_keep_point_under_cursor(
         self,
@@ -373,6 +416,19 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             np.array([0.0, 0.0, 0.0], dtype=float),
             np.array([0.0, 0.0, 1.0], dtype=float),
         )
+
+    def _compute_origin_orbit_rotation_factor(self) -> float:
+        anchor_world = getattr(self, "_origin_orbit_anchor_world", None)
+        if anchor_world is None:
+            return 0.42
+
+        lever_arm_distance = float(np.linalg.norm(np.array(anchor_world, dtype=float)))
+        if lever_arm_distance <= 1e-6:
+            return 0.42
+
+        reference_distance = max(150.0, float(self.opts["distance"]) * 0.3)
+        distance_ratio = reference_distance / lever_arm_distance
+        return float(np.clip(0.42 * distance_ratio, 0.05, 0.42))
 
     def _dolly_along_cursor_ray(self, local_position, target_point_world: np.ndarray | None, wheel_delta: int) -> None:
         if wheel_delta == 0:
