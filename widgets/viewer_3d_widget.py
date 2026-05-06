@@ -84,7 +84,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self.mousePos = local_position
             diff = local_position - self.mousePos
             self.mousePos = local_position
-            self.pan(diff.x(), 0.0, diff.y(), relative="view-upright")
+            pan_speed_factor = self._compute_middle_pan_speed_factor(local_position)
+            self.pan(
+                diff.x() * pan_speed_factor,
+                0.0,
+                diff.y() * pan_speed_factor,
+                relative="view-upright",
+            )
             return
 
         if (
@@ -367,6 +373,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if target_point_world is not None:
             self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
 
+    def _compute_middle_pan_speed_factor(self, local_position) -> float:
+        target_point_world = self._pick_world_point(local_position)
+        if target_point_world is None:
+            target_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
+        distance = max(1.0, float(self._camera_distance_to_point(target_point_world) or 1.0))
+        return float(np.clip((distance / 2000.0) ** 0.85, 0.2, 6.0))
+
     def _orbit_around_fixed_pivot(
         self,
         pivot_point_world: np.ndarray,
@@ -580,12 +593,14 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             return zoom_direction * max(1.0, abs(float(wheel_delta)) * 0.25)
 
         safe_distance = max(1e-6, float(distance_to_target))
-        proportional_step = safe_distance * (1.0 - (0.999 ** abs(int(wheel_delta))))
-        step_distance = max(1.0, proportional_step)
-
         if zoom_direction > 0.0:
-            max_forward_step = max(0.0, safe_distance - 1e-3)
+            proportional_step = safe_distance * (1.0 - (0.998 ** abs(int(wheel_delta))))
+            step_distance = max(1.0, proportional_step)
+            max_forward_step = max(0.0, safe_distance - 1e-4)
             return min(step_distance, max_forward_step)
+
+        proportional_step = safe_distance * (1.0 - (0.998 ** abs(int(wheel_delta))))
+        step_distance = max(1.0, proportional_step)
         return -step_distance
 
 @dataclass(frozen=True)
