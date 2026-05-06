@@ -3,7 +3,7 @@ from bisect import bisect_left
 from pathlib import Path
 import time
 
-from PyQt6.QtCore import QObject, QThread, QTimer, Qt
+from PyQt6.QtCore import QObject, QTimer, Qt
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.robot_model import RobotModel
@@ -12,7 +12,6 @@ from models.trajectory_preview import TrajectoryPreviewResult, TrajectoryPreview
 from models.types import JointAngles6, Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 from models.trajectory_result import (
-    SegmentResult,
     TrajectoryDynamicViolationSeverity,
     TrajectoryComputationStatus,
     TrajectoryResult,
@@ -22,13 +21,9 @@ from models.trajectory_result import (
 )
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.reference_frame import ReferenceFrame
-from utils.trajectory_builder import TrajectoryBuilder
-from utils.trajectory_full_analysis_worker import TrajectoryFullAnalysisResult, TrajectoryFullAnalysisWorker
-from utils.trajectory_preview_builder import TrajectoryPreviewBuilder
-from utils.trajectory_validity_analyzer import (
-    TrajectoryValidityCancelToken,
-    TrajectoryValidityContext,
-)
+from trajectory_engine.adapters import TrajectoryControllerBuildBridge
+from trajectory_engine.managers import TrajectoryBuildManager
+from trajectory_engine.models import TrajectoryBuildTriggerMode
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from utils.trajectory_status import build_trajectory_issue_messages, build_trajectory_warning_messages
 from utils.trajectory_paths import get_trajectories_directory
@@ -64,19 +59,24 @@ class TrajectoryController(QObject):
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self._sample_dt_s = 0.004
         self.trajectory_view = trajectory_view
         self.viewer3d_controller = viewer3d_controller
         self.config_widget = self.trajectory_view.get_config_widget()
         self.actions_widget = self.trajectory_view.get_actions_widget()
         self.graphs_widget = self.trajectory_view.get_graphs_widget()
 
-        self.trajectory_builder = TrajectoryBuilder(
-            self.robot_model,
-            self.tool_model,
-            self.workspace_model,
-            smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
-            bezier_degree=self.config_widget.get_bezier_degree(),
-            jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
+        self._build_manager = TrajectoryBuildManager(
+            robot_model=self.robot_model,
+            tool_model=self.tool_model,
+            workspace_model=self.workspace_model,
+            debounce_ms=120,
+            validity_pool_size=1,
+            parent=self,
+        )
+        self._build_bridge = TrajectoryControllerBuildBridge(
+            build_manager=self._build_manager,
+            parent=self,
         )
         self.current_trajectory = TrajectoryResult()
         self.current_samples: list[TrajectorySample] = []
@@ -92,14 +92,7 @@ class TrajectoryController(QObject):
         self._is_keypoint_preview_active = False
         self._selected_keypoint_index: int | None = None
         self._editing_keypoint_index: int | None = None
-        self._collision_job_sequence = 0
-        self._active_collision_job_id: int | None = None
-        self._collision_threads: list[QThread] = []
-        self._collision_workers: list[TrajectoryFullAnalysisWorker] = []
         self._trajectory_generation_sequence = 0
-        self._collision_job_traj_ids: dict[int, int] = {}
-        self._collision_job_total_start_s: dict[int, float] = {}
-        self._collision_job_detect_start_s: dict[int, float] = {}
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
         self._playback_timer = QTimer(self)
@@ -133,6 +126,9 @@ class TrajectoryController(QObject):
         self.actions_widget.stop_requested.connect(self._on_stop_requested)
         self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
         self.workspace_model.workspace_changed.connect(self._on_workspace_changed)
+        self._build_bridge.preview_ready.connect(self._on_engine_preview_ready)
+        self._build_bridge.result_ready.connect(self._on_engine_result_ready)
+        self._build_bridge.build_failed.connect(self._on_engine_build_failed)
 
     def _on_show_robot_ghost_requested(self) -> None:
         self.viewer3d_controller.show_robot_ghost()
@@ -172,25 +168,22 @@ class TrajectoryController(QObject):
         # trajectoryPreviewFinished to avoid duplicate recomputations.
         if self._is_keypoint_preview_active:
             return
-        self._recompute_trajectory()
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
 
     def _on_time_smoothing_changed(self, _enabled: bool) -> None:
-        self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
         if self._is_keypoint_preview_active:
             return
-        self._recompute_trajectory()
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
 
     def _on_jerk_check_changed(self, _enabled: bool) -> None:
-        self.trajectory_builder.set_jerk_check_enabled(self.config_widget.is_jerk_check_enabled())
         if self._is_keypoint_preview_active:
             return
-        self._recompute_trajectory()
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
 
     def _on_bezier_degree_changed(self, _degree: str) -> None:
-        self.trajectory_builder.set_bezier_degree(self.config_widget.get_bezier_degree())
         if self._is_keypoint_preview_active:
             return
-        self._recompute_trajectory()
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
 
     def _on_keypoint_selection_changed(self, row: object) -> None:
         self._selected_keypoint_index = row if isinstance(row, int) and row >= 0 else None
@@ -208,16 +201,16 @@ class TrajectoryController(QObject):
 
     def _on_trajectory_preview_requested(self, keypoints: list[TrajectoryKeypoint]) -> None:
         self._is_keypoint_preview_active = True
-        self._recompute_trajectory(keypoints)
+        self._recompute_trajectory(keypoints, trigger_mode=TrajectoryBuildTriggerMode.LIVE_PREVIEW)
 
     def _on_trajectory_preview_finished(self) -> None:
         if not self._is_keypoint_preview_active:
             return
         self._is_keypoint_preview_active = False
-        self._recompute_trajectory()
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.FORCED_FULL)
 
     def _on_compute_requested(self) -> None:
-        self._recompute_trajectory()
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.FORCED_FULL)
 
     def _on_cartesian_display_frame_changed(self, _frame: str) -> None:
         self._update_graphs()
@@ -439,30 +432,22 @@ class TrajectoryController(QObject):
                 f"Impossible d'exporter la trajectoire.\n{exc}",
             )
 
-    def _recompute_trajectory(self, keypoints_override: list[TrajectoryKeypoint] | None = None) -> None:
+    def _recompute_trajectory(
+        self,
+        keypoints_override: list[TrajectoryKeypoint] | None = None,
+        trigger_mode: TrajectoryBuildTriggerMode = TrajectoryBuildTriggerMode.DEBOUNCED_FULL,
+    ) -> None:
         self._trajectory_generation_sequence += 1
         traj_id = self._trajectory_generation_sequence
-        total_start_s = time.perf_counter()
-        running_worker_count = len(self._collision_workers)
-        worker_free = running_worker_count == 0
         self._log_benchmark("---------------")
-        self._log_benchmark(f"desir de faire une traj traj_id={traj_id}")
-        self._log_benchmark(
-            "worker free="
-            f"{worker_free} active_job_id={self._active_collision_job_id} running_workers={running_worker_count}"
-        )
+        self._log_benchmark(f"submit trajectory build traj_id={traj_id} trigger={trigger_mode.value}")
         self._cancel_collision_analysis()
         self._stop_playback()
-        self.trajectory_builder.set_time_smoothing_enabled(self.config_widget.is_time_smoothing_enabled())
-        self.trajectory_builder.set_jerk_check_enabled(self.config_widget.is_jerk_check_enabled())
-        self.trajectory_builder.set_bezier_degree(self.config_widget.get_bezier_degree())
         if keypoints_override is None:
             keypoints = self.config_widget.get_keypoints()
         else:
             keypoints = [keypoint.clone() for keypoint in keypoints_override]
         self._displayed_keypoints = [keypoint.clone() for keypoint in keypoints]
-        generation_start_s = time.perf_counter()
-        self._log_benchmark(f"generating preview... traj_id={traj_id}")
         if not keypoints:
             self.current_trajectory = TrajectoryResult()
             self.current_preview = TrajectoryPreviewResult()
@@ -474,51 +459,16 @@ class TrajectoryController(QObject):
             self._set_analysis_pending(False)
             self._reset_trajectory_visuals()
             self._update_trajectory_issue_messages()
-            generation_ms = self._elapsed_ms(generation_start_s)
-            self._log_benchmark(f"done : {generation_ms:.3f} ms traj_id={traj_id} samples=0")
-            self._log_benchmark(f"detect collision skipped... traj_id={traj_id} reason=no_samples")
-            total_end_s = time.perf_counter()
-            total_ms = self._duration_ms(total_start_s, total_end_s)
-            self._log_benchmark(
-                "temps total start->end : "
-                f"{total_ms:.3f} ms traj_id={traj_id} "
-                f"total_start_perf_s={total_start_s:.9f} total_end_perf_s={total_end_s:.9f} "
-                f"trajectory_object_id={id(self.current_trajectory)}"
-            )
             return
 
         current_joints = JointAngles6.from_values(self.robot_model.get_joints())
-        preview_builder = TrajectoryPreviewBuilder(
-            self.robot_model,
-            self.tool_model,
-            self.workspace_model,
-            sample_dt_s=self.trajectory_builder.sample_dt_s,
-            smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
-            bezier_degree=self.config_widget.get_bezier_degree(),
-            jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
-        )
         self.current_trajectory = TrajectoryResult()
-        if len(keypoints) == 1:
-            self.current_preview = TrajectoryPreviewResult()
-            first_preview = preview_builder.compute_first_preview_segment(current_joints, keypoints[0], 0.0)
-            self.current_preview.segments.append(first_preview)
-            self.current_preview.status = first_preview.status
-            self.current_preview.first_error_segment_index = (
-                0 if first_preview.status != TrajectoryComputationStatus.SUCCESS else None
-            )
-            self.current_preview.analysis_pending = bool(first_preview.samples)
-        else:
-            self.current_preview = preview_builder.compute_preview(current_joints, self._build_segments(keypoints))
+        self.current_preview = TrajectoryPreviewResult()
         self.current_samples = []
         self.current_sample_times = []
-        self.current_preview_samples = self._flatten_preview_samples(self.current_preview)
-        self.current_preview_sample_times = [sample.time_s for sample in self.current_preview_samples]
+        self.current_preview_samples = []
+        self.current_preview_sample_times = []
         self._set_analysis_pending(True)
-        generation_ms = self._elapsed_ms(generation_start_s)
-        self._log_benchmark(
-            f"preview done : {generation_ms:.3f} ms traj_id={traj_id} "
-            f"preview_object_id={id(self.current_preview)} samples={len(self.current_preview_samples)}"
-        )
         self.config_widget.set_trajectory_context(self.current_trajectory)
         self._update_preview_graphs()
         self._update_3d_trajectory_path()
@@ -527,7 +477,15 @@ class TrajectoryController(QObject):
         self.actions_widget.set_issue_messages([])
         self.actions_widget.set_warning_messages([])
         self._apply_time_value(0.0, force_real_robot=False)
-        self._start_full_analysis(traj_id, total_start_s, current_joints, keypoints)
+        self._build_bridge.submit(
+            current_joints=current_joints,
+            keypoints=keypoints,
+            sample_dt_s=self._sample_dt_s,
+            smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
+            bezier_degree=self.config_widget.get_bezier_degree(),
+            jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
+            trigger_mode=trigger_mode,
+        )
 
     @staticmethod
     def _elapsed_ms(start_s: float) -> float:
@@ -562,14 +520,7 @@ class TrajectoryController(QObject):
         return samples
 
     def _cancel_collision_analysis(self) -> None:
-        if self._collision_workers:
-            self._log_benchmark(
-                f"requete de cancel active_job_id={self._active_collision_job_id} "
-                f"worker_count={len(self._collision_workers)}"
-            )
-        self._active_collision_job_id = None
-        for worker in list(self._collision_workers):
-            worker.request_cancel()
+        self._build_bridge.cancel_active()
 
     def _set_analysis_pending(self, pending: bool) -> None:
         self._trajectory_analysis_pending = bool(pending)
@@ -581,105 +532,30 @@ class TrajectoryController(QObject):
         else:
             self.viewer3d_controller.clear_trajectory_status_message()
 
-    def _start_full_analysis(
-        self,
-        traj_id: int,
-        total_start_s: float,
-        current_joints: JointAngles6,
-        keypoints: list[TrajectoryKeypoint],
-    ) -> None:
+    def _reanalyze_current_trajectory_validity(self) -> None:
+        keypoints = self.config_widget.get_keypoints()
         if not keypoints:
-            self._log_benchmark(f"full analysis skipped... traj_id={traj_id} reason=no_keypoints")
-            total_end_s = time.perf_counter()
-            total_ms = self._duration_ms(total_start_s, total_end_s)
-            self._log_benchmark(
-                "temps total start->end : "
-                f"{total_ms:.3f} ms traj_id={traj_id} "
-                f"total_start_perf_s={total_start_s:.9f} total_end_perf_s={total_end_s:.9f} "
-                f"trajectory_object_id={id(self.current_trajectory)}"
-            )
             return
+        self._recompute_trajectory(keypoints, trigger_mode=TrajectoryBuildTriggerMode.FORCED_FULL)
 
-        self._collision_job_sequence += 1
-        job_id = self._collision_job_sequence
-        self._active_collision_job_id = job_id
-        self._collision_job_traj_ids[job_id] = int(traj_id)
-        self._collision_job_total_start_s[job_id] = float(total_start_s)
-        self._collision_job_detect_start_s[job_id] = time.perf_counter()
-        self._log_benchmark(
-            f"full analysis started... traj_id={traj_id} job_id={job_id} "
-            f"preview_object_id={id(self.current_preview)} samples={len(self.current_preview_samples)}"
-        )
-
-        context = TrajectoryValidityContext.from_models(
-            self.robot_model,
-            self.tool_model,
-            self.workspace_model,
-        )
-        cancel_token = TrajectoryValidityCancelToken()
-        worker = TrajectoryFullAnalysisWorker(
-            job_id=job_id,
-            robot_model=self.robot_model,
-            tool_model=self.tool_model,
-            workspace_model=self.workspace_model,
-            current_joints=current_joints,
-            keypoints=keypoints,
-            context=context,
-            cancel_token=cancel_token,
-            sample_dt_s=self.trajectory_builder.sample_dt_s,
-            smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
-            bezier_degree=self.config_widget.get_bezier_degree(),
-            jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
-        )
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.completed.connect(self._on_full_analysis_worker_completed)
-        worker.cancelled.connect(self._on_collision_worker_cancelled)
-        worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda thread_ref=thread, worker_ref=worker: self._forget_collision_worker(thread_ref, worker_ref)
-        )
-
-        self._collision_threads.append(thread)
-        self._collision_workers.append(worker)
-        thread.start()
-
-    def _on_full_analysis_worker_completed(self, job_id: int, payload: object) -> None:
-        if job_id != self._active_collision_job_id:
-            self._log_benchmark(
-                f"full analysis done ignored stale job_id={job_id} active_job_id={self._active_collision_job_id}"
-            )
-            self._clear_collision_job_benchmark(job_id)
+    def _on_engine_preview_ready(self, preview: object) -> None:
+        if not isinstance(preview, TrajectoryPreviewResult):
             return
-        self._active_collision_job_id = None
-        if not isinstance(payload, TrajectoryFullAnalysisResult):
-            self._clear_collision_job_benchmark(job_id)
-            return
-        detect_start_s = self._collision_job_detect_start_s.get(job_id)
-        total_start_s = self._collision_job_total_start_s.get(job_id)
-        traj_id = self._collision_job_traj_ids.get(job_id)
-        if detect_start_s is not None:
-            self._log_benchmark(
-                f"done : {self._elapsed_ms(detect_start_s):.3f} ms "
-                f"traj_id={traj_id} job_id={job_id} has_error={payload.validity.has_error}"
-            )
-        if total_start_s is not None:
-            total_end_s = time.perf_counter()
-            self._log_benchmark(
-                "temps total start->end : "
-                f"{self._duration_ms(total_start_s, total_end_s):.3f} ms traj_id={traj_id} "
-                f"job_id={job_id} total_start_perf_s={total_start_s:.9f} "
-                f"total_end_perf_s={total_end_s:.9f} "
-                f"trajectory_object_id={id(self.current_trajectory)}"
-            )
-        self._clear_collision_job_benchmark(job_id)
+        self.current_preview = preview
+        self.current_preview_samples = self._flatten_preview_samples(preview)
+        self.current_preview_sample_times = [sample.time_s for sample in self.current_preview_samples]
+        self._set_analysis_pending(True)
+        self._update_preview_graphs()
+        self._update_3d_trajectory_path()
+        self._update_3d_keypoint_overlays()
+        self._update_preview_timeline()
+        self._apply_time_value(0.0, force_real_robot=False)
 
-        self.current_trajectory = payload.trajectory
-        self.current_samples = self._flatten_samples(self.current_trajectory)
+    def _on_engine_result_ready(self, trajectory: object) -> None:
+        if not isinstance(trajectory, TrajectoryResult):
+            return
+        self.current_trajectory = trajectory
+        self.current_samples = self._flatten_samples(trajectory)
         self.current_sample_times = [sample.time for sample in self.current_samples]
         self.current_preview = TrajectoryPreviewResult()
         self.current_preview_samples = []
@@ -692,43 +568,13 @@ class TrajectoryController(QObject):
         self._update_timeline()
         self._update_trajectory_issue_messages()
 
-    def _on_collision_worker_completed(self, job_id: int, payload: object) -> None:
-        self._on_full_analysis_worker_completed(job_id, payload)
-
-    def _on_collision_worker_cancelled(self, job_id: int) -> None:
-        traj_id = self._collision_job_traj_ids.get(job_id)
-        detect_start_s = self._collision_job_detect_start_s.get(job_id)
-        if detect_start_s is None:
-            self._log_benchmark(f"worker canceled traj_id={traj_id} job_id={job_id}")
-        else:
-            self._log_benchmark(
-                f"worker canceled traj_id={traj_id} job_id={job_id} "
-                f"after={self._elapsed_ms(detect_start_s):.3f} ms"
-            )
-        self._clear_collision_job_benchmark(job_id)
-        if job_id == self._active_collision_job_id:
-            self._active_collision_job_id = None
-
-    def _clear_collision_job_benchmark(self, job_id: int) -> None:
-        self._collision_job_traj_ids.pop(job_id, None)
-        self._collision_job_total_start_s.pop(job_id, None)
-        self._collision_job_detect_start_s.pop(job_id, None)
-
-    def _forget_collision_worker(
-        self,
-        thread: QThread,
-        worker: TrajectoryFullAnalysisWorker,
-    ) -> None:
-        if thread in self._collision_threads:
-            self._collision_threads.remove(thread)
-        if worker in self._collision_workers:
-            self._collision_workers.remove(worker)
-
-    def _reanalyze_current_trajectory_validity(self) -> None:
-        keypoints = self.config_widget.get_keypoints()
-        if not keypoints:
-            return
-        self._recompute_trajectory(keypoints)
+    def _on_engine_build_failed(self, message: str) -> None:
+        self._set_analysis_pending(False)
+        QMessageBox.warning(
+            self.trajectory_view,
+            "Generation de trajectoire",
+            f"Echec de la generation de trajectoire.\n{message}",
+        )
 
     def _update_graphs(self) -> None:
         if self._trajectory_analysis_pending:
@@ -1193,7 +1039,7 @@ class TrajectoryController(QObject):
         self._playback_index = self._sample_index_at_time(self._current_time_s)
         self._playback_sim_start_s = float(self._current_time_s)
         self._playback_wall_start_s = time.perf_counter()
-        timer_interval_ms = max(1, int(round(self.trajectory_builder.sample_dt_s * 1000.0)))
+        timer_interval_ms = max(1, int(round(self._sample_dt_s * 1000.0)))
         self._playback_timer.start(timer_interval_ms)
         self._on_playback_tick()
 
