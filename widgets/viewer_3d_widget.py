@@ -59,12 +59,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self._orbit_pivot_mode = "picked"
             self._orbit_pivot_point_world = self._pick_world_point(local_position)
             if self._orbit_pivot_point_world is None:
-                if self.is_perspective_enabled():
-                    self._orbit_pivot_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
-                    self._orbit_pivot_mode = "origin"
-                else:
-                    self._orbit_pivot_point_world = self._project_cursor_to_floor(local_position)
-                    self._orbit_pivot_mode = "floor"
+                self._orbit_pivot_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
+                self._orbit_pivot_mode = "origin"
             self._orbit_pivot_screen_position = local_position
             self._orbit_pivot_camera_distance = (
                 self._camera_distance_to_point(self._orbit_pivot_point_world)
@@ -94,7 +90,6 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if (
             ev.buttons() & Qt.MouseButton.LeftButton
             and not (ev.modifiers() & Qt.KeyboardModifier.ControlModifier)
-            and self.is_perspective_enabled()
             and getattr(self, "_orbit_pivot_mode", None) == "origin"
         ):
             if not hasattr(self, "mousePos"):
