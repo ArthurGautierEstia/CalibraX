@@ -54,6 +54,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._background_secondary_color = QColor(15, 15, 18, 255)
         self._background_gradient_direction = "vertical"
         self._perspective_enabled = True
+        self._orthographic_zoom_factor = 1.0
         self._grid_reference = None
         self.setBackgroundColor(self._background_primary_color)
 
@@ -173,7 +174,12 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self.update()
 
     def set_perspective_enabled(self, enabled: bool) -> None:
-        self._perspective_enabled = bool(enabled)
+        enabled = bool(enabled)
+        if self._perspective_enabled == enabled:
+            self.update()
+            return
+
+        self._perspective_enabled = enabled
         self.update()
 
     def is_perspective_enabled(self) -> bool:
@@ -201,7 +207,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         if self._perspective_enabled:
             tr.frustum(left, right, bottom, top, near_clip, far_clip)
         else:
-            ortho_scale = dist / near_clip
+            ortho_scale = (dist * self._orthographic_zoom_factor) / near_clip
             tr.ortho(
                 left * ortho_scale,
                 right * ortho_scale,
@@ -477,7 +483,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             return
 
         zoom_factor = 0.999 ** wheel_delta
-        self.opts["distance"] = max(1.0, float(self.opts["distance"]) * zoom_factor)
+        self._orthographic_zoom_factor = max(1e-3, float(self._orthographic_zoom_factor) * zoom_factor)
         if target_point_world is not None:
             self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
 
@@ -988,7 +994,7 @@ class Viewer3DWidget(QWidget):
         self.background_gradient_direction_combo.addItem("Radial", userData="radial")
         self.background_gradient_direction_row = self._create_style_row("Direction", self.background_gradient_direction_combo)
         viewer_style_layout.addWidget(self.background_gradient_direction_row)
-        self.btn_swap_background_colors = QPushButton("Echanger", self.viewer_style_overlay)
+        self.btn_swap_background_colors = QPushButton("Inverser", self.viewer_style_overlay)
         self.btn_swap_background_colors.setCursor(Qt.CursorShape.PointingHandCursor)
         self.background_swap_colors_row = self._create_style_row("", self.btn_swap_background_colors)
         viewer_style_layout.addWidget(self.background_swap_colors_row)

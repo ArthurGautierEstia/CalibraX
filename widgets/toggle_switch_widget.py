@@ -141,7 +141,8 @@ class ToggleSwitchWidget(QWidget):
             max(0, self.width() - track_rect.right() - margin - 10),
             self.height(),
         )
-        track_color = self._color_on if self._checked else self._color_off
+        accent_color = self.palette().color(QPalette.ColorRole.Highlight)
+        track_color = accent_color if self._checked else self._color_off
         if not self.isEnabled():
             track_color = self._color_disabled
         painter.setBrush(track_color)

@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QGroupBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QEvent
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QPalette
 import utils.math_utils as math_utils
 import numpy as np
 
@@ -59,7 +59,8 @@ class DHCellWidget(QWidget):
 
     def _update_label_style(self, checked: bool) -> None:
         if checked:
-            self.label.setStyleSheet("color: #ff8c00;")
+            accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+            self.label.setStyleSheet(f"color: {accent_hex};")
         else:
             self.label.setStyleSheet("")
 
@@ -79,6 +80,11 @@ class DHCellWidget(QWidget):
                 self.checkbox.setChecked(not self.checkbox.isChecked())
                 return True
         return super().eventFilter(obj, event)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._update_label_style(self.checkbox.isChecked())
 
 
 class MeasurementWidget(QWidget):
