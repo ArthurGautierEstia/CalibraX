@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint, QPointF
-from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QLinearGradient, QPolygonF, QRadialGradient
+from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QLinearGradient, QPolygonF, QRadialGradient, QPalette
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import shaders as gl_shaders
 from pyqtgraph.Qt import QtGui
@@ -1001,11 +1001,11 @@ class Viewer3DWidget(QWidget):
         self.grid_size_spin = QSpinBox(self.viewer_style_overlay)
         self.grid_size_spin.setRange(200, 20000)
         self.grid_size_spin.setSingleStep(100)
-        viewer_style_layout.addWidget(self._create_style_row("Grille taille", self.grid_size_spin))
+        viewer_style_layout.addWidget(self._create_style_row("Taille grille", self.grid_size_spin))
         self.grid_spacing_spin = QSpinBox(self.viewer_style_overlay)
         self.grid_spacing_spin.setRange(10, 5000)
         self.grid_spacing_spin.setSingleStep(10)
-        viewer_style_layout.addWidget(self._create_style_row("Grille pas", self.grid_spacing_spin))
+        viewer_style_layout.addWidget(self._create_style_row("Pas grille", self.grid_spacing_spin))
         self.btn_grid_color = self._create_color_picker_button("Couleur grille")
         viewer_style_layout.addWidget(self._create_style_row("Grille couleur", self.btn_grid_color))
         self.btn_save_viewer_theme = QPushButton("Enregistrer", self.viewer_style_overlay)
@@ -1657,9 +1657,8 @@ class Viewer3DWidget(QWidget):
         self._position_overlays()
 
     def _apply_viewer_chrome_style(self) -> None:
+        self._apply_application_accent_palette()
         text_rgba = f"rgba({self._viewer_text_color.red()}, {self._viewer_text_color.green()}, {self._viewer_text_color.blue()}, {self._viewer_text_color.alpha()})"
-        accent_rgba_soft = f"rgba({self._viewer_accent_color.red()}, {self._viewer_accent_color.green()}, {self._viewer_accent_color.blue()}, 48)"
-        accent_rgba_border = f"rgba({self._viewer_accent_color.red()}, {self._viewer_accent_color.green()}, {self._viewer_accent_color.blue()}, 120)"
 
         self.viewer_style_overlay.setStyleSheet(
             f"""
@@ -1673,13 +1672,8 @@ class Viewer3DWidget(QWidget):
                 font-size: 10px;
                 font-weight: 600;
             }}
-            QWidget#viewerStyleOverlay QComboBox,
-            QWidget#viewerStyleOverlay QSpinBox {{
-                background-color: rgba(25, 25, 28, 130);
+            QWidget#viewerStyleOverlay QComboBox {{
                 color: {text_rgba};
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 6px;
-                padding: 3px 6px;
                 min-height: 24px;
             }}
             """
@@ -1739,6 +1733,19 @@ class Viewer3DWidget(QWidget):
             icon_kind = button.property("icon_kind")
             if icon_kind is not None:
                 button.setIcon(self._build_toolbar_icon(str(icon_kind), button.isChecked()))
+
+    def _apply_application_accent_palette(self) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        palette = app.palette()
+        palette.setColor(QPalette.ColorRole.Highlight, self._viewer_accent_color)
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        palette.setColor(QPalette.ColorRole.Link, self._viewer_accent_color)
+        palette.setColor(QPalette.ColorRole.LinkVisited, self._viewer_accent_color.darker(115))
+        if hasattr(QPalette.ColorRole, "Accent"):
+            palette.setColor(QPalette.ColorRole.Accent, self._viewer_accent_color)
+        app.setPalette(palette)
 
     def _iter_overlay_buttons(self):
         yield self.btn_toggle_cad

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent
+from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -99,11 +100,9 @@ class ToolConfigurationWidget(QWidget):
         current_tool_title_label.setMinimumWidth(150)
         fields_layout.addWidget(current_tool_title_label, 0, 0)
         self.current_tool_profile_label = QLabel("Aucune configuration")
-        self.current_tool_profile_label.setStyleSheet(
-            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
-        )
         self.current_tool_profile_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.current_tool_profile_label.setMinimumWidth(220)
+        self._apply_current_tool_profile_label_style()
         fields_layout.addWidget(self.current_tool_profile_label, 0, 1)
 
         tool_name_title_label = QLabel("Nom du tool :")
@@ -149,6 +148,19 @@ class ToolConfigurationWidget(QWidget):
         tabs.addTab(self._build_cad_tab(), "CAD Files")
         tabs.addTab(self._build_colliders_tab(), "Colliders")
         layout.addWidget(tabs, 1)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._apply_current_tool_profile_label_style()
+
+    def _apply_current_tool_profile_label_style(self) -> None:
+        if self.current_tool_profile_label is None:
+            return
+        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.current_tool_profile_label.setStyleSheet(
+            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+        )
 
     def _build_configuration_tab(self) -> QWidget:
         tab = QWidget()

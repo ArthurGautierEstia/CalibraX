@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPalette
 
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
@@ -115,6 +115,12 @@ class ViewerControlOverlayWidget(QWidget):
         accent_rgba = f"rgba({accent_color.red()}, {accent_color.green()}, {accent_color.blue()}, 120)"
         accent_rgba_soft = f"rgba({accent_color.red()}, {accent_color.green()}, {accent_color.blue()}, 70)"
         self._CURRENT_CONFIG_COLOR = accent_hex
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Highlight, accent_color)
+        palette.setColor(QPalette.ColorRole.Link, accent_color)
+        if hasattr(QPalette.ColorRole, "Accent"):
+            palette.setColor(QPalette.ColorRole.Accent, accent_color)
+        self.setPalette(palette)
         self.setStyleSheet(
             f"""
             QWidget#viewerControlOverlay {{
@@ -126,49 +132,18 @@ class ViewerControlOverlayWidget(QWidget):
             QWidget#viewerControlOverlay QRadioButton {{
                 color: {text_hex};
             }}
-            QWidget#viewerControlOverlay QRadioButton::indicator {{
-                width: 12px;
-                height: 12px;
-            }}
-            QWidget#viewerControlOverlay QRadioButton::indicator:unchecked {{
-                border: 1px solid rgba(255, 255, 255, 90);
-                border-radius: 6px;
-                background: rgba(255, 255, 255, 18);
-            }}
-            QWidget#viewerControlOverlay QRadioButton::indicator:checked {{
-                border: 1px solid {accent_rgba};
-                border-radius: 6px;
-                background: {accent_hex};
-            }}
             QWidget#viewerControlOverlay QWidget#viewerModeSelector {{
                 background-color: rgba(255, 255, 255, 10);
                 border: 1px solid rgba(255, 255, 255, 32);
                 border-radius: 6px;
             }}
             QWidget#viewerControlOverlay QComboBox,
-            QWidget#viewerControlOverlay QPushButton,
-            QWidget#viewerControlOverlay QDoubleSpinBox {{
+            QWidget#viewerControlOverlay QPushButton {{
                 color: {text_hex};
                 background-color: rgba(255, 255, 255, 18);
                 border: 1px solid rgba(255, 255, 255, 28);
                 border-radius: 6px;
                 padding: 4px 6px;
-            }}
-            QWidget#viewerControlOverlay QSlider::groove:horizontal {{
-                height: 6px;
-                background: rgba(255, 255, 255, 26);
-                border-radius: 3px;
-            }}
-            QWidget#viewerControlOverlay QSlider::handle:horizontal {{
-                background: {accent_hex};
-                border: 1px solid {accent_rgba};
-                width: 12px;
-                margin: -4px 0;
-                border-radius: 6px;
-            }}
-            QWidget#viewerControlOverlay QSlider::sub-page:horizontal {{
-                background: {accent_rgba_soft};
-                border-radius: 3px;
             }}
             """
         )
