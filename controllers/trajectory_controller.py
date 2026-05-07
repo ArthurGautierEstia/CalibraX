@@ -93,6 +93,8 @@ class TrajectoryController(QObject):
         self._selected_keypoint_index: int | None = None
         self._editing_keypoint_index: int | None = None
         self._trajectory_generation_sequence = 0
+        self._active_build_trigger_mode = TrajectoryBuildTriggerMode.DEBOUNCED_FULL
+        self._pending_preview_keypoints: list[TrajectoryKeypoint] = []
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
         self._playback_timer = QTimer(self)
@@ -451,8 +453,10 @@ class TrajectoryController(QObject):
             keypoints = self.config_widget.get_keypoints()
         else:
             keypoints = [keypoint.clone() for keypoint in keypoints_override]
-        self._displayed_keypoints = [keypoint.clone() for keypoint in keypoints]
+        self._active_build_trigger_mode = trigger_mode
+        self._pending_preview_keypoints = [keypoint.clone() for keypoint in keypoints]
         if not keypoints:
+            self._displayed_keypoints = []
             self.current_trajectory = TrajectoryResult()
             self.current_preview = TrajectoryPreviewResult()
             self.config_widget.set_trajectory_context(self.current_trajectory)
@@ -466,6 +470,19 @@ class TrajectoryController(QObject):
             return
 
         current_joints = JointAngles6.from_values(self.robot_model.get_joints())
+        if trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW:
+            self._build_bridge.submit(
+                current_joints=current_joints,
+                keypoints=keypoints,
+                sample_dt_s=self._sample_dt_s,
+                smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
+                bezier_degree=self.config_widget.get_bezier_degree(),
+                jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
+                trigger_mode=trigger_mode,
+            )
+            return
+
+        self._displayed_keypoints = [keypoint.clone() for keypoint in keypoints]
         self.current_trajectory = TrajectoryResult()
         self.current_preview = TrajectoryPreviewResult()
         self.current_samples = []
@@ -545,6 +562,7 @@ class TrajectoryController(QObject):
     def _on_engine_preview_ready(self, preview: object) -> None:
         if not isinstance(preview, TrajectoryPreviewResult):
             return
+        self._displayed_keypoints = [keypoint.clone() for keypoint in self._pending_preview_keypoints]
         self.current_preview = preview
         self.current_preview_samples = self._flatten_preview_samples(preview)
         self.current_preview_sample_times = [sample.time_s for sample in self.current_preview_samples]
@@ -573,6 +591,17 @@ class TrajectoryController(QObject):
         self._update_trajectory_issue_messages()
 
     def _on_engine_build_failed(self, message: str) -> None:
+        if self._active_build_trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW:
+            self._displayed_keypoints = [keypoint.clone() for keypoint in self._pending_preview_keypoints]
+            self.current_preview = TrajectoryPreviewResult()
+            self.current_preview_samples = []
+            self.current_preview_sample_times = []
+            self._set_analysis_pending(True)
+            self._update_preview_graphs()
+            self._update_3d_trajectory_path()
+            self._update_3d_keypoint_overlays()
+            self._update_preview_timeline()
+            return
         self._set_analysis_pending(False)
         QMessageBox.warning(
             self.trajectory_view,
