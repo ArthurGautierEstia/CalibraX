@@ -823,11 +823,14 @@ class TrajectoryKeypointDialog(QDialog):
         self._context_keypoints = list(keypoints)
         self._context_edited_row_index = edited_row_index if isinstance(edited_row_index, int) else None
         self._context_trajectory_result = trajectory_result
-        is_editing_existing_point = (
-            self._context_edited_row_index is not None
-            and 0 <= self._context_edited_row_index < len(self._context_keypoints)
-        )
-        self.cubic_auto_update_adjacent_checkbox.setEnabled(is_editing_existing_point)
+        has_adjacent_cubic_candidate = False
+        row = self._context_edited_row_index
+        if row is not None:
+            if 0 <= row < len(self._context_keypoints):
+                has_adjacent_cubic_candidate = row > 0 or (row + 1) < len(self._context_keypoints)
+            elif row == len(self._context_keypoints):
+                has_adjacent_cubic_candidate = row > 0
+        self.cubic_auto_update_adjacent_checkbox.setEnabled(has_adjacent_cubic_candidate)
         self._refresh_linear_tangent_amplitudes_from_ratios()
         self._update_auto_tangent_buttons_state()
         self._update_context_status_labels()
@@ -849,31 +852,77 @@ class TrajectoryKeypointDialog(QDialog):
         pose = fk_result.dh_pose
         return XYZ3(pose.x, pose.y, pose.z)
 
+    def _context_keypoints_with_current_edit(self) -> list[TrajectoryKeypoint]:
+        keypoints = [keypoint.clone() for keypoint in self._context_keypoints]
+        row = self._context_edited_row_index
+        if row is not None and 0 <= row < len(keypoints):
+            keypoints[row] = self.get_keypoint()
+        return keypoints
+
+    def _resolve_segment_tangents_from_keypoints(
+        self,
+        keypoints: list[TrajectoryKeypoint],
+        segment_end_row: int,
+    ) -> tuple[XYZ3, XYZ3] | None:
+        if segment_end_row < 0 or segment_end_row >= len(keypoints):
+            return None
+
+        keypoint = keypoints[segment_end_row]
+        if keypoint.mode == KeypointMotionMode.PTP:
+            return None
+
+        if keypoint.mode == KeypointMotionMode.CUBIC:
+            return keypoint.resolve_cubic_tangent_vectors(0.0)
+
+        if keypoint.mode != KeypointMotionMode.LINEAR:
+            return None
+
+        end_xyz = resolve_keypoint_xyz(
+            self.robot_model,
+            keypoint,
+            tool=self.tool_model.get_tool(),
+            robot_base_pose_world=self._robot_base_pose_world(),
+        )
+        if end_xyz is None:
+            return None
+
+        if segment_end_row > 0:
+            start_xyz = resolve_keypoint_xyz(
+                self.robot_model,
+                keypoints[segment_end_row - 1],
+                tool=self.tool_model.get_tool(),
+                robot_base_pose_world=self._robot_base_pose_world(),
+            )
+        else:
+            tcp_pose = self.robot_model.get_tcp_pose()
+            start_xyz = XYZ3(tcp_pose.x, tcp_pose.y, tcp_pose.z)
+        if start_xyz is None:
+            return None
+
+        return keypoint.resolve_linear_tangent_vectors(start_xyz, end_xyz)
+
     def _get_previous_segment_end_tangent_for_auto(self) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is None or row < 1:
             return None
-        trajectory_result = self._context_trajectory_result
-        if trajectory_result is None:
+        keypoints = self._context_keypoints_with_current_edit()
+        tangents = self._resolve_segment_tangents_from_keypoints(keypoints, row - 1)
+        if tangents is None:
             return None
-        previous_segment_index = row - 1
-        if previous_segment_index >= len(trajectory_result.segments):
-            return None
-        previous_segment = trajectory_result.segments[previous_segment_index]
-        return XYZ3.from_values(previous_segment.in_direction)
+        return tangents[1]
 
     def _get_next_segment_start_tangent_for_auto(self) -> XYZ3 | None:
         row = self._context_edited_row_index
         if row is None:
             return None
-        trajectory_result = self._context_trajectory_result
-        if trajectory_result is None:
-            return None
         next_segment_index = row + 1
-        if next_segment_index >= len(trajectory_result.segments):
+        keypoints = self._context_keypoints_with_current_edit()
+        if next_segment_index >= len(keypoints):
             return None
-        next_segment = trajectory_result.segments[next_segment_index]
-        return XYZ3.from_values(next_segment.out_direction)
+        tangents = self._resolve_segment_tangents_from_keypoints(keypoints, next_segment_index)
+        if tangents is None:
+            return None
+        return tangents[0]
 
     def _update_auto_tangent_buttons_state(self) -> None:
         is_cubic = self._current_mode() == KeypointMotionMode.CUBIC
