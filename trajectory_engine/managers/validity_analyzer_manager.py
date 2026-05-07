@@ -26,6 +26,7 @@ class ValidityAnalyzerManager(QObject):
         self._revision_tasks: dict[int, set[int]] = defaultdict(set)
         self._task_to_revision: dict[int, int] = {}
         self._next_worker_index = 0
+        self._shutdown_requested = False
 
         for _index in range(self._pool_size):
             thread = QThread(self)
@@ -42,6 +43,8 @@ class ValidityAnalyzerManager(QObject):
             self._dispatchers.append(dispatcher)
 
     def submit_task(self, task: ValidationTask) -> None:
+        if self._shutdown_requested:
+            return
         token = BuildCancelToken()
         self._task_tokens[task.task_id] = token
         self._revision_tasks[task.revision_id].add(task.task_id)
@@ -58,11 +61,14 @@ class ValidityAnalyzerManager(QObject):
                 token.request_cancel()
 
     def shutdown(self) -> None:
+        if self._shutdown_requested:
+            return
+        self._shutdown_requested = True
         for token in list(self._task_tokens.values()):
             token.request_cancel()
         for thread in self._threads:
             thread.quit()
-            thread.wait(2000)
+            thread.wait()
 
     def _consume_task(self, revision_id: int, task_id: int) -> bool:
         task_revision = self._task_to_revision.get(task_id)

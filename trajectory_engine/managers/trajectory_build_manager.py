@@ -57,6 +57,7 @@ class TrajectoryBuildManager(QObject):
         self._expected_task_ids_by_revision: dict[int, set[int]] = {}
         self._completed_task_ids_by_revision: dict[int, set[int]] = {}
         self._task_sequence = 0
+        self._shutdown_requested = False
 
         self._preview_thread = QThread(self)
         self._preview_worker = PreviewWorker(
@@ -90,6 +91,8 @@ class TrajectoryBuildManager(QObject):
         self._full_debounce_timer.timeout.connect(self._submit_debounced_full_build)
 
     def submit(self, request: TrajectoryBuildRequest) -> int:
+        if self._shutdown_requested:
+            return 0
         previous_revision_id = self._active_revision_id
         self._revision_sequence += 1
         revision_id = self._revision_sequence
@@ -125,12 +128,15 @@ class TrajectoryBuildManager(QObject):
         self._active_request = None
 
     def shutdown(self) -> None:
+        if self._shutdown_requested:
+            return
+        self._shutdown_requested = True
         self.cancel_active()
         self._validity_manager.shutdown()
         self._preview_thread.quit()
-        self._preview_thread.wait(2000)
+        self._preview_thread.wait()
         self._full_thread.quit()
-        self._full_thread.wait(2000)
+        self._full_thread.wait()
 
     def _cancel_previous_work(self, revision_id: int) -> None:
         self._full_debounce_timer.stop()

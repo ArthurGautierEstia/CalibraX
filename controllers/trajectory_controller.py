@@ -103,6 +103,10 @@ class TrajectoryController(QObject):
         self._setup_connections()
         self._reset_trajectory_visuals()
 
+    def shutdown(self) -> None:
+        self._stop_playback()
+        self._build_bridge.shutdown()
+
     def _setup_connections(self) -> None:
         self.config_widget.showRobotGhostRequested.connect(self._on_show_robot_ghost_requested)
         self.config_widget.hideRobotGhostRequested.connect(self._on_hide_robot_ghost_requested)
