@@ -238,22 +238,19 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return self._unproject_view_point(local_position, depth_value)
 
     def _pick_orbit_world_point(self, local_position) -> np.ndarray | None:
-        if self._is_grid_topmost_at(local_position):
-            return self._pick_world_point_without_grid(local_position)
-        return self._pick_world_point(local_position)
+        picked_world_point = self._pick_world_point(local_position)
+        if picked_world_point is None:
+            return None
 
-    def _is_grid_topmost_at(self, local_position) -> bool:
-        grid_item = self._grid_reference
-        if grid_item is None:
-            return False
+        if self._is_world_point_on_grid_plane(picked_world_point):
+            return None
+        return picked_world_point
 
+    def _get_items_at(self, local_position) -> list:
         try:
-            items = self.itemsAt(region=(int(local_position.x()), int(local_position.y()), 1, 1))
+            return list(self.itemsAt(region=(int(local_position.x()), int(local_position.y()), 1, 1)))
         except Exception:
-            return False
-        if not items:
-            return False
-        return self._belongs_to_grid(items[0], grid_item)
+            return []
 
     @staticmethod
     def _belongs_to_grid(item, grid_item) -> bool:
@@ -264,6 +261,16 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             parent_getter = getattr(current_item, "parentItem", None)
             current_item = parent_getter() if callable(parent_getter) else None
         return False
+
+    def _has_non_grid_item_in_items(self, items: list, grid_item) -> bool:
+        for item in items:
+            if not self._belongs_to_grid(item, grid_item):
+                return True
+        return False
+
+    @staticmethod
+    def _is_world_point_on_grid_plane(world_point: np.ndarray) -> bool:
+        return abs(float(world_point[2])) <= 1.0
 
     def _pick_world_point_without_grid(self, local_position) -> np.ndarray | None:
         grid_item = self._grid_reference
