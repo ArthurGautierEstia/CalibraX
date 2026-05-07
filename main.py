@@ -57,7 +57,7 @@ class CalibraxApplication:
             startup_options=startup_options,
         )
 
-        self.app.aboutToQuit.connect(self.main_controller.flush_session)
+        self.app.aboutToQuit.connect(self.main_controller.shutdown)
 
     def apply_kuka_accent(self):
         """Force une couleur d'accent orange au lieu de la couleur système."""

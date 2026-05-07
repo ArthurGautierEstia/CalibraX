@@ -348,7 +348,12 @@ class TrajectoryConfigWidget(QWidget):
 
     def _on_active_dialog_preview_keypoint_changed(self, preview_keypoint: TrajectoryKeypoint) -> None:
         if self._active_dialog_mode == "add":
-            self._emit_trajectory_preview([*self._keypoints, preview_keypoint])
+            dialog = self._active_dialog
+            preview_keypoints = [keypoint.clone() for keypoint in self._keypoints]
+            preview_keypoints.append(preview_keypoint.clone())
+            if dialog is not None and dialog.should_auto_update_adjacent_cubic_tangents():
+                self._auto_update_adjacent_cubic_tangents(preview_keypoints, len(preview_keypoints) - 1)
+            self._emit_trajectory_preview(preview_keypoints)
             return
 
         row = self._active_dialog_row
@@ -370,6 +375,34 @@ class TrajectoryConfigWidget(QWidget):
     def _default_linear_tangent_ratios(self) -> list[float]:
         ratio = TrajectoryConfigWidget._default_linear_tangent_ratio_for_bezier_degree(self.get_bezier_degree())
         return [ratio, ratio]
+
+    def _resolve_previous_segment_end_tangent_for_add(self) -> XYZ3 | None:
+        if not self._keypoints:
+            return None
+        previous_segment_end_row = len(self._keypoints) - 1
+        previous_keypoint = self._keypoints[previous_segment_end_row]
+        if previous_keypoint.mode == KeypointMotionMode.CUBIC:
+            _start_tangent, end_tangent = previous_keypoint.resolve_cubic_tangent_vectors(0.0)
+            return end_tangent
+        if previous_keypoint.mode == KeypointMotionMode.LINEAR:
+            tangents = self._resolve_segment_tangents_for_keypoint(self._keypoints, previous_segment_end_row)
+            if tangents is None:
+                return None
+            _start_tangent, end_tangent = tangents
+            return end_tangent
+        return None
+
+    def _seed_added_cubic_start_tangent(self, keypoint: TrajectoryKeypoint) -> None:
+        if keypoint.mode != KeypointMotionMode.CUBIC:
+            return
+        previous_end_tangent = self._resolve_previous_segment_end_tangent_for_add()
+        if previous_end_tangent is None:
+            return
+        amplitude_mm = previous_end_tangent.norm()
+        if amplitude_mm <= 1e-9:
+            return
+        keypoint.cubic_vectors[0] = (-previous_end_tangent).normalized()
+        keypoint.cubic_amplitudes_mm[0] = amplitude_mm
 
     def _focus_active_dialog(self) -> bool:
         if self._active_dialog is None:
@@ -429,6 +462,7 @@ class TrajectoryConfigWidget(QWidget):
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),
             )
 
+        self._seed_added_cubic_start_tangent(initial_keypoint)
         self._open_keypoint_dialog(
             "add",
             None,
@@ -459,6 +493,8 @@ class TrajectoryConfigWidget(QWidget):
             if mode == "add":
                 self._keypoints.append(keypoint)
                 new_selection_row = len(self._keypoints) - 1
+                if dialog.should_auto_update_adjacent_cubic_tangents():
+                    self._auto_update_adjacent_cubic_tangents(self._keypoints, new_selection_row)
                 self.add_requested.emit()
             elif mode == "edit" and row is not None and 0 <= row < len(self._keypoints):
                 self._keypoints[row] = keypoint

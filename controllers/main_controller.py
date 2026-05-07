@@ -121,6 +121,11 @@ class MainController(QObject):
             self._schedule_session_save
         )
 
+    def shutdown(self) -> None:
+        self._session_save_timer.stop()
+        self.flush_session()
+        self.trajectory_controller.shutdown()
+
     def _on_apply_measured_dh_requested(self) -> None:
         measured_dh = self.calibration_controller.measurement_controller.get_selected_measured_dh_params()
         self.robot_model.set_measured_dh_params(measured_dh)
