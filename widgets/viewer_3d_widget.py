@@ -289,7 +289,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
     @staticmethod
     def _is_world_point_on_grid_plane(world_point: np.ndarray) -> bool:
-        return abs(float(world_point[2])) <= 1.0
+        return abs(float(world_point[2])) <= 2.0
 
     def _pick_world_point_without_grid(self, local_position) -> np.ndarray | None:
         grid_item = self._grid_reference
