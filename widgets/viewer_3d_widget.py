@@ -4,6 +4,7 @@ from OpenGL.GL import GL_DEPTH_COMPONENT, GL_FLOAT, glReadPixels
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
+    QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
@@ -15,6 +16,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QSpinBox,
     QInputDialog,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint, QPointF
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QLinearGradient, QPolygonF, QRadialGradient, QPalette
@@ -793,6 +795,7 @@ class Viewer3DWidget(QWidget):
     DEFAULT_GRID_SPACING = 200
     DEFAULT_GRID_COLOR = QColor(150, 150, 150, 100)
     DEFAULT_TEXT_COLOR = QColor(230, 230, 230, 255)
+    DEFAULT_INACTIVE_ICON_COLOR = QColor(230, 230, 230, 255)
     ACTIVE_ICON_COLOR = QColor("#ff8c00")
 
     def __init__(self, parent: QWidget = None):
@@ -869,7 +872,8 @@ class Viewer3DWidget(QWidget):
         self._project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         self._viewer_theme_store = ViewerThemeStore(self._project_root)
         self._selected_viewer_theme_name = ""
-        self._default_viewer_theme_name = self._viewer_theme_store.load_default_theme_name()
+        self._original_viewer_theme_state = self._build_original_viewer_theme_state()
+        self._applied_viewer_theme_state = self._build_original_viewer_theme_state()
         self.setup_ui()
 
     def setup_ui(self):
@@ -963,20 +967,12 @@ class Viewer3DWidget(QWidget):
                 font-size: 10px;
                 font-weight: 600;
             }
-            QWidget#viewerStyleOverlay QComboBox,
-            QWidget#viewerStyleOverlay QSpinBox {
-                background-color: rgba(25, 25, 28, 130);
-                color: lightgray;
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 6px;
-                padding: 3px 6px;
-                min-height: 24px;
-            }
         """)
         viewer_style_layout = QVBoxLayout(self.viewer_style_overlay)
         viewer_style_layout.setContentsMargins(8, 8, 8, 8)
         viewer_style_layout.setSpacing(6)
-        viewer_style_layout.addWidget(QLabel("Viewer", self.viewer_style_overlay))
+        self.viewer_theme_combo = QComboBox(self.viewer_style_overlay)
+        viewer_style_layout.addWidget(self._create_style_row("Theme", self.viewer_theme_combo))
         self.background_mode_combo = QComboBox(self.viewer_style_overlay)
         self.background_mode_combo.addItem("Solid", userData="solid")
         self.background_mode_combo.addItem("Gradient", userData="gradient")
@@ -1015,29 +1011,29 @@ class Viewer3DWidget(QWidget):
         self.btn_grid_color = self._create_color_picker_button("Couleur grille")
         viewer_style_layout.addWidget(self._create_style_row("Grille couleur", self.btn_grid_color))
         self.btn_save_viewer_theme = QPushButton("Enregistrer", self.viewer_style_overlay)
-        self.btn_select_viewer_theme = QPushButton("S\u00e9lectionner", self.viewer_style_overlay)
-        self.btn_save_default_viewer_style = QPushButton("D\u00e9finir d\u00e9faut", self.viewer_style_overlay)
+        self.btn_create_viewer_theme = QPushButton("Definir un nouveau theme", self.viewer_style_overlay)
+        self.btn_manage_viewer_themes = QPushButton("Gerer les themes", self.viewer_style_overlay)
         self.btn_save_viewer_theme.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_select_viewer_theme.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_save_default_viewer_style.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_create_viewer_theme.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_manage_viewer_themes.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save_viewer_theme.setStyleSheet("""
             QPushButton {
-                background-color: rgba(255, 255, 255, 14);
+                background-color: rgba(255, 255, 255, 26);
                 color: rgba(235, 235, 235, 220);
-                border: 1px solid rgba(255, 255, 255, 24);
+                border: 1px solid rgba(255, 255, 255, 40);
                 border-radius: 6px;
                 padding: 5px 8px;
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 22);
+                background-color: rgba(255, 255, 255, 34);
             }
         """)
         self.btn_swap_background_colors.setStyleSheet(self.btn_save_viewer_theme.styleSheet())
-        self.btn_select_viewer_theme.setStyleSheet(self.btn_save_viewer_theme.styleSheet())
-        self.btn_save_default_viewer_style.setStyleSheet(self.btn_save_viewer_theme.styleSheet())
+        self.btn_create_viewer_theme.setStyleSheet(self.btn_save_viewer_theme.styleSheet())
+        self.btn_manage_viewer_themes.setStyleSheet(self.btn_save_viewer_theme.styleSheet())
         viewer_style_layout.addWidget(self.btn_save_viewer_theme)
-        viewer_style_layout.addWidget(self.btn_select_viewer_theme)
-        viewer_style_layout.addWidget(self.btn_save_default_viewer_style)
+        viewer_style_layout.addWidget(self.btn_create_viewer_theme)
+        viewer_style_layout.addWidget(self.btn_manage_viewer_themes)
         self.viewer_style_overlay.hide()
         self.viewer_presets_overlay = QWidget(self.viewer)
         self.viewer_presets_overlay.setObjectName("viewerPresetsOverlay")
@@ -1208,6 +1204,7 @@ class Viewer3DWidget(QWidget):
         self.btn_view_top.clicked.connect(lambda: self._set_camera_preset("top"))
         self.btn_view_bottom.clicked.connect(lambda: self._set_camera_preset("bottom"))
         self.btn_view_isometric.clicked.connect(lambda: self._set_camera_preset("isometric"))
+        self.viewer_theme_combo.currentIndexChanged.connect(self._on_viewer_theme_combo_changed)
         self.background_mode_combo.currentIndexChanged.connect(self._on_background_mode_changed)
         self.btn_background_primary_color.clicked.connect(self._choose_background_primary_color)
         self.btn_background_secondary_color.clicked.connect(self._choose_background_secondary_color)
@@ -1219,8 +1216,8 @@ class Viewer3DWidget(QWidget):
         self.grid_spacing_spin.valueChanged.connect(self._on_grid_spacing_changed)
         self.btn_grid_color.clicked.connect(self._choose_grid_color)
         self.btn_save_viewer_theme.clicked.connect(self._save_current_viewer_theme)
-        self.btn_select_viewer_theme.clicked.connect(self._select_viewer_theme)
-        self.btn_save_default_viewer_style.clicked.connect(self._save_current_viewer_style_as_default)
+        self.btn_create_viewer_theme.clicked.connect(self._create_new_viewer_theme)
+        self.btn_manage_viewer_themes.clicked.connect(self._manage_viewer_themes)
         self.btn_go_position_zero_overlay.clicked.connect(self.get_overlay_joints_widget().position_zero_requested.emit)
         self.btn_go_position_calibration_overlay.clicked.connect(
             self.get_overlay_joints_widget().position_calibration_requested.emit
@@ -1387,14 +1384,30 @@ class Viewer3DWidget(QWidget):
     def get_overlay_cartesian_widget(self):
         return self.viewer_control_overlay.get_cartesian_widget()
 
+    def _close_secondary_overlays(self, except_overlay: str = "") -> None:
+        overlays_to_close = (
+            ("frame_lists", getattr(self, "frame_lists_overlay", None)),
+            ("viewer_style", getattr(self, "viewer_style_overlay", None)),
+            ("view_presets", getattr(self, "viewer_presets_overlay", None)),
+        )
+        normalized_exception = str(except_overlay or "").strip()
+        for overlay_name, overlay_widget in overlays_to_close:
+            if overlay_name == normalized_exception or overlay_widget is None:
+                continue
+            overlay_widget.hide()
+
     def _on_viewer_style_button_clicked(self) -> None:
         should_show = not self.viewer_style_overlay.isVisible()
+        if should_show:
+            self._close_secondary_overlays(except_overlay="viewer_style")
         self.viewer_style_overlay.setVisible(should_show)
         self._position_overlays()
         self._refresh_toolbar_buttons()
 
     def _on_view_presets_button_clicked(self) -> None:
         should_show = not self.viewer_presets_overlay.isVisible()
+        if should_show:
+            self._close_secondary_overlays(except_overlay="view_presets")
         self.viewer_presets_overlay.setVisible(should_show)
         self._position_overlays()
         self._refresh_toolbar_buttons()
@@ -1470,7 +1483,6 @@ class Viewer3DWidget(QWidget):
         return float(np.clip(home_button_center_y - 4.0, 0.0, viewer_height_px))
 
     def _on_background_mode_changed(self, _index: int) -> None:
-        self._selected_viewer_theme_name = ""
         self._viewer_background_mode = str(self.background_mode_combo.currentData())
         self._apply_viewer_background_style()
         self._refresh_viewer_style_controls()
@@ -1479,7 +1491,6 @@ class Viewer3DWidget(QWidget):
         color = QColorDialog.getColor(self._viewer_background_primary_color, self, "Choisir la couleur du fond")
         if not color.isValid():
             return
-        self._selected_viewer_theme_name = ""
         self._viewer_background_primary_color = color
         self._apply_viewer_background_style()
         self._refresh_viewer_style_controls()
@@ -1488,19 +1499,16 @@ class Viewer3DWidget(QWidget):
         color = QColorDialog.getColor(self._viewer_background_secondary_color, self, "Choisir la seconde couleur du fond")
         if not color.isValid():
             return
-        self._selected_viewer_theme_name = ""
         self._viewer_background_secondary_color = color
         self._apply_viewer_background_style()
         self._refresh_viewer_style_controls()
 
     def _on_background_gradient_direction_changed(self, _index: int) -> None:
-        self._selected_viewer_theme_name = ""
         self._viewer_background_gradient_direction = str(self.background_gradient_direction_combo.currentData())
         self._apply_viewer_background_style()
         self._refresh_viewer_style_controls()
 
     def _swap_background_colors(self) -> None:
-        self._selected_viewer_theme_name = ""
         primary_color = QColor(self._viewer_background_primary_color)
         self._viewer_background_primary_color = QColor(self._viewer_background_secondary_color)
         self._viewer_background_secondary_color = primary_color
@@ -1511,7 +1519,6 @@ class Viewer3DWidget(QWidget):
         color = QColorDialog.getColor(self._viewer_text_color, self, "Choisir la couleur du texte")
         if not color.isValid():
             return
-        self._selected_viewer_theme_name = ""
         self._viewer_text_color = color
         self._apply_viewer_chrome_style()
         self._refresh_viewer_style_controls()
@@ -1520,7 +1527,6 @@ class Viewer3DWidget(QWidget):
         color = QColorDialog.getColor(self._viewer_accent_color, self, "Choisir la couleur d'accent")
         if not color.isValid():
             return
-        self._selected_viewer_theme_name = ""
         self._viewer_accent_color = color
         self._apply_viewer_chrome_style()
         self._refresh_toolbar_buttons()
@@ -1528,13 +1534,11 @@ class Viewer3DWidget(QWidget):
         self._refresh_viewer_style_controls()
 
     def _on_grid_size_changed(self, value: int) -> None:
-        self._selected_viewer_theme_name = ""
         self._grid_size = int(value)
         self._apply_grid_style()
         self._refresh_viewer_style_controls()
 
     def _on_grid_spacing_changed(self, value: int) -> None:
-        self._selected_viewer_theme_name = ""
         self._grid_spacing = int(value)
         self._apply_grid_style()
         self._refresh_viewer_style_controls()
@@ -1543,77 +1547,57 @@ class Viewer3DWidget(QWidget):
         color = QColorDialog.getColor(self._grid_color, self, "Choisir la couleur de la grille")
         if not color.isValid():
             return
-        self._selected_viewer_theme_name = ""
         self._grid_color = color
         self._apply_grid_style()
         self._refresh_viewer_style_controls()
 
-    def _save_current_viewer_style_as_default(self) -> None:
-        default_theme_name = self._selected_viewer_theme_name.strip()
-        if default_theme_name == "":
-            default_theme_name = "Theme par defaut"
-            self._viewer_theme_store.save_theme(default_theme_name, self._build_current_viewer_theme_state())
-            self._selected_viewer_theme_name = default_theme_name
-        self._viewer_theme_store.save_default_theme_name(default_theme_name)
-        self._default_viewer_theme_name = default_theme_name
-        self._refresh_viewer_style_controls()
-        self._emit_display_state_changed()
+    def _list_visible_viewer_themes(self) -> list:
+        return self._viewer_theme_store.list_themes()
 
-    def _select_viewer_theme(self) -> None:
-        selectable_theme_names = ["Original"] + [stored_theme.name for stored_theme in self._viewer_theme_store.list_themes()]
-        current_theme_name = self._selected_viewer_theme_name if self._selected_viewer_theme_name != "" else "Original"
-        selected_theme_name, accepted = QInputDialog.getItem(
-            self,
-            "Selectionner un theme",
-            "Theme :",
-            selectable_theme_names,
-            max(0, selectable_theme_names.index(current_theme_name) if current_theme_name in selectable_theme_names else 0),
-            False,
-        )
-        if not accepted:
+    def _on_viewer_theme_combo_changed(self, index: int) -> None:
+        if index < 0:
             return
-
-        normalized_theme_name = str(selected_theme_name).strip()
-        if normalized_theme_name == "Original":
+        selected_theme_name = str(self.viewer_theme_combo.itemData(index) or "").strip()
+        if selected_theme_name == "":
             self._apply_theme_state(self._build_original_viewer_theme_state(), selected_theme_name="")
             self._emit_display_state_changed()
             return
 
-        from PyQt6.QtWidgets import QMessageBox
-
-        action_dialog = QMessageBox(self)
-        action_dialog.setWindowTitle("Theme viewer")
-        action_dialog.setText(f'Theme selectionne : "{normalized_theme_name}"')
-        apply_button = action_dialog.addButton("Appliquer", QMessageBox.ButtonRole.AcceptRole)
-        delete_button = action_dialog.addButton("Supprimer", QMessageBox.ButtonRole.DestructiveRole)
-        action_dialog.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
-        action_dialog.exec()
-
-        clicked_button = action_dialog.clickedButton()
-        if clicked_button is delete_button:
-            if self._viewer_theme_store.delete_theme(normalized_theme_name):
-                if self._selected_viewer_theme_name == normalized_theme_name:
-                    self._selected_viewer_theme_name = ""
-                if self._default_viewer_theme_name == normalized_theme_name:
-                    self._default_viewer_theme_name = ""
-                self._refresh_viewer_style_controls()
-                self._emit_display_state_changed()
-            return
-        if clicked_button is not apply_button:
-            return
-
-        selected_theme = self._viewer_theme_store.load_theme(normalized_theme_name)
+        selected_theme = self._viewer_theme_store.load_theme(selected_theme_name)
         if selected_theme is None:
             return
-        self._apply_theme_state(selected_theme, selected_theme_name=normalized_theme_name)
+        self._apply_theme_state(selected_theme, selected_theme_name=selected_theme_name)
         self._emit_display_state_changed()
 
     def _save_current_viewer_theme(self) -> None:
+        current_theme_name = self._selected_viewer_theme_name.strip()
+        if current_theme_name == "":
+            QMessageBox.information(
+                self,
+                "Theme viewer",
+                "Selectionnez d'abord un theme existant ou creez-en un nouveau.",
+            )
+            return
+        saved_theme_name = self._viewer_theme_store.save_theme(
+            current_theme_name,
+            self._build_current_viewer_theme_state(),
+        )
+        self._selected_viewer_theme_name = saved_theme_name
+        self._applied_viewer_theme_state = ViewerThemeState.from_dict(self._build_current_viewer_theme_state().to_dict())
+        self._refresh_viewer_style_controls()
+        self._emit_display_state_changed()
+        QMessageBox.information(
+            self,
+            "Theme viewer",
+            f'Le thème {saved_theme_name} a été enregistré avec succès !',
+        )
+
+    def _create_new_viewer_theme(self) -> None:
         initial_name = self._selected_viewer_theme_name.strip()
         selected_name, accepted = QInputDialog.getText(
             self,
-            "Enregistrer un theme",
-            "Nom du theme :",
+            "Définir un nouveau thème",
+            "Nom du thème :",
             text=initial_name,
         )
         if not accepted:
@@ -1626,8 +1610,63 @@ class Viewer3DWidget(QWidget):
             self._build_current_viewer_theme_state(),
         )
         self._selected_viewer_theme_name = saved_theme_name
+        self._applied_viewer_theme_state = ViewerThemeState.from_dict(self._build_current_viewer_theme_state().to_dict())
         self._refresh_viewer_style_controls()
         self._emit_display_state_changed()
+
+    def _manage_viewer_themes(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Gérer les thèmes")
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(12, 12, 12, 12)
+        dialog_layout.setSpacing(8)
+
+        themes_list_widget = QListWidget(dialog)
+        stored_themes = self._list_visible_viewer_themes()
+        for stored_theme in stored_themes:
+            item = QListWidgetItem(stored_theme.name)
+            themes_list_widget.addItem(item)
+        dialog_layout.addWidget(themes_list_widget)
+
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(8)
+        delete_button = QPushButton("Supprimer", dialog)
+        close_button = QPushButton("Fermer", dialog)
+        button_row.addWidget(delete_button)
+        button_row.addWidget(close_button)
+        dialog_layout.addLayout(button_row)
+
+        def _delete_selected_theme() -> None:
+            current_item = themes_list_widget.currentItem()
+            if current_item is None:
+                return
+            theme_name = str(current_item.text()).strip()
+            if theme_name == "":
+                return
+            confirmation = QMessageBox.question(
+                dialog,
+                "Supprimer un thème",
+                f'Supprimer le thème {theme_name} ?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirmation != QMessageBox.StandardButton.Yes:
+                return
+            if not self._viewer_theme_store.delete_theme(theme_name):
+                return
+            if self._selected_viewer_theme_name == theme_name:
+                self._selected_viewer_theme_name = ""
+                self._apply_theme_state(self._build_original_viewer_theme_state(), selected_theme_name="")
+            row = themes_list_widget.row(current_item)
+            themes_list_widget.takeItem(row)
+            self._refresh_viewer_style_controls()
+            self._emit_display_state_changed()
+
+        delete_button.clicked.connect(_delete_selected_theme)
+        close_button.clicked.connect(dialog.accept)
+        dialog.resize(320, 260)
+        dialog.exec()
 
     def _sync_viewer_style_controls(self) -> None:
         mode_index = self.background_mode_combo.findData(self._viewer_background_mode)
@@ -1650,6 +1689,15 @@ class Viewer3DWidget(QWidget):
         self._apply_grid_style()
 
     def _refresh_viewer_style_controls(self) -> None:
+        current_theme_name = self._selected_viewer_theme_name.strip()
+        self.viewer_theme_combo.blockSignals(True)
+        self.viewer_theme_combo.clear()
+        self.viewer_theme_combo.addItem("Original", userData="")
+        for stored_theme in self._list_visible_viewer_themes():
+            self.viewer_theme_combo.addItem(stored_theme.name, userData=stored_theme.name)
+        selected_theme_index = self.viewer_theme_combo.findData(current_theme_name)
+        self.viewer_theme_combo.setCurrentIndex(max(0, selected_theme_index))
+        self.viewer_theme_combo.blockSignals(False)
         self._set_color_button_preview(self.btn_background_primary_color, self._viewer_background_primary_color)
         self._set_color_button_preview(self.btn_background_secondary_color, self._viewer_background_secondary_color)
         self._set_color_button_preview(self.btn_text_color, self._viewer_text_color)
@@ -1659,6 +1707,10 @@ class Viewer3DWidget(QWidget):
         self.background_secondary_color_row.setVisible(is_gradient)
         self.background_gradient_direction_row.setVisible(is_gradient)
         self.background_swap_colors_row.setVisible(is_gradient)
+        has_theme_changes = self._current_theme_differs_from_applied()
+        has_selected_theme = self._selected_viewer_theme_name.strip() != ""
+        self.btn_save_viewer_theme.setEnabled(has_selected_theme and has_theme_changes)
+        self.btn_create_viewer_theme.setEnabled(has_theme_changes)
         self.viewer_style_overlay.adjustSize()
         self._position_overlays()
 
@@ -1677,10 +1729,6 @@ class Viewer3DWidget(QWidget):
                 color: {text_rgba};
                 font-size: 10px;
                 font-weight: 600;
-            }}
-            QWidget#viewerStyleOverlay QComboBox {{
-                color: {text_rgba};
-                min-height: 24px;
             }}
             """
         )
@@ -1717,20 +1765,20 @@ class Viewer3DWidget(QWidget):
         action_button_style = (
             f"""
             QPushButton {{
-                background-color: rgba(255, 255, 255, 14);
+                background-color: rgba(255, 255, 255, 26);
                 color: {text_rgba};
-                border: 1px solid rgba(255, 255, 255, 24);
+                border: 1px solid rgba(255, 255, 255, 40);
                 border-radius: 6px;
                 padding: 5px 8px;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 22);
+                background-color: rgba(255, 255, 255, 34);
             }}
             """
         )
         self.btn_save_viewer_theme.setStyleSheet(action_button_style)
-        self.btn_select_viewer_theme.setStyleSheet(action_button_style)
-        self.btn_save_default_viewer_style.setStyleSheet(action_button_style)
+        self.btn_create_viewer_theme.setStyleSheet(action_button_style)
+        self.btn_manage_viewer_themes.setStyleSheet(action_button_style)
         self.btn_swap_background_colors.setStyleSheet(action_button_style)
         if hasattr(self, "viewer_control_overlay"):
             self.viewer_control_overlay.apply_theme_colors(self._viewer_text_color, self._viewer_accent_color)
@@ -1833,6 +1881,12 @@ class Viewer3DWidget(QWidget):
             grid_color=self._color_to_hex_rgba(self._grid_color),
         )
 
+    def _current_theme_differs_from_original(self) -> bool:
+        return self._build_current_viewer_theme_state().to_dict() != self._original_viewer_theme_state.to_dict()
+
+    def _current_theme_differs_from_applied(self) -> bool:
+        return self._build_current_viewer_theme_state().to_dict() != self._applied_viewer_theme_state.to_dict()
+
     def _apply_theme_state(self, theme_state: ViewerThemeState, selected_theme_name: str = "") -> None:
         self._selected_viewer_theme_name = str(selected_theme_name or "").strip()
         self._viewer_background_mode = theme_state.background_mode if theme_state.background_mode in {"solid", "gradient"} else "solid"
@@ -1848,6 +1902,7 @@ class Viewer3DWidget(QWidget):
         self._grid_size = max(1, int(theme_state.grid_size))
         self._grid_spacing = max(1, int(theme_state.grid_spacing))
         self._grid_color = self._color_from_hex_rgba(theme_state.grid_color, self.DEFAULT_GRID_COLOR)
+        self._applied_viewer_theme_state = ViewerThemeState.from_dict(theme_state.to_dict())
         self._sync_viewer_style_controls()
 
     @staticmethod
@@ -1895,16 +1950,10 @@ class Viewer3DWidget(QWidget):
         self._workspace_collision_zones_visible = bool(state.workspace_collision_zones_visible)
         self._robot_colliders_visible = bool(state.robot_colliders_visible)
         self._tool_colliders_visible = bool(state.tool_colliders_visible)
-        self._default_viewer_theme_name = self._viewer_theme_store.load_default_theme_name()
         selected_theme_name = str(state.selected_theme_name or "").strip()
         theme_to_apply = self._build_original_viewer_theme_state()
         applied_theme_name = ""
-        if self._default_viewer_theme_name != "":
-            default_theme = self._viewer_theme_store.load_theme(self._default_viewer_theme_name)
-            if default_theme is not None:
-                theme_to_apply = default_theme
-                applied_theme_name = self._default_viewer_theme_name
-        elif selected_theme_name != "":
+        if selected_theme_name != "":
             selected_theme = self._viewer_theme_store.load_theme(selected_theme_name)
             if selected_theme is not None:
                 theme_to_apply = selected_theme
@@ -2134,7 +2183,7 @@ class Viewer3DWidget(QWidget):
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        color = QColor(self._viewer_text_color) if not active else QColor(self._viewer_accent_color)
+        color = QColor(self.DEFAULT_INACTIVE_ICON_COLOR) if not active else QColor(self._viewer_accent_color)
         pen = QPen(color, 1.8)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -2323,6 +2372,7 @@ class Viewer3DWidget(QWidget):
             return
         should_show = not self.frame_lists_overlay.isVisible()
         if should_show:
+            self._close_secondary_overlays(except_overlay="frame_lists")
             self._refresh_frame_lists_overlay()
         self.frame_lists_overlay.setVisible(should_show)
         self._position_overlays()
