@@ -30,7 +30,7 @@ from trajectory_engine.workers.preview_worker import PreviewWorker
 class TrajectoryBuildManager(QObject):
     preview_ready = pyqtSignal(int, object)
     result_ready = pyqtSignal(int, object)
-    build_failed = pyqtSignal(int, str)
+    build_failed = pyqtSignal(int, str, str)
 
     _dispatch_preview = pyqtSignal(object, object)
     _dispatch_full = pyqtSignal(object, object)
@@ -67,7 +67,9 @@ class TrajectoryBuildManager(QObject):
         self._dispatch_preview.connect(self._preview_worker.process)
         self._preview_worker.completed.connect(self._on_preview_completed)
         self._preview_worker.cancelled.connect(self._on_preview_cancelled)
-        self._preview_worker.failed.connect(self._on_worker_failed)
+        self._preview_worker.failed.connect(
+            lambda revision_id, message: self._on_worker_failed(revision_id, "preview", message)
+        )
         self._preview_thread.start()
 
         self._full_thread = QThread(self)
@@ -78,7 +80,9 @@ class TrajectoryBuildManager(QObject):
         self._dispatch_full.connect(self._full_worker.process)
         self._full_worker.completed.connect(self._on_full_completed)
         self._full_worker.cancelled.connect(self._on_full_cancelled)
-        self._full_worker.failed.connect(self._on_worker_failed)
+        self._full_worker.failed.connect(
+            lambda revision_id, message: self._on_worker_failed(revision_id, "full", message)
+        )
         self._full_thread.start()
 
         self._validity_manager = ValidityAnalyzerManager(pool_size=validity_pool_size, parent=self)
@@ -113,8 +117,6 @@ class TrajectoryBuildManager(QObject):
         self._preview_token = BuildCancelToken()
         self._dispatch_preview.emit(normalized_request, self._preview_token)
 
-        if normalized_request.trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW:
-            return revision_id
         if normalized_request.trigger_mode == TrajectoryBuildTriggerMode.FORCED_FULL:
             self._submit_full_build(normalized_request)
         else:
@@ -230,12 +232,12 @@ class TrajectoryBuildManager(QObject):
             self._completed_task_ids_by_revision.pop(revision_id, None)
             self._computation_by_revision.pop(revision_id, None)
 
-    def _on_worker_failed(self, revision_id: int, message: str) -> None:
+    def _on_worker_failed(self, revision_id: int, stage: str, message: str) -> None:
         if revision_id != self._active_revision_id:
             return
-        self.build_failed.emit(revision_id, message)
+        self.build_failed.emit(revision_id, stage, message)
 
     def _on_validation_task_failed(self, revision_id: int, task_id: int, message: str) -> None:
         if revision_id != self._active_revision_id:
             return
-        self.build_failed.emit(revision_id, f"validation task {task_id} failed: {message}")
+        self.build_failed.emit(revision_id, "validation", f"validation task {task_id} failed: {message}")

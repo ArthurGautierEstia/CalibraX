@@ -11,7 +11,7 @@ from trajectory_engine.models import TrajectoryBuildRequest, TrajectoryBuildTrig
 class TrajectoryControllerBuildBridge(QObject):
     preview_ready = pyqtSignal(object)
     result_ready = pyqtSignal(object)
-    build_failed = pyqtSignal(str)
+    build_failed = pyqtSignal(str, str)
 
     def __init__(
         self,
@@ -58,5 +58,5 @@ class TrajectoryControllerBuildBridge(QObject):
     def _on_result_ready(self, _revision_id: int, payload: object) -> None:
         self.result_ready.emit(to_legacy_trajectory(payload))
 
-    def _on_build_failed(self, _revision_id: int, message: str) -> None:
-        self.build_failed.emit(message)
+    def _on_build_failed(self, _revision_id: int, stage: str, message: str) -> None:
+        self.build_failed.emit(stage, message)

@@ -590,8 +590,8 @@ class TrajectoryController(QObject):
         self._update_timeline()
         self._update_trajectory_issue_messages()
 
-    def _on_engine_build_failed(self, message: str) -> None:
-        if self._active_build_trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW:
+    def _on_engine_build_failed(self, stage: str, message: str) -> None:
+        if self._active_build_trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW and stage == "preview":
             self._displayed_keypoints = [keypoint.clone() for keypoint in self._pending_preview_keypoints]
             self.current_preview = TrajectoryPreviewResult()
             self.current_preview_samples = []
@@ -601,6 +601,8 @@ class TrajectoryController(QObject):
             self._update_3d_trajectory_path()
             self._update_3d_keypoint_overlays()
             self._update_preview_timeline()
+            return
+        if self._active_build_trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW:
             return
         self._set_analysis_pending(False)
         QMessageBox.warning(
