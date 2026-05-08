@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QLabel,
+    QCheckBox,
     QListWidgetItem,
     QListWidget,
     QAbstractItemView,
@@ -904,21 +905,35 @@ class Viewer3DWidget(QWidget):
                 border: 1px solid rgba(255, 255, 255, 20);
                 border-radius: 10px;
             }
+            QWidget#viewerFrameListZone {
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 22);
+                border-radius: 8px;
+            }
             QWidget#viewerFrameListsOverlay QLabel {
                 color: rgba(230, 230, 230, 210);
                 font-size: 10px;
                 font-weight: 600;
             }
             QWidget#viewerFrameListsOverlay QListWidget {
-                background-color: rgba(25, 25, 28, 130);
+                background-color: transparent;
                 color: lightgray;
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 6px;
+                border: none;
                 outline: 0;
                 font-size: 10px;
             }
             QWidget#viewerFrameListsOverlay QListWidget::item {
-                padding: 3px 4px;
+                padding: 0px;
+            }
+            QWidget#viewerFrameListsOverlay QCheckBox {
+                color: rgba(230, 230, 230, 210);
+                spacing: 8px;
+                padding: 4px 6px;
+                background-color: transparent;
+            }
+            QWidget#viewerFrameListsOverlay QCheckBox:hover {
+                background-color: rgba(255, 255, 255, 12);
+                border-radius: 6px;
             }
         """)
         frame_lists_layout = QHBoxLayout(self.frame_lists_overlay)
@@ -935,17 +950,19 @@ class Viewer3DWidget(QWidget):
             list_widget.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
             list_widget.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.robot_frame_column = QWidget(self.frame_lists_overlay)
+        self.robot_frame_column.setObjectName("viewerFrameListZone")
         self.robot_frame_column.setFixedWidth(frame_column_width)
         robot_column = QVBoxLayout(self.robot_frame_column)
-        robot_column.setContentsMargins(0, 0, 0, 0)
+        robot_column.setContentsMargins(6, 6, 6, 6)
         robot_column.setSpacing(4)
         robot_column.setAlignment(Qt.AlignmentFlag.AlignTop)
         robot_column.addWidget(self.robot_frame_list_label)
         robot_column.addWidget(self.frame_list)
         self.scene_frame_column = QWidget(self.frame_lists_overlay)
+        self.scene_frame_column.setObjectName("viewerFrameListZone")
         self.scene_frame_column.setFixedWidth(frame_column_width)
         scene_column = QVBoxLayout(self.scene_frame_column)
-        scene_column.setContentsMargins(0, 0, 0, 0)
+        scene_column.setContentsMargins(6, 6, 6, 6)
         scene_column.setSpacing(4)
         scene_column.setAlignment(Qt.AlignmentFlag.AlignTop)
         scene_column.addWidget(self.scene_frame_list_label)
@@ -1163,10 +1180,6 @@ class Viewer3DWidget(QWidget):
         self.setLayout(layout)
         self.add_grid()
 
-        self.frame_list.itemClicked.connect(self._on_robot_frame_item_clicked)
-        self.workspace_frame_list.itemClicked.connect(self._on_workspace_frame_item_clicked)
-        self.frame_list.itemChanged.connect(self._on_robot_frame_item_changed)
-        self.workspace_frame_list.itemChanged.connect(self._on_workspace_frame_item_changed)
         self.btn_toggle_robot_controls.clicked.connect(self._toggle_robot_controls_overlay)
         self.btn_toggle_cad.clicked.connect(self._on_cad_button_clicked)
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
@@ -1729,6 +1742,45 @@ class Viewer3DWidget(QWidget):
                 color: {text_rgba};
                 font-size: 10px;
                 font-weight: 600;
+            }}
+            """
+        )
+        self.frame_lists_overlay.setStyleSheet(
+            f"""
+            QWidget#viewerFrameListsOverlay {{
+                background-color: rgba(0, 0, 0, 18);
+                border: 1px solid rgba(255, 255, 255, 20);
+                border-radius: 10px;
+            }}
+            QWidget#viewerFrameListZone {{
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 22);
+                border-radius: 8px;
+            }}
+            QWidget#viewerFrameListsOverlay QLabel {{
+                color: {text_rgba};
+                font-size: 10px;
+                font-weight: 600;
+            }}
+            QWidget#viewerFrameListsOverlay QListWidget {{
+                background-color: transparent;
+                color: {text_rgba};
+                border: none;
+                outline: 0;
+                font-size: 10px;
+            }}
+            QWidget#viewerFrameListsOverlay QListWidget::item {{
+                padding: 0px;
+            }}
+            QWidget#viewerFrameListsOverlay QCheckBox {{
+                color: {text_rgba};
+                spacing: 8px;
+                padding: 4px 6px;
+                background-color: transparent;
+            }}
+            QWidget#viewerFrameListsOverlay QCheckBox:hover {{
+                background-color: rgba(255, 255, 255, 12);
+                border-radius: 6px;
             }}
             """
         )
@@ -2311,45 +2363,17 @@ class Viewer3DWidget(QWidget):
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
 
-    def _on_robot_frame_item_changed(self, item: QListWidgetItem) -> None:
-        index = self.frame_list.row(item)
-        if index < 0 or index >= len(self.frames_visibility):
+    def _on_frame_checkbox_toggled(self, is_workspace_frame: bool, index: int, checked: bool) -> None:
+        target_visibility = self.workspace_frames_visibility if is_workspace_frame else self.frames_visibility
+        if index < 0 or index >= len(target_visibility):
             return
-        is_visible = item.checkState() == Qt.CheckState.Checked
-        if self.frames_visibility[index] == is_visible:
+        is_visible = bool(checked)
+        if target_visibility[index] == is_visible:
             return
-        self.frames_visibility[index] = is_visible
+        target_visibility[index] = is_visible
         self._clear_and_refresh()
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
-
-    def _on_robot_frame_item_clicked(self, item: QListWidgetItem) -> None:
-        self._toggle_list_item_check_state(self.frame_list, item)
-
-    def _on_workspace_frame_item_changed(self, item: QListWidgetItem) -> None:
-        index = self.workspace_frame_list.row(item)
-        if index < 0 or index >= len(self.workspace_frames_visibility):
-            return
-        is_visible = item.checkState() == Qt.CheckState.Checked
-        if self.workspace_frames_visibility[index] == is_visible:
-            return
-        self.workspace_frames_visibility[index] = is_visible
-        self._clear_and_refresh()
-        self._refresh_toolbar_buttons()
-        self._emit_display_state_changed()
-
-    def _on_workspace_frame_item_clicked(self, item: QListWidgetItem) -> None:
-        self._toggle_list_item_check_state(self.workspace_frame_list, item)
-
-    def _toggle_list_item_check_state(self, list_widget: QListWidget, item: QListWidgetItem) -> None:
-        if item is None:
-            return
-        list_widget.blockSignals(True)
-        item.setCheckState(
-            Qt.CheckState.Unchecked if item.checkState() == Qt.CheckState.Checked else Qt.CheckState.Checked
-        )
-        list_widget.blockSignals(False)
-        list_widget.itemChanged.emit(item)
 
     def _on_cad_button_clicked(self):
         self.set_robot_visibility(not self._cad_showed)
@@ -2459,28 +2483,24 @@ class Viewer3DWidget(QWidget):
     ) -> None:
         count = len(frames_visibility)
         normalized_labels = [str(label) for label in labels] if isinstance(labels, list) else []
-        list_widget.blockSignals(True)
-        if list_widget.count() != count:
-            list_widget.clear()
-            for index in range(count):
-                item = QListWidgetItem(self._frame_label_for_index(index, normalized_labels))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                item.setSizeHint(QSize(0, 28))
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-                list_widget.addItem(item)
-        else:
-            for index in range(count):
-                item = list_widget.item(index)
-                if item is not None:
-                    item.setText(self._frame_label_for_index(index, normalized_labels))
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        is_workspace_frame = list_widget is self.workspace_frame_list
+        list_widget.clear()
         for index, is_visible in enumerate(frames_visibility):
-            item = list_widget.item(index)
-            if item is None:
-                continue
-            item.setCheckState(Qt.CheckState.Checked if is_visible else Qt.CheckState.Unchecked)
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 28))
+            list_widget.addItem(item)
+
+            checkbox = QCheckBox(self._frame_label_for_index(index, normalized_labels), list_widget)
+            checkbox.setChecked(bool(is_visible))
+            checkbox.toggled.connect(
+                lambda checked, workspace=is_workspace_frame, frame_index=index: self._on_frame_checkbox_toggled(
+                    workspace,
+                    frame_index,
+                    checked,
+                )
+            )
+            list_widget.setItemWidget(item, checkbox)
         self._set_frame_list_height(list_widget, count)
-        list_widget.blockSignals(False)
 
     def _frame_label_for_index(self, index: int, labels: list[str]) -> str:
         if 0 <= index < len(labels):
