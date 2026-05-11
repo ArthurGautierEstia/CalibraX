@@ -3,7 +3,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent
+from PyQt6.QtGui import QColor, QPalette
 from utils.mgi import MgiConfigKey
 from widgets.jog_spin_box import JogSpinBox
 
@@ -266,8 +267,22 @@ class JointsControlWidget(QWidget):
     def set_configuration(self, config: MgiConfigKey) -> None:
         """Met à jour le texte de configuration"""
         self._current_axis_config = config
-        self.configuration_label.setText(f"Configuration courante : {config.name}")
+        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.configuration_label.setText(
+            f'Configuration courante : <span style="color: {accent_hex};">{config.name}</span>'
+        )
         self.configuration_changed.emit(config.name)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self.set_configuration(self._current_axis_config)
+
+    def apply_text_color(self, text_color: QColor) -> None:
+        text_hex = text_color.name(QColor.NameFormat.HexRgb)
+        control_style = f"color: {text_hex};"
+        for spinbox in self.spinboxes_q:
+            spinbox.setStyleSheet(control_style)
 
     def set_spinbox_single_step(self, step: float) -> None:
         normalized_step = max(0.001, float(step))

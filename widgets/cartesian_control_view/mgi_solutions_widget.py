@@ -1,5 +1,5 @@
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QBrush
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent
+from PyQt6.QtGui import QColor, QBrush, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -134,7 +134,12 @@ class MgiSolutionsWidget(QWidget):
             is_selected_row = selected_row_index is not None and row == selected_row_index
 
             configuration_item = QTableWidgetItem(config_key.name)
-            configuration_item.setForeground(QBrush(QColor("orange" if is_selected_row else "white")))
+            configuration_color = (
+                self.palette().color(QPalette.ColorRole.Highlight)
+                if is_selected_row
+                else self.palette().color(QPalette.ColorRole.WindowText)
+            )
+            configuration_item.setForeground(QBrush(configuration_color))
             self._table.setItem(row, 0, configuration_item)
 
             status_item = QTableWidgetItem(status_to_text(item.status))
@@ -156,6 +161,11 @@ class MgiSolutionsWidget(QWidget):
             self._table.setCellWidget(row, 8, select_button)
 
         self._table.resizeColumnsToContents()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and self._mgi_result is not None:
+            self._populate_table()
 
     def _display_rows(self) -> list[tuple[MgiConfigKey, MgiResultItem]]:
         if self._mgi_result is None:

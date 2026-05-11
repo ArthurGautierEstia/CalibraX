@@ -3,8 +3,8 @@
 import math
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -120,11 +120,9 @@ class RobotConfigurationWidget(QWidget):
         fields_layout.addWidget(current_config_title_label, 0, 0)
 
         self.current_config_name_label = QLabel("Aucune configuration")
-        self.current_config_name_label.setStyleSheet(
-            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
-        )
         self.current_config_name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.current_config_name_label.setMinimumWidth(220)
+        self._apply_current_configuration_label_style()
         fields_layout.addWidget(self.current_config_name_label, 0, 1)
 
         robot_name_title_label = QLabel("Nom du robot :")
@@ -206,6 +204,17 @@ class RobotConfigurationWidget(QWidget):
 
     def set_current_configuration_name(self, file_name: str) -> None:
         self.current_config_name_label.setText(file_name)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._apply_current_configuration_label_style()
+
+    def _apply_current_configuration_label_style(self) -> None:
+        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.current_config_name_label.setStyleSheet(
+            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+        )
 
     def add_tab(self, widget: QWidget, title: str) -> None:
         existing_index = self._extra_tab_indexes.get(title, -1)
@@ -964,12 +973,12 @@ class RobotConfigurationWidget(QWidget):
         if normalized_hex:
             button.setStyleSheet(
                 f"min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; "
-                f"border: 1px solid #555; background-color: {normalized_hex};"
+                f"border: 1px solid #555; border-radius: 6px; background-color: {normalized_hex};"
             )
             button.setProperty("cad_color_hex", normalized_hex)
             return
         button.setStyleSheet(
             "min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; "
-            "border: 1px solid #777; background-color: transparent;"
+            "border: 1px solid #777; border-radius: 6px; background-color: transparent;"
         )
         button.setProperty("cad_color_hex", "")

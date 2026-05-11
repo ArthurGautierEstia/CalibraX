@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QColor, QPalette
 
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
@@ -37,6 +38,7 @@ class ViewerControlOverlayWidget(QWidget):
         self.configuration_label = QLabel()
         self.reference_label = self.cartesian_widget.reference_label
         self.reference_frame_combo = self.cartesian_widget.reference_frame_combo
+        self._current_config_name = "FUN"
 
         self.mode_stack = QStackedWidget()
         self.mode_stack.addWidget(self.joints_widget)
@@ -47,30 +49,7 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_stack.setCurrentWidget(self.joints_widget)
 
     def _setup_ui(self) -> None:
-        self.setStyleSheet("""
-            QWidget#viewerControlOverlay {
-                background-color: rgba(25, 25, 28, 130);
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 6px;
-            }
-            QWidget#viewerControlOverlay QLabel,
-            QWidget#viewerControlOverlay QRadioButton {
-                color: lightgray;
-            }
-            QWidget#viewerControlOverlay QWidget#viewerModeSelector {
-                background-color: rgba(255, 255, 255, 10);
-                border: 1px solid rgba(255, 255, 255, 32);
-                border-radius: 6px;
-            }
-            QWidget#viewerControlOverlay QComboBox,
-            QWidget#viewerControlOverlay QPushButton {
-                color: white;
-                background-color: rgba(255, 255, 255, 18);
-                border: 1px solid rgba(255, 255, 255, 28);
-                border-radius: 6px;
-                padding: 4px 6px;
-            }
-        """)
+        self.apply_theme_colors(QColor(230, 230, 230), QColor(255, 140, 0))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 12)
@@ -125,9 +104,53 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_stack.setCurrentWidget(self.joints_widget)
 
     def _on_configuration_changed(self, config_name: str) -> None:
+        self._current_config_name = str(config_name)
         self.configuration_label.setText(
             f'Configuration courante : <span style="color: {self._CURRENT_CONFIG_COLOR};">{config_name}</span>'
         )
+
+    def apply_theme_colors(self, text_color: QColor, accent_color: QColor) -> None:
+        text_hex = text_color.name(QColor.NameFormat.HexRgb)
+        accent_hex = accent_color.name(QColor.NameFormat.HexRgb)
+        accent_rgba = f"rgba({accent_color.red()}, {accent_color.green()}, {accent_color.blue()}, 120)"
+        accent_rgba_soft = f"rgba({accent_color.red()}, {accent_color.green()}, {accent_color.blue()}, 70)"
+        self._CURRENT_CONFIG_COLOR = accent_hex
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Highlight, accent_color)
+        palette.setColor(QPalette.ColorRole.Link, accent_color)
+        if hasattr(QPalette.ColorRole, "Accent"):
+            palette.setColor(QPalette.ColorRole.Accent, accent_color)
+        self.setPalette(palette)
+        self.setStyleSheet(
+            f"""
+            QWidget#viewerControlOverlay {{
+                background-color: rgba(25, 25, 28, 130);
+                border: 1px solid rgba(255, 255, 255, 35);
+                border-radius: 6px;
+            }}
+            QWidget#viewerControlOverlay QLabel,
+            QWidget#viewerControlOverlay QRadioButton {{
+                color: {text_hex};
+            }}
+            QWidget#viewerControlOverlay QWidget#viewerModeSelector {{
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 32);
+                border-radius: 6px;
+            }}
+            QWidget#viewerControlOverlay QComboBox,
+            QWidget#viewerControlOverlay QPushButton {{
+                color: {text_hex};
+                background-color: rgba(255, 255, 255, 18);
+                border: 1px solid rgba(255, 255, 255, 28);
+                border-radius: 6px;
+                padding: 4px 6px;
+            }}
+            """
+        )
+        self.jog_delta_spinbox.setStyleSheet(f"color: {text_hex};")
+        self.joints_widget.apply_text_color(text_color)
+        self.cartesian_widget.apply_text_color(text_color)
+        self._on_configuration_changed(self._current_config_name)
 
     def get_joints_widget(self) -> JointsControlWidget:
         return self.joints_widget

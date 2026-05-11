@@ -335,5 +335,6 @@
         "#F67829",
         "#4C4C4C"
     ],
-    "default_tool_profile": "./default_data/tools/Broche_70kW.json"
+    "default_tool_profile": "./default_data/tools/Broche_70kW.json",
+    "default_tool_auto_load_on_startup": true
 }
