@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QGroupBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QEvent
-from PyQt6.QtGui import QFont, QPalette
+from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 import utils.math_utils as math_utils
 import numpy as np
 
@@ -102,6 +102,7 @@ class MeasurementWidget(QWidget):
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
         self.measurements: List[Dict[str, Any]] = []
+        self._reference_repere_name: str | None = None
         self.setup_ui()
 
     def setup_ui(self) -> None:
@@ -114,9 +115,7 @@ class MeasurementWidget(QWidget):
         top_layout = QGridLayout()
 
         self.file_label = QLabel("Aucun fichier chargé")
-        self.file_label.setStyleSheet(
-            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;"
-        )
+        self._apply_file_label_style()
         self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top_layout.addWidget(self.file_label, 0, 0)
 
@@ -387,16 +386,37 @@ class MeasurementWidget(QWidget):
         for name in repere_names:
             item = QTreeWidgetItem([name])
             self.tree.addTopLevelItem(item)
+        self._apply_reference_item_style()
 
     def set_measurements_data(self, measurements: List[Dict[str, Any]]) -> None:
         self.measurements = measurements
 
     def set_reference_bold(self, ref_name: str) -> None:
+        self._reference_repere_name = ref_name
+        self._apply_reference_item_style()
+
+    def _apply_reference_item_style(self) -> None:
+        accent_color = self.palette().color(QPalette.ColorRole.Highlight)
+        default_brush = QBrush()
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
             font = QFont()
-            font.setBold(item.text(0) == ref_name)
+            is_reference = item.text(0) == self._reference_repere_name
+            font.setBold(is_reference)
             item.setFont(0, font)
+            item.setForeground(0, QBrush(QColor(accent_color)) if is_reference else default_brush)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._apply_file_label_style()
+            self._apply_reference_item_style()
+
+    def _apply_file_label_style(self) -> None:
+        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.file_label.setStyleSheet(
+            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+        )
 
     def display_repere_data(self, delta_T: np.ndarray) -> None:
         """
@@ -495,6 +515,20 @@ class MeasurementWidget(QWidget):
 
     def set_measure_filename(self, filename) -> None:
         self.file_label.setText(filename if filename else "Aucun fichier chargé")
+
+    def clear_measurements(self) -> None:
+        self.file_label.setText("Aucun fichier chargé")
+        self._apply_file_label_style()
+        self.tree.clear()
+        self.table_me.clearContents()
+        self.table_dh_measured.clearContents()
+        self._initialize_dh_cells()
+        self._initialize_tcp_offsets_table()
+        self._sync_group_checkboxes()
+
+    def set_measure_filename(self, filename) -> None:
+        self.file_label.setText(filename if filename else "Aucun fichier chargé")
+        self._apply_file_label_style()
 
     def get_current_repere_name(self) -> Optional[str]:
         current_item = self.tree.currentItem()
