@@ -6,6 +6,7 @@ from enum import Enum
 class ReferenceFrame(str, Enum):
     BASE = "BASE"
     WORLD = "WORLD"
+    PROGRAM = "PROGRAM"
     TOOL = "TOOL"
 
     @classmethod
