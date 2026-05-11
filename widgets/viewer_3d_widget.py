@@ -2595,7 +2595,7 @@ class Viewer3DWidget(QWidget):
                     pos=world_points,
                     color=color,
                     width=2,
-                    antialias=True,
+                    antialias=False,
                 )
                 self._trajectory_path_items.append(path_item)
                 self.viewer.addItem(path_item)

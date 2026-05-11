@@ -9,6 +9,7 @@ from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
 from views.joint_control_view import JointControlView
 from views.mgi_view import MgiView
+from views.program_view import ProgramView
 from views.robot_view import RobotView
 from views.tool_view import ToolView
 from views.trajectory_view import TrajectoryView
@@ -17,7 +18,7 @@ from widgets.viewer_3d_widget import Viewer3DWidget
 
 
 class MainTabsBar(QTabBar):
-    PRIMARY_TAB_COUNT = 6
+    PRIMARY_TAB_COUNT = 7
 
     def tabSizeHint(self, index: int) -> QSize:
         default_size = super().tabSizeHint(index)
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow):
         self.cartesian_control_view = CartesianControlView()
         self.mgi_view = MgiView()
         self.trajectory_view = TrajectoryView(robot_model, tool_model, workspace_model)
+        self.program_view = ProgramView(robot_model, tool_model, workspace_model)
 
         self.viewer3d = Viewer3DWidget()
 
@@ -76,6 +78,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.mgi_view, "MGI")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
+        self.tabs.addTab(self.program_view, "Programme")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
         self.main_splitter.setHandleWidth(6)
@@ -167,6 +170,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue du viewer 3D"""
         return self.viewer3d
 
+    def get_program_view(self) -> ProgramView:
+        """Retourne la vue programme."""
+        return self.program_view
+
     #####################
     # Functions
     #####################
@@ -181,6 +188,7 @@ class MainWindow(QMainWindow):
             self.workspace_view,
             self.mgi_view,
             self.trajectory_view,
+            self.program_view,
         )
 
         for control_view in always_enabled_views:

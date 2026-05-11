@@ -9,6 +9,7 @@ from controllers.calibration_controller import CalibrationController
 from controllers.cartesian_control_controller import CartesianControlController
 from controllers.joint_control_controller import JointControlController
 from controllers.mgi_controller import MgiController
+from controllers.program_controller import ProgramController
 from controllers.robot_controller import RobotController
 from controllers.trajectory_controller import TrajectoryController
 from controllers.viewer3d_controller import Viewer3DController
@@ -90,6 +91,13 @@ class MainController(QObject):
             tool_model,
             workspace_model,
             main_window.get_trajectory_view(),
+            self.viewer3d_controller,
+        )
+        self.program_controller = ProgramController(
+            robot_model,
+            tool_model,
+            workspace_model,
+            main_window.get_program_view(),
             self.viewer3d_controller,
         )
         self.workspace_controller = WorkspaceController(workspace_model, main_window.get_workspace_view())
