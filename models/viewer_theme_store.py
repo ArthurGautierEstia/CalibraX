@@ -17,7 +17,6 @@ class StoredViewerTheme:
 
 class ViewerThemeStore:
     THEMES_DIRECTORY_RELATIVE_PATH = os.path.join("user_data", "viewer_themes")
-    DEFAULT_THEME_SETTINGS_FILE_NAME = "_default_theme.json"
 
     def __init__(self, project_root: str) -> None:
         self._project_root = os.path.abspath(project_root)
@@ -31,8 +30,6 @@ class ViewerThemeStore:
         themes: list[StoredViewerTheme] = []
         for file_name in sorted(os.listdir(self._themes_directory_path)):
             if not file_name.lower().endswith(".json"):
-                continue
-            if file_name == self.DEFAULT_THEME_SETTINGS_FILE_NAME:
                 continue
             file_path = os.path.join(self._themes_directory_path, file_name)
             theme = self._load_theme_file(file_path)
@@ -66,32 +63,6 @@ class ViewerThemeStore:
             json.dump(payload, file, indent=4)
         return normalized_theme_name
 
-    def load_default_theme_name(self) -> str:
-        self.ensure_storage_directory()
-        settings_file_path = os.path.join(self._themes_directory_path, self.DEFAULT_THEME_SETTINGS_FILE_NAME)
-        if not os.path.exists(settings_file_path):
-            return ""
-        try:
-            with open(settings_file_path, "r", encoding="utf-8") as file:
-                payload = json.load(file)
-        except (OSError, ValueError, TypeError):
-            return ""
-
-        if not isinstance(payload, dict):
-            return ""
-        theme_name = payload.get("theme_name")
-        return "" if theme_name is None else str(theme_name).strip()
-
-    def save_default_theme_name(self, theme_name: str) -> None:
-        normalized_theme_name = str(theme_name or "").strip()
-        if normalized_theme_name == "":
-            raise ValueError("Le theme viewer par defaut ne peut pas etre vide.")
-
-        self.ensure_storage_directory()
-        settings_file_path = os.path.join(self._themes_directory_path, self.DEFAULT_THEME_SETTINGS_FILE_NAME)
-        with open(settings_file_path, "w", encoding="utf-8") as file:
-            json.dump({"theme_name": normalized_theme_name}, file, indent=4)
-
     def delete_theme(self, theme_name: str) -> bool:
         normalized_theme_name = str(theme_name or "").strip()
         if normalized_theme_name == "":
@@ -104,12 +75,6 @@ class ViewerThemeStore:
                 os.remove(file_path)
             except OSError:
                 return False
-            if self.load_default_theme_name() == normalized_theme_name:
-                default_settings_path = os.path.join(self._themes_directory_path, self.DEFAULT_THEME_SETTINGS_FILE_NAME)
-                try:
-                    os.remove(default_settings_path)
-                except OSError:
-                    pass
             return True
         return False
 
