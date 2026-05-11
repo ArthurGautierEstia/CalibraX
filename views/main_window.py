@@ -1,6 +1,6 @@
-from PyQt6.QtCore import QTimer, Qt, QSize
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QStyle, QTabBar, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
+from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -111,8 +111,55 @@ class MainWindow(QMainWindow):
 
     def _get_validated_tab_icon(self) -> QIcon:
         if self._validated_tab_icon is None:
-            self._validated_tab_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+            self._validated_tab_icon = self._build_validated_tab_icon()
         return self._validated_tab_icon
+
+    def _build_validated_tab_icon(self) -> QIcon:
+        icon_size_px = 18
+        pixmap = QPixmap(icon_size_px, icon_size_px)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(self.palette().color(self.palette().ColorRole.Highlight)))
+
+        check_path = QPainterPath()
+        check_path.moveTo(2.5, 9.5)
+        check_path.lineTo(5.2, 6.8)
+        check_path.lineTo(8.0, 9.6)
+        check_path.lineTo(13.8, 3.8)
+        check_path.lineTo(16.0, 6.0)
+        check_path.lineTo(8.0, 14.0)
+        check_path.closeSubpath()
+
+        bounds = check_path.boundingRect()
+        target_bounds = QRectF(1.0, 1.0, icon_size_px - 2.0, icon_size_px - 2.0)
+        scale_factor = min(
+            target_bounds.width() / bounds.width(),
+            target_bounds.height() / bounds.height(),
+        )
+
+        painter.translate(target_bounds.center())
+        painter.scale(scale_factor, scale_factor)
+        painter.translate(-bounds.center())
+        painter.drawPath(check_path)
+        painter.end()
+
+        return QIcon(pixmap)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == event.Type.PaletteChange:
+            self._validated_tab_icon = None
+            self._refresh_validated_tab_icons()
+
+    def _refresh_validated_tab_icons(self) -> None:
+        for tab_index in (MainWindow.ROBOT_TAB_INDEX, MainWindow.TOOL_TAB_INDEX):
+            current_icon = self.tabs.tabIcon(tab_index)
+            if current_icon.isNull():
+                continue
+            self.tabs.setTabIcon(tab_index, self._get_validated_tab_icon())
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
