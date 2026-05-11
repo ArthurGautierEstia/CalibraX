@@ -94,6 +94,8 @@ class TrajectoryBuildRequest:
     smooth_time_enabled: bool
     bezier_degree: TrajectoryBezierDegree
     jerk_check_enabled: bool
+    cartesian_accel_limit_mm_s2: float
+    cartesian_jerk_limit_mm_s3: float
     trigger_mode: TrajectoryBuildTriggerMode
 
 

@@ -125,6 +125,7 @@ class TrajectoryController(QObject):
         self.config_widget.timeSmoothingChanged.connect(self._on_time_smoothing_changed)
         self.config_widget.jerkCheckChanged.connect(self._on_jerk_check_changed)
         self.config_widget.bezierDegreeChanged.connect(self._on_bezier_degree_changed)
+        self.config_widget.cartesianDynamicsChanged.connect(self._on_cartesian_dynamics_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_cartesian_display_frame_changed)
         self.actions_widget.compute_requested.connect(self._on_compute_requested)
         self.actions_widget.export_trajectory_requested.connect(self._on_export_trajectory_requested)
@@ -189,6 +190,11 @@ class TrajectoryController(QObject):
         self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
 
     def _on_bezier_degree_changed(self, _degree: str) -> None:
+        if self._is_keypoint_preview_active:
+            return
+        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
+
+    def _on_cartesian_dynamics_changed(self) -> None:
         if self._is_keypoint_preview_active:
             return
         self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
@@ -477,9 +483,9 @@ class TrajectoryController(QObject):
                 current_joints=current_joints,
                 keypoints=keypoints,
                 sample_dt_s=self._sample_dt_s,
-                smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
-                bezier_degree=self.config_widget.get_bezier_degree(),
                 jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
+                cartesian_accel_limit_mm_s2=self.config_widget.get_cartesian_accel_limit_mm_s2(),
+                cartesian_jerk_limit_mm_s3=self.config_widget.get_cartesian_jerk_limit_mm_s3(),
                 trigger_mode=trigger_mode,
             )
             return
@@ -504,9 +510,9 @@ class TrajectoryController(QObject):
             current_joints=current_joints,
             keypoints=keypoints,
             sample_dt_s=self._sample_dt_s,
-            smooth_time_enabled=self.config_widget.is_time_smoothing_enabled(),
-            bezier_degree=self.config_widget.get_bezier_degree(),
             jerk_check_enabled=self.config_widget.is_jerk_check_enabled(),
+            cartesian_accel_limit_mm_s2=self.config_widget.get_cartesian_accel_limit_mm_s2(),
+            cartesian_jerk_limit_mm_s3=self.config_widget.get_cartesian_jerk_limit_mm_s3(),
             trigger_mode=trigger_mode,
         )
 
@@ -560,6 +566,17 @@ class TrajectoryController(QObject):
         if not keypoints:
             return
         self._recompute_trajectory(keypoints, trigger_mode=TrajectoryBuildTriggerMode.FORCED_FULL)
+
+    def _on_collision_worker_completed(self, job_id: int, result: object) -> None:
+        active_job_id = getattr(self, "_active_collision_job_id", None)
+        if active_job_id is not None and int(job_id) != int(active_job_id):
+            return
+        from utils.trajectory_validity_analyzer import apply_trajectory_validity_result
+
+        trajectory = getattr(self, "current_trajectory", None)
+        if trajectory is None:
+            return
+        apply_trajectory_validity_result(trajectory, result)
 
     def _on_engine_preview_ready(self, preview: object) -> None:
         if not isinstance(preview, TrajectoryPreviewResult):

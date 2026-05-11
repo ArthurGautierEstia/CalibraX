@@ -4,6 +4,7 @@ from enum import Enum
 
 
 class TrajectoryBezierDegree(Enum):
+    BEZIER7 = "BEZIER7"
     BEZIER3 = "BEZIER3"
     BEZIER5 = "BEZIER5"
 

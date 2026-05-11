@@ -6,6 +6,7 @@ import math
 
 from models.reference_frame import ReferenceFrame
 from models.types import Pose6, XYZ3
+from trajectory_engine.v2.models import TrajectoryPassMode
 from utils.mgi import ConfigurationIdentifier, MgiConfigKey
 
 
@@ -45,6 +46,7 @@ class TrajectoryKeypoint:
         forced_config: MgiConfigKey | None = None,
         ptp_speed_percent: float = 75.0,
         linear_speed_mps: float = 0.5,
+        pass_mode: TrajectoryPassMode | str = TrajectoryPassMode.STOP,
     ) -> None:
         self.target_type = target_type
         self.mode = mode
@@ -98,6 +100,7 @@ class TrajectoryKeypoint:
 
         self.ptp_speed_percent = self._clamp(float(ptp_speed_percent), 0.0, 100.0)
         self.linear_speed_mps = self._clamp(float(linear_speed_mps), 0.0, 2.0)
+        self.pass_mode = TrajectoryPassMode.from_value(pass_mode)
 
         self._normalize_configuration_rules()
 
@@ -209,6 +212,7 @@ class TrajectoryKeypoint:
             forced_config=self.forced_config,
             ptp_speed_percent=self.ptp_speed_percent,
             linear_speed_mps=self.linear_speed_mps,
+            pass_mode=self.pass_mode,
         )
 
     def to_dict(self) -> dict:
@@ -235,6 +239,7 @@ class TrajectoryKeypoint:
             "forced_config": self.forced_config.name if self.forced_config is not None else None,
             "ptp_speed_percent": float(self.ptp_speed_percent),
             "linear_speed_mps": float(self.linear_speed_mps),
+            "pass_mode": self.pass_mode.value,
         }
 
     @staticmethod
@@ -305,6 +310,7 @@ class TrajectoryKeypoint:
             forced_config=forced_config,
             ptp_speed_percent=float(raw.get("ptp_speed_percent", 75.0)),
             linear_speed_mps=float(raw.get("linear_speed_mps", 0.5)),
+            pass_mode=TrajectoryPassMode.from_value(raw.get("pass_mode", TrajectoryPassMode.STOP.value)),
         )
 
     @staticmethod

@@ -6,8 +6,8 @@ from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from trajectory_engine.core.chunking import build_validation_task_samples
-from trajectory_engine.core.full_builder import TrajectoryBuilder
-from trajectory_engine.core.preview_builder import TrajectoryPreviewBuilder
+from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
+from trajectory_engine.v2.builders.preview_builder import TrajectoryPreviewBuilderV2
 from trajectory_engine.core.validity_analyzer import (
     apply_validation_result,
     build_validity_context_snapshot,
@@ -61,7 +61,7 @@ class TrajectoryBuildManager(QObject):
 
         self._preview_thread = QThread(self)
         self._preview_worker = PreviewWorker(
-            TrajectoryPreviewBuilder(robot_model, tool_model, workspace_model),
+            TrajectoryPreviewBuilderV2(robot_model, tool_model, workspace_model),
         )
         self._preview_worker.moveToThread(self._preview_thread)
         self._dispatch_preview.connect(self._preview_worker.process)
@@ -74,7 +74,7 @@ class TrajectoryBuildManager(QObject):
 
         self._full_thread = QThread(self)
         self._full_worker = FullTrajectoryWorker(
-            TrajectoryBuilder(robot_model, tool_model, workspace_model),
+            TrajectoryBuilderV2(robot_model, tool_model, workspace_model),
         )
         self._full_worker.moveToThread(self._full_thread)
         self._dispatch_full.connect(self._full_worker.process)
@@ -108,6 +108,8 @@ class TrajectoryBuildManager(QObject):
             smooth_time_enabled=bool(request.smooth_time_enabled),
             bezier_degree=request.bezier_degree,
             jerk_check_enabled=bool(request.jerk_check_enabled),
+            cartesian_accel_limit_mm_s2=float(request.cartesian_accel_limit_mm_s2),
+            cartesian_jerk_limit_mm_s3=float(request.cartesian_jerk_limit_mm_s3),
             trigger_mode=request.trigger_mode,
         )
         self._cancel_previous_work(previous_revision_id)

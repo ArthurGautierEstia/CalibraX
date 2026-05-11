@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
-from trajectory_engine.core.full_builder import TrajectoryBuilder
+from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
 from trajectory_engine.models import (
     BuildCancelToken,
     BuildStatus,
@@ -17,7 +17,7 @@ class FullTrajectoryWorker(QObject):
     cancelled = pyqtSignal(int)
     failed = pyqtSignal(int, str)
 
-    def __init__(self, builder: TrajectoryBuilder, parent: QObject | None = None) -> None:
+    def __init__(self, builder: TrajectoryBuilderV2, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._builder = builder
 
@@ -27,9 +27,11 @@ class FullTrajectoryWorker(QObject):
             return
         try:
             self._builder.set_cancel_token(cancel_token)
-            self._builder.set_time_smoothing_enabled(request.smooth_time_enabled)
-            self._builder.set_bezier_degree(request.bezier_degree)
             self._builder.set_jerk_check_enabled(request.jerk_check_enabled)
+            self._builder.set_cartesian_dynamic_limits(
+                request.cartesian_accel_limit_mm_s2,
+                request.cartesian_jerk_limit_mm_s3,
+            )
 
             if cancel_token.is_cancelled():
                 self.cancelled.emit(request.revision_id)

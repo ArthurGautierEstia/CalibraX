@@ -43,6 +43,7 @@ from models.trajectory_keypoint import (
     KeypointTargetType,
     TrajectoryKeypoint,
 )
+from trajectory_engine.v2.models import TrajectoryPassMode
 from models.reference_frame import ReferenceFrame
 from models.types import Pose6, XYZ3
 from models.trajectory_result import TrajectoryResult
@@ -104,6 +105,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.cartesian_solutions_table_right = QTableWidget()
 
         self.mode_combo = QComboBox()
+        self.pass_mode_combo = QComboBox()
         self.speed_spin = QDoubleSpinBox()
         self.speed_unit_label = QLabel("m/s")
         self.speed_unit_label.setMinimumWidth(self.speed_unit_label.sizeHint().width())
@@ -181,11 +183,16 @@ class TrajectoryKeypointDialog(QDialog):
         self.mode_combo.addItem(KeypointMotionMode.PTP.value, KeypointMotionMode.PTP.value)
         self.mode_combo.addItem(KeypointMotionMode.LINEAR.value, KeypointMotionMode.LINEAR.value)
         self.mode_combo.addItem("BEZIER", KeypointMotionMode.CUBIC.value)
+        self.pass_mode_combo.addItem("Stop", TrajectoryPassMode.STOP.value)
+        self.pass_mode_combo.addItem("Fly-by", TrajectoryPassMode.FLY_BY.value)
         top_controls_layout.addWidget(QLabel("Type de target"))
         top_controls_layout.addWidget(self.target_type_combo)
         top_controls_layout.addSpacing(10)
         top_controls_layout.addWidget(QLabel("Mode"))
         top_controls_layout.addWidget(self.mode_combo)
+        top_controls_layout.addSpacing(10)
+        top_controls_layout.addWidget(QLabel("Passage"))
+        top_controls_layout.addWidget(self.pass_mode_combo)
         top_controls_layout.addSpacing(10)
         top_controls_layout.addWidget(QLabel("Vitesse"))
         top_controls_layout.addWidget(self.speed_spin)
@@ -432,6 +439,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.use_home_target_btn.clicked.connect(self._on_use_home_target_clicked)
         self.use_initial_target_btn.clicked.connect(self._on_use_initial_target_clicked)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        self.pass_mode_combo.currentIndexChanged.connect(self._on_pass_mode_changed)
         self.speed_spin.valueChanged.connect(self._on_speed_changed)
         self.config_policy_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
         self.forced_config_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
@@ -1189,6 +1197,9 @@ class TrajectoryKeypointDialog(QDialog):
         self._try_minimize_window_size()
         self._emit_ghost_update()
 
+    def _on_pass_mode_changed(self, _idx: int) -> None:
+        self._emit_live_preview()
+
     def _on_target_type_changed(self, _idx: int) -> None:
         previous_type = self._last_target_type
         new_type = self._current_target_type()
@@ -1393,6 +1404,12 @@ class TrajectoryKeypointDialog(QDialog):
         self.mode_combo.blockSignals(False)
         self._last_mode = keypoint.mode
 
+        pass_idx = self.pass_mode_combo.findData(keypoint.pass_mode.value)
+        if pass_idx >= 0:
+            self.pass_mode_combo.blockSignals(True)
+            self.pass_mode_combo.setCurrentIndex(pass_idx)
+            self.pass_mode_combo.blockSignals(False)
+
         for spin, value in zip(self.cubic_vector_1, keypoint.cubic_vectors[0].to_tuple()):
             spin.setValue(value)
         for spin, value in zip(self.cubic_vector_2, keypoint.cubic_vectors[1].to_tuple()):
@@ -1470,4 +1487,5 @@ class TrajectoryKeypointDialog(QDialog):
             forced_config=forced_config,
             ptp_speed_percent=self._ptp_speed_percent,
             linear_speed_mps=self._linear_speed_mps,
+            pass_mode=TrajectoryPassMode.from_value(self.pass_mode_combo.currentData()),
         )

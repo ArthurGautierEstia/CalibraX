@@ -29,9 +29,9 @@ class TrajectoryControllerBuildBridge(QObject):
         current_joints: JointAngles6,
         keypoints: list,
         sample_dt_s: float,
-        smooth_time_enabled: bool,
-        bezier_degree,
         jerk_check_enabled: bool,
+        cartesian_accel_limit_mm_s2: float,
+        cartesian_jerk_limit_mm_s3: float,
         trigger_mode: TrajectoryBuildTriggerMode,
     ) -> int:
         request = TrajectoryBuildRequest(
@@ -39,9 +39,11 @@ class TrajectoryControllerBuildBridge(QObject):
             current_joints=current_joints.copy(),
             keypoints=[keypoint.clone() for keypoint in keypoints],
             sample_dt_s=float(sample_dt_s),
-            smooth_time_enabled=bool(smooth_time_enabled),
-            bezier_degree=bezier_degree,
+            smooth_time_enabled=True,
+            bezier_degree="BEZIER7",
             jerk_check_enabled=bool(jerk_check_enabled),
+            cartesian_accel_limit_mm_s2=float(cartesian_accel_limit_mm_s2),
+            cartesian_jerk_limit_mm_s3=float(cartesian_jerk_limit_mm_s3),
             trigger_mode=trigger_mode,
         )
         return self._build_manager.submit(request)

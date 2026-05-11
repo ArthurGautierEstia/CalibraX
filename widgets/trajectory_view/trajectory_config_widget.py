@@ -20,7 +20,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QHeaderView,
-    QComboBox
+    QComboBox,
+    QDoubleSpinBox,
 )
 
 import utils.math_utils as math_utils
@@ -61,6 +62,7 @@ class TrajectoryConfigWidget(QWidget):
     goToRequested = pyqtSignal(int)
     timeSmoothingChanged = pyqtSignal(bool)
     bezierDegreeChanged = pyqtSignal(str)
+    cartesianDynamicsChanged = pyqtSignal()
     cartesianDisplayFrameChanged = pyqtSignal(str)
     jerkCheckChanged = pyqtSignal(bool)
 
@@ -76,7 +78,7 @@ class TrajectoryConfigWidget(QWidget):
         self.tool_model = tool_model
         self.workspace_model = workspace_model
 
-        self.keypoints_table = QTableWidget(0, 10)
+        self.keypoints_table = QTableWidget(0, 11)
         self.btn_add = QPushButton("Ajouter")
         self.btn_edit = QPushButton("Editer")
         self.btn_go_to = QPushButton("Aller à")
@@ -89,6 +91,8 @@ class TrajectoryConfigWidget(QWidget):
         self.cb_smooth_time = QCheckBox("Lisser le temps")
         self.cb_check_jerk = QCheckBox("Vérif. jerk")
         self.bezier_degree_combo = QComboBox()
+        self.cartesian_accel_spin = QDoubleSpinBox()
+        self.cartesian_jerk_spin = QDoubleSpinBox()
         self.cartesian_display_frame_combo = QComboBox()
         self.cb_smooth_time.setChecked(True)
         self.cb_smooth_time.setToolTip(
@@ -100,6 +104,16 @@ class TrajectoryConfigWidget(QWidget):
             "Active : signale les dépassements de jerk. "
             "Désactivé : conserve les controles vitesse et accéleration."
         )
+        self.cartesian_accel_spin.setRange(1.0, 1_000_000.0)
+        self.cartesian_accel_spin.setDecimals(1)
+        self.cartesian_accel_spin.setSingleStep(100.0)
+        self.cartesian_accel_spin.setValue(1000.0)
+        self.cartesian_accel_spin.setSuffix(" mm/s2")
+        self.cartesian_jerk_spin.setRange(1.0, 100_000_000.0)
+        self.cartesian_jerk_spin.setDecimals(1)
+        self.cartesian_jerk_spin.setSingleStep(1000.0)
+        self.cartesian_jerk_spin.setValue(10000.0)
+        self.cartesian_jerk_spin.setSuffix(" mm/s3")
 
         self._keypoints: list[TrajectoryKeypoint] = []
         self._active_dialog: TrajectoryKeypointDialog | None = None
@@ -122,13 +136,14 @@ class TrajectoryConfigWidget(QWidget):
         layout.addWidget(title)
 
         options_row = QHBoxLayout()
-        options_row.addWidget(self.cb_smooth_time)
         options_row.addWidget(self.cb_check_jerk)
         options_row.addSpacing(12)
-        options_row.addWidget(QLabel("Interpolation"))
-        self.bezier_degree_combo.addItem("Bézier 5", TrajectoryBezierDegree.BEZIER5.value)
-        self.bezier_degree_combo.addItem("Bézier 3", TrajectoryBezierDegree.BEZIER3.value)
-        options_row.addWidget(self.bezier_degree_combo)
+        options_row.addWidget(QLabel("Interpolation: Bézier 7"))
+        options_row.addSpacing(12)
+        options_row.addWidget(QLabel("Accel cart."))
+        options_row.addWidget(self.cartesian_accel_spin)
+        options_row.addWidget(QLabel("Jerk cart."))
+        options_row.addWidget(self.cartesian_jerk_spin)
         options_row.addSpacing(12)
         options_row.addWidget(QLabel("Repère cartésien"))
         self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.BASE.value)
@@ -138,16 +153,16 @@ class TrajectoryConfigWidget(QWidget):
         layout.addLayout(options_row)
 
         self.keypoints_table.setHorizontalHeaderLabels([
-            "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
+            "Cible", "Mode", "Passage", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
         ])
 
         header = self.keypoints_table.horizontalHeader()
         header.setMinimumSectionSize(60)
 
-        for col in range(0, 9):
+        for col in range(0, 10):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
                 
         self.keypoints_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.keypoints_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -181,6 +196,8 @@ class TrajectoryConfigWidget(QWidget):
         self.cb_smooth_time.toggled.connect(self._on_time_smoothing_toggled)
         self.cb_check_jerk.toggled.connect(self._on_jerk_check_toggled)
         self.bezier_degree_combo.currentIndexChanged.connect(self._on_bezier_degree_changed)
+        self.cartesian_accel_spin.valueChanged.connect(self._on_cartesian_dynamics_changed)
+        self.cartesian_jerk_spin.valueChanged.connect(self._on_cartesian_dynamics_changed)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
@@ -196,7 +213,8 @@ class TrajectoryConfigWidget(QWidget):
         self.keypoints_table.setEnabled(not active)
         self.cb_smooth_time.setEnabled(not active)
         self.cb_check_jerk.setEnabled(not active)
-        self.bezier_degree_combo.setEnabled(not active)
+        self.cartesian_accel_spin.setEnabled(not active)
+        self.cartesian_jerk_spin.setEnabled(not active)
         self._update_buttons_state()
 
     def _on_time_smoothing_toggled(self, checked: bool) -> None:
@@ -208,6 +226,9 @@ class TrajectoryConfigWidget(QWidget):
     def _on_bezier_degree_changed(self, _index: int) -> None:
         self.bezierDegreeChanged.emit(self.get_bezier_degree().value)
 
+    def _on_cartesian_dynamics_changed(self, _value: float) -> None:
+        self.cartesianDynamicsChanged.emit()
+
     def _on_cartesian_display_frame_changed(self, _index: int) -> None:
         self.cartesianDisplayFrameChanged.emit(self.get_cartesian_display_frame())
 
@@ -218,13 +239,23 @@ class TrajectoryConfigWidget(QWidget):
         return self.cb_check_jerk.isChecked()
 
     def get_bezier_degree(self) -> TrajectoryBezierDegree:
-        return TrajectoryBezierDegree.from_value(self.bezier_degree_combo.currentData())
+        return TrajectoryBezierDegree.BEZIER7
+
+    def get_cartesian_accel_limit_mm_s2(self) -> float:
+        return float(self.cartesian_accel_spin.value())
+
+    def get_cartesian_jerk_limit_mm_s3(self) -> float:
+        return float(self.cartesian_jerk_spin.value())
 
     def get_cartesian_display_frame(self) -> str:
         return ReferenceFrame.from_value(self.cartesian_display_frame_combo.currentData()).value
 
     def set_bezier_degree(self, degree: TrajectoryBezierDegree | str, emit_signal: bool = False) -> None:
         normalized = TrajectoryBezierDegree.from_value(degree)
+        if normalized == TrajectoryBezierDegree.BEZIER7:
+            if emit_signal:
+                self.bezierDegreeChanged.emit(normalized.value)
+            return
         index = self.bezier_degree_combo.findData(normalized.value)
         if index < 0:
             return
@@ -251,6 +282,21 @@ class TrajectoryConfigWidget(QWidget):
         self.cb_smooth_time.blockSignals(False)
         if emit_signal:
             self.timeSmoothingChanged.emit(self.cb_smooth_time.isChecked())
+
+    def set_cartesian_dynamic_limits(
+        self,
+        accel_limit_mm_s2: float,
+        jerk_limit_mm_s3: float,
+        emit_signal: bool = False,
+    ) -> None:
+        self.cartesian_accel_spin.blockSignals(True)
+        self.cartesian_jerk_spin.blockSignals(True)
+        self.cartesian_accel_spin.setValue(max(1.0, float(accel_limit_mm_s2)))
+        self.cartesian_jerk_spin.setValue(max(1.0, float(jerk_limit_mm_s3)))
+        self.cartesian_accel_spin.blockSignals(False)
+        self.cartesian_jerk_spin.blockSignals(False)
+        if emit_signal:
+            self.cartesianDynamicsChanged.emit()
 
     def set_jerk_check_enabled(self, enabled: bool, emit_signal: bool = False) -> None:
         self.cb_check_jerk.blockSignals(True)
@@ -368,9 +414,8 @@ class TrajectoryConfigWidget(QWidget):
 
     @staticmethod
     def _default_linear_tangent_ratio_for_bezier_degree(degree: TrajectoryBezierDegree) -> float:
-        if degree == TrajectoryBezierDegree.BEZIER5:
-            return 0.15
-        return 0.30
+        _ = degree
+        return 1.0 / 7.0
 
     def _default_linear_tangent_ratios(self) -> list[float]:
         ratio = TrajectoryConfigWidget._default_linear_tangent_ratio_for_bezier_degree(self.get_bezier_degree())
@@ -593,9 +638,9 @@ class TrajectoryConfigWidget(QWidget):
                 raise ValueError("Format invalide: le fichier doit contenir un objet de trajectoire.")
 
             raw_keypoints = payload.get("keypoints")
-            smooth_time_enabled = bool(payload.get("smooth_time_enabled", True))
             jerk_check_enabled = bool(payload.get("jerk_check_enabled", True))
-            bezier_degree = TrajectoryBezierDegree.from_value(payload.get("bezier_degree", TrajectoryBezierDegree.BEZIER5.value))
+            cartesian_accel_limit_mm_s2 = float(payload.get("cartesian_accel_limit_mm_s2", 1000.0))
+            cartesian_jerk_limit_mm_s3 = float(payload.get("cartesian_jerk_limit_mm_s3", 10000.0))
             if not isinstance(raw_keypoints, list):
                 raise ValueError("Format invalide: liste de keypoints introuvable.")
             parsed_keypoints = [TrajectoryKeypoint.from_dict(item) for item in raw_keypoints]
@@ -604,9 +649,12 @@ class TrajectoryConfigWidget(QWidget):
             return
 
         self._keypoints = parsed_keypoints
-        self.set_time_smoothing_enabled(smooth_time_enabled, emit_signal=False)
         self.set_jerk_check_enabled(jerk_check_enabled, emit_signal=False)
-        self.set_bezier_degree(bezier_degree, emit_signal=False)
+        self.set_cartesian_dynamic_limits(
+            cartesian_accel_limit_mm_s2,
+            cartesian_jerk_limit_mm_s3,
+            emit_signal=False,
+        )
         self._refresh_table()
         self.keypoints_table.clearSelection()
         self._emit_selection_changed()
@@ -627,9 +675,10 @@ class TrajectoryConfigWidget(QWidget):
             return
 
         payload = {
-            "smooth_time_enabled": self.is_time_smoothing_enabled(),
             "jerk_check_enabled": self.is_jerk_check_enabled(),
-            "bezier_degree": self.get_bezier_degree().value,
+            "bezier_degree": TrajectoryBezierDegree.BEZIER7.value,
+            "cartesian_accel_limit_mm_s2": self.get_cartesian_accel_limit_mm_s2(),
+            "cartesian_jerk_limit_mm_s3": self.get_cartesian_jerk_limit_mm_s3(),
             "keypoints": [keypoint.to_dict() for keypoint in self._keypoints],
         }
         try:
@@ -697,6 +746,7 @@ class TrajectoryConfigWidget(QWidget):
                     else "JOINT"
                 ),
                 self._mode_text(keypoint),
+                keypoint.pass_mode.value,
                 self._speed_text(keypoint),
             ]
             values.extend(f"{v:.3f}" for v in target_values[:6])
