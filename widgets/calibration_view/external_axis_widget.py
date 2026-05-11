@@ -2,8 +2,8 @@ from typing import List, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QEvent, Qt
-from PyQt6.QtGui import QPainter, QPixmap, QPalette
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -86,7 +86,7 @@ class ExternalAxisWidget(QWidget):
         axis_type_layout.addWidget(self.lever_arm_container)
         import_layout = QHBoxLayout()
         self.file_label = QLabel("Aucun fichier chargé")
-        self._apply_file_label_style()
+        self.file_label.setStyleSheet("border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #d8d8d8;")
         self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         import_layout.addWidget(self.file_label, 1)
         self.btn_import = QPushButton("Importer .txt")
@@ -1160,17 +1160,6 @@ class ExternalAxisWidget(QWidget):
         label.setText("OK" if is_ok else "NOK")
         color = "#2e7d32" if is_ok else "#c62828"
         label.setStyleSheet(f"font-weight: bold; color: {color};")
-
-    def changeEvent(self, event) -> None:
-        super().changeEvent(event)
-        if event.type() == QEvent.Type.PaletteChange:
-            self._apply_file_label_style()
-
-    def _apply_file_label_style(self) -> None:
-        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
-        self.file_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
-        )
 
     def _set_conformity_label_pending(self, label: QLabel) -> None:
         label.setText("-")

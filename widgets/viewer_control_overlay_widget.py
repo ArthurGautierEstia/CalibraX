@@ -147,9 +147,6 @@ class ViewerControlOverlayWidget(QWidget):
             }}
             """
         )
-        self.jog_delta_spinbox.setStyleSheet(f"color: {text_hex};")
-        self.joints_widget.apply_text_color(text_color)
-        self.cartesian_widget.apply_text_color(text_color)
         self._on_configuration_changed(self._current_config_name)
 
     def get_joints_widget(self) -> JointsControlWidget:

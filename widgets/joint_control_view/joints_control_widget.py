@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QPalette
 from utils.mgi import MgiConfigKey
 from widgets.jog_spin_box import JogSpinBox
 
@@ -277,12 +277,6 @@ class JointsControlWidget(QWidget):
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange:
             self.set_configuration(self._current_axis_config)
-
-    def apply_text_color(self, text_color: QColor) -> None:
-        text_hex = text_color.name(QColor.NameFormat.HexRgb)
-        control_style = f"color: {text_hex};"
-        for spinbox in self.spinboxes_q:
-            spinbox.setStyleSheet(control_style)
 
     def set_spinbox_single_step(self, step: float) -> None:
         normalized_step = max(0.001, float(step))

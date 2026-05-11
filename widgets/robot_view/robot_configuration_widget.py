@@ -973,12 +973,12 @@ class RobotConfigurationWidget(QWidget):
         if normalized_hex:
             button.setStyleSheet(
                 f"min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; "
-                f"border: 1px solid #555; border-radius: 6px; background-color: {normalized_hex};"
+                f"border: 1px solid #555; background-color: {normalized_hex};"
             )
             button.setProperty("cad_color_hex", normalized_hex)
             return
         button.setStyleSheet(
             "min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; "
-            "border: 1px solid #777; border-radius: 6px; background-color: transparent;"
+            "border: 1px solid #777; background-color: transparent;"
         )
         button.setProperty("cad_color_hex", "")

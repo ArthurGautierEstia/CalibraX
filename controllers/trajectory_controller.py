@@ -13,7 +13,6 @@ from models.trajectory_preview import TrajectoryPreviewResult, TrajectoryPreview
 from models.types import JointAngles6, Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 from models.trajectory_result import (
-    SegmentResult,
     TrajectoryDynamicViolationSeverity,
     TrajectoryComputationStatus,
     TrajectoryResult,

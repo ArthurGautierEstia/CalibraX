@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (
     QLabel, QSlider, QDoubleSpinBox, QComboBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
 
 from models.reference_frame import ReferenceFrame
 from models.types import Pose6
@@ -379,13 +378,6 @@ class CartesianControlWidget(QWidget):
         normalized_value = max(0.001, float(value))
         for index, spinbox in enumerate(self.spinboxes_cart):
             spinbox.setSingleStep(normalized_value if index < 3 else normalized_value * 0.1)
-
-    def apply_text_color(self, text_color: QColor) -> None:
-        text_hex = text_color.name(QColor.NameFormat.HexRgb)
-        control_style = f"color: {text_hex};"
-        self.convention_combo.setStyleSheet(control_style)
-        for spinbox in self.spinboxes_cart:
-            spinbox.setStyleSheet(control_style)
 
     def _apply_reference_frame_interaction_mode(self) -> None:
         jog_only_mode = self.current_reference_frame == ReferenceFrame.TOOL.value

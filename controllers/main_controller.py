@@ -151,10 +151,6 @@ class MainController(QObject):
         session = self._load_session()
         startup = self._build_startup_payload(session)
 
-        viewer_state = startup.get("viewer_state")
-        if isinstance(viewer_state, ViewerDisplayState):
-            self.main_window.get_viewer3d().apply_display_state(viewer_state)
-
         robot_configuration_loaded = False
         config_path = self._resolve_existing_path(startup.get("config", ""))
         if config_path:
@@ -170,6 +166,10 @@ class MainController(QObject):
         workspace_path = self._resolve_existing_path(startup.get("workspace", ""))
         if workspace_path:
             self.workspace_controller.load_workspace_from_path(workspace_path, show_errors=False)
+
+        viewer_state = startup.get("viewer_state")
+        if isinstance(viewer_state, ViewerDisplayState):
+            self.main_window.get_viewer3d().apply_display_state(viewer_state)
 
         self._startup_completed = True
         self._schedule_session_save()
