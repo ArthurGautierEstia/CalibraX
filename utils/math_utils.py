@@ -392,23 +392,6 @@ def transform_xyz_limits_yaw_only(
     ]
 
 
-def cubique_transition(t: float) -> float:
-    """
-    Description:
-        Smooth time using f(t) = -2 * t^3 + 3 * t^2.
-    Argument:
-        t, in [0;1].
-    Return:
-        smoothed t, in [0;1].
-    """
-    # Clamp
-    if t < 0:
-        t = 0
-    elif t > 1:
-        t = 1
-    t2 = t * t
-    return -2 * t2 * t + 3 * t2
-
 def cubic_transition(t: float) -> float:
     """
     Description:
