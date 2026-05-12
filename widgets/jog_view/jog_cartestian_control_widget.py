@@ -22,6 +22,7 @@ class JogCartesianControlWidget(QWidget):
         
         # Composants
         self.delta_input = QDoubleSpinBox()
+        self.delta_input.setKeyboardTracking(False)
         self.jog_cartesian_buttons_minus: List[QPushButton] = []
         self.jog_cartesian_buttons_plus: List[QPushButton] = []
         self.base_tool_combobox: QComboBox = None

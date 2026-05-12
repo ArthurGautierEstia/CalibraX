@@ -45,7 +45,8 @@ class MgiJointWeightsWidget(QWidget):
             spin_box.setRange(0.0, 100.0)
             spin_box.setValue(self._weights[i])
             spin_box.setSingleStep(0.1)
-            spin_box.setDecimals(2)
+            spin_box.setDecimals(3)
+            spin_box.setKeyboardTracking(False)
             spin_box.valueChanged.connect(
                 lambda value, idx=i: self._on_weight_changed(idx, value)
             )

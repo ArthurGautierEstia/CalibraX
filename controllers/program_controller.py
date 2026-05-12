@@ -124,14 +124,12 @@ class ProgramController:
         self.actions_widget.stop_requested.connect(self._on_stop_requested)
         self.actions_widget.restart_requested.connect(self._on_restart_requested)
         self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
+        self.actions_widget.clear_requested.connect(self._on_clear_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
         self.config_widget.keypoints_changed.connect(self._on_program_keypoints_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
-        self.robot_model.measured_dh_params_changed.connect(self._on_context_changed)
-        self.robot_model.measured_dh_enabled_changed.connect(self._on_context_changed)
-        self.tool_model.tool_changed.connect(self._on_context_changed)
         self.workspace_model.workspace_changed.connect(self._refresh_view)
         self.config_widget.btn_edit.clicked.disconnect()
         self.config_widget.btn_edit.clicked.connect(self._on_program_edit_requested)
@@ -166,6 +164,10 @@ class ProgramController:
         self._recompute_current_program()
 
     def _on_recompute_requested(self) -> None:
+        self._recompute_current_program()
+    
+    def _on_clear_requested(self) -> None:
+        self.current_program = None
         self._recompute_current_program()
 
     def _on_context_changed(self, *_args) -> None:

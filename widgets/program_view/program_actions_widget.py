@@ -13,11 +13,13 @@ class ProgramActionsWidget(QWidget):
     stop_requested = pyqtSignal()
     restart_requested = pyqtSignal()
     time_value_changed = pyqtSignal(float)
+    clear_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
         self._time_range = (0.0, 0.0)
         self.btn_recompute = QPushButton("Recalculer")
+        self.btn_clear = QPushButton("Effacer trajectoire")
         self.btn_export = QPushButton("Exporter programme compense")
         self.btn_play = QPushButton("Demarrer")
         self.btn_pause = QPushButton("Pause")
@@ -38,6 +40,7 @@ class ProgramActionsWidget(QWidget):
 
         row_buttons = QHBoxLayout()
         row_buttons.addWidget(self.btn_recompute)
+        row_buttons.addWidget(self.btn_clear)
         row_buttons.addWidget(self.btn_export)
         row_buttons.addWidget(self.btn_play)
         row_buttons.addWidget(self.btn_pause)
@@ -73,6 +76,7 @@ class ProgramActionsWidget(QWidget):
 
     def _setup_connections(self) -> None:
         self.btn_recompute.clicked.connect(self.recompute_requested.emit)
+        self.btn_clear.clicked.connect(self.clear_requested.emit)
         self.btn_export.clicked.connect(self.export_requested.emit)
         self.btn_play.clicked.connect(self.play_requested.emit)
         self.btn_pause.clicked.connect(self.pause_requested.emit)

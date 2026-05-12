@@ -172,6 +172,7 @@ class CartesianControlWidget(QWidget):
             spinbox.setSingleStep(0.10)
             spinbox.setSuffix(" mm" if i < 3 else " °")
             spinbox.setValue(0.0)
+            spinbox.setKeyboardTracking(False)
             if self._compact:
                 spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             

@@ -120,6 +120,7 @@ class MgiJacobienWidget(QWidget):
         self._spinbox_max_iter = QSpinBox()
         self._spinbox_max_iter.setRange(1, 100)
         self._spinbox_max_iter.setValue(20)
+        self._spinbox_max_iter.setKeyboardTracking(False)
         self._spinbox_max_iter.setToolTip(
             "Nombre maximum de mises à jour Jacobienne.\n"
             "Avec un bon point de départ analytique, 2-5 mises à jour suffisent."
@@ -132,6 +133,7 @@ class MgiJacobienWidget(QWidget):
         self._spinbox_seuil_pos.setSingleStep(0.001)
         self._spinbox_seuil_pos.setValue(0.001)
         self._spinbox_seuil_pos.setSuffix(" mm")
+        self._spinbox_seuil_pos.setKeyboardTracking(False)
         self._spinbox_seuil_pos.setToolTip("Seuil de convergence en position (norme 3D).")
         form.addRow("Seuil position :", self._spinbox_seuil_pos)
 
@@ -141,6 +143,7 @@ class MgiJacobienWidget(QWidget):
         self._spinbox_seuil_ori.setSingleStep(0.001)
         self._spinbox_seuil_ori.setValue(0.001)
         self._spinbox_seuil_ori.setSuffix(" °")
+        self._spinbox_seuil_ori.setKeyboardTracking(False)
         self._spinbox_seuil_ori.setToolTip("Seuil de convergence en orientation (norme axis-angle).")
         form.addRow("Seuil orientation :", self._spinbox_seuil_ori)
 
@@ -150,6 +153,7 @@ class MgiJacobienWidget(QWidget):
         self._spinbox_epsilon.setSingleStep(1e-7)
         self._spinbox_epsilon.setValue(1e-6)
         self._spinbox_epsilon.setSuffix(" rad")
+        self._spinbox_epsilon.setKeyboardTracking(False)
         self._spinbox_epsilon.setToolTip(
             "Pas de différentiation pour la Jacobienne numérique.\n"
             "Valeur typique : 1e-6 rad."
@@ -161,6 +165,7 @@ class MgiJacobienWidget(QWidget):
         self._spinbox_lambda.setDecimals(4)
         self._spinbox_lambda.setSingleStep(0.005)
         self._spinbox_lambda.setValue(0.01)
+        self._spinbox_lambda.setKeyboardTracking(False)
         self._spinbox_lambda.setToolTip(
             "Facteur d'amortissement λ (Levenberg-Marquardt).\n"
             "Augmenter si le solveur diverge près des singularités (q5 ≈ 0°)."

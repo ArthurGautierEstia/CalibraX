@@ -391,6 +391,7 @@ class ExternalAxisWidget(QWidget):
         spinbox.setDecimals(0)
         spinbox.setSingleStep(1.0)
         spinbox.setValue(value)
+        spinbox.setKeyboardTracking(False)
         return spinbox
 
     @staticmethod
@@ -400,6 +401,7 @@ class ExternalAxisWidget(QWidget):
         spinbox.setDecimals(6)
         spinbox.setSingleStep(0.000001)
         spinbox.setValue(0.0)
+        spinbox.setKeyboardTracking(False)
         return spinbox
 
     @staticmethod
@@ -409,6 +411,7 @@ class ExternalAxisWidget(QWidget):
         spinbox.setDecimals(3)
         spinbox.setSingleStep(0.01)
         spinbox.setValue(value)
+        spinbox.setKeyboardTracking(False)
         return spinbox
 
     def _current_axis_unit(self) -> str:
@@ -476,6 +479,7 @@ class ExternalAxisWidget(QWidget):
         spinbox = QSpinBox()
         spinbox.setRange(0, 999)
         spinbox.setValue(value)
+        spinbox.setKeyboardTracking(False)
         return spinbox
 
     def _build_statistics_layout(self) -> QVBoxLayout:
