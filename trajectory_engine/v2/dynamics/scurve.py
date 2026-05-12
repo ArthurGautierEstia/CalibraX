@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from trajectory_engine.v2.models import MotionScalarState, SegmentDynamicPhaseKind
+from trajectory_engine.v2.models import (
+    MotionScalarState,
+    SegmentDynamicPhaseKind,
+    SegmentDynamicProfileKind,
+    SegmentDynamicResolution,
+)
 
 
 S_CURVE_PEAK_SPEED_SCALE = 2.1875
@@ -189,6 +194,52 @@ def _fit_peak_speed(
     return low
 
 
+def resolve_segment_dynamic_profile(
+    length_mm: float,
+    target_speed_mm_s: float,
+    entry_speed_mm_s: float,
+    exit_speed_mm_s: float,
+    accel_limit_mm_s2: float,
+    jerk_limit_mm_s3: float,
+) -> SegmentDynamicResolution:
+    length = max(0.0, float(length_mm))
+    target_speed = max(0.0, float(target_speed_mm_s))
+    entry_speed = max(0.0, min(float(entry_speed_mm_s), target_speed))
+    exit_speed = max(0.0, min(float(exit_speed_mm_s), target_speed))
+    accel_limit = max(float(accel_limit_mm_s2), _EPS)
+    jerk_limit = max(float(jerk_limit_mm_s3), _EPS)
+
+    if length <= _EPS or target_speed <= _EPS:
+        return SegmentDynamicResolution(
+            profile_kind=SegmentDynamicProfileKind.TRIANGULAR,
+            peak_speed_mm_s=0.0,
+            target_speed_reached=target_speed <= _EPS,
+            accel_distance_mm=0.0,
+            cruise_distance_mm=0.0,
+            decel_distance_mm=0.0,
+        )
+
+    peak_speed = _fit_peak_speed(length, target_speed, entry_speed, exit_speed, accel_limit, jerk_limit)
+    accel_distance = _transition_distance(entry_speed, peak_speed, accel_limit, jerk_limit)
+    decel_distance = _transition_distance(peak_speed, exit_speed, accel_limit, jerk_limit)
+    cruise_distance = max(0.0, length - accel_distance - decel_distance)
+    target_speed_reached = peak_speed >= target_speed - _EPS
+    profile_kind = (
+        SegmentDynamicProfileKind.TRAPEZOIDAL
+        if target_speed_reached and cruise_distance > _EPS
+        else SegmentDynamicProfileKind.TRIANGULAR
+    )
+
+    return SegmentDynamicResolution(
+        profile_kind=profile_kind,
+        peak_speed_mm_s=peak_speed,
+        target_speed_reached=target_speed_reached,
+        accel_distance_mm=accel_distance,
+        cruise_distance_mm=cruise_distance if profile_kind == SegmentDynamicProfileKind.TRAPEZOIDAL else 0.0,
+        decel_distance_mm=decel_distance,
+    )
+
+
 def build_distance_profile(
     segment_index: int,
     length_mm: float,
@@ -209,7 +260,7 @@ def build_distance_profile(
 
     if length <= _EPS or target_speed <= _EPS:
         phase = ScalarMotionPhase(
-            kind=SegmentDynamicPhaseKind.CRUISE,
+            kind=SegmentDynamicPhaseKind.TRANSITION,
             segment_index=segment_index,
             start_time_s=start_time_s,
             duration_s=0.0,
@@ -219,12 +270,18 @@ def build_distance_profile(
         )
         return ScalarMotionProfile([phase])
 
-    peak_speed = _fit_peak_speed(length, target_speed, entry_speed, exit_speed, accel_limit, jerk_limit)
+    resolution = resolve_segment_dynamic_profile(
+        length_mm=length,
+        target_speed_mm_s=target_speed,
+        entry_speed_mm_s=entry_speed,
+        exit_speed_mm_s=exit_speed,
+        accel_limit_mm_s2=accel_limit,
+        jerk_limit_mm_s3=jerk_limit,
+    )
+    peak_speed = resolution.peak_speed_mm_s
     accel_duration = _transition_duration_s(peak_speed - entry_speed, accel_limit, jerk_limit)
     decel_duration = _transition_duration_s(exit_speed - peak_speed, accel_limit, jerk_limit)
-    accel_distance = 0.5 * (entry_speed + peak_speed) * accel_duration
-    decel_distance = 0.5 * (peak_speed + exit_speed) * decel_duration
-    cruise_distance = max(0.0, length - accel_distance - decel_distance)
+    cruise_distance = resolution.cruise_distance_mm
     cruise_duration = cruise_distance / peak_speed if peak_speed > _EPS else 0.0
 
     phases: list[ScalarMotionPhase] = []
@@ -244,7 +301,7 @@ def build_distance_profile(
         cursor_time = phase.end_time_s()
         cursor_position = phase.end_position()
 
-    if cruise_duration > _EPS:
+    if resolution.profile_kind == SegmentDynamicProfileKind.TRAPEZOIDAL and cruise_duration > _EPS:
         phase = ScalarMotionPhase(
             kind=SegmentDynamicPhaseKind.CRUISE,
             segment_index=segment_index,
@@ -273,13 +330,13 @@ def build_distance_profile(
     if not phases:
         phases.append(
             ScalarMotionPhase(
-                kind=SegmentDynamicPhaseKind.CRUISE,
+                kind=SegmentDynamicPhaseKind.TRANSITION,
                 segment_index=segment_index,
                 start_time_s=start_time_s,
-                duration_s=length / target_speed,
+                duration_s=0.0,
                 start_position=start_position_mm,
-                start_speed=target_speed,
-                end_speed=target_speed,
+                start_speed=0.0,
+                end_speed=0.0,
             )
         )
 

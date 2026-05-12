@@ -4,7 +4,13 @@ from models.types import XYZ3
 from trajectory_engine.v2.arc_length import build_arc_length_lut, parameter_at_distance
 from trajectory_engine.models import SegmentResult, TrajectoryBuilderBehavior, TrajectoryComputationStatus
 from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
-from trajectory_engine.v2.dynamics import S_CURVE_PEAK_SPEED_SCALE, build_distance_profile, ptp_duration_s
+from trajectory_engine.v2.dynamics import (
+    S_CURVE_PEAK_SPEED_SCALE,
+    SegmentDynamicProfileKind,
+    build_distance_profile,
+    ptp_duration_s,
+    resolve_segment_dynamic_profile,
+)
 from trajectory_engine.v2.geometry import Bezier7Curve3D
 from trajectory_engine.v2.models import Bezier7ControlPoints3D, SegmentDynamicPhaseKind
 
@@ -72,6 +78,12 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         self.assertAlmostEqual(ptp_duration_s(100.0, 50.0), 100.0 * S_CURVE_PEAK_SPEED_SCALE / 50.0)
 
     def test_long_profile_has_cruise_and_continuous_bounds(self) -> None:
+        resolution = resolve_segment_dynamic_profile(1000.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
+        self.assertEqual(resolution.profile_kind, SegmentDynamicProfileKind.TRAPEZOIDAL)
+        self.assertTrue(resolution.target_speed_reached)
+        self.assertAlmostEqual(resolution.peak_speed_mm_s, 500.0, places=6)
+        self.assertGreater(resolution.cruise_distance_mm, 0.0)
+
         profile = build_distance_profile(0, 1000.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
         kinds = [phase.kind for phase in profile.phases]
         self.assertIn(SegmentDynamicPhaseKind.CRUISE, kinds)
@@ -83,11 +95,47 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         self.assertAlmostEqual(end.acceleration, 0.0, places=6)
 
     def test_short_profile_removes_cruise(self) -> None:
+        resolution = resolve_segment_dynamic_profile(10.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
+        self.assertEqual(resolution.profile_kind, SegmentDynamicProfileKind.TRIANGULAR)
+        self.assertFalse(resolution.target_speed_reached)
+        self.assertLess(resolution.peak_speed_mm_s, 500.0)
+        self.assertEqual(resolution.cruise_distance_mm, 0.0)
+
         profile = build_distance_profile(0, 10.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
         self.assertNotIn(SegmentDynamicPhaseKind.CRUISE, [phase.kind for phase in profile.phases])
         self.assertAlmostEqual(profile.evaluate(profile.duration_s).position, 10.0, places=5)
 
+    def test_very_short_profile_never_creates_negative_or_zero_cruise(self) -> None:
+        resolution = resolve_segment_dynamic_profile(0.001, 500.0, 0.0, 0.0, 1000.0, 10000.0)
+        self.assertEqual(resolution.profile_kind, SegmentDynamicProfileKind.TRIANGULAR)
+        self.assertEqual(resolution.cruise_distance_mm, 0.0)
+        self.assertGreaterEqual(resolution.accel_distance_mm, 0.0)
+        self.assertGreaterEqual(resolution.decel_distance_mm, 0.0)
+
+        profile = build_distance_profile(0, 0.001, 500.0, 0.0, 0.0, 1000.0, 10000.0)
+        self.assertNotIn(SegmentDynamicPhaseKind.CRUISE, [phase.kind for phase in profile.phases])
+        self.assertTrue(all(phase.duration_s > 0.0 for phase in profile.phases))
+
+    def test_symmetric_triangular_profile_peaks_at_midpoint(self) -> None:
+        resolution = resolve_segment_dynamic_profile(10.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
+        profile = build_distance_profile(0, 10.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
+        midpoint_time_s = profile.duration_s * 0.5
+        before = profile.evaluate(midpoint_time_s - profile.duration_s * 0.1)
+        midpoint = profile.evaluate(midpoint_time_s)
+        after = profile.evaluate(midpoint_time_s + profile.duration_s * 0.1)
+
+        self.assertEqual(len(profile.phases), 2)
+        self.assertAlmostEqual(profile.phases[0].end_time_s(), midpoint_time_s, places=9)
+        self.assertAlmostEqual(midpoint.velocity, resolution.peak_speed_mm_s, places=6)
+        self.assertAlmostEqual(midpoint.acceleration, 0.0, places=6)
+        self.assertLess(before.velocity, midpoint.velocity)
+        self.assertLess(after.velocity, midpoint.velocity)
+
     def test_speed_transition_keeps_non_zero_exit_speed(self) -> None:
+        resolution = resolve_segment_dynamic_profile(300.0, 500.0, 0.0, 200.0, 1000.0, 10000.0)
+        self.assertGreaterEqual(resolution.peak_speed_mm_s, 200.0)
+        self.assertGreaterEqual(resolution.cruise_distance_mm, 0.0)
+
         profile = build_distance_profile(0, 300.0, 500.0, 0.0, 200.0, 1000.0, 10000.0)
         end = profile.evaluate(profile.duration_s)
         self.assertAlmostEqual(end.velocity, 200.0, places=5)

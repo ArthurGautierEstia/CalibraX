@@ -27,6 +27,11 @@ class SegmentDynamicPhaseKind(Enum):
     TRANSITION = "TRANSITION"
 
 
+class SegmentDynamicProfileKind(Enum):
+    TRAPEZOIDAL = "TRAPEZOIDAL"
+    TRIANGULAR = "TRIANGULAR"
+
+
 @dataclass(frozen=True)
 class Bezier7ControlPoints3D:
     p0: XYZ3
@@ -93,6 +98,16 @@ class DynamicLimits:
     cartesian_speed_mm_s: float
     cartesian_accel_mm_s2: float
     cartesian_jerk_mm_s3: float
+
+
+@dataclass(frozen=True)
+class SegmentDynamicResolution:
+    profile_kind: SegmentDynamicProfileKind
+    peak_speed_mm_s: float
+    target_speed_reached: bool
+    accel_distance_mm: float
+    cruise_distance_mm: float
+    decel_distance_mm: float
 
 
 @dataclass(frozen=True)
