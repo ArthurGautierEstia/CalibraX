@@ -7,6 +7,7 @@ from trajectory_engine.v2.dynamics.scurve import (
     normalized_s_curve,
     normalized_s_curve_derivative,
     normalized_s_curve_second_derivative,
+    normalized_s_curve_third_derivative,
     ptp_duration_s,
     resolve_segment_dynamic_profile,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "normalized_s_curve",
     "normalized_s_curve_derivative",
     "normalized_s_curve_second_derivative",
+    "normalized_s_curve_third_derivative",
     "ptp_duration_s",
     "resolve_segment_dynamic_profile",
 ]

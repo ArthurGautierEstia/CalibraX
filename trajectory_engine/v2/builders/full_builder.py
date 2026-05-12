@@ -20,7 +20,13 @@ from trajectory_engine.models import (
     TrajectoryBuilderBehavior,
 )
 from trajectory_engine.v2.builders.common import BuilderV2Common
-from trajectory_engine.v2.dynamics import build_distance_profile, normalized_s_curve
+from trajectory_engine.v2.dynamics import (
+    build_distance_profile,
+    normalized_s_curve,
+    normalized_s_curve_derivative,
+    normalized_s_curve_second_derivative,
+    normalized_s_curve_third_derivative,
+)
 from trajectory_engine.v2.runtime import RuntimeEvaluator
 from trajectory_engine.v2.sampling import (
     reset_articular_dynamics,
@@ -166,7 +172,13 @@ class TrajectoryBuilderV2(BuilderV2Common):
             u = 1.0 if duration_s <= self._EPS else local_time_s / duration_s
             smooth_u = normalized_s_curve(u)
             joints = self._interpolate_joints(from_joints, delta, smooth_u)
-            sample = self._build_ptp_sample(start_time_s + local_time_s, joints, previous)
+            sample = self._build_ptp_sample(
+                start_time_s + local_time_s,
+                joints,
+                previous,
+                update_articular_dynamics_from_previous=False,
+            )
+            self._apply_ptp_analytic_articular_dynamics(sample, delta, duration_s, local_time_s)
             self._apply_dynamic_limits(sample, speed_limits, accel_limits, jerk_limits)
             result.samples.append(sample)
             self._update_joint_stats(result, sample)
@@ -278,6 +290,7 @@ class TrajectoryBuilderV2(BuilderV2Common):
         time_s: float,
         joints_deg: JointAngles6,
         previous_sample: TrajectorySample | None,
+        update_articular_dynamics_from_previous: bool = True,
     ) -> TrajectorySample:
         sample = TrajectorySample()
         sample.time = float(time_s)
@@ -297,19 +310,58 @@ class TrajectoryBuilderV2(BuilderV2Common):
             sample.mgi_solutions = {
                 sample.configuration: TrajectorySampleMgiSolution(status=MgiResultStatus.VALID.name, joints=sample.joints)
             }
-        self._update_sample_dynamics(sample, previous_sample)
+        self._update_sample_dynamics(
+            sample,
+            previous_sample,
+            update_cartesian=True,
+            update_articular=update_articular_dynamics_from_previous,
+        )
         return sample
 
-    def _update_sample_dynamics(self, sample: TrajectorySample, previous_sample: TrajectorySample | None) -> None:
+    def _update_sample_dynamics(
+        self,
+        sample: TrajectorySample,
+        previous_sample: TrajectorySample | None,
+        update_cartesian: bool = True,
+        update_articular: bool = True,
+    ) -> None:
         if previous_sample is None:
-            reset_cartesian_dynamics(sample)
-            reset_articular_dynamics(sample)
+            if update_cartesian:
+                reset_cartesian_dynamics(sample)
+            if update_articular:
+                reset_articular_dynamics(sample)
             return
         dt = sample.time - previous_sample.time
         if dt <= self._EPS:
             dt = self.sample_dt_s
-        update_cartesian_dynamics(sample, previous_sample, dt)
-        update_articular_dynamics(sample, previous_sample, dt)
+        if update_cartesian:
+            update_cartesian_dynamics(sample, previous_sample, dt)
+        if update_articular:
+            update_articular_dynamics(sample, previous_sample, dt)
+
+    @staticmethod
+    def _apply_ptp_analytic_articular_dynamics(
+        sample: TrajectorySample,
+        delta_joints_deg: JointAngles6,
+        duration_s: float,
+        local_time_s: float,
+    ) -> None:
+        reset_articular_dynamics(sample)
+        if not sample.reachable:
+            return
+        duration = max(float(duration_s), 1e-9)
+        u = max(0.0, min(1.0, float(local_time_s) / duration))
+        velocity_factor = normalized_s_curve_derivative(u) / duration
+        acceleration_factor = normalized_s_curve_second_derivative(u) / (duration * duration)
+        jerk_factor = normalized_s_curve_third_derivative(u) / (duration * duration * duration)
+        delta_values = delta_joints_deg.to_list()
+
+        sample.articular_velocity = [delta_values[axis] * velocity_factor for axis in range(6)]
+        sample.articular_acceleration = [delta_values[axis] * acceleration_factor for axis in range(6)]
+        sample.articular_jerk = [delta_values[axis] * jerk_factor for axis in range(6)]
+        sample.articular_velocity_valid = True
+        sample.articular_acceleration_valid = True
+        sample.articular_jerk_valid = True
 
     @staticmethod
     def _compact_mgi_solutions(

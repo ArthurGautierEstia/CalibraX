@@ -1,8 +1,8 @@
 import unittest
 
-from models.types import XYZ3
+from models.types import JointAngles6, XYZ3
 from trajectory_engine.v2.arc_length import build_arc_length_lut, parameter_at_distance
-from trajectory_engine.models import SegmentResult, TrajectoryBuilderBehavior, TrajectoryComputationStatus
+from trajectory_engine.models import SegmentResult, TrajectoryBuilderBehavior, TrajectoryComputationStatus, TrajectorySample
 from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
 from trajectory_engine.v2.dynamics import (
     S_CURVE_PEAK_SPEED_SCALE,
@@ -76,6 +76,38 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
 
     def test_ptp_duration_uses_degree7_peak_speed_scale(self) -> None:
         self.assertAlmostEqual(ptp_duration_s(100.0, 50.0), 100.0 * S_CURVE_PEAK_SPEED_SCALE / 50.0)
+
+    def test_ptp_analytic_articular_dynamics_are_valid_at_bounds(self) -> None:
+        delta = JointAngles6(90.0, -45.0, 10.0, 0.0, 5.0, -2.5)
+        duration_s = 2.0
+
+        for local_time_s in (0.0, duration_s):
+            sample = TrajectorySample()
+            sample.reachable = True
+            TrajectoryBuilderV2._apply_ptp_analytic_articular_dynamics(sample, delta, duration_s, local_time_s)
+
+            self.assertTrue(sample.articular_velocity_valid)
+            self.assertTrue(sample.articular_acceleration_valid)
+            self.assertTrue(sample.articular_jerk_valid)
+            for axis in range(6):
+                self.assertAlmostEqual(sample.articular_velocity[axis], 0.0, places=9)
+                self.assertAlmostEqual(sample.articular_acceleration[axis], 0.0, places=9)
+                self.assertAlmostEqual(sample.articular_jerk[axis], 0.0, places=9)
+
+    def test_ptp_analytic_articular_dynamics_are_not_finite_difference_based(self) -> None:
+        delta = JointAngles6(90.0, -45.0, 0.0, 0.0, 0.0, 0.0)
+        sample = TrajectorySample()
+        sample.reachable = True
+
+        TrajectoryBuilderV2._apply_ptp_analytic_articular_dynamics(sample, delta, 2.0, 1.0)
+
+        self.assertTrue(sample.articular_velocity_valid)
+        self.assertTrue(sample.articular_acceleration_valid)
+        self.assertTrue(sample.articular_jerk_valid)
+        self.assertGreater(sample.articular_velocity[0], 0.0)
+        self.assertLess(sample.articular_velocity[1], 0.0)
+        self.assertAlmostEqual(sample.articular_acceleration[0], 0.0, places=9)
+        self.assertLess(sample.articular_jerk[0], 0.0)
 
     def test_long_profile_has_cruise_and_continuous_bounds(self) -> None:
         resolution = resolve_segment_dynamic_profile(1000.0, 500.0, 0.0, 0.0, 1000.0, 10000.0)
