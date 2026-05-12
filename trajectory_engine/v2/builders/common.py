@@ -274,7 +274,7 @@ class BuilderV2Common:
             in_direction=in_direction,
         )
 
-    def _ptp_duration(self, segment: TrajectorySegment, deltas: JointAngles6) -> float:
+    def _ptp_duration(self, segment: TrajectorySegment, deltas: JointAngles6, min_duration_s: float = 0.100) -> float:
         speed_ratio = max(0.0, min(1.0, float(segment.to_keypoint.ptp_speed_percent) / 100.0))
         axis_speed_limits = self.robot_model.get_axis_speed_limits()
         delta_values = deltas.to_list()
@@ -284,7 +284,7 @@ class BuilderV2Common:
             if abs(delta_values[axis]) > self._EPS and limit <= self._EPS:
                 return 0.0
             duration = max(duration, ptp_duration_s(abs(delta_values[axis]), limit))
-        return duration
+        return max(duration, min_duration_s)
 
     def _dynamic_limits(self, segment: TrajectorySegment) -> DynamicLimits:
         return DynamicLimits(

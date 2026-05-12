@@ -153,7 +153,7 @@ class TrajectoryBuilderV2(BuilderV2Common):
             return result
 
         delta = self._shortest_joint_delta(from_joints, to_joints)
-        duration_s = self._ptp_duration(segment, delta)
+        duration_s = self._ptp_duration(segment, delta, 0.100)
         intervals = self._intervals_for_duration(duration_s)
         if intervals <= 0:
             intervals = 1
