@@ -17,6 +17,7 @@ from trajectory_engine.models import (
     TrajectorySampleErrorCode,
     TrajectorySampleMgiSolution,
     TrajectorySegment,
+    TrajectoryBuilderBehavior,
 )
 from trajectory_engine.v2.builders.common import BuilderV2Common
 from trajectory_engine.v2.dynamics import build_distance_profile, normalized_s_curve
@@ -171,7 +172,7 @@ class TrajectoryBuilderV2(BuilderV2Common):
             self._update_joint_stats(result, sample)
             self._register_sample_error(result, sample, len(result.samples) - 1)
             previous = sample
-            if result.status != TrajectoryComputationStatus.SUCCESS:
+            if self._should_stop_on_error(result):
                 break
 
         result.duration = len(result.samples) * self.sample_dt_s if duration_s <= self._EPS else duration_s
@@ -231,7 +232,7 @@ class TrajectoryBuilderV2(BuilderV2Common):
             self._update_joint_stats(result, sample)
             self._register_sample_error(result, sample, len(result.samples) - 1)
             previous = sample
-            if result.status != TrajectoryComputationStatus.SUCCESS:
+            if self._should_stop_on_error(result):
                 break
 
         result.duration = max(0.0, profile.duration_s - start_time_s)
@@ -444,9 +445,10 @@ class TrajectoryBuilderV2(BuilderV2Common):
         trajectory.status = segment.status
         trajectory.first_error_segment_index = int(segment_index)
 
-    @staticmethod
-    def _should_stop_on_error(segment: SegmentResult) -> bool:
-        return segment.status != TrajectoryComputationStatus.SUCCESS
+    def _should_stop_on_error(self, segment: SegmentResult) -> bool:
+        if segment.status == TrajectoryComputationStatus.SUCCESS:
+            return False
+        return self.behavior == TrajectoryBuilderBehavior.STOP_ON_ERROR
 
     @staticmethod
     def _update_joint_stats(segment_result: SegmentResult, sample: TrajectorySample) -> None:

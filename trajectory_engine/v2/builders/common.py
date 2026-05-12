@@ -8,7 +8,7 @@ from models.tool_model import ToolModel
 from models.trajectory_keypoint import ConfigurationPolicy, KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
-from trajectory_engine.models import BuildCancelToken, TrajectorySegment
+from trajectory_engine.models import BuildCancelToken, TrajectoryBuilderBehavior, TrajectorySegment
 from trajectory_engine.v2.arc_length import build_arc_length_lut
 from trajectory_engine.v2.dynamics import build_distance_profile, ptp_duration_s
 from trajectory_engine.v2.geometry import Bezier7Curve3D
@@ -32,6 +32,7 @@ class BuilderV2Common:
         cartesian_accel_limit_mm_s2: float = 1000.0,
         cartesian_jerk_limit_mm_s3: float = 10000.0,
         jerk_check_enabled: bool = True,
+        behavior: TrajectoryBuilderBehavior = TrajectoryBuilderBehavior.CONTINUE_ON_ERROR,
     ) -> None:
         self.robot_model = robot_model
         self.tool_model = tool_model
@@ -40,6 +41,7 @@ class BuilderV2Common:
         self.cartesian_accel_limit_mm_s2 = max(1e-6, float(cartesian_accel_limit_mm_s2))
         self.cartesian_jerk_limit_mm_s3 = max(1e-6, float(cartesian_jerk_limit_mm_s3))
         self.jerk_check_enabled = bool(jerk_check_enabled)
+        self.behavior = behavior
         self._cancel_token: BuildCancelToken | None = None
         self._working_mgi_solver: MGI | None = None
         self._robot_allowed_configs: set[MgiConfigKey] | None = None
@@ -54,6 +56,9 @@ class BuilderV2Common:
 
     def set_jerk_check_enabled(self, enabled: bool) -> None:
         self.jerk_check_enabled = bool(enabled)
+
+    def set_behavior(self, behavior: TrajectoryBuilderBehavior) -> None:
+        self.behavior = behavior
 
     def _is_cancelled(self) -> bool:
         return self._cancel_token is not None and self._cancel_token.is_cancelled()

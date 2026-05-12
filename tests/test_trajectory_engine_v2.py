@@ -2,6 +2,8 @@ import unittest
 
 from models.types import XYZ3
 from trajectory_engine.v2.arc_length import build_arc_length_lut, parameter_at_distance
+from trajectory_engine.models import SegmentResult, TrajectoryBuilderBehavior, TrajectoryComputationStatus
+from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
 from trajectory_engine.v2.dynamics import S_CURVE_PEAK_SPEED_SCALE, build_distance_profile, ptp_duration_s
 from trajectory_engine.v2.geometry import Bezier7Curve3D
 from trajectory_engine.v2.models import Bezier7ControlPoints3D, SegmentDynamicPhaseKind
@@ -90,6 +92,22 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         end = profile.evaluate(profile.duration_s)
         self.assertAlmostEqual(end.velocity, 200.0, places=5)
         self.assertAlmostEqual(end.acceleration, 0.0, places=5)
+
+    def test_full_builder_v2_continues_on_error_by_default(self) -> None:
+        builder = object.__new__(TrajectoryBuilderV2)
+        builder.behavior = TrajectoryBuilderBehavior.CONTINUE_ON_ERROR
+        segment = SegmentResult()
+        segment.status = TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED
+
+        self.assertFalse(builder._should_stop_on_error(segment))
+
+    def test_full_builder_v2_can_stop_on_error(self) -> None:
+        builder = object.__new__(TrajectoryBuilderV2)
+        builder.behavior = TrajectoryBuilderBehavior.STOP_ON_ERROR
+        segment = SegmentResult()
+        segment.status = TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED
+
+        self.assertTrue(builder._should_stop_on_error(segment))
 
 
 if __name__ == "__main__":
