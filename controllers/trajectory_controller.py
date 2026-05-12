@@ -124,7 +124,6 @@ class TrajectoryController(QObject):
         self.config_widget.keypoints_changed.connect(self._on_keypoints_changed)
         self.config_widget.timeSmoothingChanged.connect(self._on_time_smoothing_changed)
         self.config_widget.jerkCheckChanged.connect(self._on_jerk_check_changed)
-        self.config_widget.bezierDegreeChanged.connect(self._on_bezier_degree_changed)
         self.config_widget.cartesianDynamicsChanged.connect(self._on_cartesian_dynamics_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_cartesian_display_frame_changed)
         self.actions_widget.compute_requested.connect(self._on_compute_requested)
@@ -185,11 +184,6 @@ class TrajectoryController(QObject):
         self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
 
     def _on_jerk_check_changed(self, _enabled: bool) -> None:
-        if self._is_keypoint_preview_active:
-            return
-        self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
-
-    def _on_bezier_degree_changed(self, _degree: str) -> None:
         if self._is_keypoint_preview_active:
             return
         self._recompute_trajectory(trigger_mode=TrajectoryBuildTriggerMode.DEBOUNCED_FULL)
@@ -452,9 +446,6 @@ class TrajectoryController(QObject):
         trigger_mode: TrajectoryBuildTriggerMode = TrajectoryBuildTriggerMode.DEBOUNCED_FULL,
     ) -> None:
         self._trajectory_generation_sequence += 1
-        traj_id = self._trajectory_generation_sequence
-        self._log_benchmark("---------------")
-        self._log_benchmark(f"submit trajectory build traj_id={traj_id} trigger={trigger_mode.value}")
         self._cancel_collision_analysis()
         self._stop_playback()
         if keypoints_override is None:

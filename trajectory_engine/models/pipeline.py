@@ -8,7 +8,6 @@ import numpy as np
 
 from models.primitive_collider_models import PrimitiveCollider, PrimitiveColliderData, RobotAxisColliderData
 from models.trajectory_keypoint import KeypointMotionMode, TrajectoryKeypoint
-from models.trajectory_options import TrajectoryBezierDegree
 from models.types import JointAngles6, Pose6, TrajectorySampleKinematics, XYZ3
 from utils.mgi import MgiConfigKey
 
@@ -92,7 +91,6 @@ class TrajectoryBuildRequest:
     keypoints: list[TrajectoryKeypoint]
     sample_dt_s: float
     smooth_time_enabled: bool
-    bezier_degree: TrajectoryBezierDegree
     jerk_check_enabled: bool
     cartesian_accel_limit_mm_s2: float
     cartesian_jerk_limit_mm_s3: float

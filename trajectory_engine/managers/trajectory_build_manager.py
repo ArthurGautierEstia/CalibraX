@@ -106,7 +106,6 @@ class TrajectoryBuildManager(QObject):
             keypoints=[keypoint.clone() for keypoint in request.keypoints],
             sample_dt_s=float(request.sample_dt_s),
             smooth_time_enabled=bool(request.smooth_time_enabled),
-            bezier_degree=request.bezier_degree,
             jerk_check_enabled=bool(request.jerk_check_enabled),
             cartesian_accel_limit_mm_s2=float(request.cartesian_accel_limit_mm_s2),
             cartesian_jerk_limit_mm_s3=float(request.cartesian_jerk_limit_mm_s3),

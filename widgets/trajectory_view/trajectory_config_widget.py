@@ -32,7 +32,6 @@ from models.trajectory_keypoint import (
     KeypointTargetType,
     TrajectoryKeypoint,
 )
-from models.trajectory_options import TrajectoryBezierDegree
 from models.reference_frame import ReferenceFrame
 from models.types import XYZ3
 from models.robot_model import RobotModel
@@ -61,7 +60,6 @@ class TrajectoryConfigWidget(QWidget):
     updateRobotGhostRequested = pyqtSignal(object)
     goToRequested = pyqtSignal(int)
     timeSmoothingChanged = pyqtSignal(bool)
-    bezierDegreeChanged = pyqtSignal(str)
     cartesianDynamicsChanged = pyqtSignal()
     cartesianDisplayFrameChanged = pyqtSignal(str)
     jerkCheckChanged = pyqtSignal(bool)
@@ -90,7 +88,6 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_delete_all = QPushButton("Tout supprimer")
         self.cb_smooth_time = QCheckBox("Lisser le temps")
         self.cb_check_jerk = QCheckBox("Vérif. jerk")
-        self.bezier_degree_combo = QComboBox()
         self.cartesian_accel_spin = QDoubleSpinBox()
         self.cartesian_jerk_spin = QDoubleSpinBox()
         self.cartesian_display_frame_combo = QComboBox()
@@ -137,8 +134,6 @@ class TrajectoryConfigWidget(QWidget):
 
         options_row = QHBoxLayout()
         options_row.addWidget(self.cb_check_jerk)
-        options_row.addSpacing(12)
-        options_row.addWidget(QLabel("Interpolation: Bézier 7"))
         options_row.addSpacing(12)
         options_row.addWidget(QLabel("Accel cart."))
         options_row.addWidget(self.cartesian_accel_spin)
@@ -195,7 +190,6 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_export.clicked.connect(self._on_export_clicked)
         self.cb_smooth_time.toggled.connect(self._on_time_smoothing_toggled)
         self.cb_check_jerk.toggled.connect(self._on_jerk_check_toggled)
-        self.bezier_degree_combo.currentIndexChanged.connect(self._on_bezier_degree_changed)
         self.cartesian_accel_spin.valueChanged.connect(self._on_cartesian_dynamics_changed)
         self.cartesian_jerk_spin.valueChanged.connect(self._on_cartesian_dynamics_changed)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
@@ -223,9 +217,6 @@ class TrajectoryConfigWidget(QWidget):
     def _on_jerk_check_toggled(self, checked: bool) -> None:
         self.jerkCheckChanged.emit(bool(checked))
 
-    def _on_bezier_degree_changed(self, _index: int) -> None:
-        self.bezierDegreeChanged.emit(self.get_bezier_degree().value)
-
     def _on_cartesian_dynamics_changed(self, _value: float) -> None:
         self.cartesianDynamicsChanged.emit()
 
@@ -238,9 +229,6 @@ class TrajectoryConfigWidget(QWidget):
     def is_jerk_check_enabled(self) -> bool:
         return self.cb_check_jerk.isChecked()
 
-    def get_bezier_degree(self) -> TrajectoryBezierDegree:
-        return TrajectoryBezierDegree.BEZIER7
-
     def get_cartesian_accel_limit_mm_s2(self) -> float:
         return float(self.cartesian_accel_spin.value())
 
@@ -249,21 +237,6 @@ class TrajectoryConfigWidget(QWidget):
 
     def get_cartesian_display_frame(self) -> str:
         return ReferenceFrame.from_value(self.cartesian_display_frame_combo.currentData()).value
-
-    def set_bezier_degree(self, degree: TrajectoryBezierDegree | str, emit_signal: bool = False) -> None:
-        normalized = TrajectoryBezierDegree.from_value(degree)
-        if normalized == TrajectoryBezierDegree.BEZIER7:
-            if emit_signal:
-                self.bezierDegreeChanged.emit(normalized.value)
-            return
-        index = self.bezier_degree_combo.findData(normalized.value)
-        if index < 0:
-            return
-        self.bezier_degree_combo.blockSignals(True)
-        self.bezier_degree_combo.setCurrentIndex(index)
-        self.bezier_degree_combo.blockSignals(False)
-        if emit_signal:
-            self.bezierDegreeChanged.emit(normalized.value)
 
     def set_cartesian_display_frame(self, display_frame: str, emit_signal: bool = False) -> None:
         normalized = ReferenceFrame.from_value(display_frame)
@@ -412,13 +385,8 @@ class TrajectoryConfigWidget(QWidget):
             self._auto_update_adjacent_cubic_tangents(preview_keypoints, row)
         self._emit_trajectory_preview(preview_keypoints)
 
-    @staticmethod
-    def _default_linear_tangent_ratio_for_bezier_degree(degree: TrajectoryBezierDegree) -> float:
-        _ = degree
-        return 1.0 / 7.0
-
     def _default_linear_tangent_ratios(self) -> list[float]:
-        ratio = TrajectoryConfigWidget._default_linear_tangent_ratio_for_bezier_degree(self.get_bezier_degree())
+        ratio = 1.0 / 7.0
         return [ratio, ratio]
 
     def _resolve_previous_segment_end_tangent_for_add(self) -> XYZ3 | None:
@@ -676,7 +644,6 @@ class TrajectoryConfigWidget(QWidget):
 
         payload = {
             "jerk_check_enabled": self.is_jerk_check_enabled(),
-            "bezier_degree": TrajectoryBezierDegree.BEZIER7.value,
             "cartesian_accel_limit_mm_s2": self.get_cartesian_accel_limit_mm_s2(),
             "cartesian_jerk_limit_mm_s3": self.get_cartesian_jerk_limit_mm_s3(),
             "keypoints": [keypoint.to_dict() for keypoint in self._keypoints],

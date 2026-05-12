@@ -40,7 +40,6 @@ class TrajectoryControllerBuildBridge(QObject):
             keypoints=[keypoint.clone() for keypoint in keypoints],
             sample_dt_s=float(sample_dt_s),
             smooth_time_enabled=True,
-            bezier_degree="BEZIER7",
             jerk_check_enabled=bool(jerk_check_enabled),
             cartesian_accel_limit_mm_s2=float(cartesian_accel_limit_mm_s2),
             cartesian_jerk_limit_mm_s3=float(cartesian_jerk_limit_mm_s3),

@@ -108,7 +108,6 @@ class ProgramController:
         self.config_widget.btn_delete_all.hide()
         self.config_widget.cb_smooth_time.hide()
         self.config_widget.cb_check_jerk.hide()
-        self.config_widget.bezier_degree_combo.hide()
         self.config_widget.cartesian_display_frame_combo.clear()
         self.config_widget.cartesian_display_frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
         self.config_widget.cartesian_display_frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
