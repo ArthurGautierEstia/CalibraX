@@ -622,6 +622,10 @@ class ProgramSimulator:
         return RobotTool(tool_pose.x, tool_pose.y, tool_pose.z, tool_pose.a, tool_pose.b, tool_pose.c)
 
     @staticmethod
+    def _tool_to_pose(tool: RobotTool) -> Pose6:
+        return Pose6(tool.x, tool.y, tool.z, tool.a, tool.b, tool.c)
+
+    @staticmethod
     def _normalize_joints(joints_deg: list[float]) -> list[float]:
         normalized = [float(value) for value in joints_deg[:6]]
         while len(normalized) < 6:

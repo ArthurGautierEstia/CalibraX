@@ -6,7 +6,7 @@ from models.workspace_model import WorkspaceModel
 from widgets.program_view.program_actions_widget import ProgramActionsWidget
 from widgets.program_view.program_config_widget import ProgramConfigWidget
 from widgets.program_view.program_graphs_widget import ProgramGraphsWidget
-from widgets.trajectory_view.trajectory_config_widget import TrajectoryConfigWidget
+from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
 
 
 class ProgramView(QWidget):
@@ -19,7 +19,7 @@ class ProgramView(QWidget):
     ) -> None:
         super().__init__(parent)
         self.header_widget = ProgramConfigWidget()
-        self.config_widget = TrajectoryConfigWidget(robot_model, tool_model, workspace_model)
+        self.config_widget = ProgramKeypointsWidget(robot_model, tool_model, workspace_model)
         self.actions_widget = ProgramActionsWidget()
         self.graphs_widget = ProgramGraphsWidget()
         self._setup_ui()
@@ -43,7 +43,7 @@ class ProgramView(QWidget):
     def get_header_widget(self) -> ProgramConfigWidget:
         return self.header_widget
 
-    def get_config_widget(self) -> TrajectoryConfigWidget:
+    def get_config_widget(self) -> ProgramKeypointsWidget:
         return self.config_widget
 
     def get_actions_widget(self) -> ProgramActionsWidget:

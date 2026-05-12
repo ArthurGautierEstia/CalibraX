@@ -14,6 +14,7 @@ class ProgramActionsWidget(QWidget):
     restart_requested = pyqtSignal()
     time_value_changed = pyqtSignal(float)
     clear_requested = pyqtSignal()
+    
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
@@ -29,6 +30,7 @@ class ProgramActionsWidget(QWidget):
         self.show_measured_checkbox = QCheckBox("Afficher trajectoire reelle")
         self.show_compensated_checkbox = QCheckBox("Afficher trajectoire compensee")
         self.output_mode_combo = QComboBox()
+        self.tool_source_combo = QComboBox()
         self.time_slider = QSlider(Qt.Orientation.Horizontal)
         self.time_label = QLabel("Temps : 0.00 s")
         self.status_label = QLabel("")
