@@ -93,8 +93,23 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
                 samples.append((segment_index, sample_index, sample))
         return samples
 
+    def _assert_uniform_sample_ticks(self, result: TrajectoryResult, sample_dt_s: float = 0.004) -> None:
+        samples = self._flatten_samples(result)
+        for _segment_index, _sample_index, sample in samples:
+            tick = round(sample.time / sample_dt_s)
+            self.assertAlmostEqual(sample.time, tick * sample_dt_s, places=9)
+        for index in range(1, len(samples)):
+            dt_s = samples[index][2].time - samples[index - 1][2].time
+            self.assertAlmostEqual(dt_s, sample_dt_s, places=9)
+        for segment in result.segments:
+            duration_tick = round(segment.duration / sample_dt_s)
+            last_time_tick = round(segment.last_time / sample_dt_s)
+            self.assertAlmostEqual(segment.duration, duration_tick * sample_dt_s, places=9)
+            self.assertAlmostEqual(segment.last_time, last_time_tick * sample_dt_s, places=9)
+
     def _assert_lin_flyby_junction_is_uniform(self, trajectory_name: str, expected_speed_mm_s: float) -> None:
         result = self._compute_fixture_trajectory(trajectory_name)
+        self._assert_uniform_sample_ticks(result)
         samples = self._flatten_samples(result)
         boundary_index = next(
             index
@@ -104,9 +119,9 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         previous_sample = samples[boundary_index - 1][2]
         first_next_sample = samples[boundary_index][2]
         dt_s = first_next_sample.time - previous_sample.time
-        self.assertGreaterEqual(dt_s, 0.99 * 0.004)
-        self.assertAlmostEqual(previous_sample.cartesian_velocity[1], expected_speed_mm_s, delta=1.0)
-        self.assertAlmostEqual(first_next_sample.cartesian_velocity[1], expected_speed_mm_s, delta=1.0)
+        self.assertAlmostEqual(dt_s, 0.004, places=9)
+        self.assertAlmostEqual(previous_sample.cartesian_velocity[1], expected_speed_mm_s, delta=2.0)
+        self.assertAlmostEqual(first_next_sample.cartesian_velocity[1], expected_speed_mm_s, delta=2.0)
 
         local_samples = [
             sample
@@ -128,10 +143,13 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         same_speed = self._compute_fixture_trajectory("LIN_2_seg_same_v_stop.json")
         different_speed = self._compute_fixture_trajectory("LIN_2_seg_diff_v_stop.json")
 
-        self.assertAlmostEqual(same_speed.segments[1].duration, 1.7291666667, places=6)
-        self.assertAlmostEqual(same_speed.segments[2].duration, 1.7291666667, places=6)
-        self.assertAlmostEqual(different_speed.segments[1].duration, 1.7291666667, places=6)
-        self.assertAlmostEqual(different_speed.segments[2].duration, 2.4333929049, places=6)
+        self._assert_uniform_sample_ticks(same_speed)
+        self._assert_uniform_sample_ticks(different_speed)
+
+        self.assertAlmostEqual(same_speed.segments[1].duration, 1.732, places=9)
+        self.assertAlmostEqual(same_speed.segments[2].duration, 1.732, places=9)
+        self.assertAlmostEqual(different_speed.segments[1].duration, 1.732, places=9)
+        self.assertAlmostEqual(different_speed.segments[2].duration, 2.436, places=9)
 
         for result in (same_speed, different_speed):
             samples = self._flatten_samples(result)
