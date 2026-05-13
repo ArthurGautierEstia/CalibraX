@@ -41,3 +41,4 @@ class RobotController(QObject):
 
     def _setup_connections(self) -> None:
         self.dh_controller.configuration_loaded.connect(self.configuration_loaded.emit)
+        self.tool_controller.empty_tool_applied.connect(self.dh_controller.clear_default_tool_profile)

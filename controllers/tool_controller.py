@@ -19,6 +19,7 @@ class ToolController(QObject):
     STATUS_LOADED = "Configuration tool chargée"
     STATUS_UP_TO_DATE = "Configuration tool à jour"
     validation_state_changed = pyqtSignal(bool)
+    empty_tool_applied = pyqtSignal()
 
     def __init__(
         self,
@@ -97,6 +98,7 @@ class ToolController(QObject):
         self.tool_model.set_tool_colliders([])
         self.tool_model.set_evaluated_robot_axis_colliders([True] * 6)
         self._mark_as_unsaved_reference()
+        self.empty_tool_applied.emit()
 
     def reset_tool_configuration(self) -> None:
         self._apply_empty_tool()
