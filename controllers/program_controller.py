@@ -203,7 +203,7 @@ class ProgramController:
             return
         if self.current_result.compensation_computed:
             return
-        compensated_result = self.program_simulator.simulate_program(self.current_program, include_compensation=True)
+        compensated_result = self.program_simulator.simulate_program(self._get_simulation_program(), include_compensation=True)
         self.current_result = replace(
             compensated_result,
             nominal_samples=self.current_result.nominal_samples,
