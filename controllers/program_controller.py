@@ -225,7 +225,7 @@ class ProgramController:
         self._refresh_timeline()
 
     def _refresh_display_only(self) -> None:
-        if self.current_result is not None and self.actions_widget.show_compensated_checkbox.isChecked():
+        if self.current_result is not None and self.actions_widget.is_compensated_display():
             self._ensure_compensation_result()
         if self.current_result is not None:
             self._compensated_segments_cache = self._build_segments(
@@ -237,6 +237,7 @@ class ProgramController:
         self._refresh_viewer_segments()
         self._refresh_error_graph()
         self._refresh_timeline()
+        self._refresh_keypoint_table()
 
     def _refresh_program_info(self) -> None:
         if self.current_program is None:
@@ -287,11 +288,9 @@ class ProgramController:
             self.viewer3d_controller.clear_trajectory_path()
             return
         segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
-        if self.actions_widget.show_nominal_checkbox.isChecked():
-            segments.extend(self._nominal_segments_cache)
-        if self.actions_widget.show_measured_checkbox.isChecked():
-            segments.extend(self._measured_segments_cache)
-        if self.actions_widget.show_compensated_checkbox.isChecked():
+        segments.extend(self._nominal_segments_cache)
+        segments.extend(self._measured_segments_cache)
+        if self.actions_widget.is_compensated_display():
             self._ensure_compensation_result()
             segments.extend(self._compensated_segments_cache)
         if segments:
@@ -369,9 +368,8 @@ class ProgramController:
     def _playback_samples(self) -> list[ProgramSimulationSample]:
         if self.current_result is None:
             return []
-        selected_compensated_samples = self._selected_compensated_samples()
-        if selected_compensated_samples:
-            return selected_compensated_samples
+        if self.actions_widget.is_compensated_display():
+            return self._selected_compensated_samples()
         return self.current_result.nominal_samples
 
     def _apply_time_value(self, time_s: float) -> None:

@@ -23,6 +23,10 @@ class ProgramGraphsWidget(QWidget):
         self.error_plot.setTitle("Erreur Y le long de la trajectoire")
         self.error_plot.setLabel("bottom", "Abscisse curviligne (mm)")
         self.error_plot.setLabel("left", "Erreur Y (mm)")
+        # Disable scientific notation on y-axis
+        y_axis = self.error_plot.getAxis("left")
+        y_axis.setLogMode(False)
+        y_axis.enableAutoSIPrefix(False)
         self.error_plot.addLegend()
         self._measured_curve = self.error_plot.plot([], [], pen=pg.mkPen("#007aff", width=2), name="Reelle")
         self._compensated_curve = self.error_plot.plot([], [], pen=pg.mkPen("#34c759", width=2), name="Compensee")
