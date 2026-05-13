@@ -1,8 +1,24 @@
+import json
+from pathlib import Path
 import unittest
 
+from models.robot_configuration_file import RobotConfigurationFile
+from models.robot_model import RobotModel
+from models.tool_config_file import ToolConfigFile
+from models.tool_model import ToolModel
+from models.trajectory_keypoint import TrajectoryKeypoint
 from models.types import JointAngles6, XYZ3
+from models.workspace_file import WorkspaceFile
+from models.workspace_model import WorkspaceModel
 from trajectory_engine.v2.arc_length import build_arc_length_lut, parameter_at_distance
-from trajectory_engine.models import SegmentResult, TrajectoryBuilderBehavior, TrajectoryComputationStatus, TrajectorySample
+from trajectory_engine.models import (
+    SegmentResult,
+    TrajectoryBuilderBehavior,
+    TrajectoryComputationStatus,
+    TrajectoryResult,
+    TrajectorySample,
+    TrajectorySegment,
+)
 from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
 from trajectory_engine.v2.dynamics import (
     S_CURVE_PEAK_SPEED_SCALE,
@@ -31,6 +47,104 @@ class _CancelToken:
 
 
 class TrajectoryEngineV2Tests(unittest.TestCase):
+    @staticmethod
+    def _project_root() -> Path:
+        return Path(__file__).resolve().parents[1]
+
+    def _compute_fixture_trajectory(self, trajectory_name: str) -> TrajectoryResult:
+        root = self._project_root()
+        robot_config_path = root / "default_data" / "configurations" / "rocky_robodk.json"
+        robot_config = RobotConfigurationFile.load(str(robot_config_path))
+        robot_model = RobotModel()
+        robot_model.load_from_configuration_file(robot_config, str(robot_config_path))
+
+        tool_model = ToolModel()
+        if robot_config.default_tool_auto_load_on_startup and robot_config.default_tool_profile:
+            tool_path = root / robot_config.default_tool_profile
+            tool_profile = ToolConfigFile.load(str(tool_path))
+            tool_model.apply_tool_profile(str(tool_path), tool_profile)
+            robot_model.set_tool(tool_model.get_tool())
+
+        workspace_model = WorkspaceModel()
+        workspace_path = root / "user_data" / "workspaces" / "scene_easy.json"
+        if workspace_path.exists():
+            WorkspaceFile.load(str(workspace_path)).apply_to_workspace_model(workspace_model, str(workspace_path))
+
+        trajectory_path = root / "user_data" / "trajectories" / trajectory_name
+        with trajectory_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        keypoints = [TrajectoryKeypoint.from_dict(item) for item in payload["keypoints"]]
+        segments = [TrajectorySegment(keypoints[index], keypoints[index + 1]) for index in range(len(keypoints) - 1)]
+        builder = TrajectoryBuilderV2(
+            robot_model,
+            tool_model,
+            workspace_model,
+            cartesian_accel_limit_mm_s2=float(payload["cartesian_accel_limit_mm_s2"]),
+            cartesian_jerk_limit_mm_s3=float(payload["cartesian_jerk_limit_mm_s3"]),
+            jerk_check_enabled=bool(payload["jerk_check_enabled"]),
+        )
+        return builder.compute_trajectory(robot_model.get_home_position(), segments)
+
+    @staticmethod
+    def _flatten_samples(result: TrajectoryResult) -> list[tuple[int, int, TrajectorySample]]:
+        samples: list[tuple[int, int, TrajectorySample]] = []
+        for segment_index, segment in enumerate(result.segments):
+            for sample_index, sample in enumerate(segment.samples):
+                samples.append((segment_index, sample_index, sample))
+        return samples
+
+    def _assert_lin_flyby_junction_is_uniform(self, trajectory_name: str, expected_speed_mm_s: float) -> None:
+        result = self._compute_fixture_trajectory(trajectory_name)
+        samples = self._flatten_samples(result)
+        boundary_index = next(
+            index
+            for index, (segment_index, sample_index, _sample) in enumerate(samples)
+            if segment_index == 2 and sample_index == 0
+        )
+        previous_sample = samples[boundary_index - 1][2]
+        first_next_sample = samples[boundary_index][2]
+        dt_s = first_next_sample.time - previous_sample.time
+        self.assertGreaterEqual(dt_s, 0.99 * 0.004)
+        self.assertAlmostEqual(previous_sample.cartesian_velocity[1], expected_speed_mm_s, delta=1.0)
+        self.assertAlmostEqual(first_next_sample.cartesian_velocity[1], expected_speed_mm_s, delta=1.0)
+
+        local_samples = [
+            sample
+            for segment_index, _sample_index, sample in samples
+            if segment_index in (1, 2) and abs(sample.pose[1]) <= 20.0
+        ]
+        local_max_jerk = max(
+            max(abs(value) for value in sample.articular_jerk)
+            for sample in local_samples
+            if sample.articular_jerk_valid
+        )
+        self.assertLess(local_max_jerk, 10000.0)
+
+    def test_fixture_flyby_junctions_use_uniform_sampling_grid(self) -> None:
+        self._assert_lin_flyby_junction_is_uniform("LIN_2_seg_same_v_fly.json", 500.0)
+        self._assert_lin_flyby_junction_is_uniform("LIN_2_seg_diff_v_fly.json", 250.0)
+
+    def test_fixture_stop_junctions_keep_stop_and_durations(self) -> None:
+        same_speed = self._compute_fixture_trajectory("LIN_2_seg_same_v_stop.json")
+        different_speed = self._compute_fixture_trajectory("LIN_2_seg_diff_v_stop.json")
+
+        self.assertAlmostEqual(same_speed.segments[1].duration, 1.7291666667, places=6)
+        self.assertAlmostEqual(same_speed.segments[2].duration, 1.7291666667, places=6)
+        self.assertAlmostEqual(different_speed.segments[1].duration, 1.7291666667, places=6)
+        self.assertAlmostEqual(different_speed.segments[2].duration, 2.4333929049, places=6)
+
+        for result in (same_speed, different_speed):
+            samples = self._flatten_samples(result)
+            boundary_index = next(
+                index
+                for index, (segment_index, sample_index, _sample) in enumerate(samples)
+                if segment_index == 2 and sample_index == 0
+            )
+            last_previous_sample = samples[boundary_index - 1][2]
+            first_next_sample = samples[boundary_index][2]
+            self.assertLess(abs(last_previous_sample.cartesian_velocity[1]), 0.01)
+            self.assertLess(abs(first_next_sample.cartesian_velocity[1]), 0.01)
+
     def test_bezier7_linear_coefficients_and_endpoints(self) -> None:
         curve = Bezier7Curve3D.linear(XYZ3(0.0, 0.0, 0.0), XYZ3(7.0, 0.0, 0.0))
 

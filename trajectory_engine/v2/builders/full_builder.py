@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
 
 from models.trajectory_keypoint import ConfigurationPolicy, KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
@@ -37,6 +38,51 @@ from trajectory_engine.v2.sampling import (
 from utils.mgi import MgiConfigKey, MgiResult, MgiResultStatus
 
 
+@dataclass(frozen=True)
+class _SampleSchedulePoint:
+    time_s: float
+    is_forced_endpoint: bool = False
+
+
+class _SampleClock:
+    _EPS = 1e-9
+
+    def __init__(self, sample_dt_s: float, start_time_s: float = 0.0) -> None:
+        self.sample_dt_s = max(float(sample_dt_s), self._EPS)
+        self.next_time_s = float(start_time_s) + self.sample_dt_s
+
+    def segment_points(
+        self,
+        start_time_s: float,
+        end_time_s: float,
+        include_endpoint: bool,
+    ) -> list[_SampleSchedulePoint]:
+        start_time = float(start_time_s)
+        end_time = max(start_time, float(end_time_s))
+        points: list[_SampleSchedulePoint] = []
+
+        if self.next_time_s <= start_time + self._EPS:
+            steps = math.floor((start_time - self.next_time_s) / self.sample_dt_s) + 1
+            self.next_time_s += max(1, steps) * self.sample_dt_s
+
+        while self.next_time_s <= end_time + self._EPS:
+            time_s = end_time if abs(self.next_time_s - end_time) <= self._EPS else self.next_time_s
+            points.append(_SampleSchedulePoint(time_s=time_s, is_forced_endpoint=False))
+            self.next_time_s += self.sample_dt_s
+
+        has_endpoint = bool(points) and abs(points[-1].time_s - end_time) <= self._EPS
+        if include_endpoint and not has_endpoint:
+            points.append(_SampleSchedulePoint(time_s=end_time, is_forced_endpoint=True))
+            self.restart_after(end_time)
+        elif include_endpoint:
+            self.restart_after(end_time)
+
+        return points
+
+    def restart_after(self, time_s: float) -> None:
+        self.next_time_s = float(time_s) + self.sample_dt_s
+
+
 class TrajectoryBuilderV2(BuilderV2Common):
     def compute_trajectory(self, current_joints: list[float], segments: list[TrajectorySegment]) -> TrajectoryResult:
         result = TrajectoryResult(build_status=BuildStatus.RUNNING)
@@ -53,7 +99,13 @@ class TrajectoryBuilderV2(BuilderV2Common):
 
             previous_sample: TrajectorySample | None = None
             start_time_s = 0.0
-            first_segment = self.compute_first_segment(current_joints, segments[0].from_keypoint, start_time_s)
+            sample_clock = _SampleClock(self.sample_dt_s, start_time_s)
+            first_segment = self.compute_first_segment(
+                current_joints,
+                segments[0].from_keypoint,
+                start_time_s,
+                sample_clock,
+            )
             result.segments.append(first_segment)
             self._accumulate_status(result, first_segment, 0)
             if self._should_stop_on_error(first_segment):
@@ -78,10 +130,11 @@ class TrajectoryBuilderV2(BuilderV2Common):
                         previous_curve,
                         previous_cart_exit_speed,
                         exit_speed,
+                        sample_clock,
                     )
                     previous_cart_exit_speed = exit_speed
                 else:
-                    segment_result = self.compute_PTP_segment(segment, previous_sample, start_time_s)
+                    segment_result = self.compute_PTP_segment(segment, previous_sample, start_time_s, sample_clock)
                     previous_cart_exit_speed = 0.0
                     previous_curve = None
 
@@ -104,6 +157,7 @@ class TrajectoryBuilderV2(BuilderV2Common):
         current_joints: list[float],
         to_keypoint: TrajectoryKeypoint,
         start_time_s: float = 0.0,
+        sample_clock: _SampleClock | None = None,
     ) -> SegmentResult:
         joints = self._copy_joints_6(current_joints)
         config_key = MgiConfigKey.identify_configuration_deg(joints, self.robot_model.get_config_identifier())
@@ -117,14 +171,16 @@ class TrajectoryBuilderV2(BuilderV2Common):
             ptp_speed_percent=to_keypoint.ptp_speed_percent,
             linear_speed_mps=to_keypoint.linear_speed_mps,
         )
-        return self.compute_segment(TrajectorySegment(synthetic_from, to_keypoint), None, start_time_s)
+        return self.compute_segment(TrajectorySegment(synthetic_from, to_keypoint), None, start_time_s, sample_clock)
 
     def compute_segment(
         self,
         segment: TrajectorySegment,
         previous_sample: TrajectorySample | None = None,
         start_time_s: float = 0.0,
+        sample_clock: _SampleClock | None = None,
     ) -> SegmentResult:
+        clock = _SampleClock(self.sample_dt_s, start_time_s) if sample_clock is None else sample_clock
         if self._is_cartesian_mode(segment.to_keypoint.mode):
             segment_result, _curve = self._compute_cartesian_segment(
                 segment,
@@ -134,15 +190,17 @@ class TrajectoryBuilderV2(BuilderV2Common):
                 None,
                 0.0,
                 0.0,
+                clock,
             )
             return segment_result
-        return self.compute_PTP_segment(segment, previous_sample, start_time_s)
+        return self.compute_PTP_segment(segment, previous_sample, start_time_s, clock)
 
     def compute_PTP_segment(
         self,
         segment: TrajectorySegment,
         previous_sample: TrajectorySample | None = None,
         start_time_s: float = 0.0,
+        sample_clock: _SampleClock | None = None,
     ) -> SegmentResult:
         result = SegmentResult()
         result.mode = KeypointMotionMode.PTP
@@ -160,24 +218,26 @@ class TrajectoryBuilderV2(BuilderV2Common):
 
         delta = self._shortest_joint_delta(from_joints, to_joints)
         duration_s = self._ptp_duration(segment, delta, 0.100)
-        intervals = self._intervals_for_duration(duration_s)
-        if intervals <= 0:
-            intervals = 1
+        clock = _SampleClock(self.sample_dt_s, start_time_s) if sample_clock is None else sample_clock
+        end_time_s = start_time_s + duration_s
+        schedule = clock.segment_points(start_time_s, end_time_s, include_endpoint=True)
         speed_limits, accel_limits, jerk_limits = self._axis_dynamic_limits()
         previous = previous_sample
-        for step in range(1, intervals + 1):
+        for point in schedule:
             if self._is_cancelled():
                 break
-            local_time_s = min(duration_s, step * self.sample_dt_s)
+            local_time_s = max(0.0, min(duration_s, point.time_s - start_time_s))
             u = 1.0 if duration_s <= self._EPS else local_time_s / duration_s
             smooth_u = normalized_s_curve(u)
             joints = self._interpolate_joints(from_joints, delta, smooth_u)
             sample = self._build_ptp_sample(
-                start_time_s + local_time_s,
+                point.time_s,
                 joints,
                 previous,
                 update_articular_dynamics_from_previous=False,
             )
+            if point.is_forced_endpoint and self._is_too_close_to_previous_sample(point.time_s, previous):
+                reset_cartesian_dynamics(sample)
             self._apply_ptp_analytic_articular_dynamics(sample, delta, duration_s, local_time_s)
             self._apply_dynamic_limits(sample, speed_limits, accel_limits, jerk_limits)
             result.samples.append(sample)
@@ -187,8 +247,8 @@ class TrajectoryBuilderV2(BuilderV2Common):
             if self._should_stop_on_error(result):
                 break
 
-        result.duration = len(result.samples) * self.sample_dt_s if duration_s <= self._EPS else duration_s
-        result.last_time = start_time_s + result.duration
+        result.duration = duration_s
+        result.last_time = end_time_s
         return result
 
     def _compute_cartesian_segment(
@@ -200,6 +260,7 @@ class TrajectoryBuilderV2(BuilderV2Common):
         previous_curve: object | None,
         entry_speed_mm_s: float,
         exit_speed_mm_s: float,
+        sample_clock: _SampleClock | None = None,
     ) -> tuple[SegmentResult, object | None]:
         result = SegmentResult()
         result.mode = segment.to_keypoint.mode
@@ -230,15 +291,19 @@ class TrajectoryBuilderV2(BuilderV2Common):
             start_position_mm=0.0,
         )
         evaluator = RuntimeEvaluator(runtime_segment, profile)
-        intervals = self._intervals_for_duration(profile.duration_s - start_time_s)
+        clock = _SampleClock(self.sample_dt_s, start_time_s) if sample_clock is None else sample_clock
+        include_endpoint = exit_speed_mm_s <= self._EPS
+        schedule = clock.segment_points(start_time_s, profile.duration_s, include_endpoint)
         previous = previous_sample
         speed_limits, accel_limits, jerk_limits = self._axis_dynamic_limits()
-        for step in range(1, intervals + 1):
+        for point in schedule:
             if self._is_cancelled():
                 break
-            time_s = min(profile.duration_s, start_time_s + step * self.sample_dt_s)
-            pose = evaluator.evaluate_pose(time_s)
-            sample = self._build_cartesian_sample(time_s, pose, previous)
+            pose = evaluator.evaluate_pose(point.time_s)
+            sample = self._build_cartesian_sample(point.time_s, pose, previous)
+            if point.is_forced_endpoint and self._is_too_close_to_previous_sample(point.time_s, previous):
+                reset_cartesian_dynamics(sample)
+                reset_articular_dynamics(sample)
             self._apply_dynamic_limits(sample, speed_limits, accel_limits, jerk_limits)
             result.samples.append(sample)
             self._update_joint_stats(result, sample)
@@ -338,6 +403,15 @@ class TrajectoryBuilderV2(BuilderV2Common):
             update_cartesian_dynamics(sample, previous_sample, dt)
         if update_articular:
             update_articular_dynamics(sample, previous_sample, dt)
+
+    def _is_too_close_to_previous_sample(
+        self,
+        time_s: float,
+        previous_sample: TrajectorySample | None,
+    ) -> bool:
+        if previous_sample is None:
+            return False
+        return 0.0 < float(time_s) - previous_sample.time < self.sample_dt_s * 0.5
 
     @staticmethod
     def _apply_ptp_analytic_articular_dynamics(
