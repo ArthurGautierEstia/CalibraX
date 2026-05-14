@@ -77,6 +77,7 @@ class JointsControlWidget(QWidget):
             translation_reference_spinbox.setSingleStep(0.10)
             translation_reference_spinbox.setSuffix(" mm")
             translation_reference_spinbox.setValue(0.0)
+            translation_reference_spinbox.setKeyboardTracking(False)
 
             rotation_reference_spinbox = QDoubleSpinBox()
             rotation_reference_spinbox.setRange(-180.0, 180.0)
@@ -84,6 +85,7 @@ class JointsControlWidget(QWidget):
             rotation_reference_spinbox.setSingleStep(0.10)
             rotation_reference_spinbox.setSuffix(" °")
             rotation_reference_spinbox.setValue(0.0)
+            rotation_reference_spinbox.setKeyboardTracking(False)
 
             spinbox_width = max(
                 translation_reference_spinbox.sizeHint().width(),
@@ -113,6 +115,7 @@ class JointsControlWidget(QWidget):
             spinbox.setSingleStep(0.10)
             spinbox.setSuffix(" °")
             spinbox.setValue(0.0)
+            spinbox.setKeyboardTracking(False)
             if self._compact:
                 spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
             spinbox.setFixedWidth(spinbox_width)

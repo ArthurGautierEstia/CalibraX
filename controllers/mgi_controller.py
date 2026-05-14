@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from controllers.cartesian_control_view.mgi_solutions_controller import MgiSolutionsController
 from models.robot_model import RobotModel
@@ -8,6 +8,8 @@ from views.mgi_view import MgiView
 
 
 class MgiController(QObject):
+    jacobien_recompute_requested = pyqtSignal()
+
     def __init__(
         self,
         robot_model: RobotModel,
@@ -41,6 +43,9 @@ class MgiController(QObject):
     def _on_jacobien_enabled_changed(self, enabled: bool) -> None:
         if not enabled:
             self.set_jacobien_resultat(None)
+            return
+        self.jacobien_recompute_requested.emit()
 
     def _on_jacobien_params_changed(self) -> None:
-        pass
+        if self.is_jacobien_enabled():
+            self.jacobien_recompute_requested.emit()

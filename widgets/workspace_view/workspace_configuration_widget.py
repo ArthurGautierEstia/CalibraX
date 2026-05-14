@@ -141,6 +141,7 @@ class WorkspaceConfigurationWidget(QWidget):
                     spinbox.setRange(-360.0, 360.0)
                     spinbox.setDecimals(3)
                     spinbox.setSingleStep(1.0)
+                spinbox.setKeyboardTracking(False)
                 spinbox.valueChanged.connect(self._on_robot_base_pose_world_value_changed)
                 self.robot_base_pose_spinboxes.append(spinbox)
                 pose_row.addWidget(spinbox)

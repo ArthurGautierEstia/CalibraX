@@ -26,6 +26,12 @@ class ProgramCompensationOutputMode(Enum):
     ARTICULAR = "ARTICULAR"
 
 
+class TrajectoryPlaybackMode(Enum):
+    THEORETICAL = "THEORETICAL"
+    REAL = "REAL"
+    COMPENSATED = "COMPENSATED"
+
+
 @dataclass(frozen=True)
 class RobotProgramTarget:
     target_type: RobotProgramTargetType

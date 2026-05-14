@@ -194,6 +194,11 @@ class RobotConfigurationController(QObject):
         self._default_tool_auto_load_on_startup = bool(enabled)
         self._refresh_configuration_status()
 
+    def clear_default_tool_profile(self) -> None:
+        self._default_tool_profile = ""
+        self.robot_configuration_widget.set_default_tool_profile("")
+        self._refresh_configuration_status()
+
     def _on_view_load_config_requested(self) -> None:
         self.load_configuration()
 

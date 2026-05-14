@@ -29,7 +29,7 @@ from utils.mgi import RobotTool
 from utils.robot_program_kuka import export_kuka_src_program, load_kuka_src_program
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
-from widgets.trajectory_view.trajectory_config_widget import TrajectoryConfigWidget
+from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
 from views.program_view import ProgramView
 
 
@@ -72,7 +72,7 @@ class ProgramController:
         self.program_view = program_view
         self.viewer3d_controller = viewer3d_controller
         self.header_widget = self.program_view.get_header_widget()
-        self.config_widget: TrajectoryConfigWidget = self.program_view.get_config_widget()
+        self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
@@ -82,6 +82,8 @@ class ProgramController:
         self._display_keypoint_tools: list[RobotTool] = []
         self._display_target_refs: list[_ProgramTargetRef] = []
         self._selected_keypoint_index: int | None = None
+        self._tool_source: str = "ROBOT"  # ROBOT or PROGRAM
+        self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._compensated_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
@@ -94,24 +96,8 @@ class ProgramController:
         self._playback_timer.timeout.connect(self._on_playback_tick)
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
-        self._configure_keypoint_widget()
         self._setup_connections()
         self._refresh_view()
-
-    def _configure_keypoint_widget(self) -> None:
-        self.config_widget.btn_add.hide()
-        self.config_widget.btn_delete.hide()
-        self.config_widget.btn_move_up.hide()
-        self.config_widget.btn_move_down.hide()
-        self.config_widget.btn_import.hide()
-        self.config_widget.btn_export.hide()
-        self.config_widget.btn_delete_all.hide()
-        self.config_widget.cb_smooth_time.hide()
-        self.config_widget.cb_check_jerk.hide()
-        self.config_widget.cartesian_display_frame_combo.clear()
-        self.config_widget.cartesian_display_frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
-        self.config_widget.cartesian_display_frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
-        self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value)
 
     def _setup_connections(self) -> None:
         self.header_widget.load_program_requested.connect(self._on_load_program_requested)
@@ -123,19 +109,15 @@ class ProgramController:
         self.actions_widget.stop_requested.connect(self._on_stop_requested)
         self.actions_widget.restart_requested.connect(self._on_restart_requested)
         self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
+        self.actions_widget.clear_requested.connect(self._on_clear_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
+        self.config_widget.edit_requested.connect(self._on_program_edit_requested)
         self.config_widget.keypoints_changed.connect(self._on_program_keypoints_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
+        self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
-        self.robot_model.measured_dh_params_changed.connect(self._on_context_changed)
-        self.robot_model.measured_dh_enabled_changed.connect(self._on_context_changed)
-        self.tool_model.tool_changed.connect(self._on_context_changed)
         self.workspace_model.workspace_changed.connect(self._refresh_view)
-        self.config_widget.btn_edit.clicked.disconnect()
-        self.config_widget.btn_edit.clicked.connect(self._on_program_edit_requested)
-        self.config_widget.keypoints_table.itemDoubleClicked.disconnect()
-        self.config_widget.keypoints_table.itemDoubleClicked.connect(self._on_program_table_item_double_clicked)
 
     def _on_load_program_requested(self) -> None:
         self.DEFAULT_PROGRAMS_DIR.mkdir(parents=True, exist_ok=True)
@@ -166,6 +148,11 @@ class ProgramController:
 
     def _on_recompute_requested(self) -> None:
         self._recompute_current_program()
+    
+    def _on_clear_requested(self) -> None:
+        self.current_program = None
+        self._restore_robot_tool()  # Restaurer le tool robot quand on efface le programme
+        self._recompute_current_program()
 
     def _on_context_changed(self, *_args) -> None:
         if self.current_program is None:
@@ -184,7 +171,15 @@ class ProgramController:
             self._compensated_segments_cache = []
             self._refresh_view()
             return
-        self.current_result = self.program_simulator.simulate_program(self.current_program, include_compensation=False)
+        simulation_program = self._get_simulation_program()
+        if simulation_program is None:
+            self.current_result = None
+            self._display_keypoints = []
+            self._display_keypoint_tools = []
+            self._display_target_refs = []
+            self._refresh_view()
+            return
+        self.current_result = self.program_simulator.simulate_program(simulation_program, include_compensation=False)
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._nominal_segments_cache = self._build_segments(
             self.current_result.nominal_samples,
@@ -208,7 +203,7 @@ class ProgramController:
             return
         if self.current_result.compensation_computed:
             return
-        compensated_result = self.program_simulator.simulate_program(self.current_program, include_compensation=True)
+        compensated_result = self.program_simulator.simulate_program(self._get_simulation_program(), include_compensation=True)
         self.current_result = replace(
             compensated_result,
             nominal_samples=self.current_result.nominal_samples,
@@ -230,7 +225,7 @@ class ProgramController:
         self._refresh_timeline()
 
     def _refresh_display_only(self) -> None:
-        if self.current_result is not None and self.actions_widget.show_compensated_checkbox.isChecked():
+        if self.current_result is not None and self.actions_widget.is_compensated_display():
             self._ensure_compensation_result()
         if self.current_result is not None:
             self._compensated_segments_cache = self._build_segments(
@@ -242,6 +237,7 @@ class ProgramController:
         self._refresh_viewer_segments()
         self._refresh_error_graph()
         self._refresh_timeline()
+        self._refresh_keypoint_table()
 
     def _refresh_program_info(self) -> None:
         if self.current_program is None:
@@ -292,11 +288,9 @@ class ProgramController:
             self.viewer3d_controller.clear_trajectory_path()
             return
         segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
-        if self.actions_widget.show_nominal_checkbox.isChecked():
-            segments.extend(self._nominal_segments_cache)
-        if self.actions_widget.show_measured_checkbox.isChecked():
-            segments.extend(self._measured_segments_cache)
-        if self.actions_widget.show_compensated_checkbox.isChecked():
+        segments.extend(self._nominal_segments_cache)
+        segments.extend(self._measured_segments_cache)
+        if self.actions_widget.is_compensated_display():
             self._ensure_compensation_result()
             segments.extend(self._compensated_segments_cache)
         if segments:
@@ -374,9 +368,8 @@ class ProgramController:
     def _playback_samples(self) -> list[ProgramSimulationSample]:
         if self.current_result is None:
             return []
-        selected_compensated_samples = self._selected_compensated_samples()
-        if selected_compensated_samples:
-            return selected_compensated_samples
+        if self.actions_widget.is_compensated_display():
+            return self._selected_compensated_samples()
         return self.current_result.nominal_samples
 
     def _apply_time_value(self, time_s: float) -> None:
@@ -506,6 +499,61 @@ class ProgramController:
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
 
+    def _get_simulation_program(self) -> RobotProgram | None:
+        """Retourne le programme à simuler, avec les tools adaptés selon le mode sélectionné."""
+        if self.current_program is None:
+            return None
+        
+        if self._tool_source == "ROBOT":
+            # En mode Tool Robot : toutes les motions utilisent le tool robot actuel
+            current_tool = self.tool_model.get_tool()
+            tool_pose = self.program_simulator._tool_to_pose(current_tool)
+            if tool_pose is None:
+                return self.current_program
+            
+            # Créer un programme temporaire avec le tool robot pour toutes les motions
+            motions_with_robot_tool = []
+            for motion in self.current_program.motions:
+                updated_motion = replace(motion, tool_pose=tool_pose)
+                motions_with_robot_tool.append(updated_motion)
+            return replace(self.current_program, motions=motions_with_robot_tool)
+        else:
+            # En mode Tool Programme : utiliser le programme original avec ses tools
+            return self.current_program
+
+    def _apply_program_tool(self) -> None:
+        """Applique le tool de la première motion du programme au tool_model."""
+        if self.current_program is None or self._saved_robot_tool is not None:
+            return
+        # Sauvegarde du tool actuel
+        self._saved_robot_tool = self.tool_model.get_tool()
+        # Applique le tool de la première motion
+        for motion in self.current_program.motions:
+            program_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
+            if program_tool is not None:
+                self.tool_model.set_tool(program_tool)
+                break
+
+    def _restore_robot_tool(self) -> None:
+        """Restaure le tool robot original."""
+        if self._saved_robot_tool is not None:
+            self.tool_model.set_tool(self._saved_robot_tool)
+            self._saved_robot_tool = None
+
+    def _on_tool_source_changed(self, tool_source: str) -> None:
+        self._tool_source = tool_source
+        
+        if tool_source == "PROGRAM":
+            self._apply_program_tool()
+        else:
+            self._restore_robot_tool()
+        
+        if self.current_program is not None:
+            self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+            self._refresh_keypoint_table()
+            self._refresh_viewer_keypoints()
+            self._refresh_viewer_segments()
+
     def _on_program_edit_requested(self) -> None:
         row = self._selected_keypoint_index
         if row is None:
@@ -535,8 +583,7 @@ class ProgramController:
         updated_motions[target_ref.motion_index] = updated_motion
         self.current_program = replace(self.current_program, motions=updated_motions)
         self._recompute_current_program()
-        if row < self.config_widget.keypoints_table.rowCount():
-            self.config_widget.keypoints_table.selectRow(row)
+        self.config_widget.select_row(row)
 
     def _on_program_keypoints_changed(self, _keypoints: list[TrajectoryKeypoint]) -> None:
         return
@@ -572,8 +619,11 @@ class ProgramController:
             self.config_widget.cartesian_display_frame_combo.currentData(),
             ReferenceFrame.PROGRAM,
         )
+        # Toutes les motions utilisent le tool actuellement configuré dans tool_model
+        current_tool = self.tool_model.get_tool()
         for motion_index, motion in enumerate(self.current_program.motions):
-            motion_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
+            # Utilise le tool courant (robot ou programme selon la sélection)
+            motion_tool = current_tool
             if motion.mode.value == "CIRCULAR" and motion.via_target is not None:
                 via_keypoint = self._motion_target_to_keypoint(motion, motion.via_target, is_circular=True, display_frame=display_frame)
                 if via_keypoint is not None:

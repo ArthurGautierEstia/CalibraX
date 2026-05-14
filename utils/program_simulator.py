@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bisect import bisect_left
+
 from dataclasses import dataclass, replace
 import math
 
@@ -86,19 +88,30 @@ class ProgramSimulator:
 
         nominal_xyz = [self._pose_xyz(sample.nominal_pose_base) for sample in nominal_ok]
         nominal_progresses = self._progresses_from_xyz(nominal_xyz)
-        measured_path = self._build_path_from_samples(nominal_ok, use_measured=True)
-        compensated_path = self._build_path_from_samples(compensated_samples, use_measured=True)
+        total_length_mm = self._path_length_mm(nominal_xyz)
+
+        measured_xyz_list = [self._pose_xyz(sample.measured_pose_base) for sample in nominal_ok]
+
+        compensated_xyz_points = []
+        for sample in compensated_samples:
+            pose = sample.measured_pose_base if sample.measured_pose_base is not None else sample.nominal_pose_base
+            if pose is not None:
+                compensated_xyz_points.append(self._pose_xyz(pose))
+
+        if not compensated_xyz_points:
+            return [], [], []
+
+        compensated_progresses = self._progresses_from_xyz(compensated_xyz_points)
 
         abscissa_mm: list[float] = []
         measured_error_y_mm: list[float] = []
         compensated_error_y_mm: list[float] = []
-        total_length_mm = self._path_length_mm(nominal_xyz)
-        for nominal_xyz_point, progress in zip(nominal_xyz, nominal_progresses):
-            measured_xyz = self._interpolate_path_xyz(measured_path, progress)
-            compensated_xyz = self._interpolate_path_xyz(compensated_path, progress)
+
+        for nominal_xyz_point, progress, measured_xyz in zip(nominal_xyz, nominal_progresses, measured_xyz_list):
             abscissa_mm.append(progress * total_length_mm)
-            measured_error_y_mm.append(
-                0.0 if measured_xyz is None else float(measured_xyz[1]) - float(nominal_xyz_point[1])
+            measured_error_y_mm.append(float(measured_xyz[1]) - float(nominal_xyz_point[1]))
+            compensated_xyz = self._interpolate_path_xyz(
+                (compensated_progresses, compensated_xyz_points), progress
             )
             compensated_error_y_mm.append(
                 0.0 if compensated_xyz is None else float(compensated_xyz[1]) - float(nominal_xyz_point[1])
@@ -622,6 +635,10 @@ class ProgramSimulator:
         return RobotTool(tool_pose.x, tool_pose.y, tool_pose.z, tool_pose.a, tool_pose.b, tool_pose.c)
 
     @staticmethod
+    def _tool_to_pose(tool: RobotTool) -> Pose6:
+        return Pose6(tool.x, tool.y, tool.z, tool.a, tool.b, tool.c)
+
+    @staticmethod
     def _normalize_joints(joints_deg: list[float]) -> list[float]:
         normalized = [float(value) for value in joints_deg[:6]]
         while len(normalized) < 6:
@@ -813,9 +830,8 @@ class ProgramSimulator:
             return list(points_xyz[0])
         if clamped_progress >= progresses[-1]:
             return list(points_xyz[-1])
-        right_index = 1
-        while right_index < len(progresses) and progresses[right_index] < clamped_progress:
-            right_index += 1
+        # Binary search for the interval containing clamped_progress
+        right_index = bisect_left(progresses, clamped_progress)
         right_index = min(right_index, len(progresses) - 1)
         left_index = max(0, right_index - 1)
         progress_left = progresses[left_index]

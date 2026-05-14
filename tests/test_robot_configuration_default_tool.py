@@ -5,10 +5,13 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 
 from controllers.robot_view.robot_configuration_controller import RobotConfigurationController
+from controllers.tool_controller import ToolController
 from models.robot_configuration_file import RobotConfigurationFile
 from models.robot_model import RobotModel
 from models.tool_config_file import ToolConfigFile
+from models.tool_model import ToolModel
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
+from widgets.tool_view.tool_configuration_widget import ToolConfigurationWidget
 from utils.mgi import RobotTool
 
 
@@ -151,6 +154,26 @@ class RobotConfigurationDefaultToolTests(unittest.TestCase):
             self.assertEqual(1, tool_controller.reset_calls)
         finally:
             output_path.unlink(missing_ok=True)
+
+    def test_new_tool_resets_robot_default_tool_to_none(self) -> None:
+        robot_model = RobotModel()
+        robot_widget = RobotConfigurationWidget()
+        tool_model = ToolModel()
+        tool_widget = ToolConfigurationWidget()
+        tool_controller = ToolController(tool_model, tool_widget)
+        controller = RobotConfigurationController(robot_model, robot_widget, tool_controller=tool_controller)
+        tool_controller.empty_tool_applied.connect(controller.clear_default_tool_profile)
+
+        self.assertIsNotNone(robot_widget.default_tool_profile_combo)
+        self.assertGreater(robot_widget.default_tool_profile_combo.count(), 1)
+
+        robot_widget.default_tool_profile_combo.setCurrentIndex(1)
+        self.assertNotEqual("", robot_widget.get_default_tool_profile())
+
+        tool_widget.btn_new.click()
+
+        self.assertEqual("", robot_widget.get_default_tool_profile())
+        self.assertEqual("", str(robot_widget.default_tool_profile_combo.currentData() or ""))
 
 
 if __name__ == "__main__":

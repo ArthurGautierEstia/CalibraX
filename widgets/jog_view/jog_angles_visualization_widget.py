@@ -44,9 +44,10 @@ class JogAnglesVisualizationWidget(QWidget):
             # SpinBox (valeur réelle) - Désactivé
             spinbox = QDoubleSpinBox()
             spinbox.setRange(self._axis_limits[i][0], self._axis_limits[i][1])
-            spinbox.setDecimals(2)
+            spinbox.setDecimals(3)
             spinbox.setValue(0.0)
             spinbox.setEnabled(False)  # Désactivé
+            spinbox.setKeyboardTracking(False)
             
             row_layout.addWidget(label)
             row_layout.addWidget(slider)

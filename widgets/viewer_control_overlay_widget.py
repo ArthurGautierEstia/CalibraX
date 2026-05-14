@@ -32,6 +32,7 @@ class ViewerControlOverlayWidget(QWidget):
         self.mode_selector_frame = QWidget(self)
         self.jog_delta_label = QLabel("Vitesse Jog :")
         self.jog_delta_spinbox = QDoubleSpinBox(self)
+        self.jog_delta_spinbox.setKeyboardTracking(False)
 
         self.joints_widget = JointsControlWidget(compact=True, enable_jog_spin_buttons=True)
         self.cartesian_widget = CartesianControlWidget(compact=True, enable_jog_spin_buttons=True)

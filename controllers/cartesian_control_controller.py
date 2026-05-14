@@ -4,6 +4,7 @@ from controllers.cartesian_control_view.cartesian_widget_controller import Carte
 from controllers.mgi_controller import MgiController
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
+from models.types import Pose6
 from models.workspace_model import WorkspaceModel
 from views.cartesian_control_view import CartesianControlView
 
@@ -35,18 +36,29 @@ class CartesianControlController(QObject):
 
     def _setup_connections(self) -> None:
         self.cartesian_widget_controller.new_target_computed.connect(self._on_cartesian_new_target_computed)
+        self.mgi_controller.jacobien_recompute_requested.connect(self._on_jacobien_recompute_requested)
 
     def _on_cartesian_new_target_computed(self) -> None:
         target = self.cartesian_widget_controller.get_new_target()
+        self.apply_target(target)
+
+    def _on_jacobien_recompute_requested(self) -> None:
+        self.apply_target(self.robot_model.get_corrected_tcp_pose())
+
+    def apply_target(self, target: Pose6) -> None:
+        if not isinstance(target, Pose6):
+            return
 
         mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
         best_sol = self.robot_model.get_best_mgi_solution(mgi_result)
 
         if not best_sol:
             self.mgi_controller.display_mgi_result(mgi_result, None)
+            self.mgi_controller.set_jacobien_resultat(None)
             return
 
-        _config_key, sol_analytique = best_sol
+        config_key, sol_analytique = best_sol
+        self.mgi_controller.display_mgi_result(mgi_result, config_key)
 
         if self.mgi_controller.is_jacobien_enabled():
             params = self.mgi_controller.get_jacobien_params()
