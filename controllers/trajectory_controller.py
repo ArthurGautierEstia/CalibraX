@@ -558,17 +558,6 @@ class TrajectoryController(QObject):
             return
         self._recompute_trajectory(keypoints, trigger_mode=TrajectoryBuildTriggerMode.FORCED_FULL)
 
-    def _on_collision_worker_completed(self, job_id: int, result: object) -> None:
-        active_job_id = getattr(self, "_active_collision_job_id", None)
-        if active_job_id is not None and int(job_id) != int(active_job_id):
-            return
-        from utils.trajectory_validity_analyzer import apply_trajectory_validity_result
-
-        trajectory = getattr(self, "current_trajectory", None)
-        if trajectory is None:
-            return
-        apply_trajectory_validity_result(trajectory, result)
-
     def _on_engine_preview_ready(self, preview: object) -> None:
         if not isinstance(preview, TrajectoryPreviewResult):
             return
