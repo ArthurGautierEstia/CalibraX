@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from models.types import Pose6, XYZ3
-from trajectory_engine.v2.arc_length import parameter_at_distance
-from trajectory_engine.v2.dynamics import ScalarMotionProfile, normalized_s_curve
-from trajectory_engine.v2.models import RuntimeSegment
+from trajectory_engine.arc_length import parameter_at_distance
+from trajectory_engine.dynamics import ScalarMotionProfile, normalized_s_curve
+from trajectory_engine.models.trajectory_primitives import RuntimeSegment
 
 
 def _wrap_angle_deg(angle_deg: float) -> float:

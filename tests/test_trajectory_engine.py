@@ -10,8 +10,8 @@ from models.trajectory_keypoint import TrajectoryKeypoint
 from models.types import JointAngles6, XYZ3
 from models.workspace_file import WorkspaceFile
 from models.workspace_model import WorkspaceModel
-from trajectory_engine.v2.arc_length import build_arc_length_lut, parameter_at_distance
-from trajectory_engine.models import (
+from trajectory_engine.arc_length import build_arc_length_lut, parameter_at_distance
+from trajectory_engine.models.pipeline import (
     SegmentResult,
     TrajectoryBuilderBehavior,
     TrajectoryComputationStatus,
@@ -19,16 +19,16 @@ from trajectory_engine.models import (
     TrajectorySample,
     TrajectorySegment,
 )
-from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
-from trajectory_engine.v2.dynamics import (
+from trajectory_engine.core.full_builder import TrajectoryBuilder
+from trajectory_engine.dynamics import (
     S_CURVE_PEAK_SPEED_SCALE,
     SegmentDynamicProfileKind,
     build_distance_profile,
     ptp_duration_s,
     resolve_segment_dynamic_profile,
 )
-from trajectory_engine.v2.geometry import Bezier7Curve3D
-from trajectory_engine.v2.models import Bezier7ControlPoints3D, SegmentDynamicPhaseKind
+from trajectory_engine.geometry import Bezier7Curve3D
+from trajectory_engine.models.trajectory_primitives import Bezier7ControlPoints3D, SegmentDynamicPhaseKind
 
 
 def _assert_xyz_close(test: unittest.TestCase, actual: XYZ3, expected: XYZ3, places: int = 6) -> None:
@@ -46,7 +46,7 @@ class _CancelToken:
         return self.calls > 3
 
 
-class TrajectoryEngineV2Tests(unittest.TestCase):
+class TrajectoryEngineTests(unittest.TestCase):
     @staticmethod
     def _project_root() -> Path:
         return Path(__file__).resolve().parents[1]
@@ -75,7 +75,7 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
             payload = json.load(handle)
         keypoints = [TrajectoryKeypoint.from_dict(item) for item in payload["keypoints"]]
         segments = [TrajectorySegment(keypoints[index], keypoints[index + 1]) for index in range(len(keypoints) - 1)]
-        builder = TrajectoryBuilderV2(
+        builder = TrajectoryBuilder(
             robot_model,
             tool_model,
             workspace_model,
@@ -216,7 +216,7 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         for local_time_s in (0.0, duration_s):
             sample = TrajectorySample()
             sample.reachable = True
-            TrajectoryBuilderV2._apply_ptp_analytic_articular_dynamics(sample, delta, duration_s, local_time_s)
+            TrajectoryBuilder._apply_ptp_analytic_articular_dynamics(sample, delta, duration_s, local_time_s)
 
             self.assertTrue(sample.articular_velocity_valid)
             self.assertTrue(sample.articular_acceleration_valid)
@@ -231,7 +231,7 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         sample = TrajectorySample()
         sample.reachable = True
 
-        TrajectoryBuilderV2._apply_ptp_analytic_articular_dynamics(sample, delta, 2.0, 1.0)
+        TrajectoryBuilder._apply_ptp_analytic_articular_dynamics(sample, delta, 2.0, 1.0)
 
         self.assertTrue(sample.articular_velocity_valid)
         self.assertTrue(sample.articular_acceleration_valid)
@@ -305,16 +305,16 @@ class TrajectoryEngineV2Tests(unittest.TestCase):
         self.assertAlmostEqual(end.velocity, 200.0, places=5)
         self.assertAlmostEqual(end.acceleration, 0.0, places=5)
 
-    def test_full_builder_v2_continues_on_error_by_default(self) -> None:
-        builder = object.__new__(TrajectoryBuilderV2)
+    def test_full_builder_continues_on_error_by_default(self) -> None:
+        builder = object.__new__(TrajectoryBuilder)
         builder.behavior = TrajectoryBuilderBehavior.CONTINUE_ON_ERROR
         segment = SegmentResult()
         segment.status = TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED
 
         self.assertFalse(builder._should_stop_on_error(segment))
 
-    def test_full_builder_v2_can_stop_on_error(self) -> None:
-        builder = object.__new__(TrajectoryBuilderV2)
+    def test_full_builder_can_stop_on_error(self) -> None:
+        builder = object.__new__(TrajectoryBuilder)
         builder.behavior = TrajectoryBuilderBehavior.STOP_ON_ERROR
         segment = SegmentResult()
         segment.status = TrajectoryComputationStatus.JERK_LIMIT_EXCEEDED

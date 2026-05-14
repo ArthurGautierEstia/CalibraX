@@ -4,7 +4,7 @@ import math
 
 from models.trajectory_keypoint import ConfigurationPolicy, KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6, XYZ3
-from trajectory_engine.models import (
+from trajectory_engine.models.pipeline import (
     BuildStatus,
     TrajectoryComputationStatus,
     TrajectoryPreviewResult,
@@ -13,13 +13,13 @@ from trajectory_engine.models import (
     TrajectorySample,
     TrajectorySegment,
 )
-from trajectory_engine.v2.builders.common import BuilderV2Common
-from trajectory_engine.v2.dynamics import build_distance_profile, normalized_s_curve
-from trajectory_engine.v2.runtime import RuntimeEvaluator
+from trajectory_engine.core.builder_common import TrajectoryBuilderCommon
+from trajectory_engine.dynamics import build_distance_profile, normalized_s_curve
+from trajectory_engine.runtime import RuntimeEvaluator
 from utils.mgi import MgiConfigKey
 
 
-class TrajectoryPreviewBuilderV2(BuilderV2Common):
+class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
     def compute_preview(self, current_joints: JointAngles6, segments: list[TrajectorySegment]) -> TrajectoryPreviewResult:
         result = TrajectoryPreviewResult(build_status=BuildStatus.RUNNING)
         self._working_mgi_solver = None

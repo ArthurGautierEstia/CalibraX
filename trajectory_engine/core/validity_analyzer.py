@@ -10,7 +10,7 @@ from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.types import Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
-from trajectory_engine.models import (
+from trajectory_engine.models.pipeline import (
     BuildCancelToken,
     SampleValidationResult,
     SegmentResult,

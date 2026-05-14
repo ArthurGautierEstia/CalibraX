@@ -5,7 +5,7 @@ import math
 
 from models.trajectory_keypoint import ConfigurationPolicy, KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6, TrajectorySampleKinematics, XYZ3
-from trajectory_engine.models import (
+from trajectory_engine.models.pipeline import (
     BuildStatus,
     JointDynamicStats,
     SegmentResult,
@@ -20,16 +20,16 @@ from trajectory_engine.models import (
     TrajectorySegment,
     TrajectoryBuilderBehavior,
 )
-from trajectory_engine.v2.builders.common import BuilderV2Common
-from trajectory_engine.v2.dynamics import (
+from trajectory_engine.core.builder_common import TrajectoryBuilderCommon
+from trajectory_engine.dynamics import (
     build_distance_profile,
     normalized_s_curve,
     normalized_s_curve_derivative,
     normalized_s_curve_second_derivative,
     normalized_s_curve_third_derivative,
 )
-from trajectory_engine.v2.runtime import RuntimeEvaluator
-from trajectory_engine.v2.sampling import (
+from trajectory_engine.runtime import RuntimeEvaluator
+from trajectory_engine.sampling import (
     reset_articular_dynamics,
     reset_cartesian_dynamics,
     update_articular_dynamics,
@@ -90,7 +90,7 @@ class _SampleClock:
         return int(round((float(time_s) - self.origin_time_s) / self.sample_dt_s))
 
 
-class TrajectoryBuilderV2(BuilderV2Common):
+class TrajectoryBuilder(TrajectoryBuilderCommon):
     def compute_trajectory(self, current_joints: list[float], segments: list[TrajectorySegment]) -> TrajectoryResult:
         result = TrajectoryResult(build_status=BuildStatus.RUNNING)
         self._working_mgi_solver = None

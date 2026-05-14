@@ -3,7 +3,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from trajectory_engine.core.validity_analyzer import ValidityAnalyzer
-from trajectory_engine.models import BuildCancelToken, ValidationTask
+from trajectory_engine.models.pipeline import BuildCancelToken, ValidationTask
 
 
 class ValidityWorker(QObject):

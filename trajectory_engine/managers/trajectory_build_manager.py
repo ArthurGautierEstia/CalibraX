@@ -6,15 +6,15 @@ from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from trajectory_engine.core.chunking import build_validation_task_samples
-from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
-from trajectory_engine.v2.builders.preview_builder import TrajectoryPreviewBuilderV2
+from trajectory_engine.core.full_builder import TrajectoryBuilder
+from trajectory_engine.core.preview_builder import TrajectoryPreviewBuilder
 from trajectory_engine.core.validity_analyzer import (
     apply_validation_result,
     build_validity_context_snapshot,
     prepare_trajectory_validity_analysis,
 )
 from trajectory_engine.managers.validity_analyzer_manager import ValidityAnalyzerManager
-from trajectory_engine.models import (
+from trajectory_engine.models.pipeline import (
     BuildCancelToken,
     BuildStatus,
     TrajectoryBuildRequest,
@@ -61,7 +61,7 @@ class TrajectoryBuildManager(QObject):
 
         self._preview_thread = QThread(self)
         self._preview_worker = PreviewWorker(
-            TrajectoryPreviewBuilderV2(robot_model, tool_model, workspace_model),
+            TrajectoryPreviewBuilder(robot_model, tool_model, workspace_model),
         )
         self._preview_worker.moveToThread(self._preview_thread)
         self._dispatch_preview.connect(self._preview_worker.process)
@@ -74,7 +74,7 @@ class TrajectoryBuildManager(QObject):
 
         self._full_thread = QThread(self)
         self._full_worker = FullTrajectoryWorker(
-            TrajectoryBuilderV2(robot_model, tool_model, workspace_model),
+            TrajectoryBuilder(robot_model, tool_model, workspace_model),
         )
         self._full_worker.moveToThread(self._full_thread)
         self._dispatch_full.connect(self._full_worker.process)

@@ -43,7 +43,7 @@ from models.trajectory_keypoint import (
     KeypointTargetType,
     TrajectoryKeypoint,
 )
-from trajectory_engine.v2.models import TrajectoryPassMode
+from trajectory_engine.models.trajectory_primitives import TrajectoryPassMode
 from models.reference_frame import ReferenceFrame
 from models.types import Pose6, XYZ3
 from models.trajectory_result import TrajectoryResult

@@ -8,16 +8,16 @@ from models.tool_model import ToolModel
 from models.trajectory_keypoint import ConfigurationPolicy, KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
-from trajectory_engine.models import BuildCancelToken, TrajectoryBuilderBehavior, TrajectorySegment
-from trajectory_engine.v2.arc_length import build_arc_length_lut
-from trajectory_engine.v2.dynamics import build_distance_profile, ptp_duration_s
-from trajectory_engine.v2.geometry import Bezier7Curve3D
-from trajectory_engine.v2.models import DynamicLimits, RuntimeSegment, SegmentSpeedProfile, TrajectoryPassMode
+from trajectory_engine.models.pipeline import BuildCancelToken, TrajectoryBuilderBehavior, TrajectorySegment
+from trajectory_engine.arc_length import build_arc_length_lut
+from trajectory_engine.dynamics import build_distance_profile, ptp_duration_s
+from trajectory_engine.geometry import Bezier7Curve3D
+from trajectory_engine.models.trajectory_primitives import DynamicLimits, RuntimeSegment, SegmentSpeedProfile, TrajectoryPassMode
 from utils.mgi import MGI, ConfigurationIdentifier, MgiConfigKey, MgiResult, MgiResultItem
 from utils.reference_frame_utils import convert_pose_to_base_frame
 
 
-class BuilderV2Common:
+class TrajectoryBuilderCommon:
     DEFAULT_SAMPLE_DT_S = 0.004
     DEFAULT_ARC_LENGTH_SAMPLES = 300
     MAX_SAMPLES_PER_SEGMENT = 50_000

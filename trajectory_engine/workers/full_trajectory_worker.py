@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
-from trajectory_engine.v2.builders.full_builder import TrajectoryBuilderV2
-from trajectory_engine.models import (
+from trajectory_engine.core.full_builder import TrajectoryBuilder
+from trajectory_engine.models.pipeline import (
     BuildCancelToken,
     BuildStatus,
     TrajectoryBuildRequest,
@@ -17,7 +17,7 @@ class FullTrajectoryWorker(QObject):
     cancelled = pyqtSignal(int)
     failed = pyqtSignal(int, str)
 
-    def __init__(self, builder: TrajectoryBuilderV2, parent: QObject | None = None) -> None:
+    def __init__(self, builder: TrajectoryBuilder, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._builder = builder
 

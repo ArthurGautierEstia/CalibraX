@@ -3,8 +3,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from trajectory_engine.v2.dynamics import build_distance_profile
-from trajectory_engine.v2.models import TrajectoryPassMode
+from trajectory_engine.dynamics import build_distance_profile
+from trajectory_engine.models.trajectory_primitives import TrajectoryPassMode
 
 
 def _read_float(prompt: str, default: float) -> float:

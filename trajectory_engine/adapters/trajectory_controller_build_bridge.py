@@ -5,7 +5,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from models.types import JointAngles6
 from trajectory_engine.adapters.legacy_converters import to_legacy_preview, to_legacy_trajectory
 from trajectory_engine.managers.trajectory_build_manager import TrajectoryBuildManager
-from trajectory_engine.models import TrajectoryBuildRequest, TrajectoryBuildTriggerMode
+from trajectory_engine.models.pipeline import TrajectoryBuildRequest, TrajectoryBuildTriggerMode
 
 
 class TrajectoryControllerBuildBridge(QObject):

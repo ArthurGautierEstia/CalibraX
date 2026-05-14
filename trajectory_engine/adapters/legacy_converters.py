@@ -18,7 +18,7 @@ from models.trajectory_result import (
     TrajectorySampleMgiSolution as LegacyTrajectorySampleMgiSolution,
 )
 from models.types import JointAngles6, Pose6, XYZ3
-from trajectory_engine.models import (
+from trajectory_engine.models.pipeline import (
     TrajectoryComputationStatus,
     TrajectoryDynamicViolationSeverity,
     TrajectoryPreviewResult,

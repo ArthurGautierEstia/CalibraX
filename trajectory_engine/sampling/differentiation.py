@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from trajectory_engine.models import TrajectorySample
+from trajectory_engine.models.pipeline import TrajectorySample
 
 
 def _norm3(x: float, y: float, z: float) -> float:

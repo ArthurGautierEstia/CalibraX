@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from models.types import XYZ3
-from trajectory_engine.v2.models import Bezier7Coefficients3D, Bezier7ControlPoints3D
+from trajectory_engine.models.trajectory_primitives import Bezier7Coefficients3D, Bezier7ControlPoints3D
 
 
 def _add(a: XYZ3, b: XYZ3) -> XYZ3:

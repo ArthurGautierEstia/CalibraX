@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from trajectory_engine.models import TrajectoryResult, ValidationTaskSample
+from trajectory_engine.models.pipeline import TrajectoryResult, ValidationTaskSample
 
 
 def build_validation_task_samples(trajectory: TrajectoryResult) -> list[ValidationTaskSample]:

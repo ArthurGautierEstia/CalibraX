@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from trajectory_engine.v2.models import (
+from trajectory_engine.models.trajectory_primitives import (
     MotionScalarState,
     SegmentDynamicPhaseKind,
     SegmentDynamicProfileKind,

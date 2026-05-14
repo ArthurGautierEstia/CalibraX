@@ -3,9 +3,9 @@ from __future__ import annotations
 import bisect
 
 from models.types import XYZ3
-from trajectory_engine.models import BuildCancelToken
-from trajectory_engine.v2.geometry import Bezier7Curve3D
-from trajectory_engine.v2.models import ArcLengthLut
+from trajectory_engine.models.pipeline import BuildCancelToken
+from trajectory_engine.geometry import Bezier7Curve3D
+from trajectory_engine.models.trajectory_primitives import ArcLengthLut
 
 
 def _distance(a: XYZ3, b: XYZ3) -> float:

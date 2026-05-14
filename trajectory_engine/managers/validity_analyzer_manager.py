@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
-from trajectory_engine.models import BuildCancelToken, ValidationResult, ValidationTask
+from trajectory_engine.models.pipeline import BuildCancelToken, ValidationResult, ValidationTask
 from trajectory_engine.workers.validity_worker import ValidityWorker
 
 

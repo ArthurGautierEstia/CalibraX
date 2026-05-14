@@ -6,7 +6,7 @@ import math
 
 from models.reference_frame import ReferenceFrame
 from models.types import Pose6, XYZ3
-from trajectory_engine.v2.models import TrajectoryPassMode
+from trajectory_engine.models.trajectory_primitives import TrajectoryPassMode
 from utils.mgi import ConfigurationIdentifier, MgiConfigKey
 
 

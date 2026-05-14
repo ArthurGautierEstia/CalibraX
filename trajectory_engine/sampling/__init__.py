@@ -1,4 +1,4 @@
-from trajectory_engine.v2.sampling.differentiation import (
+from trajectory_engine.sampling.differentiation import (
     update_articular_dynamics,
     update_cartesian_dynamics,
     reset_articular_dynamics,

@@ -25,7 +25,7 @@ from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, T
 from models.reference_frame import ReferenceFrame
 from trajectory_engine.adapters import TrajectoryControllerBuildBridge
 from trajectory_engine.managers import TrajectoryBuildManager
-from trajectory_engine.models import TrajectoryBuildTriggerMode
+from trajectory_engine.models.pipeline import TrajectoryBuildTriggerMode
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from utils.trajectory_status import build_trajectory_issue_messages, build_trajectory_warning_messages
 from utils.trajectory_paths import get_trajectories_directory

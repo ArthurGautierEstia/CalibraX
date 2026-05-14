@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
-from trajectory_engine.v2.builders.preview_builder import TrajectoryPreviewBuilderV2
-from trajectory_engine.models import (
+from trajectory_engine.core.preview_builder import TrajectoryPreviewBuilder
+from trajectory_engine.models.pipeline import (
     BuildCancelToken,
     BuildStatus,
     TrajectoryBuildRequest,
@@ -16,7 +16,7 @@ class PreviewWorker(QObject):
     cancelled = pyqtSignal(int)
     failed = pyqtSignal(int, str)
 
-    def __init__(self, builder: TrajectoryPreviewBuilderV2, parent: QObject | None = None) -> None:
+    def __init__(self, builder: TrajectoryPreviewBuilder, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._builder = builder
 
@@ -42,7 +42,7 @@ class PreviewWorker(QObject):
 
             segments = []
             if len(request.keypoints) >= 2:
-                from trajectory_engine.models import TrajectorySegment
+                from trajectory_engine.models.pipeline import TrajectorySegment
 
                 segments = [
                     TrajectorySegment(request.keypoints[i], request.keypoints[i + 1])
