@@ -44,12 +44,6 @@ class _SampleSchedulePoint:
     tick_index: int
 
 
-@dataclass(frozen=True)
-class _QuantizedDuration:
-    tick_count: int
-    duration_s: float
-
-
 class _SampleClock:
     _EPS = 1e-9
 
@@ -58,21 +52,20 @@ class _SampleClock:
         self.origin_time_s = float(start_time_s)
         self.next_tick_index = 1
 
-    def quantize_duration(self, duration_s: float) -> _QuantizedDuration:
-        duration = max(0.0, float(duration_s))
-        if duration <= self._EPS:
-            return _QuantizedDuration(tick_count=0, duration_s=0.0)
-        tick_count = int(math.ceil((duration - self._EPS) / self.sample_dt_s))
-        tick_count = max(1, tick_count)
-        return _QuantizedDuration(tick_count=tick_count, duration_s=tick_count * self.sample_dt_s)
-
-    def segment_points(self, start_time_s: float, tick_count: int) -> list[_SampleSchedulePoint]:
-        if tick_count <= 0:
+    def segment_points(self, start_time_s: float, end_time_s: float) -> list[_SampleSchedulePoint]:
+        start_time = float(start_time_s)
+        end_time = float(end_time_s)
+        if end_time <= start_time + self._EPS:
             return []
 
-        start_tick_index = self._tick_index_for_time(start_time_s)
-        first_tick_index = max(self.next_tick_index, start_tick_index + 1)
-        end_tick_index = start_tick_index + int(tick_count)
+        first_tick_index = max(
+            self.next_tick_index,
+            int(math.floor((start_time - self.origin_time_s) / self.sample_dt_s)) + 1,
+        )
+        end_tick_index = int(math.floor((end_time - self.origin_time_s + self._EPS) / self.sample_dt_s))
+        if end_tick_index < first_tick_index:
+            return []
+
         points = [
             _SampleSchedulePoint(
                 time_s=self.time_for_tick(tick_index),
@@ -85,9 +78,6 @@ class _SampleClock:
 
     def time_for_tick(self, tick_index: int) -> float:
         return self.origin_time_s + int(tick_index) * self.sample_dt_s
-
-    def _tick_index_for_time(self, time_s: float) -> int:
-        return int(round((float(time_s) - self.origin_time_s) / self.sample_dt_s))
 
 
 class TrajectoryBuilder(TrajectoryBuilderCommon):
@@ -219,12 +209,10 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
             return result
 
         delta = self._shortest_joint_delta(from_joints, to_joints)
-        theoretical_duration_s = self._ptp_duration(segment, delta, 0.100)
+        duration_s = self._ptp_duration(segment, delta, 0.100)
         clock = _SampleClock(self.sample_dt_s, start_time_s) if sample_clock is None else sample_clock
-        quantized_duration = clock.quantize_duration(theoretical_duration_s)
-        duration_s = quantized_duration.duration_s
         end_time_s = start_time_s + duration_s
-        schedule = clock.segment_points(start_time_s, quantized_duration.tick_count)
+        schedule = clock.segment_points(start_time_s, end_time_s)
         speed_limits, accel_limits, jerk_limits = self._axis_dynamic_limits()
         previous = previous_sample
         for point in schedule:
@@ -292,21 +280,16 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
         )
         evaluator = RuntimeEvaluator(runtime_segment, profile)
         clock = _SampleClock(self.sample_dt_s, start_time_s) if sample_clock is None else sample_clock
-        theoretical_duration_s = max(0.0, profile.duration_s - start_time_s)
-        quantized_duration = clock.quantize_duration(theoretical_duration_s)
-        duration_s = quantized_duration.duration_s
-        schedule = clock.segment_points(start_time_s, quantized_duration.tick_count)
+        duration_s = max(0.0, profile.duration_s - start_time_s)
+        end_time_s = start_time_s + duration_s
+        schedule = clock.segment_points(start_time_s, end_time_s)
         previous = previous_sample
         speed_limits, accel_limits, jerk_limits = self._axis_dynamic_limits()
         for point in schedule:
             if self._is_cancelled():
                 break
             local_time_s = max(0.0, min(duration_s, point.time_s - start_time_s))
-            if duration_s <= self._EPS:
-                profile_time_s = profile.duration_s
-            else:
-                time_ratio = max(0.0, min(1.0, local_time_s / duration_s))
-                profile_time_s = start_time_s + theoretical_duration_s * time_ratio
+            profile_time_s = start_time_s + local_time_s
             pose = evaluator.evaluate_pose(profile_time_s)
             sample = self._build_cartesian_sample(point.time_s, pose, previous)
             self._apply_dynamic_limits(sample, speed_limits, accel_limits, jerk_limits)
@@ -318,7 +301,7 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
                 break
 
         result.duration = duration_s
-        result.last_time = start_time_s + result.duration
+        result.last_time = end_time_s
         return result
 
     def _build_cartesian_sample(

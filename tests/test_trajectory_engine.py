@@ -110,11 +110,6 @@ class TrajectoryEngineTests(unittest.TestCase):
         for index in range(1, len(samples)):
             dt_s = samples[index][2].time - samples[index - 1][2].time
             self.assertAlmostEqual(dt_s, sample_dt_s, places=9)
-        for segment in result.segments:
-            duration_tick = round(segment.duration / sample_dt_s)
-            last_time_tick = round(segment.last_time / sample_dt_s)
-            self.assertAlmostEqual(segment.duration, duration_tick * sample_dt_s, places=9)
-            self.assertAlmostEqual(segment.last_time, last_time_tick * sample_dt_s, places=9)
 
     def _assert_lin_flyby_junction_is_uniform(self, trajectory_name: str, expected_speed_mm_s: float) -> None:
         result = self._compute_fixture_trajectory(trajectory_name)
@@ -155,10 +150,10 @@ class TrajectoryEngineTests(unittest.TestCase):
         self._assert_uniform_sample_ticks(same_speed)
         self._assert_uniform_sample_ticks(different_speed)
 
-        self.assertAlmostEqual(same_speed.segments[1].duration, 1.732, places=9)
-        self.assertAlmostEqual(same_speed.segments[2].duration, 1.732, places=9)
-        self.assertAlmostEqual(different_speed.segments[1].duration, 1.732, places=9)
-        self.assertAlmostEqual(different_speed.segments[2].duration, 2.436, places=9)
+        self.assertAlmostEqual(same_speed.segments[1].duration, 1.7291666666666592, places=9)
+        self.assertAlmostEqual(same_speed.segments[2].duration, 1.7291666666666592, places=9)
+        self.assertAlmostEqual(different_speed.segments[1].duration, 1.7291666666666592, places=9)
+        self.assertAlmostEqual(different_speed.segments[2].duration, 2.433393251112807, places=9)
 
         for result in (same_speed, different_speed):
             samples = self._flatten_samples(result)
