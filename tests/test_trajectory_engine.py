@@ -91,7 +91,6 @@ class TrajectoryEngineTests(unittest.TestCase):
             workspace_model,
             cartesian_accel_limit_mm_s2=float(payload["cartesian_accel_limit_mm_s2"]),
             cartesian_jerk_limit_mm_s3=float(payload["cartesian_jerk_limit_mm_s3"]),
-            jerk_check_enabled=bool(payload["jerk_check_enabled"]),
         )
         return builder.compute_trajectory(robot_model.get_home_position(), segments)
 

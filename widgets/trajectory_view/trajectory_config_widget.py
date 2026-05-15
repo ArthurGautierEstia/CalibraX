@@ -606,7 +606,6 @@ class TrajectoryConfigWidget(QWidget):
                 raise ValueError("Format invalide: le fichier doit contenir un objet de trajectoire.")
 
             raw_keypoints = payload.get("keypoints")
-            jerk_check_enabled = bool(payload.get("jerk_check_enabled", True))
             cartesian_accel_limit_mm_s2 = float(payload.get("cartesian_accel_limit_mm_s2", 1000.0))
             cartesian_jerk_limit_mm_s3 = float(payload.get("cartesian_jerk_limit_mm_s3", 10000.0))
             if not isinstance(raw_keypoints, list):
@@ -617,7 +616,6 @@ class TrajectoryConfigWidget(QWidget):
             return
 
         self._keypoints = parsed_keypoints
-        self.set_jerk_check_enabled(jerk_check_enabled, emit_signal=False)
         self.set_cartesian_dynamic_limits(
             cartesian_accel_limit_mm_s2,
             cartesian_jerk_limit_mm_s3,
@@ -643,7 +641,6 @@ class TrajectoryConfigWidget(QWidget):
             return
 
         payload = {
-            "jerk_check_enabled": self.is_jerk_check_enabled(),
             "cartesian_accel_limit_mm_s2": self.get_cartesian_accel_limit_mm_s2(),
             "cartesian_jerk_limit_mm_s3": self.get_cartesian_jerk_limit_mm_s3(),
             "keypoints": [keypoint.to_dict() for keypoint in self._keypoints],
