@@ -122,19 +122,17 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
             start_time_s = first_segment.last_time
 
             previous_cart_exit_speed = 0.0
-            previous_curve = None
             for index, segment in enumerate(segments):
                 if self._is_cancelled():
                     result.build_status = BuildStatus.CANCELLED
                     return result
                 if self._is_cartesian_mode(segment.to_keypoint.mode):
                     exit_speed = self._segment_exit_speed(segments, index)
-                    segment_result, previous_curve = self._compute_cartesian_segment(
+                    segment_result = self._compute_cartesian_segment(
                         segment,
                         index,
                         previous_sample,
                         start_time_s,
-                        previous_curve,
                         previous_cart_exit_speed,
                         exit_speed,
                         sample_clock,
@@ -143,7 +141,6 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
                 else:
                     segment_result = self.compute_PTP_segment(segment, previous_sample, start_time_s, sample_clock)
                     previous_cart_exit_speed = 0.0
-                    previous_curve = None
 
                 result.segments.append(segment_result)
                 self._accumulate_status(result, segment_result, index + 1)
@@ -189,17 +186,15 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
     ) -> SegmentResult:
         clock = _SampleClock(self.sample_dt_s, start_time_s) if sample_clock is None else sample_clock
         if self._is_cartesian_mode(segment.to_keypoint.mode):
-            segment_result, _curve = self._compute_cartesian_segment(
+            return self._compute_cartesian_segment(
                 segment,
                 0,
                 previous_sample,
                 start_time_s,
-                None,
                 0.0,
                 0.0,
                 clock,
             )
-            return segment_result
         return self.compute_PTP_segment(segment, previous_sample, start_time_s, clock)
 
     def compute_PTP_segment(
@@ -264,24 +259,22 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
         segment_index: int,
         previous_sample: TrajectorySample | None,
         start_time_s: float,
-        previous_curve: object | None,
         entry_speed_mm_s: float,
         exit_speed_mm_s: float,
         sample_clock: _SampleClock | None = None,
-    ) -> tuple[SegmentResult, object | None]:
+    ) -> SegmentResult:
         result = SegmentResult()
         result.mode = segment.to_keypoint.mode
         runtime_segment = self._build_runtime_segment(
             segment,
             segment_index,
-            previous_curve,
             entry_speed_mm_s,
             exit_speed_mm_s,
         )
         if runtime_segment is None or runtime_segment.arc_lut is None:
             result.status = TrajectoryComputationStatus.POINT_UNREACHABLE
             result.last_time = start_time_s
-            return result, previous_curve
+            return result
 
         result.out_direction = runtime_segment.out_direction.to_list()
         result.in_direction = runtime_segment.in_direction.to_list()
@@ -326,7 +319,7 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
 
         result.duration = duration_s
         result.last_time = start_time_s + result.duration
-        return result, runtime_segment.curve
+        return result
 
     def _build_cartesian_sample(
         self,

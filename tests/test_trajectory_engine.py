@@ -30,7 +30,7 @@ from trajectory_engine.dynamics import (
     resolve_segment_dynamic_profile,
 )
 from trajectory_engine.geometry import Bezier7Curve3D
-from trajectory_engine.models.trajectory_primitives import Bezier7ControlPoints3D, SegmentDynamicPhaseKind
+from trajectory_engine.models.trajectory_primitives import SegmentDynamicPhaseKind
 
 
 def _assert_xyz_close(test: unittest.TestCase, actual: XYZ3, expected: XYZ3, places: int = 6) -> None:
@@ -182,25 +182,6 @@ class TrajectoryEngineTests(unittest.TestCase):
         _assert_xyz_close(self, curve.point(0.0), XYZ3(0.0, 0.0, 0.0))
         _assert_xyz_close(self, curve.point(1.0), XYZ3(7.0, 0.0, 0.0))
         self.assertGreater(curve.point(0.75).x, curve.point(0.25).x)
-
-    def test_bezier7_c3_continuation_derivatives_match(self) -> None:
-        first = Bezier7Curve3D(
-            Bezier7ControlPoints3D(
-                XYZ3(0.0, 0.0, 0.0),
-                XYZ3(1.0, 0.0, 0.0),
-                XYZ3(2.0, 0.0, 0.0),
-                XYZ3(3.0, 0.0, 0.0),
-                XYZ3(4.0, 1.0, 0.0),
-                XYZ3(5.0, 1.0, 0.0),
-                XYZ3(6.0, 1.0, 0.0),
-                XYZ3(7.0, 1.0, 0.0),
-            )
-        )
-        second = Bezier7Curve3D.c3_continuation(first, XYZ3(14.0, 2.0, 0.0))
-        _assert_xyz_close(self, first.point(1.0), second.point(0.0))
-        _assert_xyz_close(self, first.first_derivative(1.0), second.first_derivative(0.0))
-        _assert_xyz_close(self, first.second_derivative(1.0), second.second_derivative(0.0))
-        _assert_xyz_close(self, first.third_derivative(1.0), second.third_derivative(0.0))
 
     def test_arc_length_straight_line_and_inverse(self) -> None:
         curve = Bezier7Curve3D.linear(XYZ3(0.0, 0.0, 0.0), XYZ3(100.0, 0.0, 0.0))

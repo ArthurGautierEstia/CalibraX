@@ -97,20 +97,6 @@ class Bezier7Curve3D:
             )
         )
 
-    @staticmethod
-    def c3_continuation(previous: "Bezier7Curve3D", end: XYZ3) -> "Bezier7Curve3D":
-        prev = previous.control_points
-        q0 = prev.p7.copy()
-        q1 = _sub(_scale(prev.p7, 2.0), prev.p6)
-        q2 = _sub(_scale(prev.p7, 2.0), prev.p5)
-        q3 = _sub(_scale(prev.p7, 2.0), prev.p4)
-        q7 = end.copy()
-        tail = _sub(q7, q0)
-        q4 = XYZ3(q0.x + 4.0 * tail.x / 7.0, q0.y + 4.0 * tail.y / 7.0, q0.z + 4.0 * tail.z / 7.0)
-        q5 = XYZ3(q0.x + 5.0 * tail.x / 7.0, q0.y + 5.0 * tail.y / 7.0, q0.z + 5.0 * tail.z / 7.0)
-        q6 = XYZ3(q0.x + 6.0 * tail.x / 7.0, q0.y + 6.0 * tail.y / 7.0, q0.z + 6.0 * tail.z / 7.0)
-        return Bezier7Curve3D(Bezier7ControlPoints3D(q0, q1, q2, q3, q4, q5, q6, q7))
-
     def point(self, u: float) -> XYZ3:
         u = max(0.0, min(1.0, float(u)))
         c = self.coefficients

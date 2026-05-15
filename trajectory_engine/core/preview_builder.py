@@ -35,7 +35,6 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
             self._accumulate_status(result, first, 0)
             previous_preview = first.samples[-1] if first.samples else None
             start_time_s = first.last_time_s
-            previous_curve = None
             previous_cart_exit_speed = 0.0
             for index, segment in enumerate(segments):
                 if self._is_cancelled():
@@ -43,18 +42,16 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
                     return result
                 if self._is_cartesian_mode(segment.to_keypoint.mode):
                     exit_speed = self._segment_exit_speed(segments, index)
-                    segment_result, previous_curve = self._compute_preview_cartesian_segment(
+                    segment_result = self._compute_preview_cartesian_segment(
                         segment,
                         index,
                         start_time_s,
-                        previous_curve,
                         previous_cart_exit_speed,
                         exit_speed,
                     )
                     previous_cart_exit_speed = exit_speed
                 else:
                     segment_result = self.compute_preview_ptp_segment(segment, previous_preview, start_time_s)
-                    previous_curve = None
                     previous_cart_exit_speed = 0.0
                 result.segments.append(segment_result)
                 self._accumulate_status(result, segment_result, index + 1)
@@ -96,8 +93,7 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
         start_time_s: float = 0.0,
     ) -> TrajectoryPreviewSegment:
         if self._is_cartesian_mode(segment.to_keypoint.mode):
-            segment_result, _curve = self._compute_preview_cartesian_segment(segment, 0, start_time_s, None, 0.0, 0.0)
-            return segment_result
+            return self._compute_preview_cartesian_segment(segment, 0, start_time_s, 0.0, 0.0)
         return self.compute_preview_ptp_segment(segment, previous_sample, start_time_s)
 
     def compute_preview_ptp_segment(
@@ -143,17 +139,16 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
         segment: TrajectorySegment,
         segment_index: int,
         start_time_s: float,
-        previous_curve: object | None,
         entry_speed_mm_s: float,
         exit_speed_mm_s: float,
-    ) -> tuple[TrajectoryPreviewSegment, object | None]:
+    ) -> TrajectoryPreviewSegment:
         result = TrajectoryPreviewSegment()
         result.mode = segment.to_keypoint.mode
-        runtime_segment = self._build_runtime_segment(segment, segment_index, previous_curve, entry_speed_mm_s, exit_speed_mm_s)
+        runtime_segment = self._build_runtime_segment(segment, segment_index, entry_speed_mm_s, exit_speed_mm_s)
         if runtime_segment is None:
             result.status = TrajectoryComputationStatus.POINT_UNREACHABLE
             result.last_time_s = start_time_s
-            return result, previous_curve
+            return result
         result.out_direction = runtime_segment.out_direction.copy()
         result.in_direction = runtime_segment.in_direction.copy()
         limits = self._dynamic_limits(segment)
@@ -177,7 +172,7 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
             result.samples.append(TrajectoryPreviewSample(time_s=time_s, pose_base=evaluator.evaluate_pose(time_s), joints_deg=None, reachable=True))
         result.duration_s = max(0.0, profile.duration_s - start_time_s)
         result.last_time_s = start_time_s + result.duration_s
-        return result, runtime_segment.curve
+        return result
 
     @staticmethod
     def _accumulate_status(

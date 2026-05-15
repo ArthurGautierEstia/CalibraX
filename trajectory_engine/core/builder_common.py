@@ -196,7 +196,7 @@ class TrajectoryBuilderCommon:
     def _is_cartesian_mode(mode: KeypointMotionMode) -> bool:
         return mode in (KeypointMotionMode.LINEAR, KeypointMotionMode.CUBIC)
 
-    def _build_curve(self, segment: TrajectorySegment, previous_curve: Bezier7Curve3D | None) -> tuple[Bezier7Curve3D, XYZ3, XYZ3] | None:
+    def _build_curve(self, segment: TrajectorySegment) -> tuple[Bezier7Curve3D, XYZ3, XYZ3] | None:
         start_pose = self._resolve_keypoint_pose(segment.from_keypoint)
         end_pose = self._resolve_keypoint_pose(segment.to_keypoint)
         if start_pose is None or end_pose is None:
@@ -208,20 +208,6 @@ class TrajectoryBuilderCommon:
             curve = Bezier7Curve3D.linear(start, end)
             direction = XYZ3((end.x - start.x) / 7.0, (end.y - start.y) / 7.0, (end.z - start.z) / 7.0)
             return curve, direction, XYZ3(-direction.x, -direction.y, -direction.z)
-
-        if previous_curve is not None and TrajectoryPassMode.from_value(getattr(segment.from_keypoint, "pass_mode", TrajectoryPassMode.STOP)) == TrajectoryPassMode.FLY_BY:
-            curve = Bezier7Curve3D.c3_continuation(previous_curve, end)
-            out_direction = XYZ3(
-                curve.control_points.p1.x - curve.control_points.p0.x,
-                curve.control_points.p1.y - curve.control_points.p0.y,
-                curve.control_points.p1.z - curve.control_points.p0.z,
-            )
-            in_direction = XYZ3(
-                curve.control_points.p6.x - curve.control_points.p7.x,
-                curve.control_points.p6.y - curve.control_points.p7.y,
-                curve.control_points.p6.z - curve.control_points.p7.z,
-            )
-            return curve, out_direction, in_direction
 
         segment_length = ((end.x - start.x) ** 2 + (end.y - start.y) ** 2 + (end.z - start.z) ** 2) ** 0.5
         out_direction, in_direction = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length)
@@ -245,13 +231,12 @@ class TrajectoryBuilderCommon:
         self,
         segment: TrajectorySegment,
         segment_index: int,
-        previous_curve: Bezier7Curve3D | None,
         entry_speed_mm_s: float,
         exit_speed_mm_s: float,
     ) -> RuntimeSegment | None:
         start_pose = self._resolve_keypoint_pose(segment.from_keypoint)
         end_pose = self._resolve_keypoint_pose(segment.to_keypoint)
-        curve_info = self._build_curve(segment, previous_curve)
+        curve_info = self._build_curve(segment)
         if start_pose is None or end_pose is None or curve_info is None:
             return None
         curve, out_direction, in_direction = curve_info
