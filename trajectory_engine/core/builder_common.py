@@ -279,6 +279,8 @@ class TrajectoryBuilderCommon:
         axis_speed_limits = self.robot_model.get_axis_speed_limits()
         axis_jerk_limits = self.robot_model.get_axis_jerk_limits()
         delta_values = deltas.to_list()
+        if all(abs(delta_values[axis]) <= self._EPS for axis in range(6)):
+            return 0.0
         duration_speed = 0.0
         duration_jerk = 0.0
         for axis in range(6):

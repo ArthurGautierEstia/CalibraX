@@ -230,6 +230,14 @@ class TrajectoryEngineTests(unittest.TestCase):
 
         self.assertAlmostEqual(builder._ptp_duration(segment, delta, 0.100), ptp_jerk_duration_s(90.0, 420.0))
 
+    def test_ptp_duration_is_zero_without_joint_motion(self) -> None:
+        builder = object.__new__(TrajectoryBuilder)
+        builder.robot_model = _PtpDurationRobotModel()
+        segment = TrajectorySegment(TrajectoryKeypoint(), TrajectoryKeypoint(ptp_speed_percent=100.0))
+        delta = JointAngles6(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+        self.assertEqual(builder._ptp_duration(segment, delta, 0.100), 0.0)
+
     def test_ptp_analytic_articular_dynamics_are_valid_at_bounds(self) -> None:
         delta = JointAngles6(90.0, -45.0, 10.0, 0.0, 5.0, -2.5)
         duration_s = 2.0

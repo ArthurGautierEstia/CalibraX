@@ -117,6 +117,10 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
             return result
         delta = self._shortest_joint_delta(from_joints, to_joints)
         duration_s = self._ptp_duration(segment, delta)
+        if duration_s <= self._EPS:
+            result.duration_s = 0.0
+            result.last_time_s = start_time_s
+            return result
         intervals = self._intervals_for_duration(duration_s)
         for step in range(1, intervals + 1):
             if self._is_cancelled():
