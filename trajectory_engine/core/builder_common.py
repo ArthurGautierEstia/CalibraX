@@ -10,7 +10,7 @@ from models.types import JointAngles6, Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 from trajectory_engine.models.pipeline import BuildCancelToken, TrajectoryBuilderBehavior, TrajectorySegment
 from trajectory_engine.arc_length import build_arc_length_lut
-from trajectory_engine.dynamics import build_distance_profile, ptp_duration_s
+from trajectory_engine.dynamics import build_distance_profile, ptp_duration_s, ptp_jerk_duration_s
 from trajectory_engine.geometry import Bezier7Curve3D
 from trajectory_engine.models.trajectory_primitives import DynamicLimits, RuntimeSegment, SegmentSpeedProfile, TrajectoryPassMode
 from utils.mgi import MGI, ConfigurationIdentifier, MgiConfigKey, MgiResult, MgiResultItem
@@ -277,14 +277,19 @@ class TrajectoryBuilderCommon:
     def _ptp_duration(self, segment: TrajectorySegment, deltas: JointAngles6, min_duration_s: float = 0.100) -> float:
         speed_ratio = max(0.0, min(1.0, float(segment.to_keypoint.ptp_speed_percent) / 100.0))
         axis_speed_limits = self.robot_model.get_axis_speed_limits()
+        axis_jerk_limits = self.robot_model.get_axis_jerk_limits()
         delta_values = deltas.to_list()
-        duration = 0.0
+        duration_speed = 0.0
+        duration_jerk = 0.0
         for axis in range(6):
-            limit = float(axis_speed_limits[axis]) * speed_ratio if axis < len(axis_speed_limits) else 0.0
-            if abs(delta_values[axis]) > self._EPS and limit <= self._EPS:
+            delta_abs = abs(delta_values[axis])
+            speed_limit = float(axis_speed_limits[axis]) * speed_ratio if axis < len(axis_speed_limits) else 0.0
+            if delta_abs > self._EPS and speed_limit <= self._EPS:
                 return 0.0
-            duration = max(duration, ptp_duration_s(abs(delta_values[axis]), limit))
-        return max(duration, min_duration_s)
+            jerk_limit = float(axis_jerk_limits[axis]) if axis < len(axis_jerk_limits) else 0.0
+            duration_speed = max(duration_speed, ptp_duration_s(delta_abs, speed_limit))
+            duration_jerk = max(duration_jerk, ptp_jerk_duration_s(delta_abs, jerk_limit))
+        return max(duration_speed, duration_jerk, min_duration_s)
 
     def _dynamic_limits(self, segment: TrajectorySegment) -> DynamicLimits:
         return DynamicLimits(

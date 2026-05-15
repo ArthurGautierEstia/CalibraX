@@ -21,9 +21,11 @@ from trajectory_engine.models.pipeline import (
 )
 from trajectory_engine.core.full_builder import TrajectoryBuilder
 from trajectory_engine.dynamics import (
+    S_CURVE_PEAK_JERK_SCALE,
     S_CURVE_PEAK_SPEED_SCALE,
     SegmentDynamicProfileKind,
     build_distance_profile,
+    ptp_jerk_duration_s,
     ptp_duration_s,
     resolve_segment_dynamic_profile,
 )
@@ -44,6 +46,14 @@ class _CancelToken:
     def is_cancelled(self) -> bool:
         self.calls += 1
         return self.calls > 3
+
+
+class _PtpDurationRobotModel:
+    def get_axis_speed_limits(self) -> list[float]:
+        return [1_000_000.0] * 6
+
+    def get_axis_jerk_limits(self) -> list[float]:
+        return [420.0] * 6
 
 
 class TrajectoryEngineTests(unittest.TestCase):
@@ -208,6 +218,17 @@ class TrajectoryEngineTests(unittest.TestCase):
 
     def test_ptp_duration_uses_degree7_peak_speed_scale(self) -> None:
         self.assertAlmostEqual(ptp_duration_s(100.0, 50.0), 100.0 * S_CURVE_PEAK_SPEED_SCALE / 50.0)
+
+    def test_ptp_jerk_duration_uses_degree7_peak_jerk_scale(self) -> None:
+        self.assertAlmostEqual(ptp_jerk_duration_s(90.0, 420.0), (90.0 * S_CURVE_PEAK_JERK_SCALE / 420.0) ** (1.0 / 3.0))
+
+    def test_ptp_duration_includes_jerk_limit(self) -> None:
+        builder = object.__new__(TrajectoryBuilder)
+        builder.robot_model = _PtpDurationRobotModel()
+        segment = TrajectorySegment(TrajectoryKeypoint(), TrajectoryKeypoint(ptp_speed_percent=100.0))
+        delta = JointAngles6(90.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+        self.assertAlmostEqual(builder._ptp_duration(segment, delta, 0.100), ptp_jerk_duration_s(90.0, 420.0))
 
     def test_ptp_analytic_articular_dynamics_are_valid_at_bounds(self) -> None:
         delta = JointAngles6(90.0, -45.0, 10.0, 0.0, 5.0, -2.5)

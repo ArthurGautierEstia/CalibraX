@@ -12,6 +12,7 @@ from trajectory_engine.models.trajectory_primitives import (
 
 S_CURVE_PEAK_SPEED_SCALE = 2.1875
 S_CURVE_ACCEL_PEAK_SCALE = 2.1875
+S_CURVE_PEAK_JERK_SCALE = 52.5
 S_CURVE_JERK_FROM_VELOCITY_SCALE = 7.5131884044
 _EPS = 1e-9
 
@@ -69,6 +70,14 @@ def ptp_duration_s(delta_abs: float, velocity_limit: float) -> float:
     if velocity_limit <= _EPS:
         return 0.0
     return abs(float(delta_abs)) * S_CURVE_PEAK_SPEED_SCALE / float(velocity_limit)
+
+
+def ptp_jerk_duration_s(delta_abs: float, jerk_limit: float) -> float:
+    if abs(delta_abs) <= _EPS:
+        return 0.0
+    if jerk_limit <= _EPS:
+        return 0.0
+    return (abs(float(delta_abs)) * S_CURVE_PEAK_JERK_SCALE / float(jerk_limit)) ** (1.0 / 3.0)
 
 
 @dataclass(frozen=True)
