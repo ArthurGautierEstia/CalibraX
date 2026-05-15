@@ -86,6 +86,7 @@ class TrajectoryController(QObject):
         self.current_preview = TrajectoryPreviewResult()
         self.current_preview_samples: list[TrajectoryPreviewSample] = []
         self.current_preview_sample_times: list[float] = []
+        self._trajectory_start_joints: JointAngles6 | None = None
         self._trajectory_analysis_pending = False
         self._displayed_keypoints: list[TrajectoryKeypoint] = []
         self._current_time_s = 0.0
@@ -463,12 +464,14 @@ class TrajectoryController(QObject):
             self.current_sample_times = []
             self.current_preview_samples = []
             self.current_preview_sample_times = []
+            self._trajectory_start_joints = None
             self._set_analysis_pending(False)
             self._reset_trajectory_visuals()
             self._update_trajectory_issue_messages()
             return
 
         current_joints = JointAngles6.from_values(self.robot_model.get_joints())
+        self._trajectory_start_joints = current_joints
         if trigger_mode == TrajectoryBuildTriggerMode.LIVE_PREVIEW:
             self._build_bridge.submit(
                 current_joints=current_joints,
@@ -632,7 +635,8 @@ class TrajectoryController(QObject):
             config_timeline.set_time_indicator(None)
             return
 
-        times = self.current_sample_times
+        include_origin = self._should_prepend_graph_origin(self.current_sample_times)
+        times = self._graph_times_with_origin(self.current_sample_times)
         cartesian_samples = self._cartesian_samples_for_display()
         cart_positions = [[sample[0][axis] for sample in cartesian_samples] for axis in range(6)]
         cart_velocities = [[sample[1][axis] for sample in cartesian_samples] for axis in range(6)]
@@ -642,6 +646,16 @@ class TrajectoryController(QObject):
         art_velocities = [[sample.articular_velocity[axis] for sample in self.current_samples] for axis in range(6)]
         art_accelerations = [[sample.articular_acceleration[axis] for sample in self.current_samples] for axis in range(6)]
         art_jerks = [[sample.articular_jerk[axis] for sample in self.current_samples] for axis in range(6)]
+        if include_origin:
+            cart_positions = self._prepend_axis_values(self._initial_graph_pose_for_display(), cart_positions)
+            zero_axis_values = [0.0] * 6
+            cart_velocities = self._prepend_axis_values(zero_axis_values, cart_velocities)
+            cart_accelerations = self._prepend_axis_values(zero_axis_values, cart_accelerations)
+            cart_jerks = self._prepend_axis_values(zero_axis_values, cart_jerks)
+            art_positions = self._prepend_axis_values(self._initial_graph_joints(), art_positions)
+            art_velocities = self._prepend_axis_values(zero_axis_values, art_velocities)
+            art_accelerations = self._prepend_axis_values(zero_axis_values, art_accelerations)
+            art_jerks = self._prepend_axis_values(zero_axis_values, art_jerks)
         key_times = [segment.last_time for segment in self.current_trajectory.segments if segment.last_time > 0.0]
 
         cartesian_panel.set_trajectories(times, cart_positions, cart_velocities, cart_accelerations, cart_jerks)
@@ -662,7 +676,8 @@ class TrajectoryController(QObject):
             config_timeline.set_configuration_data([], [])
             return
 
-        times = self.current_preview_sample_times
+        include_origin = self._should_prepend_graph_origin(self.current_preview_sample_times)
+        times = self._graph_times_with_origin(self.current_preview_sample_times)
         display_frame = self.config_widget.get_cartesian_display_frame()
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         poses: list[list[float]] = []
@@ -675,6 +690,8 @@ class TrajectoryController(QObject):
                 ).to_list()
             )
         cart_positions = [[pose[axis] for pose in poses] for axis in range(6)]
+        if include_origin:
+            cart_positions = self._prepend_axis_values(self._initial_graph_pose_for_display(), cart_positions)
 
         articular_samples = [
             sample for sample in self.current_preview_samples if sample.joints_deg is not None
@@ -684,6 +701,8 @@ class TrajectoryController(QObject):
                 [sample.joints_deg.to_list()[axis] for sample in articular_samples if sample.joints_deg is not None]
                 for axis in range(6)
             ]
+            if include_origin:
+                art_positions = self._prepend_axis_values(self._initial_graph_joints(), art_positions)
             articular_panel.set_trajectories(times, art_positions, empty_series, empty_series, empty_series)
         else:
             articular_panel.set_trajectories([], empty_series, empty_series, empty_series, empty_series)
@@ -745,6 +764,47 @@ class TrajectoryController(QObject):
                 jerk = [float(v) for v in sample.cartesian_jerk[:6]]
             out.append((pose, velocity, acceleration, jerk))
         return out
+
+    @staticmethod
+    def _should_prepend_graph_origin(times_s: list[float]) -> bool:
+        return bool(times_s) and float(times_s[0]) > 1e-9
+
+    @classmethod
+    def _graph_times_with_origin(cls, times_s: list[float]) -> list[float]:
+        times = [float(value) for value in times_s]
+        if not cls._should_prepend_graph_origin(times):
+            return times
+        return [0.0] + times
+
+    @staticmethod
+    def _prepend_axis_values(origin_values: list[float], series_by_axis: list[list[float]]) -> list[list[float]]:
+        return [[float(origin_values[axis])] + series_by_axis[axis] for axis in range(6)]
+
+    def _initial_graph_joints(self) -> list[float]:
+        if self._trajectory_start_joints is not None:
+            return self._trajectory_start_joints.to_list()
+        if self.current_samples:
+            return [float(value) for value in self.current_samples[0].joints[:6]]
+        return [0.0] * 6
+
+    def _initial_graph_pose_for_display(self) -> list[float]:
+        initial_pose = self._initial_graph_pose_base()
+        return convert_pose_from_base_frame(
+            initial_pose,
+            ReferenceFrame.from_value(self.config_widget.get_cartesian_display_frame()),
+            self.workspace_model.get_robot_base_transform_world(),
+        ).to_list()
+
+    def _initial_graph_pose_base(self) -> Pose6:
+        joints = self._initial_graph_joints()
+        fk_result = self.robot_model.compute_fk_joints(joints, tool=self.tool_model.get_tool())
+        if fk_result is not None:
+            return fk_result.dh_pose
+        if self.current_samples:
+            return Pose6(*self.current_samples[0].pose[:6])
+        if self.current_preview_samples:
+            return self.current_preview_samples[0].pose_base
+        return Pose6.zeros()
 
     def _base_path_color_for_mode(self, mode: KeypointMotionMode) -> tuple[float, float, float, float]:
         if mode == KeypointMotionMode.PTP:
