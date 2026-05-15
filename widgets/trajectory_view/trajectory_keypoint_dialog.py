@@ -107,11 +107,15 @@ class TrajectoryKeypointDialog(QDialog):
         self.mode_combo = QComboBox()
         self.pass_mode_combo = QComboBox()
         self.speed_spin = QDoubleSpinBox()
+        self.speed_spin.setKeyboardTracking(False)
         self.speed_unit_label = QLabel("m/s")
         self.speed_unit_label.setMinimumWidth(self.speed_unit_label.sizeHint().width())
         self._ptp_speed_percent = 75.0
         self._linear_speed_mps = 0.5
         self._last_mode = KeypointMotionMode.PTP
+        self._last_preview_speed_mode = KeypointMotionMode.PTP
+        self._last_preview_ptp_speed_percent = self._ptp_speed_percent
+        self._last_preview_linear_speed_mps = self._linear_speed_mps
         self._last_target_type = KeypointTargetType.CARTESIAN
         self._suspend_preview_emission = False
         self._updating_linear_tangent_fields = False
@@ -440,7 +444,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.use_initial_target_btn.clicked.connect(self._on_use_initial_target_clicked)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         self.pass_mode_combo.currentIndexChanged.connect(self._on_pass_mode_changed)
-        self.speed_spin.valueChanged.connect(self._on_speed_changed)
+        self.speed_spin.editingFinished.connect(self._on_speed_changed)
         self.config_policy_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
         self.forced_config_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
         for spin in self.cubic_vector_1:
@@ -1163,11 +1167,24 @@ class TrajectoryKeypointDialog(QDialog):
         self._emit_live_preview()
 
     def _store_current_speed(self) -> None:
+        self.speed_spin.interpretText()
         current = float(self.speed_spin.value())
         if self._last_mode == KeypointMotionMode.PTP:
             self._ptp_speed_percent = self._clamp(current, 0.0, 100.0)
         else:
             self._linear_speed_mps = self._clamp(current, 0.0, 2.0)
+
+    def _remember_preview_speed(self) -> None:
+        self._last_preview_speed_mode = self._last_mode
+        self._last_preview_ptp_speed_percent = self._ptp_speed_percent
+        self._last_preview_linear_speed_mps = self._linear_speed_mps
+
+    def _speed_changed_since_last_preview(self) -> bool:
+        if self._last_preview_speed_mode != self._last_mode:
+            return True
+        if self._last_mode == KeypointMotionMode.PTP:
+            return abs(self._ptp_speed_percent - self._last_preview_ptp_speed_percent) > 1e-9
+        return abs(self._linear_speed_mps - self._last_preview_linear_speed_mps) > 1e-9
 
     def _set_configuration_policy_without_signal(self, policy: ConfigurationPolicy) -> None:
         policy_idx = self.config_policy_combo.findData(policy.value)
@@ -1196,6 +1213,7 @@ class TrajectoryKeypointDialog(QDialog):
             self._on_auto_end_tangent_clicked()
         self._try_minimize_window_size()
         self._emit_ghost_update()
+        self._remember_preview_speed()
 
     def _on_pass_mode_changed(self, _idx: int) -> None:
         self._emit_live_preview()
@@ -1254,6 +1272,10 @@ class TrajectoryKeypointDialog(QDialog):
         self._emit_ghost_update()
 
     def _on_speed_changed(self, *_args) -> None:
+        self._store_current_speed()
+        if not self._speed_changed_since_last_preview():
+            return
+        self._remember_preview_speed()
         self._emit_live_preview()
 
     def _on_cubic_vectors_changed(self, *_args) -> None:
@@ -1444,6 +1466,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._refresh_cartesian_solutions_table()
         self._try_minimize_window_size()
         self._suspend_preview_emission = False
+        self._remember_preview_speed()
         self._emit_ghost_update()
         self._update_context_status_labels()
 

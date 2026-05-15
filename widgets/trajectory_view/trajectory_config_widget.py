@@ -105,11 +105,13 @@ class TrajectoryConfigWidget(QWidget):
         self.cartesian_accel_spin.setDecimals(1)
         self.cartesian_accel_spin.setSingleStep(100.0)
         self.cartesian_accel_spin.setValue(1000.0)
+        self.cartesian_accel_spin.setKeyboardTracking(False)
         self.cartesian_accel_spin.setSuffix(" mm/s2")
         self.cartesian_jerk_spin.setRange(1.0, 100_000_000.0)
         self.cartesian_jerk_spin.setDecimals(1)
         self.cartesian_jerk_spin.setSingleStep(1000.0)
         self.cartesian_jerk_spin.setValue(10000.0)
+        self.cartesian_jerk_spin.setKeyboardTracking(False)
         self.cartesian_jerk_spin.setSuffix(" mm/s3")
 
         self._keypoints: list[TrajectoryKeypoint] = []
@@ -118,6 +120,8 @@ class TrajectoryConfigWidget(QWidget):
         self._active_dialog_row: int | None = None
         self._is_editing_active = False
         self._trajectory_context: TrajectoryResult | None = None
+        self._last_emitted_cartesian_accel_limit_mm_s2 = self.get_cartesian_accel_limit_mm_s2()
+        self._last_emitted_cartesian_jerk_limit_mm_s3 = self.get_cartesian_jerk_limit_mm_s3()
 
         self._setup_ui()
         self._setup_connections()
@@ -190,8 +194,8 @@ class TrajectoryConfigWidget(QWidget):
         self.btn_export.clicked.connect(self._on_export_clicked)
         self.cb_smooth_time.toggled.connect(self._on_time_smoothing_toggled)
         self.cb_check_jerk.toggled.connect(self._on_jerk_check_toggled)
-        self.cartesian_accel_spin.valueChanged.connect(self._on_cartesian_dynamics_changed)
-        self.cartesian_jerk_spin.valueChanged.connect(self._on_cartesian_dynamics_changed)
+        self.cartesian_accel_spin.editingFinished.connect(self._on_cartesian_dynamics_editing_finished)
+        self.cartesian_jerk_spin.editingFinished.connect(self._on_cartesian_dynamics_editing_finished)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
@@ -217,7 +221,20 @@ class TrajectoryConfigWidget(QWidget):
     def _on_jerk_check_toggled(self, checked: bool) -> None:
         self.jerkCheckChanged.emit(bool(checked))
 
-    def _on_cartesian_dynamics_changed(self, _value: float) -> None:
+    def _remember_cartesian_dynamic_limits(self) -> None:
+        self._last_emitted_cartesian_accel_limit_mm_s2 = self.get_cartesian_accel_limit_mm_s2()
+        self._last_emitted_cartesian_jerk_limit_mm_s3 = self.get_cartesian_jerk_limit_mm_s3()
+
+    def _cartesian_dynamic_limits_changed_since_last_emit(self) -> bool:
+        return (
+            abs(self.get_cartesian_accel_limit_mm_s2() - self._last_emitted_cartesian_accel_limit_mm_s2) > 1e-9
+            or abs(self.get_cartesian_jerk_limit_mm_s3() - self._last_emitted_cartesian_jerk_limit_mm_s3) > 1e-9
+        )
+
+    def _on_cartesian_dynamics_editing_finished(self) -> None:
+        if not self._cartesian_dynamic_limits_changed_since_last_emit():
+            return
+        self._remember_cartesian_dynamic_limits()
         self.cartesianDynamicsChanged.emit()
 
     def _on_cartesian_display_frame_changed(self, _index: int) -> None:
@@ -268,6 +285,7 @@ class TrajectoryConfigWidget(QWidget):
         self.cartesian_jerk_spin.setValue(max(1.0, float(jerk_limit_mm_s3)))
         self.cartesian_accel_spin.blockSignals(False)
         self.cartesian_jerk_spin.blockSignals(False)
+        self._remember_cartesian_dynamic_limits()
         if emit_signal:
             self.cartesianDynamicsChanged.emit()
 
