@@ -32,6 +32,8 @@ class MainController(QObject):
         workspace_model: WorkspaceModel,
         main_window: MainWindow,
         startup_options: dict | None = None,
+        trajectory_benchmark_verbose: bool = False,
+        validity_pool_size: int = 1,
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -92,6 +94,8 @@ class MainController(QObject):
             workspace_model,
             main_window.get_trajectory_view(),
             self.viewer3d_controller,
+            trajectory_benchmark_verbose=trajectory_benchmark_verbose,
+            validity_pool_size=validity_pool_size,
         )
         self.program_controller = ProgramController(
             robot_model,

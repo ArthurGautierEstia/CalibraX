@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from trajectory_engine.core.full_builder import TrajectoryBuilder
@@ -16,6 +18,7 @@ class FullTrajectoryWorker(QObject):
     completed = pyqtSignal(int, object)
     cancelled = pyqtSignal(int)
     failed = pyqtSignal(int, str)
+    benchmark_finished = pyqtSignal(int, str, float)
 
     def __init__(self, builder: TrajectoryBuilder, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -25,6 +28,8 @@ class FullTrajectoryWorker(QObject):
     def process(self, request: object, cancel_token: object) -> None:
         if not isinstance(request, TrajectoryBuildRequest) or not isinstance(cancel_token, BuildCancelToken):
             return
+        start_s = time.perf_counter()
+        status = "failed"
         try:
             self._builder.set_cancel_token(cancel_token)
             self._builder.set_jerk_check_enabled(request.jerk_check_enabled)
@@ -34,11 +39,15 @@ class FullTrajectoryWorker(QObject):
             )
 
             if cancel_token.is_cancelled():
+                status = "cancelled"
+                self.benchmark_finished.emit(request.revision_id, status, time.perf_counter() - start_s)
                 self.cancelled.emit(request.revision_id)
                 return
 
             if not request.keypoints:
                 result = TrajectoryResult(build_status=BuildStatus.COMPLETED, revision_id=request.revision_id)
+                status = "completed"
+                self.benchmark_finished.emit(request.revision_id, status, time.perf_counter() - start_s)
                 self.completed.emit(request.revision_id, result)
                 return
 
@@ -63,10 +72,15 @@ class FullTrajectoryWorker(QObject):
                 result.revision_id = request.revision_id
 
             if cancel_token.is_cancelled() or result.build_status == BuildStatus.CANCELLED:
+                status = "cancelled"
+                self.benchmark_finished.emit(request.revision_id, status, time.perf_counter() - start_s)
                 self.cancelled.emit(request.revision_id)
                 return
+            status = "completed"
+            self.benchmark_finished.emit(request.revision_id, status, time.perf_counter() - start_s)
             self.completed.emit(request.revision_id, result)
         except Exception as exc:
+            self.benchmark_finished.emit(request.revision_id, status, time.perf_counter() - start_s)
             self.failed.emit(request.revision_id, str(exc))
         finally:
             self._builder.set_cancel_token(None)

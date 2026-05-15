@@ -55,6 +55,8 @@ class CalibraxApplication:
             self.workspace_model,
             self.main_window,
             startup_options=startup_options,
+            trajectory_benchmark_verbose=True,
+            validity_pool_size=1,
         )
 
         self.app.aboutToQuit.connect(self.main_controller.shutdown)

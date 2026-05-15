@@ -15,6 +15,8 @@ class _WorkerDispatchProxy(QObject):
 class ValidityAnalyzerManager(QObject):
     result_ready = pyqtSignal(int, object)
     task_failed = pyqtSignal(int, int, str)
+    task_started = pyqtSignal(int, int, int, float)
+    task_finished = pyqtSignal(int, int, int, str, float, float)
 
     def __init__(self, pool_size: int = 1, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -28,19 +30,24 @@ class ValidityAnalyzerManager(QObject):
         self._next_worker_index = 0
         self._shutdown_requested = False
 
-        for _index in range(self._pool_size):
+        for worker_index in range(self._pool_size):
             thread = QThread(self)
-            worker = ValidityWorker()
+            worker = ValidityWorker(worker_index)
             dispatcher = _WorkerDispatchProxy(self)
             worker.moveToThread(thread)
             dispatcher.dispatch.connect(worker.process)
             worker.completed.connect(self._on_worker_completed)
             worker.cancelled.connect(self._on_worker_cancelled)
             worker.failed.connect(self._on_worker_failed)
+            worker.task_started.connect(self.task_started.emit)
+            worker.task_finished.connect(self.task_finished.emit)
             thread.start()
             self._threads.append(thread)
             self._workers.append(worker)
             self._dispatchers.append(dispatcher)
+
+    def pool_size(self) -> int:
+        return self._pool_size
 
     def submit_task(self, task: ValidationTask) -> None:
         if self._shutdown_requested:

@@ -54,6 +54,8 @@ class TrajectoryController(QObject):
         workspace_model: WorkspaceModel,
         trajectory_view: TrajectoryView,
         viewer3d_controller: Viewer3DController,
+        trajectory_benchmark_verbose: bool = False,
+        validity_pool_size: int = 1,
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -73,7 +75,8 @@ class TrajectoryController(QObject):
             tool_model=self.tool_model,
             workspace_model=self.workspace_model,
             debounce_ms=120,
-            validity_pool_size=1,
+            validity_pool_size=validity_pool_size,
+            verbose_logging=trajectory_benchmark_verbose,
             parent=self,
         )
         self._build_bridge = TrajectoryControllerBuildBridge(
@@ -111,6 +114,9 @@ class TrajectoryController(QObject):
     def shutdown(self) -> None:
         self._stop_playback()
         self._build_bridge.shutdown()
+
+    def set_trajectory_benchmark_logging(self, enabled: bool) -> None:
+        self._build_manager.set_verbose_logging(enabled)
 
     def _setup_connections(self) -> None:
         self.config_widget.showRobotGhostRequested.connect(self._on_show_robot_ghost_requested)
