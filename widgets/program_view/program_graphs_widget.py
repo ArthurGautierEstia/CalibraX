@@ -51,8 +51,8 @@ class ProgramGraphsWidget(QWidget):
     ) -> None:
         if not self.is_error_graph_visible():
             return
-        self._measured_curve.setData(abscissa_mm, measured_error_y_mm)
-        self._compensated_curve.setData(abscissa_mm, compensated_error_y_mm)
+        self._measured_curve.setData(abscissa_mm if measured_error_y_mm else [], measured_error_y_mm)
+        self._compensated_curve.setData(abscissa_mm if compensated_error_y_mm else [], compensated_error_y_mm)
 
     def clear(self) -> None:
         self._measured_curve.setData([], [])

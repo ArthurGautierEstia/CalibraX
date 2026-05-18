@@ -98,10 +98,7 @@ class ProgramSimulator:
             if pose is not None:
                 compensated_xyz_points.append(self._pose_xyz(pose))
 
-        if not compensated_xyz_points:
-            return [], [], []
-
-        compensated_progresses = self._progresses_from_xyz(compensated_xyz_points)
+        compensated_progresses = self._progresses_from_xyz(compensated_xyz_points) if compensated_xyz_points else []
 
         abscissa_mm: list[float] = []
         measured_error_y_mm: list[float] = []
@@ -110,12 +107,13 @@ class ProgramSimulator:
         for nominal_xyz_point, progress, measured_xyz in zip(nominal_xyz, nominal_progresses, measured_xyz_list):
             abscissa_mm.append(progress * total_length_mm)
             measured_error_y_mm.append(float(measured_xyz[1]) - float(nominal_xyz_point[1]))
-            compensated_xyz = self._interpolate_path_xyz(
-                (compensated_progresses, compensated_xyz_points), progress
-            )
-            compensated_error_y_mm.append(
-                0.0 if compensated_xyz is None else float(compensated_xyz[1]) - float(nominal_xyz_point[1])
-            )
+            if compensated_xyz_points:
+                compensated_xyz = self._interpolate_path_xyz(
+                    (compensated_progresses, compensated_xyz_points), progress
+                )
+                compensated_error_y_mm.append(
+                    0.0 if compensated_xyz is None else float(compensated_xyz[1]) - float(nominal_xyz_point[1])
+                )
         return abscissa_mm, measured_error_y_mm, compensated_error_y_mm
 
     def _simulate_motion_list(self, motions: list[RobotProgramMotion]) -> list[ProgramSimulationSample]:

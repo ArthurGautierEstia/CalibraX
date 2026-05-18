@@ -15,7 +15,7 @@ class ProgramActionsWidget(QWidget):
     restart_requested = pyqtSignal()
     time_value_changed = pyqtSignal(float)
     clear_requested = pyqtSignal()
-    
+    trajectory_visibility_changed = pyqtSignal()
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
@@ -28,6 +28,13 @@ class ProgramActionsWidget(QWidget):
         self.btn_stop = QPushButton("Stop")
         self.btn_restart = QPushButton("Restart")
         self.btn_compute_compensation = QPushButton("Calculer compensation")
+        self.cb_show_theoretical = QCheckBox("Afficher theorique")
+        self.cb_show_measured = QCheckBox("Afficher reelle")
+        self.cb_show_compensated = QCheckBox("Afficher compensee")
+        self.cb_show_theoretical.setChecked(True)
+        self.cb_show_measured.setChecked(False)
+        self.cb_show_compensated.setChecked(False)
+        self.cb_show_compensated.setEnabled(False)
         self.time_slider = QSlider(Qt.Orientation.Horizontal)
         self.time_label = QLabel("Temps : 0.00 s")
         self.status_label = QLabel("")
@@ -49,6 +56,13 @@ class ProgramActionsWidget(QWidget):
         row_buttons.addStretch()
         layout.addLayout(row_buttons)
 
+        row_visibility = QHBoxLayout()
+        row_visibility.addWidget(self.cb_show_theoretical)
+        row_visibility.addWidget(self.cb_show_measured)
+        row_visibility.addWidget(self.cb_show_compensated)
+        row_visibility.addStretch()
+        layout.addLayout(row_visibility)
+
         row_timeline = QHBoxLayout()
         self.time_slider.setRange(0, 1000)
         self.time_slider.setValue(0)
@@ -68,6 +82,9 @@ class ProgramActionsWidget(QWidget):
         self.btn_stop.clicked.connect(self.stop_requested.emit)
         self.btn_restart.clicked.connect(self.restart_requested.emit)
         self.btn_compute_compensation.clicked.connect(self.compute_compensation_requested.emit)
+        self.cb_show_theoretical.stateChanged.connect(lambda _: self.trajectory_visibility_changed.emit())
+        self.cb_show_measured.stateChanged.connect(lambda _: self.trajectory_visibility_changed.emit())
+        self.cb_show_compensated.stateChanged.connect(lambda _: self.trajectory_visibility_changed.emit())
         self.time_slider.valueChanged.connect(self._on_slider_changed)
 
     def _on_slider_changed(self, value: int) -> None:
@@ -113,3 +130,20 @@ class ProgramActionsWidget(QWidget):
     def set_compensation_enabled(self, enabled: bool) -> None:
         """Active/desactive le bouton de calcul de compensation."""
         self.btn_compute_compensation.setEnabled(enabled)
+
+    def is_theoretical_visible(self) -> bool:
+        return self.cb_show_theoretical.isChecked()
+
+    def is_measured_visible(self) -> bool:
+        return self.cb_show_measured.isChecked()
+
+    def is_compensated_visible(self) -> bool:
+        return self.cb_show_compensated.isChecked()
+
+    def set_compensated_checkbox_enabled(self, enabled: bool) -> None:
+        """Active/desactive la checkbox compensee. La decoche si on la desactive."""
+        if not enabled:
+            self.cb_show_compensated.blockSignals(True)
+            self.cb_show_compensated.setChecked(False)
+            self.cb_show_compensated.blockSignals(False)
+        self.cb_show_compensated.setEnabled(enabled)

@@ -155,6 +155,7 @@ class ProgramController:
         self.actions_widget.restart_requested.connect(self._on_restart_requested)
         self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
         self.actions_widget.clear_requested.connect(self._on_clear_requested)
+        self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
@@ -246,6 +247,7 @@ class ProgramController:
             self._articular_program = None
             self._cartesian_program = None
             self._compensation_computed = False
+            self.actions_widget.set_compensated_checkbox_enabled(False)
             self.current_result = None
             self._display_keypoints = []
             self._display_keypoint_tools = []
@@ -298,6 +300,7 @@ class ProgramController:
         self._compensated_cartesian_result = None
         self._compensated_articular_result = None
         self._compensation_computed = False
+        self.actions_widget.set_compensated_checkbox_enabled(False)
 
         # Definition mode par defaut
         default_motion_mode = program_type
@@ -465,10 +468,12 @@ class ProgramController:
             return
 
         segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
-        segments.extend(self._nominal_segments_cache)
-        segments.extend(self._measured_segments_cache)
+        if self.actions_widget.is_theoretical_visible():
+            segments.extend(self._nominal_segments_cache)
+        if self.actions_widget.is_measured_visible():
+            segments.extend(self._measured_segments_cache)
 
-        if self.config_widget.get_target_mode() == "COMPENSATED":
+        if self.config_widget.get_target_mode() == "COMPENSATED" and self.actions_widget.is_compensated_visible():
             self._ensure_compensation_result()
             segments.extend(self._compensated_segments_cache)
 
@@ -522,12 +527,18 @@ class ProgramController:
 
         motion_mode = self.config_widget.get_motion_mode()
         nominal_samples = self._get_samples_for_modes("THEORETICAL", motion_mode)
-        compensated_samples = self._get_samples_for_modes("COMPENSATED", motion_mode) if self._compensation_computed else []
+        compensated_samples = (
+            self._get_samples_for_modes("COMPENSATED", motion_mode)
+            if self._compensation_computed and self.actions_widget.is_compensated_visible()
+            else []
+        )
 
         abscissa_mm, measured_error_y_mm, compensated_error_y_mm = self.program_simulator.build_error_curves(
             nominal_samples,
             compensated_samples,
         )
+        if not self.actions_widget.is_measured_visible():
+            measured_error_y_mm = []
         self.graphs_widget.set_error_curves(abscissa_mm, measured_error_y_mm, compensated_error_y_mm)
 
 
@@ -1505,6 +1516,7 @@ class ProgramController:
 
         # Rafraichir uniquement ce qui depend de target_mode
         self._refresh_status()
+        self._refresh_keypoint_table()
         self._refresh_viewer_segments()
         self._refresh_error_graph()
         self._refresh_timeline()
@@ -1515,8 +1527,9 @@ class ProgramController:
             return
 
         self._compute_compensation()
-        self.actions_widget.set_compensation_enabled(True)
-        self.config_widget.set_target_mode_enabled(True)
+        if self._compensation_computed:
+            self.config_widget.set_target_mode_enabled(True)
+            self.actions_widget.set_compensated_checkbox_enabled(True)
 
         # Rafraichir pour afficher la compensation
         motion_mode = self.config_widget.get_motion_mode()
