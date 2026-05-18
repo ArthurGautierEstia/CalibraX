@@ -119,6 +119,8 @@ class ProgramController:
         # NOUVEAU : Programmes convertis
         self._articular_program: RobotProgram | None = None
         self._cartesian_program: RobotProgram | None = None
+        self._compensated_cartesian_program: RobotProgram | None = None
+        self._compensated_articular_program: RobotProgram | None = None
 
         # NOUVEAU : Flag de calcul de compensation
         self._compensation_computed: bool = False
@@ -156,6 +158,7 @@ class ProgramController:
         self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
         self.actions_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
+        self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
@@ -246,6 +249,8 @@ class ProgramController:
             self._compensated_articular_result = None
             self._articular_program = None
             self._cartesian_program = None
+            self._compensated_cartesian_program = None
+            self._compensated_articular_program = None
             self._compensation_computed = False
             self.actions_widget.set_compensated_checkbox_enabled(False)
             self.current_result = None
@@ -299,6 +304,8 @@ class ProgramController:
         # Reinitialisation compensation
         self._compensated_cartesian_result = None
         self._compensated_articular_result = None
+        self._compensated_cartesian_program = None
+        self._compensated_articular_program = None
         self._compensation_computed = False
         self.actions_widget.set_compensated_checkbox_enabled(False)
 
@@ -329,7 +336,7 @@ class ProgramController:
         # Set UI defaults
         self.config_widget.set_motion_mode(default_motion_mode, emit_signal=False)
         self.config_widget.set_target_mode("THEORETICAL", emit_signal=False)
-        self.actions_widget.set_compensation_enabled(False)
+        self.actions_widget.set_compensation_enabled(True)
 
         self._refresh_view()
 
@@ -473,7 +480,7 @@ class ProgramController:
         if self.actions_widget.is_measured_visible():
             segments.extend(self._measured_segments_cache)
 
-        if self.config_widget.get_target_mode() == "COMPENSATED" and self.actions_widget.is_compensated_visible():
+        if self._compensation_computed and self.actions_widget.is_compensated_visible():
             self._ensure_compensation_result()
             segments.extend(self._compensated_segments_cache)
 
@@ -1395,19 +1402,21 @@ class ProgramController:
             cartesian_prog, ProgramCompensationOutputMode.CARTESIAN, measured_dh
         )
         if cartesian_comp_program:
+            self._compensated_cartesian_program = cartesian_comp_program
             self._compensated_cartesian_result = self.program_simulator.simulate_program(
                 cartesian_comp_program, include_compensation=False
             )
 
         # Calcul compensation articulaire
-        if self._articular_program:
-            articular_comp_program = self.program_simulator._build_compensated_program(
-                self._articular_program, ProgramCompensationOutputMode.ARTICULAR, measured_dh
+        articular_prog = self._articular_program or self.current_program
+        articular_comp_program = self.program_simulator._build_compensated_program(
+            articular_prog, ProgramCompensationOutputMode.ARTICULAR, measured_dh
+        )
+        if articular_comp_program:
+            self._compensated_articular_program = articular_comp_program
+            self._compensated_articular_result = self.program_simulator.simulate_program(
+                articular_comp_program, include_compensation=False
             )
-            if articular_comp_program:
-                self._compensated_articular_result = self.program_simulator.simulate_program(
-                    articular_comp_program, include_compensation=False
-                )
 
         self._compensation_computed = True
 
@@ -1475,9 +1484,9 @@ class ProgramController:
         target_mode = self.config_widget.get_target_mode()
         self._update_current_result_from_modes(target_mode, motion_mode)
 
-        # Rebuild display keypoints selon le nouveau mode
+        # Rebuild display keypoints selon le nouveau mode et le target mode courant
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
-            self._build_display_keypoints_for_mode(motion_mode)
+            self._build_display_keypoints_for_mode(motion_mode, target_mode)
         )
 
         # Mise a jour des caches
@@ -1507,12 +1516,10 @@ class ProgramController:
         motion_mode = self.config_widget.get_motion_mode()
         self._update_current_result_from_modes(target_mode, motion_mode)
 
-        # Mise a jour des caches de segments
-        self._compensated_segments_cache = self._build_segments(
-            self._get_samples_for_modes("COMPENSATED", motion_mode),
-            self.COMPENSATED_PATH_COLORS,
-            "measured",
-        ) if self._compensation_computed and target_mode == "COMPENSATED" else []
+        # Rebuild keypoints selon le nouveau target_mode (theorique vs compense)
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
+            self._build_display_keypoints_for_mode(motion_mode, target_mode)
+        )
 
         # Rafraichir uniquement ce qui depend de target_mode
         self._refresh_status()
@@ -1541,9 +1548,18 @@ class ProgramController:
         self._refresh_viewer_segments()
         self._refresh_error_graph()
 
-    def _build_display_keypoints_for_mode(self, motion_mode: str) -> tuple[list[TrajectoryKeypoint], list[RobotTool], list[_ProgramTargetRef]]:
+    def _get_program_for_target_and_motion_mode(self, target_mode: str, motion_mode: str) -> RobotProgram | None:
+        """Retourne le programme selon target_mode et motion_mode."""
+        if target_mode == "COMPENSATED" and self._compensation_computed:
+            if motion_mode == "ARTICULAR":
+                return self._compensated_articular_program or self._compensated_cartesian_program
+            return self._compensated_cartesian_program or self._compensated_articular_program
+        return self._get_program_for_mode(motion_mode)
+
+    def _build_display_keypoints_for_mode(self, motion_mode: str, target_mode: str | None = None) -> tuple[list[TrajectoryKeypoint], list[RobotTool], list[_ProgramTargetRef]]:
         """Build keypoints pour un mode specifique."""
-        program = self._get_program_for_mode(motion_mode)
+        resolved_target_mode = target_mode or self.config_widget.get_target_mode()
+        program = self._get_program_for_target_and_motion_mode(resolved_target_mode, motion_mode)
         if program is None:
             return [], [], []
 

@@ -92,13 +92,18 @@ class ProgramSimulator:
 
         measured_xyz_list = [self._pose_xyz(sample.measured_pose_base) for sample in nominal_ok]
 
-        compensated_xyz_points = []
+        # Paramètrisation arc length des samples compensés en espace nominal DH (même espace que nominal),
+        # mais position réelle pour l'erreur en espace measured DH.
+        comp_nominal_xyz: list[list[float]] = []
+        comp_actual_xyz: list[list[float]] = []
         for sample in compensated_samples:
-            pose = sample.measured_pose_base if sample.measured_pose_base is not None else sample.nominal_pose_base
-            if pose is not None:
-                compensated_xyz_points.append(self._pose_xyz(pose))
+            if sample.nominal_pose_base is None:
+                continue
+            comp_nominal_xyz.append(self._pose_xyz(sample.nominal_pose_base))
+            actual_pose = sample.measured_pose_base if sample.measured_pose_base is not None else sample.nominal_pose_base
+            comp_actual_xyz.append(self._pose_xyz(actual_pose))
 
-        compensated_progresses = self._progresses_from_xyz(compensated_xyz_points) if compensated_xyz_points else []
+        compensated_progresses = self._progresses_from_xyz(comp_nominal_xyz) if comp_nominal_xyz else []
 
         abscissa_mm: list[float] = []
         measured_error_y_mm: list[float] = []
@@ -107,9 +112,9 @@ class ProgramSimulator:
         for nominal_xyz_point, progress, measured_xyz in zip(nominal_xyz, nominal_progresses, measured_xyz_list):
             abscissa_mm.append(progress * total_length_mm)
             measured_error_y_mm.append(float(measured_xyz[1]) - float(nominal_xyz_point[1]))
-            if compensated_xyz_points:
+            if comp_actual_xyz:
                 compensated_xyz = self._interpolate_path_xyz(
-                    (compensated_progresses, compensated_xyz_points), progress
+                    (compensated_progresses, comp_actual_xyz), progress
                 )
                 compensated_error_y_mm.append(
                     0.0 if compensated_xyz is None else float(compensated_xyz[1]) - float(nominal_xyz_point[1])
