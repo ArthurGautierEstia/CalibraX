@@ -2,7 +2,6 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from models.robot_program import ProgramCompensationOutputMode
-from models.reference_frame import ReferenceFrame
 
 
 class ProgramActionsWidget(QWidget):
@@ -27,10 +26,6 @@ class ProgramActionsWidget(QWidget):
         self.btn_pause = QPushButton("Pause")
         self.btn_stop = QPushButton("Stop")
         self.btn_restart = QPushButton("Restart")
-        self.cartesian_display_frame_combo = QComboBox()
-        self.tool_source_combo = QComboBox()
-        self.target_mode_combo = QComboBox()
-        self.motion_mode_combo = QComboBox()
         self.time_slider = QSlider(Qt.Orientation.Horizontal)
         self.time_label = QLabel("Temps : 0.00 s")
         self.status_label = QLabel("")
@@ -51,33 +46,6 @@ class ProgramActionsWidget(QWidget):
         row_buttons.addStretch()
         layout.addLayout(row_buttons)
 
-        row_options = QHBoxLayout()
-        # Base selector
-        row_options.addWidget(QLabel("Base"))
-        self.cartesian_display_frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
-        self.cartesian_display_frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
-        row_options.addWidget(self.cartesian_display_frame_combo)
-        row_options.addSpacing(12)
-        # Tool selector
-        row_options.addWidget(QLabel("Tool"))
-        self.tool_source_combo.addItem("Tool robot", "ROBOT")
-        self.tool_source_combo.addItem("Tool programme", "PROGRAM")
-        row_options.addWidget(self.tool_source_combo)
-        row_options.addSpacing(12)
-        # Target mode selector (Theoretical/Compensated)
-        row_options.addWidget(QLabel("Cibles"))
-        self.target_mode_combo.addItem("Theorique", "THEORETICAL")
-        self.target_mode_combo.addItem("Compense", "COMPENSATED")
-        row_options.addWidget(self.target_mode_combo)
-        row_options.addSpacing(12)
-        # Motion mode selector (Cartesian/Articular)
-        row_options.addWidget(QLabel("Mode"))
-        self.motion_mode_combo.addItem("Cartesien", ProgramCompensationOutputMode.CARTESIAN.value)
-        self.motion_mode_combo.addItem("Articulaire", ProgramCompensationOutputMode.ARTICULAR.value)
-        row_options.addWidget(self.motion_mode_combo)
-        row_options.addStretch()
-        layout.addLayout(row_options)
-
         row_timeline = QHBoxLayout()
         self.time_slider.setRange(0, 1000)
         self.time_slider.setValue(0)
@@ -96,8 +64,6 @@ class ProgramActionsWidget(QWidget):
         self.btn_pause.clicked.connect(self.pause_requested.emit)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
         self.btn_restart.clicked.connect(self.restart_requested.emit)
-        self.target_mode_combo.currentIndexChanged.connect(self.display_options_changed.emit)
-        self.motion_mode_combo.currentIndexChanged.connect(self.display_options_changed.emit)
         self.time_slider.valueChanged.connect(self._on_slider_changed)
 
     def _on_slider_changed(self, value: int) -> None:
@@ -106,14 +72,10 @@ class ProgramActionsWidget(QWidget):
         self.time_value_changed.emit(time_value)
 
     def selected_output_mode(self) -> ProgramCompensationOutputMode:
-        raw_value = self.motion_mode_combo.currentData()
-        try:
-            return ProgramCompensationOutputMode(str(raw_value))
-        except ValueError:
-            return ProgramCompensationOutputMode.CARTESIAN
+        return ProgramCompensationOutputMode.CARTESIAN
 
     def is_compensated_display(self) -> bool:
-        return self.target_mode_combo.currentData() == "COMPENSATED"
+        return False
 
     def set_status_text(self, text: str) -> None:
         self.status_label.setText(text)

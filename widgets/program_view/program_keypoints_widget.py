@@ -43,6 +43,8 @@ class ProgramKeypointsWidget(QWidget):
     cartesianDisplayFrameChanged = pyqtSignal(str)
     edit_requested = pyqtSignal(int)
     toolSourceChanged = pyqtSignal(str)
+    targetModeChanged = pyqtSignal(str)
+    motionModeChanged = pyqtSignal(str)
 
     def __init__(
         self,
@@ -61,6 +63,8 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_go_to = QPushButton("Aller à")
         self.cartesian_display_frame_combo = QComboBox()
         self.tool_source_combo = QComboBox()
+        self.target_mode_combo = QComboBox()
+        self.motion_mode_combo = QComboBox()
 
         self._keypoints: list[TrajectoryKeypoint] = []
         self._current_tool_source = "ROBOT"  # ROBOT or PROGRAM
@@ -78,23 +82,38 @@ class ProgramKeypointsWidget(QWidget):
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(title)
 
-        # Ligne 1: Sélecteur de base
-        base_row = QHBoxLayout()
-        base_row.addWidget(QLabel("Base"))
+        # Ligne unique avec les 4 sélecteurs : Base, Tool, Cibles, Mode
+        selectors_row = QHBoxLayout()
+        
+        # Sélecteur Base
+        selectors_row.addWidget(QLabel("Base"))
         self.cartesian_display_frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
         self.cartesian_display_frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
-        base_row.addWidget(self.cartesian_display_frame_combo)
-        base_row.addStretch()
-        layout.addLayout(base_row)
-
-        # Ligne 2: Sélecteur de tool
-        tool_row = QHBoxLayout()
-        tool_row.addWidget(QLabel("Tool"))
+        selectors_row.addWidget(self.cartesian_display_frame_combo)
+        selectors_row.addSpacing(12)
+        
+        # Sélecteur Tool
+        selectors_row.addWidget(QLabel("Tool"))
         self.tool_source_combo.addItem("Tool robot", "ROBOT")
         self.tool_source_combo.addItem("Tool programme", "PROGRAM")
-        tool_row.addWidget(self.tool_source_combo)
-        tool_row.addStretch()
-        layout.addLayout(tool_row)
+        selectors_row.addWidget(self.tool_source_combo)
+        selectors_row.addSpacing(12)
+        
+        # Sélecteur Cibles (Theorique/Compense)
+        selectors_row.addWidget(QLabel("Cibles"))
+        self.target_mode_combo.addItem("Theorique", "THEORETICAL")
+        self.target_mode_combo.addItem("Compense", "COMPENSATED")
+        selectors_row.addWidget(self.target_mode_combo)
+        selectors_row.addSpacing(12)
+        
+        # Sélecteur Mode (Cartesien/Articulaire)
+        selectors_row.addWidget(QLabel("Mode"))
+        self.motion_mode_combo.addItem("Cartesien", "CARTESIAN")
+        self.motion_mode_combo.addItem("Articulaire", "ARTICULAR")
+        selectors_row.addWidget(self.motion_mode_combo)
+        selectors_row.addStretch()
+        
+        layout.addLayout(selectors_row)
 
         self.keypoints_table.setHorizontalHeaderLabels([
             "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
@@ -125,6 +144,8 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_go_to.clicked.connect(self._on_go_to_clicked)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.tool_source_combo.currentIndexChanged.connect(self._on_tool_source_changed)
+        self.target_mode_combo.currentIndexChanged.connect(self._on_target_mode_changed)
+        self.motion_mode_combo.currentIndexChanged.connect(self._on_motion_mode_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
 
@@ -147,6 +168,12 @@ class ProgramKeypointsWidget(QWidget):
     def _on_tool_source_changed(self, _index: int) -> None:
         self._current_tool_source = self.tool_source_combo.currentData()
         self.toolSourceChanged.emit(self._current_tool_source)
+
+    def _on_target_mode_changed(self, _index: int) -> None:
+        self.targetModeChanged.emit(self.get_target_mode())
+
+    def _on_motion_mode_changed(self, _index: int) -> None:
+        self.motionModeChanged.emit(self.get_motion_mode())
 
     def get_cartesian_display_frame(self) -> str:
         return ReferenceFrame.from_value(self.cartesian_display_frame_combo.currentData()).value
@@ -177,6 +204,36 @@ class ProgramKeypointsWidget(QWidget):
         self._current_tool_source = tool_source
         if emit_signal:
             self.toolSourceChanged.emit(tool_source)
+
+    def get_target_mode(self) -> str:
+        """Retourne le mode de cibles sélectionné (THEORETICAL ou COMPENSATED)."""
+        return self.target_mode_combo.currentData()
+
+    def set_target_mode(self, target_mode: str, emit_signal: bool = False) -> None:
+        """Définir le mode de cibles (THEORETICAL ou COMPENSATED)."""
+        index = self.target_mode_combo.findData(target_mode)
+        if index < 0:
+            return
+        self.target_mode_combo.blockSignals(True)
+        self.target_mode_combo.setCurrentIndex(index)
+        self.target_mode_combo.blockSignals(False)
+        if emit_signal:
+            self.targetModeChanged.emit(target_mode)
+
+    def get_motion_mode(self) -> str:
+        """Retourne le mode de mouvement sélectionné (CARTESIAN ou ARTICULAR)."""
+        return self.motion_mode_combo.currentData()
+
+    def set_motion_mode(self, motion_mode: str, emit_signal: bool = False) -> None:
+        """Définir le mode de mouvement (CARTESIAN ou ARTICULAR)."""
+        index = self.motion_mode_combo.findData(motion_mode)
+        if index < 0:
+            return
+        self.motion_mode_combo.blockSignals(True)
+        self.motion_mode_combo.setCurrentIndex(index)
+        self.motion_mode_combo.blockSignals(False)
+        if emit_signal:
+            self.motionModeChanged.emit(motion_mode)
 
     def _on_edit_clicked(self) -> None:
         row = self._selected_row()
