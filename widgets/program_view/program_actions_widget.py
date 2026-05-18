@@ -8,6 +8,7 @@ class ProgramActionsWidget(QWidget):
     recompute_requested = pyqtSignal()
     export_requested = pyqtSignal()
     display_options_changed = pyqtSignal()
+    compute_compensation_requested = pyqtSignal()
     play_requested = pyqtSignal()
     pause_requested = pyqtSignal()
     stop_requested = pyqtSignal()
@@ -26,6 +27,7 @@ class ProgramActionsWidget(QWidget):
         self.btn_pause = QPushButton("Pause")
         self.btn_stop = QPushButton("Stop")
         self.btn_restart = QPushButton("Restart")
+        self.btn_compute_compensation = QPushButton("Calculer compensation")
         self.time_slider = QSlider(Qt.Orientation.Horizontal)
         self.time_label = QLabel("Temps : 0.00 s")
         self.status_label = QLabel("")
@@ -43,6 +45,7 @@ class ProgramActionsWidget(QWidget):
         row_buttons.addWidget(self.btn_pause)
         row_buttons.addWidget(self.btn_stop)
         row_buttons.addWidget(self.btn_restart)
+        row_buttons.addWidget(self.btn_compute_compensation)
         row_buttons.addStretch()
         layout.addLayout(row_buttons)
 
@@ -64,6 +67,7 @@ class ProgramActionsWidget(QWidget):
         self.btn_pause.clicked.connect(self.pause_requested.emit)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
         self.btn_restart.clicked.connect(self.restart_requested.emit)
+        self.btn_compute_compensation.clicked.connect(self.compute_compensation_requested.emit)
         self.time_slider.valueChanged.connect(self._on_slider_changed)
 
     def _on_slider_changed(self, value: int) -> None:
@@ -105,3 +109,7 @@ class ProgramActionsWidget(QWidget):
             return 0
         ratio = (float(time_value) - min_t) / (max_t - min_t)
         return int(round(max(0.0, min(1.0, ratio)) * 1000.0))
+
+    def set_compensation_enabled(self, enabled: bool) -> None:
+        """Active/desactive le bouton de calcul de compensation."""
+        self.btn_compute_compensation.setEnabled(enabled)

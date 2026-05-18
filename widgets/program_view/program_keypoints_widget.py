@@ -348,3 +348,12 @@ class ProgramKeypointsWidget(QWidget):
         """Sélectionne une ligne dans la table des keypoints."""
         if 0 <= row < self.keypoints_table.rowCount():
             self.keypoints_table.selectRow(row)
+
+    def set_target_mode_enabled(self, enabled: bool) -> None:
+        """Active/desactive l option COMPENSE dans target_mode_combo."""
+        index_compensated = self.target_mode_combo.findData("COMPENSATED")
+        if index_compensated >= 0:
+            self.target_mode_combo.model().item(index_compensated).setEnabled(enabled)
+        # Si on desactive COMPENSE et qu il est selectionne, revenir a THEORETICAL
+        if not enabled and self.get_target_mode() == "COMPENSATED":
+            self.set_target_mode("THEORETICAL", emit_signal=True)
