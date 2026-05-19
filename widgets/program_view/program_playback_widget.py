@@ -68,11 +68,11 @@ class ProgramPlaybackWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._time_range = (0.0, 0.0)
+        self._is_playing = False
 
         self._background_widget = QWidget(self)
         self._background_widget.setObjectName("programPlaybackBar")
-        self.btn_play = _PlaybackIconButton("play", "Demarrer", self._background_widget)
-        self.btn_pause = _PlaybackIconButton("pause", "Pause", self._background_widget)
+        self.btn_play_pause = _PlaybackIconButton("play", "Demarrer", self._background_widget)
         self.btn_stop = _PlaybackIconButton("stop", "Stop", self._background_widget)
         self.time_slider = QSlider(Qt.Orientation.Horizontal, self._background_widget)
         self.time_label = QLabel("0.00 s", self._background_widget)
@@ -96,15 +96,13 @@ class ProgramPlaybackWidget(QWidget):
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.time_label.setMinimumWidth(64)
 
-        layout.addWidget(self.btn_play)
-        layout.addWidget(self.btn_pause)
+        layout.addWidget(self.btn_play_pause)
         layout.addWidget(self.btn_stop)
         layout.addWidget(self.time_slider, 1)
         layout.addWidget(self.time_label)
 
     def _setup_connections(self) -> None:
-        self.btn_play.clicked.connect(self.play_requested.emit)
-        self.btn_pause.clicked.connect(self.pause_requested.emit)
+        self.btn_play_pause.clicked.connect(self._on_play_pause_clicked)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
         self.time_slider.valueChanged.connect(self._on_slider_changed)
 
@@ -147,10 +145,25 @@ class ProgramPlaybackWidget(QWidget):
 
     def set_playback_enabled(self, enabled: bool) -> None:
         playback_enabled = bool(enabled)
-        self.btn_play.setEnabled(playback_enabled)
-        self.btn_pause.setEnabled(playback_enabled)
+        self.btn_play_pause.setEnabled(playback_enabled)
         self.btn_stop.setEnabled(playback_enabled)
         self.time_slider.setEnabled(playback_enabled)
+        if not playback_enabled:
+            self.set_playing(False)
+
+    def set_playing(self, is_playing: bool) -> None:
+        self._is_playing = bool(is_playing)
+        icon_kind = "pause" if self._is_playing else "play"
+        tooltip = "Pause" if self._is_playing else "Demarrer"
+        self.btn_play_pause._icon_kind = icon_kind
+        self.btn_play_pause.setToolTip(tooltip)
+        self.btn_play_pause._refresh_icon()
+
+    def _on_play_pause_clicked(self) -> None:
+        if self._is_playing:
+            self.pause_requested.emit()
+            return
+        self.play_requested.emit()
 
     def _slider_to_time(self, slider_value: int) -> float:
         min_t, max_t = self._time_range

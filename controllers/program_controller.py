@@ -694,6 +694,7 @@ class ProgramController:
         self._playback_wall_start_s = None
 
         self._playback_timer.stop()
+        self.playback_widget.set_playing(False)
 
 
 
@@ -705,11 +706,19 @@ class ProgramController:
 
             return
 
+        end_time_s = float(samples[-1].time_s)
+
+        if self._current_time_s >= end_time_s:
+
+            self._playback_index = 0
+            self._apply_time_value(0.0)
+
         self._playback_index = self._sample_index_at_time(self._current_time_s)
 
         self._playback_sim_start_s = float(self._current_time_s)
 
         self._playback_wall_start_s = time.perf_counter()
+        self.playback_widget.set_playing(True)
 
         self._playback_timer.start(20)
 
