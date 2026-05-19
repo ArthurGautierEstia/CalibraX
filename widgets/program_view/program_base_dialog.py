@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -39,6 +39,9 @@ class ProgramBaseDialog(QDialog):
         self._setup_ui(base_pose)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
+        for button in self.button_box.buttons():
+            button.setAutoDefault(False)
+            button.setDefault(False)
 
     def _setup_ui(self, base_pose: Pose6) -> None:
         layout = QVBoxLayout(self)
@@ -66,3 +69,12 @@ class ProgramBaseDialog(QDialog):
 
     def _emit_preview_changed(self, _value: float) -> None:
         self.base_pose_preview_changed.emit(self.get_base_pose())
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            focused_widget = self.focusWidget()
+            if isinstance(focused_widget, QDoubleSpinBox):
+                focused_widget.interpretText()
+                event.accept()
+                return
+        super().keyPressEvent(event)
