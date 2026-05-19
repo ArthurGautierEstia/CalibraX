@@ -128,7 +128,7 @@ class ProgramController:
         self._display_keypoint_tools: list[RobotTool] = []
         self._display_target_refs: list[_ProgramTargetRef] = []
         self._selected_keypoint_index: int | None = None
-        self._tool_source: str = "ROBOT"  # ROBOT or PROGRAM
+        self._tool_source: str = "PROGRAM"  # ROBOT or PROGRAM
         self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
@@ -217,7 +217,7 @@ class ProgramController:
 
     def _on_recompute_requested(self) -> None:
 
-        self._recompute_current_program()
+        self._recompute_current_program(reset_modes=False)
 
     
 
@@ -238,7 +238,7 @@ class ProgramController:
 
 
 
-    def _recompute_current_program(self) -> None:
+    def _recompute_current_program(self, reset_modes: bool = True) -> None:
         self._stop_playback()
 
         if self.current_program is None:
@@ -282,7 +282,7 @@ class ProgramController:
             self._nominal_cartesian_result = self.program_simulator.simulate_program(
                 simulation_program, include_compensation=False
             )
-            self._articular_program = self._build_articular_program()
+            self._articular_program = self._build_articular_program(simulation_program)
             if self._articular_program:
                 self._nominal_articular_result = self.program_simulator.simulate_program(
                     self._articular_program, include_compensation=False
@@ -293,7 +293,7 @@ class ProgramController:
             self._nominal_articular_result = self.program_simulator.simulate_program(
                 simulation_program, include_compensation=False
             )
-            self._cartesian_program = self._build_cartesian_program()
+            self._cartesian_program = self._build_cartesian_program(simulation_program)
             if self._cartesian_program:
                 self._nominal_cartesian_result = self.program_simulator.simulate_program(
                     self._cartesian_program, include_compensation=False
@@ -309,33 +309,37 @@ class ProgramController:
         self._compensation_computed = False
         self.actions_widget.set_compensated_checkbox_enabled(False)
 
-        # Definition mode par defaut
-        default_motion_mode = program_type
+        # Modes actifs apres recalcul
+        if reset_modes:
+            active_motion_mode = program_type
+            active_target_mode = "THEORETICAL"
+            self.config_widget.set_motion_mode(active_motion_mode, emit_signal=False)
+            self.config_widget.set_target_mode(active_target_mode, emit_signal=False)
+        else:
+            active_motion_mode = self.config_widget.get_motion_mode()
+            active_target_mode = self.config_widget.get_target_mode()
 
         # Mise a jour current_result
-        self._update_current_result_from_modes("THEORETICAL", default_motion_mode)
+        self._update_current_result_from_modes(active_target_mode, active_motion_mode)
 
         # Build display keypoints
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
-            self._build_display_keypoints_for_mode(default_motion_mode)
+            self._build_display_keypoints_for_mode(active_motion_mode, active_target_mode)
         )
 
         # Build caches
         self._nominal_segments_cache = self._build_segments(
-            self._get_samples_for_modes("THEORETICAL", default_motion_mode),
+            self._get_samples_for_modes("THEORETICAL", active_motion_mode),
             self.NOMINAL_PATH_COLORS,
             "nominal",
         )
         self._measured_segments_cache = self._build_segments(
-            self._get_samples_for_modes("THEORETICAL", default_motion_mode),
+            self._get_samples_for_modes("THEORETICAL", active_motion_mode),
             self.MEASURED_PATH_COLORS,
             "measured",
         )
         self._compensated_segments_cache = []
 
-        # Set UI defaults
-        self.config_widget.set_motion_mode(default_motion_mode, emit_signal=False)
-        self.config_widget.set_target_mode("THEORETICAL", emit_signal=False)
         self.actions_widget.set_compensation_enabled(True)
 
         self._refresh_view()
@@ -1265,14 +1269,15 @@ class ProgramController:
         )
         return "CARTESIAN" if has_cartesian else "ARTICULAR"
 
-    def _build_articular_program(self) -> RobotProgram | None:
+    def _build_articular_program(self, source_program: RobotProgram | None = None) -> RobotProgram | None:
         """Convertit le programme en version purement articulaire (tout en PTP avec cibles JOINT)."""
-        if self.current_program is None:
+        program = source_program or self.current_program
+        if program is None:
             return None
 
         new_motions: list[RobotProgramMotion] = []
 
-        for motion in self.current_program.motions:
+        for motion in program.motions:
             motion_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
 
             # Convertir la cible principale
@@ -1327,14 +1332,15 @@ class ProgramController:
 
         return replace(self.current_program, motions=new_motions)
 
-    def _build_cartesian_program(self) -> RobotProgram | None:
+    def _build_cartesian_program(self, source_program: RobotProgram | None = None) -> RobotProgram | None:
         """Convertit le programme en version cartesienne (cibles CARTESIAN)."""
-        if self.current_program is None:
+        program = source_program or self.current_program
+        if program is None:
             return None
 
         new_motions: list[RobotProgramMotion] = []
 
-        for motion in self.current_program.motions:
+        for motion in program.motions:
             motion_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
 
             if motion.target.target_type == RobotProgramTargetType.CARTESIAN:
@@ -1572,10 +1578,13 @@ class ProgramController:
             ReferenceFrame.PROGRAM,
         )
 
-        current_tool = self.tool_model.get_tool()
+        robot_tool = self.tool_model.get_tool()
 
         for motion_index, motion in enumerate(program.motions):
-            motion_tool = current_tool
+            if self._tool_source == "PROGRAM":
+                motion_tool = self.program_simulator._tool_from_pose(motion.tool_pose) or robot_tool
+            else:
+                motion_tool = robot_tool
 
             if motion.mode.value == "CIRCULAR" and motion.via_target is not None:
                 via_keypoint = self._motion_target_to_keypoint(motion, motion.via_target, is_circular=True, display_frame=display_frame)

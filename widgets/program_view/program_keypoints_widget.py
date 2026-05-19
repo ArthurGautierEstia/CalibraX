@@ -67,7 +67,7 @@ class ProgramKeypointsWidget(QWidget):
         self.motion_mode_combo = QComboBox()
 
         self._keypoints: list[TrajectoryKeypoint] = []
-        self._current_tool_source = "ROBOT"  # ROBOT or PROGRAM
+        self._current_tool_source = "PROGRAM"  # ROBOT or PROGRAM
 
         self._setup_ui()
         self._setup_connections()
@@ -88,14 +88,14 @@ class ProgramKeypointsWidget(QWidget):
         # Sélecteur Base
         selectors_row.addWidget(QLabel("Base"))
         self.cartesian_display_frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
-        self.cartesian_display_frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
+        self.cartesian_display_frame_combo.addItem("Base robot", ReferenceFrame.BASE.value)
         selectors_row.addWidget(self.cartesian_display_frame_combo)
         selectors_row.addSpacing(12)
         
         # Sélecteur Tool
         selectors_row.addWidget(QLabel("Tool"))
-        self.tool_source_combo.addItem("Tool robot", "ROBOT")
         self.tool_source_combo.addItem("Tool programme", "PROGRAM")
+        self.tool_source_combo.addItem("Tool robot", "ROBOT")
         selectors_row.addWidget(self.tool_source_combo)
         selectors_row.addSpacing(12)
         
