@@ -51,8 +51,8 @@ from utils.reference_frame_utils import (
 
 
 class CalibraXGLViewWidget(gl.GLViewWidget):
-    _TRAJECTORY_KEYPOINT_PICK_RADIUS_PX = 15.0
-    _TRAJECTORY_LINE_PICK_RADIUS_PX = 7.0
+    _TRAJECTORY_KEYPOINT_PICK_RADIUS_PX = 25.0
+    _TRAJECTORY_LINE_PICK_RADIUS_PX = 15.0
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -154,9 +154,9 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
     def wheelEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
-        target_point_world = self._pick_world_point(local_position)
+        target_point_world = self._pick_trajectory_world_point(local_position)
         if target_point_world is None:
-            target_point_world = self._pick_trajectory_world_point(local_position)
+            target_point_world = self._pick_world_point(local_position)
         if target_point_world is None:
             target_point_world = self._project_cursor_to_center_depth(local_position)
 
