@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap, QPolygon
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget
 
 
 class _PlaybackIconButton(QPushButton):
@@ -112,6 +112,7 @@ class ProgramPlaybackWidget(QWidget):
         self.btn_stop = _PlaybackIconButton("stop", "Stop", self._background_widget)
         self.speed_label = QLabel("Vitesse :", self._background_widget)
         self.speed_spinbox = _SignedPercentSpinBox(self._background_widget)
+        self.loop_checkbox = QCheckBox("Loop", self._background_widget)
         self.time_slider = QSlider(Qt.Orientation.Horizontal, self._background_widget)
         self.time_label = QLabel("0.00 s", self._background_widget)
 
@@ -128,6 +129,15 @@ class ProgramPlaybackWidget(QWidget):
         layout = QHBoxLayout(self._background_widget)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
+        speed_layout = QVBoxLayout()
+        speed_layout.setContentsMargins(0, 0, 0, 0)
+        speed_layout.setSpacing(2)
+        speed_row = QHBoxLayout()
+        speed_row.setContentsMargins(0, 0, 0, 0)
+        speed_row.setSpacing(6)
+        loop_row = QHBoxLayout()
+        loop_row.setContentsMargins(0, 0, 0, 0)
+        loop_row.setSpacing(0)
 
         self.time_slider.setRange(0, 1000)
         self.time_slider.setValue(0)
@@ -138,8 +148,15 @@ class ProgramPlaybackWidget(QWidget):
 
         layout.addWidget(self.btn_play_pause)
         layout.addWidget(self.btn_stop)
-        layout.addWidget(self.speed_label)
-        layout.addWidget(self.speed_spinbox)
+        speed_row.addWidget(self.speed_label)
+        speed_row.addWidget(self.speed_spinbox)
+        speed_row.addStretch()
+        speed_layout.addLayout(speed_row)
+        loop_row.addSpacing(self.speed_label.sizeHint().width() + speed_row.spacing())
+        loop_row.addWidget(self.loop_checkbox, 0, Qt.AlignmentFlag.AlignHCenter)
+        loop_row.addStretch()
+        speed_layout.addLayout(loop_row)
+        layout.addLayout(speed_layout)
         layout.addWidget(self.time_slider, 1)
         layout.addWidget(self.time_label)
 
@@ -215,6 +232,7 @@ class ProgramPlaybackWidget(QWidget):
         self.btn_play_pause.setEnabled(playback_enabled)
         self.btn_stop.setEnabled(playback_enabled)
         self.speed_spinbox.setEnabled(playback_enabled)
+        self.loop_checkbox.setEnabled(playback_enabled)
         self.time_slider.setEnabled(playback_enabled)
         if not playback_enabled:
             self.set_playing(False)
@@ -248,3 +266,6 @@ class ProgramPlaybackWidget(QWidget):
 
     def get_speed_offset_percent(self) -> int:
         return int(self.speed_spinbox.value())
+
+    def is_loop_enabled(self) -> bool:
+        return self.loop_checkbox.isChecked()

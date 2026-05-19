@@ -14,7 +14,7 @@ class ProgramActionsWidget(QWidget):
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
-        self.btn_recompute = QPushButton("Recalculer")
+        self.btn_recompute = QPushButton("Simuler")
         self.btn_export = QPushButton("Exporter programme compense")
         self.btn_compute_compensation = QPushButton("Calculer compensation")
         self.cb_show_theoretical = QCheckBox("Afficher theorique")
@@ -32,11 +32,9 @@ class ProgramActionsWidget(QWidget):
         layout = QVBoxLayout(self)
 
         row_buttons = QHBoxLayout()
-        row_buttons.addStretch()
-        self.btn_recompute.setFixedWidth(120)
-        row_buttons.addWidget(self.btn_recompute)
-        row_buttons.addWidget(self.btn_export)
-        row_buttons.addWidget(self.btn_compute_compensation)
+        row_buttons.addWidget(self.btn_recompute, 1)
+        row_buttons.addWidget(self.btn_compute_compensation, 1)
+        row_buttons.addWidget(self.btn_export, 1)
         layout.addLayout(row_buttons)
 
         row_visibility = QHBoxLayout()
@@ -72,6 +70,9 @@ class ProgramActionsWidget(QWidget):
     def set_compensation_enabled(self, enabled: bool) -> None:
         """Active/desactive le bouton de calcul de compensation."""
         self.btn_compute_compensation.setEnabled(enabled)
+
+    def set_simulation_enabled(self, enabled: bool) -> None:
+        self.btn_recompute.setEnabled(bool(enabled))
 
     def is_theoretical_visible(self) -> bool:
         return self.cb_show_theoretical.isChecked()

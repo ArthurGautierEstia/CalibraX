@@ -6,7 +6,9 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -14,28 +16,21 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QHeaderView,
 )
 
 from models.reference_frame import ReferenceFrame
+from models.robot_model import RobotModel
+from models.tool_model import ToolModel
 from models.trajectory_keypoint import (
     KeypointMotionMode,
     KeypointTargetType,
     TrajectoryKeypoint,
 )
-from models.robot_model import RobotModel
-from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 
 
 class ProgramKeypointsWidget(QWidget):
-    """Widget pour afficher et gérer les points clés d'un programme robot.
-    
-    Ce widget est spécifique à l'onglet Programme et permet :
-    - L'affichage des points clés du programme
-    - La sélection et l'édition des cibles
-    - Le choix du repère cartésien d'affichage
-    """
+    """Widget pour afficher et gerer les points cles d'un programme robot."""
 
     goToRequested = pyqtSignal(int)
     keypointSelectionChanged = pyqtSignal(object)
@@ -61,7 +56,7 @@ class ProgramKeypointsWidget(QWidget):
 
         self.keypoints_table = QTableWidget(0, 10)
         self.btn_edit = QPushButton("Editer")
-        self.btn_go_to = QPushButton("Aller à")
+        self.btn_go_to = QPushButton("Aller a")
         self.cartesian_display_frame_combo = QComboBox()
         self.tool_source_combo = QComboBox()
         self.target_mode_combo = QComboBox()
@@ -69,7 +64,7 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_edit_program_base = QPushButton("Editer la base programme")
 
         self._keypoints: list[TrajectoryKeypoint] = []
-        self._current_tool_source = "CURRENT"  # CURRENT or PROGRAM
+        self._current_tool_source = "CURRENT"
 
         self._setup_ui()
         self._setup_connections()
@@ -80,51 +75,75 @@ class ProgramKeypointsWidget(QWidget):
 
         layout = QVBoxLayout(self)
 
-        title = QLabel("Points clés du programme")
+        title = QLabel("Points cles du programme")
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(title)
 
-        # Ligne unique avec les 4 sélecteurs : Base, Tool, Cibles, Mode
-        selectors_row = QHBoxLayout()
-        
-        # Sélecteur Base
-        selectors_row.addWidget(QLabel("Base : "))
+        selectors_row = QGridLayout()
+        selectors_row.setContentsMargins(0, 0, 0, 0)
+        selectors_row.setHorizontalSpacing(12)
+        selectors_row.setVerticalSpacing(0)
+
+        base_layout = QHBoxLayout()
+        base_layout.setContentsMargins(0, 0, 0, 0)
+        base_layout.setSpacing(6)
+        base_layout.addWidget(QLabel("Base : "))
         self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.ROBOT.value)
         self.cartesian_display_frame_combo.addItem("Programme", ReferenceFrame.PROGRAM.value)
-        selectors_row.addWidget(self.cartesian_display_frame_combo)
-        selectors_row.addSpacing(12)
-        
-        # Sélecteur Tool
-        selectors_row.addWidget(QLabel("Tool : "))
+        base_layout.addWidget(self.cartesian_display_frame_combo, 1)
+
+        tool_layout = QHBoxLayout()
+        tool_layout.setContentsMargins(0, 0, 0, 0)
+        tool_layout.setSpacing(6)
+        tool_layout.addWidget(QLabel("Tool : "))
         self.tool_source_combo.addItem("Courant", "CURRENT")
         self.tool_source_combo.addItem("Programme", "PROGRAM")
-        selectors_row.addWidget(self.tool_source_combo)
-        selectors_row.addSpacing(12)
-        
-        # Sélecteur Cibles (Theorique/Compense)
-        selectors_row.addWidget(QLabel("Cibles : "))
+        tool_layout.addWidget(self.tool_source_combo, 1)
+
+        target_layout = QHBoxLayout()
+        target_layout.setContentsMargins(0, 0, 0, 0)
+        target_layout.setSpacing(6)
+        target_layout.addWidget(QLabel("Cibles : "))
         self.target_mode_combo.addItem("Theorique", "THEORETICAL")
         self.target_mode_combo.addItem("Compense", "COMPENSATED")
-        selectors_row.addWidget(self.target_mode_combo)
-        selectors_row.addSpacing(12)
-        
-        # Sélecteur Mode (Cartesien/Articulaire)
-        selectors_row.addWidget(QLabel("Mode : "))
+        target_layout.addWidget(self.target_mode_combo, 1)
+
+        mode_layout = QHBoxLayout()
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(6)
+        mode_layout.addWidget(QLabel("Mode : "))
         self.motion_mode_combo.addItem("Cartesien", "CARTESIAN")
         self.motion_mode_combo.addItem("Articulaire", "ARTICULAR")
-        selectors_row.addWidget(self.motion_mode_combo)
-        selectors_row.addStretch()
-        
+        mode_layout.addWidget(self.motion_mode_combo, 1)
+
+        selectors_row.addLayout(base_layout, 0, 0)
+        selectors_row.addLayout(tool_layout, 0, 1)
+        selectors_row.addLayout(target_layout, 0, 2)
+        selectors_row.addLayout(mode_layout, 0, 3)
+        for column in range(4):
+            selectors_row.setColumnStretch(column, 1)
+
         layout.addLayout(selectors_row)
 
         base_actions_row = QHBoxLayout()
-        base_actions_row.addWidget(self.btn_edit_program_base)
-        base_actions_row.addStretch()
+        base_actions_row.addWidget(self.btn_edit_program_base, 1)
+        base_actions_row.addStretch(2)
         layout.addLayout(base_actions_row)
 
-        self.keypoints_table.setHorizontalHeaderLabels([
-            "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
-        ])
+        self.keypoints_table.setHorizontalHeaderLabels(
+            [
+                "Cible",
+                "Mode",
+                "Vitesse",
+                "J1 / X",
+                "J2 / Y",
+                "J3 / Z",
+                "J4 / A",
+                "J5 / B",
+                "J6 / C",
+                "Configs",
+            ]
+        )
 
         header = self.keypoints_table.horizontalHeader()
         header.setMinimumSectionSize(60)
@@ -133,7 +152,7 @@ class ProgramKeypointsWidget(QWidget):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
         header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
-        
+
         self.keypoints_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.keypoints_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.keypoints_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -166,7 +185,7 @@ class ProgramKeypointsWidget(QWidget):
     def _update_buttons_state(self) -> None:
         row = self._selected_row()
         has_selection = row is not None
-        
+
         self.btn_edit.setEnabled(has_selection)
         self.btn_go_to.setEnabled(has_selection)
 
@@ -198,11 +217,9 @@ class ProgramKeypointsWidget(QWidget):
             self.cartesianDisplayFrameChanged.emit(normalized.value)
 
     def get_tool_source(self) -> str:
-        """Retourne la source du tool sélectionnée (CURRENT ou PROGRAM)."""
         return self._current_tool_source
 
     def set_tool_source(self, tool_source: str, emit_signal: bool = False) -> None:
-        """Définir la source du tool (CURRENT ou PROGRAM)."""
         index = self.tool_source_combo.findData(tool_source)
         if index < 0:
             return
@@ -214,11 +231,9 @@ class ProgramKeypointsWidget(QWidget):
             self.toolSourceChanged.emit(tool_source)
 
     def get_target_mode(self) -> str:
-        """Retourne le mode de cibles sélectionné (THEORETICAL ou COMPENSATED)."""
         return self.target_mode_combo.currentData()
 
     def set_target_mode(self, target_mode: str, emit_signal: bool = False) -> None:
-        """Définir le mode de cibles (THEORETICAL ou COMPENSATED)."""
         index = self.target_mode_combo.findData(target_mode)
         if index < 0:
             return
@@ -229,11 +244,9 @@ class ProgramKeypointsWidget(QWidget):
             self.targetModeChanged.emit(target_mode)
 
     def get_motion_mode(self) -> str:
-        """Retourne le mode de mouvement sélectionné (CARTESIAN ou ARTICULAR)."""
         return self.motion_mode_combo.currentData()
 
     def set_motion_mode(self, motion_mode: str, emit_signal: bool = False) -> None:
-        """Définir le mode de mouvement (CARTESIAN ou ARTICULAR)."""
         index = self.motion_mode_combo.findData(motion_mode)
         if index < 0:
             return
@@ -341,28 +354,22 @@ class ProgramKeypointsWidget(QWidget):
         self._refresh_table()
 
     def keypoints_table(self) -> QTableWidget:
-        """Retourne la table des keypoints pour compatibilité."""
         return self.keypoints_table
 
     def cartesian_display_frame_combo(self) -> QComboBox:
-        """Retourne le combo box du frame pour compatibilité."""
         return self.cartesian_display_frame_combo
 
     def tool_source_combo(self) -> QComboBox:
-        """Retourne le combo box du tool source pour compatibilité."""
         return self.tool_source_combo
 
     def select_row(self, row: int) -> None:
-        """Sélectionne une ligne dans la table des keypoints."""
         if 0 <= row < self.keypoints_table.rowCount():
             self.keypoints_table.selectRow(row)
 
     def set_target_mode_enabled(self, enabled: bool) -> None:
-        """Active/desactive l option COMPENSE dans target_mode_combo."""
         index_compensated = self.target_mode_combo.findData("COMPENSATED")
         if index_compensated >= 0:
             self.target_mode_combo.model().item(index_compensated).setEnabled(enabled)
-        # Si on desactive COMPENSE et qu il est selectionne, revenir a THEORETICAL
         if not enabled and self.get_target_mode() == "COMPENSATED":
             self.set_target_mode("THEORETICAL", emit_signal=True)
 
