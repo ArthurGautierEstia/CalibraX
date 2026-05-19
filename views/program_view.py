@@ -7,6 +7,7 @@ from widgets.program_view.program_actions_widget import ProgramActionsWidget
 from widgets.program_view.program_config_widget import ProgramConfigWidget
 from widgets.program_view.program_graphs_widget import ProgramGraphsWidget
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
+from widgets.program_view.program_playback_widget import ProgramPlaybackWidget
 
 
 class ProgramView(QWidget):
@@ -22,6 +23,7 @@ class ProgramView(QWidget):
         self.config_widget = ProgramKeypointsWidget(robot_model, tool_model, workspace_model)
         self.actions_widget = ProgramActionsWidget()
         self.graphs_widget = ProgramGraphsWidget()
+        self.playback_widget = ProgramPlaybackWidget()
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -39,6 +41,7 @@ class ProgramView(QWidget):
 
         scroll_area.setWidget(content)
         layout.addWidget(scroll_area)
+        layout.addWidget(self.playback_widget)
 
     def get_header_widget(self) -> ProgramConfigWidget:
         return self.header_widget
@@ -51,3 +54,6 @@ class ProgramView(QWidget):
 
     def get_graphs_widget(self) -> ProgramGraphsWidget:
         return self.graphs_widget
+
+    def get_playback_widget(self) -> ProgramPlaybackWidget:
+        return self.playback_widget

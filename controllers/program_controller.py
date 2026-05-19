@@ -106,6 +106,7 @@ class ProgramController:
         self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
+        self.playback_widget = self.program_view.get_playback_widget()
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
@@ -152,10 +153,10 @@ class ProgramController:
         self.header_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.recompute_requested.connect(self._on_recompute_requested)
         self.actions_widget.export_requested.connect(self._on_export_requested)
-        self.actions_widget.play_requested.connect(self._on_play_requested)
-        self.actions_widget.pause_requested.connect(self._on_pause_requested)
-        self.actions_widget.stop_requested.connect(self._on_stop_requested)
-        self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
+        self.playback_widget.play_requested.connect(self._on_play_requested)
+        self.playback_widget.pause_requested.connect(self._on_pause_requested)
+        self.playback_widget.stop_requested.connect(self._on_stop_requested)
+        self.playback_widget.time_value_changed.connect(self._on_time_value_changed)
         self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
@@ -559,13 +560,15 @@ class ProgramController:
         self._playback_sample_times = [float(sample.time_s) for sample in samples]
 
         if not samples:
-            self.actions_widget.set_time_range(0.0, 0.0)
+            self.playback_widget.set_time_range(0.0, 0.0)
+            self.playback_widget.set_playback_enabled(False)
             self._apply_time_value(0.0)
             return
 
         end_time = float(samples[-1].time_s)
 
-        self.actions_widget.set_time_range(0.0, end_time)
+        self.playback_widget.set_time_range(0.0, end_time)
+        self.playback_widget.set_playback_enabled(True)
 
         self._apply_time_value(min(self._current_time_s, end_time))
 
@@ -618,7 +621,7 @@ class ProgramController:
 
         self._current_time_s = max(0.0, float(time_s))
 
-        self.actions_widget.set_time_value(self._current_time_s)
+        self.playback_widget.set_time_value(self._current_time_s)
 
         if not samples:
 
