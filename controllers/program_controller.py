@@ -149,14 +149,13 @@ class ProgramController:
 
     def _setup_connections(self) -> None:
         self.header_widget.load_program_requested.connect(self._on_load_program_requested)
+        self.header_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.recompute_requested.connect(self._on_recompute_requested)
         self.actions_widget.export_requested.connect(self._on_export_requested)
         self.actions_widget.play_requested.connect(self._on_play_requested)
         self.actions_widget.pause_requested.connect(self._on_pause_requested)
         self.actions_widget.stop_requested.connect(self._on_stop_requested)
-        self.actions_widget.restart_requested.connect(self._on_restart_requested)
         self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
-        self.actions_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
@@ -186,32 +185,27 @@ class ProgramController:
         if not file_path:
             return
 
-        self._load_program_from_path(file_path)
+        self.viewer3d_controller.begin_loading_feedback("Chargement programme KRL ...")
+        QTimer.singleShot(0, lambda: self._load_program_from_path(file_path))
 
 
 
     def _load_program_from_path(self, file_path: str) -> None:
-
-        if Path(file_path).suffix.lower() != ".src":
-            QMessageBox.warning(
-                self.program_view,
-                "Programme robot",
-                "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
-            )
-
-            return
-
         try:
-
+            if Path(file_path).suffix.lower() != ".src":
+                QMessageBox.warning(
+                    self.program_view,
+                    "Programme robot",
+                    "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
+                )
+                return
             self.current_program = load_kuka_src_program(file_path)
-
+            self._recompute_current_program()
         except (OSError, ValueError) as exc:
-
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible de charger le programme.\n{exc}")
-
             return
-
-        self._recompute_current_program()
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
 
 
@@ -408,7 +402,7 @@ class ProgramController:
     def _refresh_program_info(self) -> None:
 
         if self.current_program is None:
-            self.header_widget.set_program_info("", "", 0)
+            self.header_widget.set_program_info("", 0)
             self.header_widget.set_log_lines([])
             self.actions_widget.set_export_enabled(False)
             return
@@ -420,7 +414,6 @@ class ProgramController:
 
         self.header_widget.set_program_info(
             self.current_program.source_path,
-            self.current_program.brand.value,
             len(self.current_program.motions),
         )
 
@@ -718,14 +711,6 @@ class ProgramController:
         self._playback_index = 0
 
         self._apply_time_value(0.0)
-
-
-
-    def _on_restart_requested(self) -> None:
-
-        self._on_stop_requested()
-
-        self._on_play_requested()
 
 
 
