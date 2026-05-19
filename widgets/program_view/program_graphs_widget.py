@@ -20,9 +20,9 @@ class ProgramGraphsWidget(QWidget):
         self.show_error_graph_checkbox.setChecked(False)
         layout.addWidget(self.show_error_graph_checkbox)
         self.error_plot.showGrid(x=True, y=True, alpha=0.3)
-        self.error_plot.setTitle("Erreur Y le long de la trajectoire")
+        self.error_plot.setTitle("Erreur 3D le long de la trajectoire")
         self.error_plot.setLabel("bottom", "Abscisse curviligne (mm)")
-        self.error_plot.setLabel("left", "Erreur Y (mm)")
+        self.error_plot.setLabel("left", "Erreur 3D (mm)")
         # Disable scientific notation on y-axis
         y_axis = self.error_plot.getAxis("left")
         y_axis.setLogMode(False)

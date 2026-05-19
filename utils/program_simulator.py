@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-
+from collections import defaultdict
 from dataclasses import dataclass, replace
 import math
 
@@ -22,7 +22,7 @@ from models.robot_program import (
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.types import JointAngles6, Pose6
-from utils.mgi import MGI, MgiAxisLimits, MgiConfigKey, MgiConfigurationFilter, MgiGeometricParams, MgiParams, RobotTool
+from utils.mgi import MGI, MgiAxisLimits, MgiConfigurationFilter, MgiGeometricParams, MgiParams, RobotTool
 from utils.reference_frame_utils import pose_to_matrix, matrix_to_pose
 
 
@@ -82,44 +82,67 @@ class ProgramSimulator:
         nominal_samples: list[ProgramSimulationSample],
         compensated_samples: list[ProgramSimulationSample],
     ) -> tuple[list[float], list[float], list[float]]:
-        nominal_ok = [sample for sample in nominal_samples if sample.measured_pose_base is not None]
+        nominal_ok = [s for s in nominal_samples if s.measured_pose_base is not None]
         if not nominal_ok:
             return [], [], []
 
-        nominal_xyz = [self._pose_xyz(sample.nominal_pose_base) for sample in nominal_ok]
-        nominal_progresses = self._progresses_from_xyz(nominal_xyz)
-        total_length_mm = self._path_length_mm(nominal_xyz)
+        nominal_xyz = [self._pose_xyz(s.nominal_pose_base) for s in nominal_ok]
+        abscissa_mm = self._cumulative_arc_lengths_mm(nominal_xyz)
 
-        measured_xyz_list = [self._pose_xyz(sample.measured_pose_base) for sample in nominal_ok]
+        real_error_mm = [
+            self._xyz_distance_mm(self._pose_xyz(s.measured_pose_base), self._pose_xyz(s.nominal_pose_base))
+            for s in nominal_ok
+        ]
 
-        # Paramètrisation arc length des samples compensés en espace nominal DH (même espace que nominal),
-        # mais position réelle pour l'erreur en espace measured DH.
-        comp_nominal_xyz: list[list[float]] = []
-        comp_actual_xyz: list[list[float]] = []
-        for sample in compensated_samples:
-            if sample.nominal_pose_base is None:
+        if not compensated_samples:
+            return abscissa_mm, real_error_mm, []
+
+        compensated_error_mm = self._compute_compensated_error_per_segment(nominal_ok, compensated_samples)
+        if not any(v != 0.0 for v in compensated_error_mm):
+            return abscissa_mm, real_error_mm, []
+        return abscissa_mm, real_error_mm, compensated_error_mm
+
+    def _compute_compensated_error_per_segment(
+        self,
+        nominal_ok: list[ProgramSimulationSample],
+        compensated_samples: list[ProgramSimulationSample],
+    ) -> list[float]:
+        compensated_ok = [s for s in compensated_samples if s.measured_pose_base is not None]
+
+        nom_by_line: dict[int, list[tuple[int, ProgramSimulationSample]]] = defaultdict(list)
+        for idx, s in enumerate(nominal_ok):
+            nom_by_line[s.source_line].append((idx, s))
+
+        comp_by_line: dict[int, list[ProgramSimulationSample]] = defaultdict(list)
+        for s in compensated_ok:
+            comp_by_line[s.source_line].append(s)
+
+        result = [0.0] * len(nominal_ok)
+        any_written = False
+
+        for source_line, nom_entries in nom_by_line.items():
+            comp_entries = comp_by_line.get(source_line)
+            if not comp_entries:
                 continue
-            comp_nominal_xyz.append(self._pose_xyz(sample.nominal_pose_base))
-            actual_pose = sample.measured_pose_base if sample.measured_pose_base is not None else sample.nominal_pose_base
-            comp_actual_xyz.append(self._pose_xyz(actual_pose))
 
-        compensated_progresses = self._progresses_from_xyz(comp_nominal_xyz) if comp_nominal_xyz else []
+            nom_xyz_list = [self._pose_xyz(s.nominal_pose_base) for _, s in nom_entries]
+            nom_lengths = self._cumulative_arc_lengths_mm(nom_xyz_list)
+            total_nom = nom_lengths[-1]
 
-        abscissa_mm: list[float] = []
-        measured_error_y_mm: list[float] = []
-        compensated_error_y_mm: list[float] = []
+            comp_nom_xyz_list = [self._pose_xyz(s.nominal_pose_base) for s in comp_entries]
+            comp_meas_xyz_list = [self._pose_xyz(s.measured_pose_base) for s in comp_entries]
+            comp_nom_lengths = self._cumulative_arc_lengths_mm(comp_nom_xyz_list)
+            total_comp_nom = comp_nom_lengths[-1]
 
-        for nominal_xyz_point, progress, measured_xyz in zip(nominal_xyz, nominal_progresses, measured_xyz_list):
-            abscissa_mm.append(progress * total_length_mm)
-            measured_error_y_mm.append(float(measured_xyz[1]) - float(nominal_xyz_point[1]))
-            if comp_actual_xyz:
-                compensated_xyz = self._interpolate_path_xyz(
-                    (compensated_progresses, comp_actual_xyz), progress
-                )
-                compensated_error_y_mm.append(
-                    0.0 if compensated_xyz is None else float(compensated_xyz[1]) - float(nominal_xyz_point[1])
-                )
-        return abscissa_mm, measured_error_y_mm, compensated_error_y_mm
+            for local_idx, (global_idx, nom_s) in enumerate(nom_entries):
+                nom_len = nom_lengths[local_idx]
+                progress = nom_len / total_nom if total_nom > 1e-9 else local_idx / max(1, len(nom_entries) - 1)
+                target_len = progress * total_comp_nom
+                interp_meas_xyz = self._interp_xyz_at_arc_length(comp_meas_xyz_list, comp_nom_lengths, target_len)
+                result[global_idx] = self._xyz_distance_mm(interp_meas_xyz, self._pose_xyz(nom_s.nominal_pose_base))
+                any_written = True
+
+        return result if any_written else [0.0] * len(nominal_ok)
 
     def _simulate_motion_list(self, motions: list[RobotProgramMotion]) -> list[ProgramSimulationSample]:
         current_joints_deg = self._normalize_joints(self.robot_model.get_joints())
@@ -422,12 +445,11 @@ class ProgramSimulator:
             motion_tool = self._tool_from_pose(motion.tool_pose)
             if motion.mode == RobotProgramMotionMode.PTP and motion.target.target_type == RobotProgramTargetType.JOINT:
                 corrected_motions.append(motion)
-                current_joints_deg = motion.target.joint_angles.to_list()
-                previous_reference_joints_deg = list(current_joints_deg)
+                previous_reference_joints_deg = motion.target.joint_angles.to_list()
                 continue
 
             if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
-                corrected_via_motion = self._build_compensated_motion_variant(
+                via_result = self._build_compensated_motion_variant(
                     motion,
                     motion.via_target,
                     output_mode,
@@ -436,14 +458,16 @@ class ProgramSimulator:
                     measured_dh,
                     replace_mode=RobotProgramMotionMode.PTP if output_mode == ProgramCompensationOutputMode.ARTICULAR else motion.mode,
                 )
-                if corrected_via_motion is not None:
+                if via_result is not None:
+                    corrected_via_motion, via_q_measured = via_result
                     if output_mode == ProgramCompensationOutputMode.ARTICULAR:
                         corrected_motions.append(corrected_via_motion)
-                        previous_reference_joints_deg = corrected_via_motion.target.joint_angles.to_list()
+                        previous_reference_joints_deg = via_q_measured
                     elif corrected_via_motion.via_target is not None:
                         motion = replace(motion, via_target=corrected_via_motion.via_target)
+                        previous_reference_joints_deg = via_q_measured
 
-            corrected_motion = self._build_compensated_motion_variant(
+            result = self._build_compensated_motion_variant(
                 motion,
                 motion.target,
                 output_mode,
@@ -451,14 +475,14 @@ class ProgramSimulator:
                 motion_tool,
                 measured_dh,
             )
-            if corrected_motion is None:
+            if result is None:
                 corrected_motions.append(motion)
                 if motion.target.target_type == RobotProgramTargetType.JOINT:
                     previous_reference_joints_deg = motion.target.joint_angles.to_list()
                 continue
+            corrected_motion, q_measured = result
             corrected_motions.append(corrected_motion)
-            if corrected_motion.target.target_type == RobotProgramTargetType.JOINT:
-                previous_reference_joints_deg = corrected_motion.target.joint_angles.to_list()
+            previous_reference_joints_deg = q_measured
 
         return RobotProgram(
             brand=program.brand,
@@ -477,25 +501,23 @@ class ProgramSimulator:
         motion_tool: RobotTool,
         measured_dh: list[list[float]],
         replace_mode: RobotProgramMotionMode | None = None,
-    ) -> RobotProgramMotion | None:
+    ) -> tuple[RobotProgramMotion, list[float]] | None:
         if target.target_type != RobotProgramTargetType.CARTESIAN:
             return None
 
         target_pose_base = self._target_pose_base(motion, target, motion_tool)
-        q_seed_deg = self._select_joints_for_measured_geometry_pose(target_pose_base, previous_reference_joints_deg, motion_tool, measured_dh)
-        if q_seed_deg is None:
-            return None
-
-        corrected_joints_deg = self._apply_measured_theta_offsets_deg(q_seed_deg, measured_dh)
-        if corrected_joints_deg is None:
+        q_target_measured_deg = self._select_joints_for_measured_geometry_pose(
+            target_pose_base, previous_reference_joints_deg, motion_tool, measured_dh
+        )
+        if q_target_measured_deg is None:
             return None
 
         if output_mode == ProgramCompensationOutputMode.ARTICULAR:
-            return RobotProgramMotion(
+            motion_out = RobotProgramMotion(
                 mode=replace_mode or RobotProgramMotionMode.PTP,
                 target=RobotProgramTarget(
                     target_type=RobotProgramTargetType.JOINT,
-                    joint_angles=JointAngles6.from_values(corrected_joints_deg),
+                    joint_angles=JointAngles6.from_values(q_target_measured_deg),
                 ),
                 line_number=motion.line_number,
                 source=motion.source,
@@ -503,15 +525,16 @@ class ProgramSimulator:
                 tool_pose=motion.tool_pose.copy(),
                 cp_speed_mps=motion.cp_speed_mps,
             )
+            return motion_out, q_target_measured_deg
 
-        corrected_pose_base = self._fk_nominal_pose_base(corrected_joints_deg, motion_tool)
+        corrected_pose_base = self._fk_nominal_pose_base(q_target_measured_deg, motion_tool)
         corrected_pose_program_base = self._pose_from_robot_base_to_program_base(corrected_pose_base, motion.base_pose)
         corrected_target = RobotProgramTarget(
             target_type=RobotProgramTargetType.CARTESIAN,
             cartesian_pose=corrected_pose_program_base,
         )
         if motion.mode == RobotProgramMotionMode.CIRCULAR and target is motion.via_target:
-            return RobotProgramMotion(
+            motion_out = RobotProgramMotion(
                 mode=motion.mode,
                 target=motion.target,
                 via_target=corrected_target,
@@ -521,7 +544,9 @@ class ProgramSimulator:
                 tool_pose=motion.tool_pose.copy(),
                 cp_speed_mps=motion.cp_speed_mps,
             )
-        return replace(motion, target=corrected_target)
+        else:
+            motion_out = replace(motion, target=corrected_target)
+        return motion_out, q_target_measured_deg
 
     def _select_joints_for_measured_geometry_pose(
         self,
@@ -555,26 +580,6 @@ class ProgramSimulator:
         solver.set_q6ValueIfSingularityQ5Deg(current_joints_deg[5])
         return solver
 
-    def _apply_measured_theta_offsets_deg(self, theoretical_joints_deg: list[float], measured_dh: list[list[float]]) -> list[float] | None:
-        corrected_joints_deg = [float(value) for value in theoretical_joints_deg[:6]]
-        axis_reversed = self.robot_model.get_axis_reversed()
-        axis_limits = self.robot_model.get_axis_limits()
-        for axis in range(6):
-            reverse = float(axis_reversed[axis])
-            if abs(reverse) <= 1e-12:
-                return None
-            theoretical_offset_deg = float(self.robot_model.get_dh_param(axis, 2))
-            measured_offset_deg = float(measured_dh[axis][2])
-            delta_joint_deg = (theoretical_offset_deg - measured_offset_deg) / reverse
-            fitted = self._fit_joint_near_reference(
-                theoretical_joints_deg[axis],
-                theoretical_joints_deg[axis] + delta_joint_deg,
-                axis_limits[axis],
-            )
-            if fitted is None:
-                return None
-            corrected_joints_deg[axis] = fitted
-        return corrected_joints_deg
 
     def _normalized_measured_dh_table(self) -> list[list[float]] | None:
         raw_table = self.robot_model.get_measured_dh_params()
@@ -665,25 +670,6 @@ class ProgramSimulator:
         return 10.0 * clamped**3 - 15.0 * clamped**4 + 6.0 * clamped**5
 
     @staticmethod
-    def _fit_joint_near_reference(reference_deg: float, candidate_deg: float, axis_limits_deg: tuple[float, float]) -> float | None:
-        joint_min_deg = float(axis_limits_deg[0])
-        joint_max_deg = float(axis_limits_deg[1])
-        k_min = int(math.ceil((joint_min_deg - candidate_deg) / 360.0))
-        k_max = int(math.floor((joint_max_deg - candidate_deg) / 360.0))
-        if k_min > k_max:
-            return None
-
-        best_value: float | None = None
-        best_distance: float | None = None
-        for cycle in range(k_min, k_max + 1):
-            value = float(candidate_deg) + 360.0 * cycle
-            distance = abs(value - float(reference_deg))
-            if best_distance is None or distance < best_distance:
-                best_value = value
-                best_distance = distance
-        return best_value
-
-    @staticmethod
     def _shortest_joint_path(from_joints_deg: list[float], to_joints_deg: list[float]) -> list[float] | None:
         if len(from_joints_deg) < 6 or len(to_joints_deg) < 6:
             return None
@@ -772,6 +758,36 @@ class ProgramSimulator:
         if norm <= 1e-12:
             return np.array([1.0, 0.0, 0.0], dtype=float)
         return vector / norm
+
+    @staticmethod
+    def _cumulative_arc_lengths_mm(points_xyz: list[list[float]]) -> list[float]:
+        lengths: list[float] = [0.0]
+        for a, b in zip(points_xyz, points_xyz[1:]):
+            lengths.append(lengths[-1] + math.sqrt(sum((float(b[i]) - float(a[i])) ** 2 for i in range(3))))
+        return lengths
+
+    @staticmethod
+    def _xyz_distance_mm(a: list[float], b: list[float]) -> float:
+        return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+
+    @staticmethod
+    def _interp_xyz_at_arc_length(
+        points_xyz: list[list[float]],
+        arc_lengths: list[float],
+        target_length: float,
+    ) -> list[float]:
+        if len(points_xyz) == 1:
+            return list(points_xyz[0])
+        clamped = max(0.0, min(float(arc_lengths[-1]), float(target_length)))
+        right = bisect_left(arc_lengths, clamped)
+        right = min(right, len(arc_lengths) - 1)
+        left = max(0, right - 1)
+        left_len = arc_lengths[left]
+        right_len = arc_lengths[right]
+        if right_len - left_len <= 1e-9:
+            return list(points_xyz[right])
+        alpha = (clamped - left_len) / (right_len - left_len)
+        return [float(points_xyz[left][i]) + alpha * (float(points_xyz[right][i]) - float(points_xyz[left][i])) for i in range(3)]
 
     @staticmethod
     def _motion_linear_speed_mps(motion: RobotProgramMotion) -> float:

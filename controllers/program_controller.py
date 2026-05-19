@@ -1413,8 +1413,8 @@ class ProgramController:
                 cartesian_comp_program, include_compensation=False
             )
 
-        # Calcul compensation articulaire
-        articular_prog = self._articular_program or self.current_program
+        # Calcul compensation articulaire (toujours depuis les cibles cartesiennes)
+        articular_prog = self._cartesian_program or self.current_program
         articular_comp_program = self.program_simulator._build_compensated_program(
             articular_prog, ProgramCompensationOutputMode.ARTICULAR, measured_dh
         )
