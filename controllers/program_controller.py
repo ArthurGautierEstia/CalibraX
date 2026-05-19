@@ -485,7 +485,6 @@ class ProgramController:
             segments.extend(self._measured_segments_cache)
 
         if self._compensation_computed and self.actions_widget.is_compensated_visible():
-            self._ensure_compensation_result()
             segments.extend(self._compensated_segments_cache)
 
         if segments:
@@ -584,29 +583,29 @@ class ProgramController:
 
     def _selected_compensated_program(self) -> RobotProgram | None:
 
-        if self.current_result is None:
+        if not self._compensation_computed:
 
             return None
 
         if ProgramCompensationOutputMode(self.config_widget.get_motion_mode()) == ProgramCompensationOutputMode.ARTICULAR:
 
-            return self.current_result.articular_compensated_program
+            return self._compensated_articular_program
 
-        return self.current_result.cartesian_compensated_program
+        return self._compensated_cartesian_program
 
 
 
     def _selected_compensated_samples(self) -> list[ProgramSimulationSample]:
 
-        if self.current_result is None:
+        if not self._compensation_computed:
 
             return []
 
         if ProgramCompensationOutputMode(self.config_widget.get_motion_mode()) == ProgramCompensationOutputMode.ARTICULAR:
 
-            return self.current_result.articular_compensated_samples
+            return self._compensated_articular_result.nominal_samples if self._compensated_articular_result else []
 
-        return self.current_result.cartesian_compensated_samples
+        return self._compensated_cartesian_result.nominal_samples if self._compensated_cartesian_result else []
 
 
 
@@ -774,8 +773,6 @@ class ProgramController:
 
 
     def _on_export_requested(self) -> None:
-
-        self._ensure_compensation_result()
 
         program = self._selected_compensated_program()
 
@@ -1461,8 +1458,8 @@ class ProgramController:
                 nominal_samples=nominal_samples,
                 cartesian_compensated_samples=compensated_samples if motion_mode == "CARTESIAN" else [],
                 articular_compensated_samples=compensated_samples if motion_mode == "ARTICULAR" else [],
-                cartesian_compensated_program=self._cartesian_program if motion_mode == "CARTESIAN" else None,
-                articular_compensated_program=self._articular_program if motion_mode == "ARTICULAR" else None,
+                cartesian_compensated_program=self._compensated_cartesian_program if motion_mode == "CARTESIAN" else None,
+                articular_compensated_program=self._compensated_articular_program if motion_mode == "ARTICULAR" else None,
                 warnings=self._collect_all_warnings(),
                 compensation_computed=self._compensation_computed,
             )
