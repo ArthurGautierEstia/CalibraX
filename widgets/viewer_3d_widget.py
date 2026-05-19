@@ -50,6 +50,9 @@ from utils.reference_frame_utils import (
 
 
 class CalibraXGLViewWidget(gl.GLViewWidget):
+    _TRAJECTORY_KEYPOINT_PICK_RADIUS_PX = 15.0
+    _TRAJECTORY_LINE_PICK_RADIUS_PX = 7.0
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._background_mode = "solid"
@@ -59,6 +62,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._perspective_enabled = True
         self._orthographic_zoom_factor = 1.0
         self._grid_reference = None
+        self._trajectory_world_points_provider = None
         self.setBackgroundColor(self._background_primary_color)
 
     def mousePressEvent(self, ev) -> None:
@@ -150,6 +154,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
     def wheelEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         target_point_world = self._pick_world_point(local_position)
+        if target_point_world is None:
+            target_point_world = self._pick_trajectory_world_point(local_position)
         if target_point_world is None:
             target_point_world = self._project_cursor_to_center_depth(local_position)
 
@@ -253,6 +259,84 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self.setModelview()
         self.drawItemTree(useItemNames=False)
 
+    def _project_world_to_screen(self, world_point: np.ndarray) -> tuple[float, float] | None:
+        """Project a 3D world point to 2D screen logical-pixel coordinates."""
+        viewport_width, viewport_height = self._device_viewport_size()
+        if viewport_width <= 0 or viewport_height <= 0:
+            return None
+
+        projection_matrix = self.projectionMatrix(
+            region=(0, 0, viewport_width, viewport_height),
+            viewport=(0, 0, viewport_width, viewport_height),
+        )
+        mvp_matrix = projection_matrix * self.viewMatrix()
+        point_4d = QtGui.QVector4D(
+            float(world_point[0]), float(world_point[1]), float(world_point[2]), 1.0
+        )
+        clip = mvp_matrix.map(point_4d)
+        w = float(clip.w())
+        if abs(w) <= 1e-9 or w < 0:
+            return None
+
+        x_ndc = float(clip.x()) / w
+        y_ndc = float(clip.y()) / w
+        if x_ndc < -1.0 or x_ndc > 1.0 or y_ndc < -1.0 or y_ndc > 1.0:
+            return None
+
+        pixel_ratio = self.devicePixelRatioF()
+        screen_x = (x_ndc + 1.0) / 2.0 * float(viewport_width) / pixel_ratio
+        screen_y = (1.0 - y_ndc) / 2.0 * float(viewport_height) / pixel_ratio
+        return screen_x, screen_y
+
+    def _pick_trajectory_world_point(self, local_position) -> np.ndarray | None:
+        """Ray-cast toward trajectory keypoints and path segments using screen-space proximity."""
+        if self._trajectory_world_points_provider is None:
+            return None
+
+        keypoints_world, path_segments_world = self._trajectory_world_points_provider()
+        cx = float(local_position.x())
+        cy = float(local_position.y())
+
+        best_point: np.ndarray | None = None
+        best_dist = float("inf")
+
+        if keypoints_world is not None and len(keypoints_world) > 0:
+            for pt in keypoints_world:
+                sp = self._project_world_to_screen(pt)
+                if sp is None:
+                    continue
+                dist = ((sp[0] - cx) ** 2 + (sp[1] - cy) ** 2) ** 0.5
+                if dist < self._TRAJECTORY_KEYPOINT_PICK_RADIUS_PX and dist < best_dist:
+                    best_dist = dist
+                    best_point = np.array(pt, dtype=float)
+
+        if path_segments_world is not None:
+            for seg_pts in path_segments_world:
+                if len(seg_pts) < 2:
+                    continue
+                prev_sp = self._project_world_to_screen(seg_pts[0])
+                for i in range(1, len(seg_pts)):
+                    curr_sp = self._project_world_to_screen(seg_pts[i])
+                    if prev_sp is not None and curr_sp is not None:
+                        ax, ay = prev_sp
+                        bx, by = curr_sp
+                        dx, dy = bx - ax, by - ay
+                        seg_len_sq = dx * dx + dy * dy
+                        t = (
+                            max(0.0, min(1.0, ((cx - ax) * dx + (cy - ay) * dy) / seg_len_sq))
+                            if seg_len_sq > 1e-9
+                            else 0.0
+                        )
+                        dist = ((cx - (ax + t * dx)) ** 2 + (cy - (ay + t * dy)) ** 2) ** 0.5
+                        if dist < self._TRAJECTORY_LINE_PICK_RADIUS_PX and dist < best_dist:
+                            best_dist = dist
+                            p1 = np.array(seg_pts[i - 1], dtype=float)
+                            p2 = np.array(seg_pts[i], dtype=float)
+                            best_point = p1 + t * (p2 - p1)
+                    prev_sp = curr_sp
+
+        return best_point
+
     def _pick_world_point(self, local_position) -> np.ndarray | None:
         depth_value = self._read_depth_value(local_position)
         if depth_value is None or depth_value >= 1.0:
@@ -260,6 +344,10 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return self._unproject_view_point(local_position, depth_value)
 
     def _pick_orbit_world_point(self, local_position) -> np.ndarray | None:
+        traj_point = self._pick_trajectory_world_point(local_position)
+        if traj_point is not None:
+            return traj_point
+
         picked_world_point = self._pick_world_point(local_position)
         if picked_world_point is None:
             return None
@@ -468,6 +556,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             return
 
         camera_origin_world, ray_direction_world = ray
+
+        if target_point_world is not None:
+            to_target = np.array(target_point_world, dtype=float) - camera_origin_world
+            to_target_len = float(np.linalg.norm(to_target))
+            if to_target_len > 1e-9:
+                ray_direction_world = to_target / to_target_len
+
         distance_to_target = self._camera_distance_to_point(target_point_world)
         translation_distance = self._compute_dolly_translation_distance(distance_to_target, wheel_delta)
         if abs(translation_distance) <= 1e-9:
@@ -886,6 +981,7 @@ class Viewer3DWidget(QWidget):
         self.viewer.opts['glOptions'] = 'translucent'
         self.viewer.opts['depth'] = True
         self.viewer.setCameraPosition(distance=2000, elevation=40, azimuth=45)
+        self.viewer._trajectory_world_points_provider = self._get_trajectory_world_points
         #self.viewer.setMinimumSize(900, 400)
         self.viewer.set_background_style(
             self._viewer_background_mode,
@@ -2639,6 +2735,21 @@ class Viewer3DWidget(QWidget):
         self._trajectory_tangent_out_segments = None
         self._trajectory_tangent_in_segments = None
         self._render_trajectory_overlay()
+
+    def _get_trajectory_world_points(self) -> tuple:
+        """Fournit les positions world des éléments de trajectoire pour le picking du viewer."""
+        keypoints_world = None
+        if self._trajectory_keypoint_points is not None and len(self._trajectory_keypoint_points) > 0:
+            keypoints_world = self._transform_robot_points_to_world(self._trajectory_keypoint_points)
+
+        path_segments_world = None
+        if self._trajectory_path_segments is not None and len(self._trajectory_path_segments) > 0:
+            path_segments_world = [
+                self._transform_robot_points_to_world(pts)
+                for pts, _ in self._trajectory_path_segments
+            ]
+
+        return keypoints_world, path_segments_world
 
     def _render_trajectory_overlay(self) -> None:
         for item in self._trajectory_path_items:

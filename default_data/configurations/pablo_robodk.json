@@ -78,7 +78,7 @@
             "240.0"
         ]
     ],
-    "dh_measured_enabled": true,
+    "dh_measured_enabled": false,
     "corr": [
         [
             "0.0",
