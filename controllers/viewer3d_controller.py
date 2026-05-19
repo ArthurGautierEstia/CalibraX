@@ -308,3 +308,9 @@ class Viewer3DController(QObject):
 
     def clear_trajectory_status_message(self) -> None:
         self.viewer_3d_widget.clear_trajectory_status_message()
+
+    def set_program_frame(self, program_base_pose: Pose6 | None, label: str = "Program Frame") -> None:
+        self.viewer_3d_widget.set_program_frame(program_base_pose, label)
+
+    def clear_program_frame(self) -> None:
+        self.viewer_3d_widget.clear_program_frame()

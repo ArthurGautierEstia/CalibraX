@@ -65,7 +65,7 @@ class ProgramTargetDialog(QDialog):
         frame_row = QHBoxLayout()
         frame_row.addWidget(QLabel("Edition cartesienne"))
         self.frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
-        self.frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
+        self.frame_combo.addItem("Repere robot", ReferenceFrame.ROBOT.value)
         frame_row.addWidget(self.frame_combo)
         frame_row.addStretch()
         layout.addLayout(frame_row)
@@ -100,7 +100,7 @@ class ProgramTargetDialog(QDialog):
         self.frame_combo.blockSignals(True)
         self.frame_combo.setCurrentIndex(0)
         self.frame_combo.blockSignals(False)
-        self.cartesian_widget.set_reference_frame(ReferenceFrame.BASE.value)
+        self.cartesian_widget.set_reference_frame(ReferenceFrame.ROBOT.value)
         self.cartesian_widget.set_all_cartesian(self._target.cartesian_pose.copy())
 
     def _on_frame_changed(self, _index: int) -> None:

@@ -56,6 +56,7 @@ class RobotProgram:
     brand: RobotProgramBrand
     source_path: str
     source_text: str
+    program_base_pose: Pose6 = field(default_factory=Pose6.zeros)
     motions: list[RobotProgramMotion] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 

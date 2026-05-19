@@ -45,6 +45,7 @@ class ProgramKeypointsWidget(QWidget):
     toolSourceChanged = pyqtSignal(str)
     targetModeChanged = pyqtSignal(str)
     motionModeChanged = pyqtSignal(str)
+    editProgramBaseRequested = pyqtSignal()
 
     def __init__(
         self,
@@ -65,6 +66,7 @@ class ProgramKeypointsWidget(QWidget):
         self.tool_source_combo = QComboBox()
         self.target_mode_combo = QComboBox()
         self.motion_mode_combo = QComboBox()
+        self.btn_edit_program_base = QPushButton("Editer la base programme")
 
         self._keypoints: list[TrajectoryKeypoint] = []
         self._current_tool_source = "CURRENT"  # CURRENT or PROGRAM
@@ -115,6 +117,11 @@ class ProgramKeypointsWidget(QWidget):
         
         layout.addLayout(selectors_row)
 
+        base_actions_row = QHBoxLayout()
+        base_actions_row.addWidget(self.btn_edit_program_base)
+        base_actions_row.addStretch()
+        layout.addLayout(base_actions_row)
+
         self.keypoints_table.setHorizontalHeaderLabels([
             "Cible", "Mode", "Vitesse", "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C", "Configs"
         ])
@@ -148,6 +155,7 @@ class ProgramKeypointsWidget(QWidget):
         self.motion_mode_combo.currentIndexChanged.connect(self._on_motion_mode_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
+        self.btn_edit_program_base.clicked.connect(self.editProgramBaseRequested.emit)
 
     def _emit_keypoints_changed(self) -> None:
         self.keypoints_changed.emit(self.get_keypoints())
@@ -357,3 +365,6 @@ class ProgramKeypointsWidget(QWidget):
         # Si on desactive COMPENSE et qu il est selectionne, revenir a THEORETICAL
         if not enabled and self.get_target_mode() == "COMPENSATED":
             self.set_target_mode("THEORETICAL", emit_signal=True)
+
+    def set_program_base_edit_enabled(self, enabled: bool) -> None:
+        self.btn_edit_program_base.setEnabled(bool(enabled))

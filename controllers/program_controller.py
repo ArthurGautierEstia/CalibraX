@@ -29,6 +29,7 @@ from models.workspace_model import WorkspaceModel
 from utils.program_simulator import ProgramSimulator
 from utils.mgi import RobotTool
 from utils.robot_program_kuka import export_kuka_src_program, load_kuka_src_program
+from widgets.program_view.program_base_dialog import ProgramBaseDialog
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
@@ -162,6 +163,7 @@ class ProgramController:
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
+        self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
         self.config_widget.keypoints_changed.connect(self._on_program_keypoints_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
         self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
@@ -211,8 +213,11 @@ class ProgramController:
 
 
     def _on_recompute_requested(self) -> None:
-
-        self._recompute_current_program()
+        self.viewer3d_controller.begin_loading_feedback("Calcul de la trajectoire en cours ...")
+        try:
+            self._recompute_current_program()
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     
 
@@ -235,6 +240,7 @@ class ProgramController:
 
     def _recompute_current_program(self) -> None:
         self._stop_playback()
+        self._current_time_s = 0.0
 
         if self.current_program is None:
             # Reinitialisation complete
@@ -375,6 +381,7 @@ class ProgramController:
         self._refresh_status()
         self._refresh_viewer_segments()
         self._refresh_viewer_keypoints()
+        self._refresh_program_frame()
         self._refresh_error_graph()
         self._refresh_timeline()
 
@@ -406,6 +413,7 @@ class ProgramController:
             self.header_widget.set_program_info("", 0)
             self.header_widget.set_log_lines([])
             self.actions_widget.set_export_enabled(False)
+            self.config_widget.set_program_base_edit_enabled(False)
             return
 
         log_lines = list(self.current_program.warnings)
@@ -420,6 +428,7 @@ class ProgramController:
 
         self.header_widget.set_log_lines(log_lines)
         self.actions_widget.set_export_enabled(self._selected_compensated_program() is not None)
+        self.config_widget.set_program_base_edit_enabled(True)
 
 
 
@@ -981,6 +990,35 @@ class ProgramController:
 
         self._edit_program_target_at_row(row)
 
+    def _on_edit_program_base_requested(self) -> None:
+
+        program_base_pose = self._program_base_pose()
+
+        if program_base_pose is None:
+
+            return
+
+        dialog = ProgramBaseDialog(program_base_pose, self.program_view)
+        dialog.base_pose_preview_changed.connect(self._on_program_base_preview_changed)
+
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            self._update_program_base_preview(program_base_pose)
+
+            return
+
+        updated_base_pose = dialog.get_base_pose()
+
+        if updated_base_pose == program_base_pose:
+
+            return
+
+        self._invalidate_simulation_results()
+        self._refresh_status()
+
+    def _on_program_base_preview_changed(self, base_pose: Pose6) -> None:
+
+        self._update_program_base_preview(base_pose)
+
 
 
     def _on_program_table_item_double_clicked(self, item) -> None:
@@ -1074,6 +1112,82 @@ class ProgramController:
             return program_tool
 
         return current_tool
+
+    def _program_base_pose(self) -> Pose6 | None:
+
+        if self.current_program is None:
+
+            return None
+
+        return self.current_program.program_base_pose.copy()
+
+    @staticmethod
+    def _program_with_updated_base_pose(program: RobotProgram | None, base_pose: Pose6) -> RobotProgram | None:
+
+        if program is None:
+
+            return None
+
+        updated_motions = [
+            replace(motion, base_pose=base_pose.copy())
+            for motion in program.motions
+        ]
+
+        return replace(program, program_base_pose=base_pose.copy(), motions=updated_motions)
+
+    def _update_program_base_pose(self, base_pose: Pose6) -> None:
+
+        if self.current_program is None:
+
+            return
+
+        updated_base_pose = base_pose.copy()
+        self.current_program = self._program_with_updated_base_pose(self.current_program, updated_base_pose)
+        self._articular_program = self._program_with_updated_base_pose(self._articular_program, updated_base_pose)
+        self._cartesian_program = self._program_with_updated_base_pose(self._cartesian_program, updated_base_pose)
+        self._compensated_cartesian_program = self._program_with_updated_base_pose(
+            self._compensated_cartesian_program,
+            updated_base_pose,
+        )
+        self._compensated_articular_program = self._program_with_updated_base_pose(
+            self._compensated_articular_program,
+            updated_base_pose,
+        )
+
+    def _update_program_base_preview(self, base_pose: Pose6) -> None:
+
+        self._update_program_base_pose(base_pose)
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+        self._refresh_keypoint_table()
+        self._refresh_viewer_keypoints()
+        self._refresh_program_frame()
+
+    def _invalidate_simulation_results(self) -> None:
+
+        self.current_result = None
+        self._nominal_cartesian_result = None
+        self._nominal_articular_result = None
+        self._compensated_cartesian_result = None
+        self._compensated_articular_result = None
+        self._compensation_computed = False
+        self._nominal_segments_cache = []
+        self._measured_segments_cache = []
+        self._compensated_segments_cache = []
+        self.actions_widget.set_compensated_checkbox_enabled(False)
+        self.actions_widget.set_compensation_enabled(True)
+        self.viewer3d_controller.clear_trajectory_path()
+
+    def _refresh_program_frame(self) -> None:
+
+        program_base_pose = self._program_base_pose()
+
+        if program_base_pose is None:
+
+            self.viewer3d_controller.clear_program_frame()
+
+            return
+
+        self.viewer3d_controller.set_program_frame(program_base_pose, "Program Frame")
 
 
 
