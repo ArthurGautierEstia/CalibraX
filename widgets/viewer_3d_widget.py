@@ -817,6 +817,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         step_distance = max(1.0, proportional_step)
         return -step_distance
 
+
 @dataclass(frozen=True)
 class WorkspaceElementState:
     name: str
@@ -2778,7 +2779,7 @@ class Viewer3DWidget(QWidget):
                     pos=world_points,
                     color=color,
                     width=2,
-                    antialias=False,
+                    antialias=True,
                 )
                 self._trajectory_path_items.append(path_item)
                 self.viewer.addItem(path_item)
