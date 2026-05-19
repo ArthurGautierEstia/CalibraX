@@ -17,6 +17,7 @@ from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidg
 
 if TYPE_CHECKING:
     from controllers.tool_controller import ToolController
+    from controllers.viewer3d_controller import Viewer3DController
 
 
 class RobotConfigurationController(QObject):
@@ -35,12 +36,14 @@ class RobotConfigurationController(QObject):
         robot_model: RobotModel,
         robot_configuration_widget: RobotConfigurationWidget,
         tool_controller: ToolController | None = None,
+        viewer3d_controller: Viewer3DController | None = None,
         parent: QObject = None,
     ):
         super().__init__(parent)
         self.robot_model = robot_model
         self.robot_configuration_widget = robot_configuration_widget
         self.tool_controller = tool_controller
+        self.viewer3d_controller = viewer3d_controller
         self._default_tool_profile = ""
         self._default_tool_auto_load_on_startup = False
         self._saved_snapshot: str | None = None
@@ -362,7 +365,13 @@ class RobotConfigurationController(QObject):
                     "Le fichier de configuration n'est pas au format adapte. Veuillez verifier le contenu.",
                 )
                 return
-            self.load_configuration_from_path(file_path)
+            if self.viewer3d_controller is not None:
+                self.viewer3d_controller.begin_loading_feedback("Chargement configuration robot ...")
+            try:
+                self.load_configuration_from_path(file_path)
+            finally:
+                if self.viewer3d_controller is not None:
+                    self.viewer3d_controller.end_loading_feedback()
 
     def save_configuration(self) -> None:
         current_path = self.robot_model.get_current_config_file()

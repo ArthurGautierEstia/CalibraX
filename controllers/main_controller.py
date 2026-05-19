@@ -62,11 +62,19 @@ class MainController(QObject):
             self,
         )
 
+        self.viewer3d_controller = Viewer3DController(
+            robot_model,
+            tool_model,
+            workspace_model,
+            self.collision_scene_model,
+            main_window.get_viewer3d(),
+        )
         self.robot_controller = RobotController(
             robot_model,
             tool_model,
             main_window.get_robot_view(),
             main_window.get_tool_view(),
+            self.viewer3d_controller,
         )
         self.calibration_controller = CalibrationController(robot_model, tool_model, main_window.get_calibration_view())
         self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view())
@@ -80,13 +88,6 @@ class MainController(QObject):
             workspace_model,
             main_window.get_cartesian_control_view(),
             self.mgi_controller,
-        )
-        self.viewer3d_controller = Viewer3DController(
-            robot_model,
-            tool_model,
-            workspace_model,
-            self.collision_scene_model,
-            main_window.get_viewer3d(),
         )
         self.trajectory_controller = TrajectoryController(
             robot_model,
@@ -162,14 +163,22 @@ class MainController(QObject):
         robot_configuration_loaded = False
         config_path = self._resolve_existing_path(startup.get("config", ""))
         if config_path:
-            robot_configuration_loaded = self.robot_controller.dh_controller.load_configuration_from_path(
-                config_path,
-                show_errors=False,
-            )
+            self.viewer3d_controller.begin_loading_feedback("Chargement configuration robot ...")
+            try:
+                robot_configuration_loaded = self.robot_controller.dh_controller.load_configuration_from_path(
+                    config_path,
+                    show_errors=False,
+                )
+            finally:
+                self.viewer3d_controller.end_loading_feedback()
 
         tool_path = self._resolve_existing_path(startup.get("tool", ""))
         if not robot_configuration_loaded and tool_path:
-            self.robot_controller.tool_controller.load_tool_profile_from_path(tool_path, show_errors=False)
+            self.viewer3d_controller.begin_loading_feedback("Chargement configuration tool ...")
+            try:
+                self.robot_controller.tool_controller.load_tool_profile_from_path(tool_path, show_errors=False)
+            finally:
+                self.viewer3d_controller.end_loading_feedback()
 
         workspace_path = self._resolve_existing_path(startup.get("workspace", ""))
         if workspace_path:

@@ -1667,20 +1667,24 @@ class ProgramController:
         if self.current_program is None:
             return
 
-        self._compute_compensation()
-        if self._compensation_computed:
-            self.config_widget.set_target_mode_enabled(True)
-            self.actions_widget.set_compensated_checkbox_enabled(True)
+        self.viewer3d_controller.begin_loading_feedback("Calcul de la compensation en cours ...")
+        try:
+            self._compute_compensation()
+            if self._compensation_computed:
+                self.config_widget.set_target_mode_enabled(True)
+                self.actions_widget.set_compensated_checkbox_enabled(True)
 
-        # Rafraichir pour afficher la compensation
-        motion_mode = self.config_widget.get_motion_mode()
-        self._compensated_segments_cache = self._build_segments(
-            self._get_samples_for_modes("COMPENSATED", motion_mode),
-            self.COMPENSATED_PATH_COLORS,
-            "measured",
-        )
-        self._refresh_viewer_segments()
-        self._refresh_error_graph()
+            # Rafraichir pour afficher la compensation
+            motion_mode = self.config_widget.get_motion_mode()
+            self._compensated_segments_cache = self._build_segments(
+                self._get_samples_for_modes("COMPENSATED", motion_mode),
+                self.COMPENSATED_PATH_COLORS,
+                "measured",
+            )
+            self._refresh_viewer_segments()
+            self._refresh_error_graph()
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _get_program_for_target_and_motion_mode(self, target_mode: str, motion_mode: str) -> RobotProgram | None:
         """Retourne le programme selon target_mode et motion_mode."""
