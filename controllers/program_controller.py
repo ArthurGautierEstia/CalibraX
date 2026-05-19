@@ -158,7 +158,7 @@ class ProgramController:
         self.playback_widget.pause_requested.connect(self._on_pause_requested)
         self.playback_widget.stop_requested.connect(self._on_stop_requested)
         self.playback_widget.time_value_changed.connect(self._on_time_value_changed)
-        self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
+        self.actions_widget.trajectory_visibility_changed.connect(self._on_trajectory_visibility_changed)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
@@ -332,16 +332,11 @@ class ProgramController:
             self._build_display_keypoints_for_mode(active_motion_mode, active_target_mode)
         )
 
-        # Build caches
-        self._nominal_segments_cache = self._build_segments(
+        # Build caches — Lot D : une seule passe pour nominal + measured
+        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             self._get_samples_for_modes("THEORETICAL", active_motion_mode),
             self.NOMINAL_PATH_COLORS,
-            "nominal",
-        )
-        self._measured_segments_cache = self._build_segments(
-            self._get_samples_for_modes("THEORETICAL", active_motion_mode),
             self.MEASURED_PATH_COLORS,
-            "measured",
         )
         self._compensated_segments_cache = []
 
@@ -392,6 +387,11 @@ class ProgramController:
         self._refresh_program_frame()
         self._refresh_error_graph()
         self._refresh_timeline()
+
+    def _on_trajectory_visibility_changed(self, *_args) -> None:
+        if self.current_program is None:
+            return
+        self._refresh_viewer_segments()
 
 
 
@@ -1614,16 +1614,11 @@ class ProgramController:
             self._build_display_keypoints_for_mode(motion_mode, target_mode)
         )
 
-        # Mise a jour des caches
-        self._nominal_segments_cache = self._build_segments(
+        # Mise a jour des caches — Lot D : une seule passe pour nominal + measured
+        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             self._get_samples_for_modes("THEORETICAL", motion_mode),
             self.NOMINAL_PATH_COLORS,
-            "nominal",
-        )
-        self._measured_segments_cache = self._build_segments(
-            self._get_samples_for_modes("THEORETICAL", motion_mode),
             self.MEASURED_PATH_COLORS,
-            "measured",
         )
         self._compensated_segments_cache = self._build_segments(
             self._get_samples_for_modes("COMPENSATED", motion_mode),
@@ -1725,6 +1720,53 @@ class ProgramController:
         motion_mode = self.config_widget.get_motion_mode()
         return self._build_display_keypoints_for_mode(motion_mode)
 
+
+    @staticmethod
+    def _build_nominal_and_measured_segments(
+        samples: list[ProgramSimulationSample],
+        nominal_colors: dict[str, tuple[float, float, float, float]],
+        measured_colors: dict[str, tuple[float, float, float, float]],
+    ) -> tuple[
+        list[tuple[list[list[float]], tuple[float, float, float, float]]],
+        list[tuple[list[list[float]], tuple[float, float, float, float]]],
+    ]:
+        """Lot D : construit les segments nominal et measured en une seule passe sur les samples."""
+        nominal_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
+        measured_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
+
+        nom_points: list[list[float]] = []
+        meas_points: list[list[float]] = []
+        current_key: tuple[str, int] | None = None
+
+        for sample in samples:
+            nom_pose = sample.nominal_pose_base
+            meas_pose = sample.measured_pose_base
+            if nom_pose is None and meas_pose is None:
+                continue
+
+            motion_key = (sample.motion_mode.value, int(sample.source_line))
+
+            if current_key is not None and motion_key != current_key:
+                if len(nom_points) >= 2:
+                    nominal_segments.append((nom_points, nominal_colors.get(current_key[0], (1.0, 0.55, 0.0, 1.0))))
+                    nom_points = [nom_points[-1]]
+                if len(meas_points) >= 2:
+                    measured_segments.append((meas_points, measured_colors.get(current_key[0], (0.0, 0.35, 1.0, 1.0))))
+                    meas_points = [meas_points[-1]]
+
+            current_key = motion_key
+            if nom_pose is not None:
+                nom_points.append([nom_pose.x, nom_pose.y, nom_pose.z])
+            if meas_pose is not None:
+                meas_points.append([meas_pose.x, meas_pose.y, meas_pose.z])
+
+        if current_key is not None:
+            if len(nom_points) >= 2:
+                nominal_segments.append((nom_points, nominal_colors.get(current_key[0], (1.0, 0.55, 0.0, 1.0))))
+            if len(meas_points) >= 2:
+                measured_segments.append((meas_points, measured_colors.get(current_key[0], (0.0, 0.35, 1.0, 1.0))))
+
+        return nominal_segments, measured_segments
 
     def _build_segments(
         self,

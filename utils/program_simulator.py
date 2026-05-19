@@ -4,6 +4,7 @@ from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, replace
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -37,11 +38,19 @@ class ProgramSimulator:
     DEFAULT_DT_S = 0.02
     DEFAULT_LINEAR_SPEED_MPS = 0.2
     DEFAULT_PTP_SPEED_PERCENT = 50.0
-    CARTESIAN_SAMPLE_STEP_MM = 1.0
+    MAX_TRAJECTORY_SAMPLES = 3000
+    MIN_CARTESIAN_SAMPLE_STEP_MM = 1.0
 
     def __init__(self, robot_model: RobotModel, tool_model: ToolModel) -> None:
         self.robot_model = robot_model
         self.tool_model = tool_model
+        # Lot A.1 : cache DH mesuré valide pendant une passe de simulate_program
+        self._cached_measured_dh: list[list[float]] | None = None
+        # Lot F : arrays numpy pré-extraits pour FK mesuré vectorisé
+        self._cached_measured_dh_arrays: tuple | None = None
+        self._cached_axis_reversed: np.ndarray | None = None
+        # Lot B : pas d'interpolation actif pour la simulation courante
+        self._active_cartesian_step_mm: float = self.MIN_CARTESIAN_SAMPLE_STEP_MM
 
     def simulate_program(self, program: RobotProgram, include_compensation: bool = True) -> ProgramSimulationResult:
         if program.brand != RobotProgramBrand.KUKA:
@@ -49,33 +58,48 @@ class ProgramSimulator:
         if not self.robot_model.get_has_configuration():
             return ProgramSimulationResult(warnings=["Charger une configuration robot avant de simuler un programme."])
 
-        nominal_samples = self._simulate_motion_list(program.motions)
-        warnings = list(program.warnings)
-        cartesian_program: RobotProgram | None = None
-        articular_program: RobotProgram | None = None
-        cartesian_samples: list[ProgramSimulationSample] = []
-        articular_samples: list[ProgramSimulationSample] = []
-
-        measured_dh = self._normalized_measured_dh_table()
-        if measured_dh is None:
-            warnings.append("Aucun modele mesure disponible: trajectoire reelle et compensation indisponibles.")
-        elif include_compensation:
-            cartesian_program = self._build_compensated_program(program, ProgramCompensationOutputMode.CARTESIAN, measured_dh)
-            articular_program = self._build_compensated_program(program, ProgramCompensationOutputMode.ARTICULAR, measured_dh)
-            if cartesian_program is not None:
-                cartesian_samples = self._simulate_motion_list(cartesian_program.motions)
-            if articular_program is not None:
-                articular_samples = self._simulate_motion_list(articular_program.motions)
-
-        return ProgramSimulationResult(
-            nominal_samples=nominal_samples,
-            cartesian_compensated_samples=cartesian_samples,
-            articular_compensated_samples=articular_samples,
-            cartesian_compensated_program=cartesian_program,
-            articular_compensated_program=articular_program,
-            warnings=warnings,
-            compensation_computed=include_compensation or measured_dh is None,
+        # Lot A.1 : snapshot DH mesuré pour toute la passe
+        self._cached_measured_dh = self._compute_normalized_measured_dh_table()
+        # Lot F : pré-extraire les arrays numpy pour FK mesuré vectorisé
+        self._rebuild_measured_dh_arrays()
+        # Lot B : calcul du pas adaptatif basé sur la longueur totale estimée
+        total_length_mm = self._estimate_total_path_length_mm(program.motions)
+        self._active_cartesian_step_mm = max(
+            self.MIN_CARTESIAN_SAMPLE_STEP_MM,
+            total_length_mm / max(1, self.MAX_TRAJECTORY_SAMPLES),
         )
+        try:
+            nominal_samples = self._simulate_motion_list(program.motions)
+            warnings = list(program.warnings)
+            cartesian_program: RobotProgram | None = None
+            articular_program: RobotProgram | None = None
+            cartesian_samples: list[ProgramSimulationSample] = []
+            articular_samples: list[ProgramSimulationSample] = []
+
+            measured_dh = self._cached_measured_dh
+            if measured_dh is None:
+                warnings.append("Aucun modele mesure disponible: trajectoire reelle et compensation indisponibles.")
+            elif include_compensation:
+                cartesian_program = self._build_compensated_program(program, ProgramCompensationOutputMode.CARTESIAN, measured_dh)
+                articular_program = self._build_compensated_program(program, ProgramCompensationOutputMode.ARTICULAR, measured_dh)
+                if cartesian_program is not None:
+                    cartesian_samples = self._simulate_motion_list(cartesian_program.motions)
+                if articular_program is not None:
+                    articular_samples = self._simulate_motion_list(articular_program.motions)
+
+            return ProgramSimulationResult(
+                nominal_samples=nominal_samples,
+                cartesian_compensated_samples=cartesian_samples,
+                articular_compensated_samples=articular_samples,
+                cartesian_compensated_program=cartesian_program,
+                articular_compensated_program=articular_program,
+                warnings=warnings,
+                compensation_computed=include_compensation or measured_dh is None,
+            )
+        finally:
+            self._cached_measured_dh = None
+            self._cached_measured_dh_arrays = None
+            self._cached_axis_reversed = None
 
     def build_error_curves(
         self,
@@ -144,6 +168,40 @@ class ProgramSimulator:
 
         return result if any_written else [0.0] * len(nominal_ok)
 
+    # =========================================================================
+    # Lot B : estimation longueur totale pour le pas adaptatif
+    # =========================================================================
+
+    def _estimate_total_path_length_mm(self, motions: list[RobotProgramMotion]) -> float:
+        current_joints_deg = self._normalize_joints(self.robot_model.get_joints())
+        initial_tool = self.tool_model.get_tool() if not motions else self._tool_from_pose(motions[0].tool_pose)
+        current_pose = self._fk_nominal_pose_base(current_joints_deg, initial_tool)
+        total_mm = 0.0
+        for motion in motions:
+            motion_tool = self._tool_from_pose(motion.tool_pose)
+            if motion.mode == RobotProgramMotionMode.PTP:
+                target_joints = self._resolve_ptp_target_joints(motion, current_joints_deg, motion_tool)
+                if target_joints is None:
+                    continue
+                target_pose = self._fk_nominal_pose_base(target_joints, motion_tool)
+                total_mm += self._distance_xyz_mm(current_pose, target_pose)
+                current_joints_deg = target_joints
+                current_pose = target_pose
+            elif motion.mode == RobotProgramMotionMode.LINEAR:
+                target_pose = self._target_pose_base(motion, motion.target, motion_tool)
+                total_mm += self._distance_xyz_mm(current_pose, target_pose)
+                current_pose = target_pose
+            elif motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
+                via_pose = self._target_pose_base(motion, motion.via_target, motion_tool)
+                target_pose = self._target_pose_base(motion, motion.target, motion_tool)
+                total_mm += self._distance_xyz_mm(current_pose, via_pose) + self._distance_xyz_mm(via_pose, target_pose)
+                current_pose = target_pose
+        return total_mm
+
+    # =========================================================================
+    # Simulation de la liste de mouvements
+    # =========================================================================
+
     def _simulate_motion_list(self, motions: list[RobotProgramMotion]) -> list[ProgramSimulationSample]:
         current_joints_deg = self._normalize_joints(self.robot_model.get_joints())
         initial_tool = self.tool_model.get_tool() if not motions else self._tool_from_pose(motions[0].tool_pose)
@@ -210,6 +268,10 @@ class ProgramSimulator:
             return self._simulate_cartesian_path(motion, path, current_joints_deg, current_time_s, motion_tool, step_time_s)
         return []
 
+    # =========================================================================
+    # Lot C : PTP en une seule passe (sonde légère pour estimer, puis sonde fine)
+    # =========================================================================
+
     def _simulate_ptp(
         self,
         motion: RobotProgramMotion,
@@ -229,25 +291,19 @@ class ProgramSimulator:
         axis_speed_limits = [max(1e-6, float(speed) * speed_ratio) for speed in self.robot_model.get_axis_speed_limits()[:6]]
         duration_s = max(abs(deltas_deg[axis]) / axis_speed_limits[axis] for axis in range(6))
         coarse_probe_intervals = max(1, int(math.ceil(duration_s / self.DEFAULT_DT_S)))
-        probe_samples = self._build_ptp_probe_samples(
-            current_joints_deg,
-            deltas_deg,
-            current_time_s,
-            duration_s,
-            coarse_probe_intervals,
-            motion_tool,
+
+        # Lot C : sonde légère à 8 points pour estimer la longueur TCP
+        light_probe = self._build_ptp_probe_samples(
+            current_joints_deg, deltas_deg, current_time_s, duration_s, 8, motion_tool
         )
-        estimated_tcp_length_mm = self._probe_path_length_mm(probe_samples)
-        refined_probe_intervals = max(coarse_probe_intervals, self._cartesian_intervals_for_distance(estimated_tcp_length_mm))
-        if refined_probe_intervals != coarse_probe_intervals:
-            probe_samples = self._build_ptp_probe_samples(
-                current_joints_deg,
-                deltas_deg,
-                current_time_s,
-                duration_s,
-                refined_probe_intervals,
-                motion_tool,
-            )
+        estimated_tcp_length_mm = self._probe_path_length_mm(light_probe)
+
+        # Une seule sonde fine combinant les deux critères
+        final_intervals = max(coarse_probe_intervals, self._cartesian_intervals_for_distance(estimated_tcp_length_mm))
+        probe_samples = self._build_ptp_probe_samples(
+            current_joints_deg, deltas_deg, current_time_s, duration_s, final_intervals, motion_tool
+        )
+
         resampled_probe_samples = self._resample_ptp_probe_by_distance(probe_samples)
         return [
             self._build_sample(
@@ -383,9 +439,12 @@ class ProgramSimulator:
             )
         return samples
 
-    @classmethod
-    def _cartesian_intervals_for_distance(cls, distance_mm: float) -> int:
-        step_mm = max(1e-6, float(cls.CARTESIAN_SAMPLE_STEP_MM))
+    # =========================================================================
+    # Lot B : pas d'interpolation adaptatif (méthode d'instance)
+    # =========================================================================
+
+    def _cartesian_intervals_for_distance(self, distance_mm: float) -> int:
+        step_mm = max(1e-6, float(self._active_cartesian_step_mm))
         if distance_mm <= step_mm:
             return 1
         return max(1, int(math.ceil(float(distance_mm) / step_mm)))
@@ -431,6 +490,10 @@ class ProgramSimulator:
             return None
         return self._normalize_joints(best_solution[1].joints)
 
+    # =========================================================================
+    # Lot A.2+A.3 : compensation avec MGI réutilisé par tool et cache IK
+    # =========================================================================
+
     def _build_compensated_program(
         self,
         program: RobotProgram,
@@ -441,12 +504,24 @@ class ProgramSimulator:
         current_joints_deg = self._normalize_joints(self.robot_model.get_joints())
         previous_reference_joints_deg = list(current_joints_deg)
 
+        # Lot A.2 : un solveur MGI mesuré par tool (clé = tuple des 6 composantes)
+        mgi_solvers_by_tool: dict[tuple[float, ...], MGI] = {}
+        # Lot A.3 : cache IK local pour cette passe de compensation
+        ik_cache: dict[tuple, list[float]] = {}
+
         for motion in program.motions:
             motion_tool = self._tool_from_pose(motion.tool_pose)
             if motion.mode == RobotProgramMotionMode.PTP and motion.target.target_type == RobotProgramTargetType.JOINT:
                 corrected_motions.append(motion)
                 previous_reference_joints_deg = motion.target.joint_angles.to_list()
                 continue
+
+            # Récupérer ou créer le solveur MGI pour ce tool
+            tool_key = (motion_tool.x, motion_tool.y, motion_tool.z, motion_tool.a, motion_tool.b, motion_tool.c)
+            solver = mgi_solvers_by_tool.get(tool_key)
+            if solver is None:
+                solver = self._build_measured_geometry_mgi(measured_dh, motion_tool)
+                mgi_solvers_by_tool[tool_key] = solver
 
             if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
                 via_result = self._build_compensated_motion_variant(
@@ -456,6 +531,8 @@ class ProgramSimulator:
                     previous_reference_joints_deg,
                     motion_tool,
                     measured_dh,
+                    solver,
+                    ik_cache,
                     replace_mode=RobotProgramMotionMode.PTP if output_mode == ProgramCompensationOutputMode.ARTICULAR else motion.mode,
                 )
                 if via_result is not None:
@@ -474,6 +551,8 @@ class ProgramSimulator:
                 previous_reference_joints_deg,
                 motion_tool,
                 measured_dh,
+                solver,
+                ik_cache,
             )
             if result is None:
                 corrected_motions.append(motion)
@@ -500,17 +579,30 @@ class ProgramSimulator:
         previous_reference_joints_deg: list[float],
         motion_tool: RobotTool,
         measured_dh: list[list[float]],
+        solver: MGI,
+        ik_cache: dict[tuple, list[float]],
         replace_mode: RobotProgramMotionMode | None = None,
     ) -> tuple[RobotProgramMotion, list[float]] | None:
         if target.target_type != RobotProgramTargetType.CARTESIAN:
             return None
 
         target_pose_base = self._target_pose_base(motion, target, motion_tool)
-        q_target_measured_deg = self._select_joints_for_measured_geometry_pose(
-            target_pose_base, previous_reference_joints_deg, motion_tool, measured_dh
+        tool_key = (motion_tool.x, motion_tool.y, motion_tool.z, motion_tool.a, motion_tool.b, motion_tool.c)
+        cache_key = (
+            round(target_pose_base.x, 4), round(target_pose_base.y, 4), round(target_pose_base.z, 4),
+            round(target_pose_base.a, 3), round(target_pose_base.b, 3), round(target_pose_base.c, 3),
+            tool_key, output_mode.value,
         )
-        if q_target_measured_deg is None:
-            return None
+        cached = ik_cache.get(cache_key)
+        if cached is not None:
+            q_target_measured_deg = cached
+        else:
+            q_target_measured_deg = self._select_joints_for_measured_geometry_pose(
+                target_pose_base, previous_reference_joints_deg, motion_tool, measured_dh, solver
+            )
+            if q_target_measured_deg is None:
+                return None
+            ik_cache[cache_key] = q_target_measured_deg
 
         if output_mode == ProgramCompensationOutputMode.ARTICULAR:
             motion_out = RobotProgramMotion(
@@ -554,8 +646,12 @@ class ProgramSimulator:
         reference_joints_deg: list[float],
         motion_tool: RobotTool,
         measured_dh: list[list[float]],
+        solver: MGI,
     ) -> list[float] | None:
-        solver = self._build_measured_geometry_mgi(measured_dh, motion_tool)
+        # Lot A.2 : le solveur est fourni (déjà construit pour ce tool), on met à jour les valeurs de singularité
+        solver.set_q1ValueIfSingularityQ1Deg(reference_joints_deg[0])
+        solver.set_q4ValueIfSingularityQ5Deg(reference_joints_deg[3])
+        solver.set_q6ValueIfSingularityQ5Deg(reference_joints_deg[5])
         result = solver.compute_mgi_target(target_pose_base.to_tuple(), returnDegrees=True)
         best_solution = result.get_best_solution_from_current(
             [math.radians(float(value)) for value in reference_joints_deg[:6]],
@@ -580,8 +676,16 @@ class ProgramSimulator:
         solver.set_q6ValueIfSingularityQ5Deg(current_joints_deg[5])
         return solver
 
+    # =========================================================================
+    # Lot A.1 : normalisation DH mesurée (brut + accesseur avec cache)
+    # =========================================================================
 
     def _normalized_measured_dh_table(self) -> list[list[float]] | None:
+        if self._cached_measured_dh is not None:
+            return self._cached_measured_dh
+        return self._compute_normalized_measured_dh_table()
+
+    def _compute_normalized_measured_dh_table(self) -> list[list[float]] | None:
         raw_table = self.robot_model.get_measured_dh_params()
         if len(raw_table) < 6:
             return None
@@ -598,6 +702,25 @@ class ProgramSimulator:
             return None
         return normalized
 
+    # =========================================================================
+    # Lot F : FK mesuré vectorisé avec pré-extraction numpy
+    # =========================================================================
+
+    def _rebuild_measured_dh_arrays(self) -> None:
+        """Pré-extrait les paramètres DH mesurés en arrays numpy pour éviter les conversions répétées."""
+        if self._cached_measured_dh is None:
+            self._cached_measured_dh_arrays = None
+            self._cached_axis_reversed = None
+            return
+        dh = self._cached_measured_dh
+        self._cached_measured_dh_arrays = (
+            np.radians([row[0] for row in dh]),   # alpha en radians
+            np.array([row[1] for row in dh]),       # d en mm
+            np.radians([row[2] for row in dh]),     # theta_offset en radians
+            np.array([row[3] for row in dh]),       # r en mm
+        )
+        self._cached_axis_reversed = np.array(self.robot_model.get_axis_reversed()[:6], dtype=float)
+
     def _fk_nominal_pose_base(self, joints_deg: list[float], motion_tool: RobotTool) -> Pose6:
         fk_result = self.robot_model.compute_fk_joints(joints_deg, tool=motion_tool)
         if fk_result is None:
@@ -605,20 +728,30 @@ class ProgramSimulator:
         return fk_result.dh_pose.copy()
 
     def _fk_measured_pose_base(self, joints_deg: list[float], motion_tool: RobotTool) -> Pose6 | None:
+        # Lot F : utiliser les arrays numpy pré-extraits si disponibles
+        if self._cached_measured_dh_arrays is not None and self._cached_axis_reversed is not None:
+            alpha_arr, d_arr, theta_offset_arr, r_arr = self._cached_measured_dh_arrays
+            joints_arr = np.asarray(joints_deg[:6], dtype=float)
+            theta_arr = theta_offset_arr + np.radians(joints_arr * self._cached_axis_reversed)
+            transform = np.eye(4, dtype=float)
+            for axis in range(6):
+                transform = transform @ math_utils.dh_modified(
+                    float(alpha_arr[axis]), float(d_arr[axis]), float(theta_arr[axis]), float(r_arr[axis])
+                )
+            transform = transform @ RobotModel.build_tool_transform(motion_tool)
+            return matrix_to_pose(transform)
+
+        # Fallback sans cache (hors passe de simulation)
         measured_dh = self._normalized_measured_dh_table()
         if measured_dh is None:
             return None
-
         transform = np.eye(4, dtype=float)
         axis_reversed = self.robot_model.get_axis_reversed()
         for axis in range(6):
             alpha_deg, d_mm, theta_offset_deg, r_mm = measured_dh[axis]
             theta_rad = math.radians(theta_offset_deg + joints_deg[axis] * float(axis_reversed[axis]))
             transform = transform @ math_utils.dh_modified(
-                math.radians(alpha_deg),
-                d_mm,
-                theta_rad,
-                r_mm,
+                math.radians(alpha_deg), d_mm, theta_rad, r_mm,
             )
         transform = transform @ RobotModel.build_tool_transform(motion_tool)
         return matrix_to_pose(transform)
@@ -849,7 +982,6 @@ class ProgramSimulator:
             return list(points_xyz[0])
         if clamped_progress >= progresses[-1]:
             return list(points_xyz[-1])
-        # Binary search for the interval containing clamped_progress
         right_index = bisect_left(progresses, clamped_progress)
         right_index = min(right_index, len(progresses) - 1)
         left_index = max(0, right_index - 1)
