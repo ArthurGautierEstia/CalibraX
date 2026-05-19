@@ -144,6 +144,7 @@ class ProgramController:
         self._playback_timer.timeout.connect(self._on_playback_tick)
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
+        self._playback_speed_scale = 1.0
         self._setup_connections()
         self._refresh_view()
 
@@ -158,6 +159,7 @@ class ProgramController:
         self.playback_widget.pause_requested.connect(self._on_pause_requested)
         self.playback_widget.stop_requested.connect(self._on_stop_requested)
         self.playback_widget.time_value_changed.connect(self._on_time_value_changed)
+        self.playback_widget.speed_offset_changed.connect(self._on_speed_offset_changed)
         self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
@@ -687,6 +689,17 @@ class ProgramController:
 
         self._apply_time_value(time_s)
 
+    def _on_speed_offset_changed(self, offset_percent: int) -> None:
+        normalized_percent = max(-100, min(100, int(offset_percent)))
+        if normalized_percent >= 0:
+            self._playback_speed_scale = 1.0 + (float(normalized_percent) / 100.0)
+        else:
+            self._playback_speed_scale = 1.0 / (1.0 + (abs(float(normalized_percent)) / 100.0))
+        if self._playback_wall_start_s is None:
+            return
+        self._playback_sim_start_s = float(self._current_time_s)
+        self._playback_wall_start_s = time.perf_counter()
+
 
 
     def _stop_playback(self) -> None:
@@ -764,7 +777,7 @@ class ProgramController:
 
         elapsed_s = max(0.0, time.perf_counter() - wall_start)
 
-        target_time_s = self._playback_sim_start_s + elapsed_s
+        target_time_s = self._playback_sim_start_s + (elapsed_s * self._playback_speed_scale)
 
         end_time_s = float(samples[-1].time_s)
 
