@@ -130,7 +130,7 @@ class ProgramController:
         self._display_keypoint_tools: list[RobotTool] = []
         self._display_target_refs: list[_ProgramTargetRef] = []
         self._selected_keypoint_index: int | None = None
-        self._tool_source: str = "PROGRAM"  # ROBOT or PROGRAM
+        self._tool_source: str = "CURRENT"  # CURRENT or PROGRAM
         self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
@@ -203,6 +203,10 @@ class ProgramController:
                 )
                 return
             self.current_program = load_kuka_src_program(file_path)
+            self._tool_source = "PROGRAM"
+            self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
+            self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
+            self._apply_program_tool()
             self._recompute_current_program()
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible de charger le programme.\n{exc}")
@@ -881,7 +885,7 @@ class ProgramController:
 
         
 
-        if self._tool_source == "ROBOT":
+        if self._tool_source == "CURRENT":
 
             # En mode Tool Robot : toutes les motions utilisent le tool robot actuel
 

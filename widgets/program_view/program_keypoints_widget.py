@@ -89,8 +89,8 @@ class ProgramKeypointsWidget(QWidget):
         
         # Sélecteur Base
         selectors_row.addWidget(QLabel("Base : "))
-        self.cartesian_display_frame_combo.addItem("Programme", ReferenceFrame.PROGRAM.value)
         self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.ROBOT.value)
+        self.cartesian_display_frame_combo.addItem("Programme", ReferenceFrame.PROGRAM.value)
         selectors_row.addWidget(self.cartesian_display_frame_combo)
         selectors_row.addSpacing(12)
         
