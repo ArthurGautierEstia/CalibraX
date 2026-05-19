@@ -4,14 +4,14 @@ from enum import Enum
 
 
 class ReferenceFrame(str, Enum):
-    BASE = "BASE"
+    ROBOT = "ROBOT"
     WORLD = "WORLD"
     PROGRAM = "PROGRAM"
     TOOL = "TOOL"
 
     @classmethod
     def from_value(cls, value: object, default: "ReferenceFrame" = None) -> "ReferenceFrame":
-        fallback = cls.BASE if default is None else default
+        fallback = cls.ROBOT if default is None else default
         if isinstance(value, cls):
             return value
         try:

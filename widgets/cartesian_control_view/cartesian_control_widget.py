@@ -83,7 +83,7 @@ class CartesianControlWidget(QWidget):
         self.reference_label: QLabel | None = None
         self.reference_frame_combo: QComboBox | None = None
         self.current_convention = "Kuka"
-        self.current_reference_frame = ReferenceFrame.BASE.value
+        self.current_reference_frame = ReferenceFrame.ROBOT.value
         self._compact = bool(compact)
         self._enable_jog_spin_buttons = bool(enable_jog_spin_buttons)
         
@@ -117,7 +117,7 @@ class CartesianControlWidget(QWidget):
         self.convention_combo.setEnabled(False)
         self.reference_label = QLabel("Référentiel :")
         self.reference_frame_combo = QComboBox()
-        self.reference_frame_combo.addItem("Robot", ReferenceFrame.BASE.value)
+        self.reference_frame_combo.addItem("Robot", ReferenceFrame.ROBOT.value)
         self.reference_frame_combo.addItem("World", ReferenceFrame.WORLD.value)
         self.reference_frame_combo.addItem("Tool", ReferenceFrame.TOOL.value)
         self.reference_frame_combo.currentIndexChanged.connect(self._on_reference_frame_changed)

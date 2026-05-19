@@ -35,7 +35,7 @@ class TrajectoryKeypoint:
         self,
         target_type: KeypointTargetType = KeypointTargetType.CARTESIAN,
         cartesian_target: Pose6 | None = None,
-        cartesian_frame: ReferenceFrame | str = ReferenceFrame.BASE,
+        cartesian_frame: ReferenceFrame | str = ReferenceFrame.ROBOT,
         joint_target: list[float] | None = None,
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
         cubic_vectors: Sequence[XYZ3] | None = None,

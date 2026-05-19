@@ -67,7 +67,7 @@ class ProgramKeypointsWidget(QWidget):
         self.motion_mode_combo = QComboBox()
 
         self._keypoints: list[TrajectoryKeypoint] = []
-        self._current_tool_source = "ROBOT"  # ROBOT or PROGRAM
+        self._current_tool_source = "CURRENT"  # CURRENT or PROGRAM
 
         self._setup_ui()
         self._setup_connections()
@@ -86,28 +86,28 @@ class ProgramKeypointsWidget(QWidget):
         selectors_row = QHBoxLayout()
         
         # Sélecteur Base
-        selectors_row.addWidget(QLabel("Base"))
-        self.cartesian_display_frame_combo.addItem("Base programme", ReferenceFrame.PROGRAM.value)
-        self.cartesian_display_frame_combo.addItem("Repere robot", ReferenceFrame.BASE.value)
+        selectors_row.addWidget(QLabel("Base : "))
+        self.cartesian_display_frame_combo.addItem("Programme", ReferenceFrame.PROGRAM.value)
+        self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.ROBOT.value)
         selectors_row.addWidget(self.cartesian_display_frame_combo)
         selectors_row.addSpacing(12)
         
         # Sélecteur Tool
-        selectors_row.addWidget(QLabel("Tool"))
-        self.tool_source_combo.addItem("Tool robot", "ROBOT")
-        self.tool_source_combo.addItem("Tool programme", "PROGRAM")
+        selectors_row.addWidget(QLabel("Tool : "))
+        self.tool_source_combo.addItem("Courant", "CURRENT")
+        self.tool_source_combo.addItem("Programme", "PROGRAM")
         selectors_row.addWidget(self.tool_source_combo)
         selectors_row.addSpacing(12)
         
         # Sélecteur Cibles (Theorique/Compense)
-        selectors_row.addWidget(QLabel("Cibles"))
+        selectors_row.addWidget(QLabel("Cibles : "))
         self.target_mode_combo.addItem("Theorique", "THEORETICAL")
         self.target_mode_combo.addItem("Compense", "COMPENSATED")
         selectors_row.addWidget(self.target_mode_combo)
         selectors_row.addSpacing(12)
         
         # Sélecteur Mode (Cartesien/Articulaire)
-        selectors_row.addWidget(QLabel("Mode"))
+        selectors_row.addWidget(QLabel("Mode : "))
         self.motion_mode_combo.addItem("Cartesien", "CARTESIAN")
         self.motion_mode_combo.addItem("Articulaire", "ARTICULAR")
         selectors_row.addWidget(self.motion_mode_combo)
@@ -190,11 +190,11 @@ class ProgramKeypointsWidget(QWidget):
             self.cartesianDisplayFrameChanged.emit(normalized.value)
 
     def get_tool_source(self) -> str:
-        """Retourne la source du tool sélectionnée (ROBOT ou PROGRAM)."""
+        """Retourne la source du tool sélectionnée (CURRENT ou PROGRAM)."""
         return self._current_tool_source
 
     def set_tool_source(self, tool_source: str, emit_signal: bool = False) -> None:
-        """Définir la source du tool (ROBOT ou PROGRAM)."""
+        """Définir la source du tool (CURRENT ou PROGRAM)."""
         index = self.tool_source_combo.findData(tool_source)
         if index < 0:
             return

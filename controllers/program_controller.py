@@ -1055,9 +1055,25 @@ class ProgramController:
 
         viewer_keypoint.cartesian_target = target_pose_base
 
-        viewer_keypoint.cartesian_frame = ReferenceFrame.BASE
+        viewer_keypoint.cartesian_frame = ReferenceFrame.ROBOT
 
         return viewer_keypoint
+
+    def _display_motion_tool(self, motion: RobotProgramMotion) -> RobotTool:
+
+        current_tool = self.tool_model.get_tool()
+
+        if self._tool_source != "PROGRAM":
+
+            return current_tool
+
+        program_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
+
+        if program_tool is not None:
+
+            return program_tool
+
+        return current_tool
 
 
 
@@ -1560,10 +1576,8 @@ class ProgramController:
             ReferenceFrame.PROGRAM,
         )
 
-        current_tool = self.tool_model.get_tool()
-
         for motion_index, motion in enumerate(program.motions):
-            motion_tool = current_tool
+            motion_tool = self._display_motion_tool(motion)
 
             if motion.mode.value == "CIRCULAR" and motion.via_target is not None:
                 via_keypoint = self._motion_target_to_keypoint(motion, motion.via_target, is_circular=True, display_frame=display_frame)
