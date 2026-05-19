@@ -29,6 +29,7 @@ from models.workspace_model import WorkspaceModel
 from utils.program_simulator import ProgramSimulator
 from utils.mgi import RobotTool
 from utils.robot_program_kuka import export_kuka_src_program, load_kuka_src_program
+from widgets.program_view.program_base_dialog import ProgramBaseDialog
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
@@ -106,6 +107,7 @@ class ProgramController:
         self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
+        self.playback_widget = self.program_view.get_playback_widget()
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
@@ -149,19 +151,19 @@ class ProgramController:
 
     def _setup_connections(self) -> None:
         self.header_widget.load_program_requested.connect(self._on_load_program_requested)
+        self.header_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.recompute_requested.connect(self._on_recompute_requested)
         self.actions_widget.export_requested.connect(self._on_export_requested)
-        self.actions_widget.play_requested.connect(self._on_play_requested)
-        self.actions_widget.pause_requested.connect(self._on_pause_requested)
-        self.actions_widget.stop_requested.connect(self._on_stop_requested)
-        self.actions_widget.restart_requested.connect(self._on_restart_requested)
-        self.actions_widget.time_value_changed.connect(self._on_time_value_changed)
-        self.actions_widget.clear_requested.connect(self._on_clear_requested)
+        self.playback_widget.play_requested.connect(self._on_play_requested)
+        self.playback_widget.pause_requested.connect(self._on_pause_requested)
+        self.playback_widget.stop_requested.connect(self._on_stop_requested)
+        self.playback_widget.time_value_changed.connect(self._on_time_value_changed)
         self.actions_widget.trajectory_visibility_changed.connect(self._refresh_view)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
+        self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
         self.config_widget.keypoints_changed.connect(self._on_program_keypoints_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
         self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
@@ -186,38 +188,36 @@ class ProgramController:
         if not file_path:
             return
 
-        self._load_program_from_path(file_path)
+        self.viewer3d_controller.begin_loading_feedback("Chargement programme KRL ...")
+        QTimer.singleShot(0, lambda: self._load_program_from_path(file_path))
 
 
 
     def _load_program_from_path(self, file_path: str) -> None:
-
-        if Path(file_path).suffix.lower() != ".src":
-            QMessageBox.warning(
-                self.program_view,
-                "Programme robot",
-                "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
-            )
-
-            return
-
         try:
-
+            if Path(file_path).suffix.lower() != ".src":
+                QMessageBox.warning(
+                    self.program_view,
+                    "Programme robot",
+                    "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
+                )
+                return
             self.current_program = load_kuka_src_program(file_path)
-
+            self._recompute_current_program()
         except (OSError, ValueError) as exc:
-
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible de charger le programme.\n{exc}")
-
             return
-
-        self._recompute_current_program()
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
 
 
     def _on_recompute_requested(self) -> None:
-
-        self._recompute_current_program(reset_modes=False)
+        self.viewer3d_controller.begin_loading_feedback("Calcul de la trajectoire en cours ...")
+        try:
+            self._recompute_current_program(reset_modes=False)
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     
 
@@ -240,6 +240,7 @@ class ProgramController:
 
     def _recompute_current_program(self, reset_modes: bool = True) -> None:
         self._stop_playback()
+        self._current_time_s = 0.0
 
         if self.current_program is None:
             # Reinitialisation complete
@@ -384,6 +385,7 @@ class ProgramController:
         self._refresh_status()
         self._refresh_viewer_segments()
         self._refresh_viewer_keypoints()
+        self._refresh_program_frame()
         self._refresh_error_graph()
         self._refresh_timeline()
 
@@ -412,9 +414,10 @@ class ProgramController:
     def _refresh_program_info(self) -> None:
 
         if self.current_program is None:
-            self.header_widget.set_program_info("", "", 0)
+            self.header_widget.set_program_info("", 0)
             self.header_widget.set_log_lines([])
             self.actions_widget.set_export_enabled(False)
+            self.config_widget.set_program_base_edit_enabled(False)
             return
 
         log_lines = list(self.current_program.warnings)
@@ -424,12 +427,12 @@ class ProgramController:
 
         self.header_widget.set_program_info(
             self.current_program.source_path,
-            self.current_program.brand.value,
             len(self.current_program.motions),
         )
 
         self.header_widget.set_log_lines(log_lines)
         self.actions_widget.set_export_enabled(self._selected_compensated_program() is not None)
+        self.config_widget.set_program_base_edit_enabled(True)
 
 
 
@@ -569,13 +572,15 @@ class ProgramController:
         self._playback_sample_times = [float(sample.time_s) for sample in samples]
 
         if not samples:
-            self.actions_widget.set_time_range(0.0, 0.0)
+            self.playback_widget.set_time_range(0.0, 0.0)
+            self.playback_widget.set_playback_enabled(False)
             self._apply_time_value(0.0)
             return
 
         end_time = float(samples[-1].time_s)
 
-        self.actions_widget.set_time_range(0.0, end_time)
+        self.playback_widget.set_time_range(0.0, end_time)
+        self.playback_widget.set_playback_enabled(True)
 
         self._apply_time_value(min(self._current_time_s, end_time))
 
@@ -628,7 +633,7 @@ class ProgramController:
 
         self._current_time_s = max(0.0, float(time_s))
 
-        self.actions_widget.set_time_value(self._current_time_s)
+        self.playback_widget.set_time_value(self._current_time_s)
 
         if not samples:
 
@@ -721,14 +726,6 @@ class ProgramController:
         self._playback_index = 0
 
         self._apply_time_value(0.0)
-
-
-
-    def _on_restart_requested(self) -> None:
-
-        self._on_stop_requested()
-
-        self._on_play_requested()
 
 
 
@@ -994,6 +991,35 @@ class ProgramController:
 
         self._edit_program_target_at_row(row)
 
+    def _on_edit_program_base_requested(self) -> None:
+
+        program_base_pose = self._program_base_pose()
+
+        if program_base_pose is None:
+
+            return
+
+        dialog = ProgramBaseDialog(program_base_pose, self.program_view)
+        dialog.base_pose_preview_changed.connect(self._on_program_base_preview_changed)
+
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            self._update_program_base_preview(program_base_pose)
+
+            return
+
+        updated_base_pose = dialog.get_base_pose()
+
+        if updated_base_pose == program_base_pose:
+
+            return
+
+        self._invalidate_simulation_results()
+        self._refresh_status()
+
+    def _on_program_base_preview_changed(self, base_pose: Pose6) -> None:
+
+        self._update_program_base_preview(base_pose)
+
 
 
     def _on_program_table_item_double_clicked(self, item) -> None:
@@ -1068,9 +1094,101 @@ class ProgramController:
 
         viewer_keypoint.cartesian_target = target_pose_base
 
-        viewer_keypoint.cartesian_frame = ReferenceFrame.BASE
+        viewer_keypoint.cartesian_frame = ReferenceFrame.ROBOT
 
         return viewer_keypoint
+
+    def _display_motion_tool(self, motion: RobotProgramMotion) -> RobotTool:
+
+        current_tool = self.tool_model.get_tool()
+
+        if self._tool_source != "PROGRAM":
+
+            return current_tool
+
+        program_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
+
+        if program_tool is not None:
+
+            return program_tool
+
+        return current_tool
+
+    def _program_base_pose(self) -> Pose6 | None:
+
+        if self.current_program is None:
+
+            return None
+
+        return self.current_program.program_base_pose.copy()
+
+    @staticmethod
+    def _program_with_updated_base_pose(program: RobotProgram | None, base_pose: Pose6) -> RobotProgram | None:
+
+        if program is None:
+
+            return None
+
+        updated_motions = [
+            replace(motion, base_pose=base_pose.copy())
+            for motion in program.motions
+        ]
+
+        return replace(program, program_base_pose=base_pose.copy(), motions=updated_motions)
+
+    def _update_program_base_pose(self, base_pose: Pose6) -> None:
+
+        if self.current_program is None:
+
+            return
+
+        updated_base_pose = base_pose.copy()
+        self.current_program = self._program_with_updated_base_pose(self.current_program, updated_base_pose)
+        self._articular_program = self._program_with_updated_base_pose(self._articular_program, updated_base_pose)
+        self._cartesian_program = self._program_with_updated_base_pose(self._cartesian_program, updated_base_pose)
+        self._compensated_cartesian_program = self._program_with_updated_base_pose(
+            self._compensated_cartesian_program,
+            updated_base_pose,
+        )
+        self._compensated_articular_program = self._program_with_updated_base_pose(
+            self._compensated_articular_program,
+            updated_base_pose,
+        )
+
+    def _update_program_base_preview(self, base_pose: Pose6) -> None:
+
+        self._update_program_base_pose(base_pose)
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+        self._refresh_keypoint_table()
+        self._refresh_viewer_keypoints()
+        self._refresh_program_frame()
+
+    def _invalidate_simulation_results(self) -> None:
+
+        self.current_result = None
+        self._nominal_cartesian_result = None
+        self._nominal_articular_result = None
+        self._compensated_cartesian_result = None
+        self._compensated_articular_result = None
+        self._compensation_computed = False
+        self._nominal_segments_cache = []
+        self._measured_segments_cache = []
+        self._compensated_segments_cache = []
+        self.actions_widget.set_compensated_checkbox_enabled(False)
+        self.actions_widget.set_compensation_enabled(True)
+        self.viewer3d_controller.clear_trajectory_path()
+
+    def _refresh_program_frame(self) -> None:
+
+        program_base_pose = self._program_base_pose()
+
+        if program_base_pose is None:
+
+            self.viewer3d_controller.clear_program_frame()
+
+            return
+
+        self.viewer3d_controller.set_program_frame(program_base_pose, "Program Frame")
 
 
 

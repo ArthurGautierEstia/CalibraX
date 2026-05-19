@@ -105,6 +105,12 @@ class Viewer3DController(QObject):
     def _on_workspace_changed(self) -> None:
         self.viewer_3d_widget.update_workspace(self.workspace_model)
 
+    def begin_loading_feedback(self, message: str) -> None:
+        self.viewer_3d_widget.begin_loading_feedback(message)
+
+    def end_loading_feedback(self) -> None:
+        self.viewer_3d_widget.end_loading_feedback()
+
     def _on_overlay_cartesian_target_computed(self) -> None:
         target = self._overlay_cartesian_controller.get_new_target()
         mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
@@ -302,3 +308,9 @@ class Viewer3DController(QObject):
 
     def clear_trajectory_status_message(self) -> None:
         self.viewer_3d_widget.clear_trajectory_status_message()
+
+    def set_program_frame(self, program_base_pose: Pose6 | None, label: str = "Program Frame") -> None:
+        self.viewer_3d_widget.set_program_frame(program_base_pose, label)
+
+    def clear_program_frame(self) -> None:
+        self.viewer_3d_widget.clear_program_frame()

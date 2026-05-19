@@ -44,6 +44,7 @@ TangentSegment = tuple[XYZ3, XYZ3]
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
     FrameTransform,
+    pose_to_matrix,
     transform_matrix_base_to_world,
     transform_points_base_to_world,
 )
@@ -939,6 +940,8 @@ class Viewer3DWidget(QWidget):
         self._workspace_elements: list[WorkspaceElementState] = []
         self._workspace_frame_matrices: list[np.ndarray] = []
         self._workspace_frame_labels: list[str] = []
+        self._program_frame_pose_base: Pose6 | None = None
+        self._program_frame_label = "Program Frame"
         self._workspace_tcp_zones: list[PrimitiveCollider] = []
         self._workspace_collision_zones: list[PrimitiveCollider] = []
         self._robot_colliders: list[PrimitiveCollider] = []
@@ -2891,6 +2894,17 @@ class Viewer3DWidget(QWidget):
             if i < len(self.workspace_frames_visibility) and self.workspace_frames_visibility[i]:
                 self._workspace_frame_items.extend(self.draw_frame(transform))
 
+    def set_program_frame(self, program_base_pose: Pose6 | None, label: str = "Program Frame") -> None:
+        self._program_frame_pose_base = None if program_base_pose is None else program_base_pose.copy()
+        self._program_frame_label = str(label).strip() or "Program Frame"
+        self._render_workspace_models()
+        self._normalize_workspace_frames_visibility()
+        self.draw_workspace_frames()
+        self.update_frame_list_ui()
+
+    def clear_program_frame(self) -> None:
+        self.set_program_frame(None)
+
     @staticmethod
     def _normalize_visibility_list(
         values: list[bool],
@@ -3276,6 +3290,10 @@ class Viewer3DWidget(QWidget):
         structure_changed = previous_structure_revision != self._workspace_structure_revision
         if same_workspace and pose_changed and not structure_changed:
             self._refresh_robot_state_items()
+            self._render_workspace_models()
+            self._normalize_workspace_frames_visibility()
+            self.draw_workspace_frames()
+            self.update_frame_list_ui()
             return
         if same_workspace and not pose_changed and not structure_changed:
             return
@@ -3344,6 +3362,15 @@ class Viewer3DWidget(QWidget):
             item.setGLOptions('translucent')
             self.viewer.addItem(item)
             self._workspace_element_items.append(item)
+
+        if self._program_frame_pose_base is not None:
+            self._workspace_frame_matrices.append(
+                transform_matrix_base_to_world(
+                    pose_to_matrix(self._program_frame_pose_base),
+                    self._robot_base_transform_world,
+                )
+            )
+            self._workspace_frame_labels.append(self._program_frame_label)
 
     def _render_workspace_zones(self) -> None:
         self._clear_viewer_items(self._workspace_tcp_zone_items)

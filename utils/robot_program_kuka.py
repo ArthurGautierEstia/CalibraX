@@ -142,6 +142,7 @@ def load_kuka_src_program(path: str | Path) -> RobotProgram:
         brand=RobotProgramBrand.KUKA,
         source_path=str(program_path),
         source_text=source_text,
+        program_base_pose=active_base.copy(),
         motions=motions,
         warnings=warnings,
     )
