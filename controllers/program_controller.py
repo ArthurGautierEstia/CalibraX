@@ -392,6 +392,7 @@ class ProgramController:
         if self.current_program is None:
             return
         self._refresh_viewer_segments()
+        self._refresh_error_graph()
 
 
 
