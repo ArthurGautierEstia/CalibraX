@@ -33,6 +33,7 @@ from widgets.program_view.program_base_dialog import ProgramBaseDialog
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
+from widgets.program_view.program_tool_orientation_dialog import ProgramToolOrientationDialog
 from views.program_view import ProgramView
 
 
@@ -167,6 +168,7 @@ class ProgramController:
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
         self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
+        self.config_widget.editToolOrientationRequested.connect(self._on_edit_tool_orientation_requested)
         self.config_widget.keypoints_changed.connect(self._on_program_keypoints_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
         self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
@@ -431,6 +433,7 @@ class ProgramController:
             self.actions_widget.set_simulation_enabled(False)
             self.actions_widget.set_compensation_enabled(False)
             self.config_widget.set_program_base_edit_enabled(False)
+            self.config_widget.set_tool_orientation_edit_enabled(False)
             return
 
         log_lines = list(self.current_program.warnings)
@@ -449,6 +452,9 @@ class ProgramController:
         is_simulated = self.current_result is not None and not self._simulation_dirty
         self.actions_widget.set_compensation_enabled(is_simulated)
         self.config_widget.set_program_base_edit_enabled(True)
+        self.config_widget.set_tool_orientation_edit_enabled(
+            self._count_linear_cartesian_targets(self.current_program) > 0
+        )
 
 
 
@@ -1061,6 +1067,44 @@ class ProgramController:
 
         self._update_program_base_preview(base_pose)
 
+    def _on_edit_tool_orientation_requested(self) -> None:
+
+        if self.current_program is None:
+
+            return
+
+        linear_target_count = self._count_linear_cartesian_targets(self.current_program)
+        if linear_target_count <= 0:
+            QMessageBox.information(
+                self.program_view,
+                "Orientation outil programme",
+                "Aucun point cartesien lineaire n'est disponible dans le programme.",
+            )
+            return
+
+        shared_orientation = self._shared_linear_cartesian_orientation(self.current_program)
+        dialog = ProgramToolOrientationDialog(shared_orientation, linear_target_count, self.program_view)
+
+        if dialog.exec() != dialog.DialogCode.Accepted:
+
+            return
+
+        updated_orientation = dialog.get_orientation()
+        updated_program = self._program_with_updated_linear_cartesian_orientation(
+            self.current_program,
+            updated_orientation,
+        )
+        if updated_program == self.current_program:
+
+            return
+
+        self.current_program = updated_program
+        self._mark_simulation_dirty()
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+        self._refresh_keypoint_table()
+        self._refresh_viewer_keypoints()
+        self._refresh_status()
+
 
 
     def _on_program_table_item_double_clicked(self, item) -> None:
@@ -1166,6 +1210,83 @@ class ProgramController:
             return None
 
         return self.current_program.program_base_pose.copy()
+
+    @staticmethod
+    def _count_linear_cartesian_targets(program: RobotProgram | None) -> int:
+
+        if program is None:
+
+            return 0
+
+        return sum(
+            1
+            for motion in program.motions
+            if motion.mode == RobotProgramMotionMode.LINEAR
+            and motion.target.target_type == RobotProgramTargetType.CARTESIAN
+        )
+
+    @staticmethod
+    def _shared_linear_cartesian_orientation(program: RobotProgram | None) -> Pose6 | None:
+
+        if program is None:
+
+            return None
+
+        shared_pose: Pose6 | None = None
+        for motion in program.motions:
+            if motion.mode != RobotProgramMotionMode.LINEAR:
+                continue
+            if motion.target.target_type != RobotProgramTargetType.CARTESIAN:
+                continue
+
+            current_pose = motion.target.cartesian_pose
+            if shared_pose is None:
+                shared_pose = current_pose.copy()
+                continue
+
+            if (
+                current_pose.a != shared_pose.a
+                or current_pose.b != shared_pose.b
+                or current_pose.c != shared_pose.c
+            ):
+                return None
+
+        return shared_pose
+
+    @staticmethod
+    def _program_with_updated_linear_cartesian_orientation(
+        program: RobotProgram | None,
+        orientation_pose: Pose6,
+    ) -> RobotProgram | None:
+
+        if program is None:
+
+            return None
+
+        updated_motions: list[RobotProgramMotion] = []
+        for motion in program.motions:
+            if (
+                motion.mode == RobotProgramMotionMode.LINEAR
+                and motion.target.target_type == RobotProgramTargetType.CARTESIAN
+            ):
+                target_pose = motion.target.cartesian_pose
+                updated_target = replace(
+                    motion.target,
+                    cartesian_pose=Pose6(
+                        target_pose.x,
+                        target_pose.y,
+                        target_pose.z,
+                        orientation_pose.a,
+                        orientation_pose.b,
+                        orientation_pose.c,
+                    ),
+                )
+                updated_motions.append(replace(motion, target=updated_target))
+                continue
+
+            updated_motions.append(motion)
+
+        return replace(program, motions=updated_motions)
 
     @staticmethod
     def _program_with_updated_base_pose(program: RobotProgram | None, base_pose: Pose6) -> RobotProgram | None:

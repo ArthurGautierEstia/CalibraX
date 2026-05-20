@@ -41,6 +41,7 @@ class ProgramKeypointsWidget(QWidget):
     targetModeChanged = pyqtSignal(str)
     motionModeChanged = pyqtSignal(str)
     editProgramBaseRequested = pyqtSignal()
+    editToolOrientationRequested = pyqtSignal()
 
     def __init__(
         self,
@@ -62,6 +63,7 @@ class ProgramKeypointsWidget(QWidget):
         self.target_mode_combo = QComboBox()
         self.motion_mode_combo = QComboBox()
         self.btn_edit_program_base = QPushButton("Editer la base programme")
+        self.btn_edit_tool_orientation = QPushButton("Editer l'orientation de l'outil")
 
         self._keypoints: list[TrajectoryKeypoint] = []
         self._current_tool_source = "CURRENT"
@@ -127,6 +129,7 @@ class ProgramKeypointsWidget(QWidget):
 
         base_actions_row = QHBoxLayout()
         base_actions_row.addWidget(self.btn_edit_program_base, 1)
+        base_actions_row.addWidget(self.btn_edit_tool_orientation, 1)
         base_actions_row.addStretch(2)
         layout.addLayout(base_actions_row)
 
@@ -175,6 +178,7 @@ class ProgramKeypointsWidget(QWidget):
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
         self.btn_edit_program_base.clicked.connect(self.editProgramBaseRequested.emit)
+        self.btn_edit_tool_orientation.clicked.connect(self.editToolOrientationRequested.emit)
 
     def _emit_keypoints_changed(self) -> None:
         self.keypoints_changed.emit(self.get_keypoints())
@@ -375,3 +379,6 @@ class ProgramKeypointsWidget(QWidget):
 
     def set_program_base_edit_enabled(self, enabled: bool) -> None:
         self.btn_edit_program_base.setEnabled(bool(enabled))
+
+    def set_tool_orientation_edit_enabled(self, enabled: bool) -> None:
+        self.btn_edit_tool_orientation.setEnabled(bool(enabled))
