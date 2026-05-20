@@ -14,7 +14,8 @@ class ProgramConfigWidget(QWidget):
         self.btn_load_program = QPushButton("Importer")
         self.btn_clear = QPushButton("Effacer")
         self.lbl_program = QLabel("Aucun programme")
-        self.lbl_summary = QLabel("Mouvements: 0")
+        self.lbl_summary_title = QLabel("Mouvements :")
+        self.lbl_summary_value = QLabel("0")
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self._setup_ui()
@@ -44,8 +45,11 @@ class ProgramConfigWidget(QWidget):
         self._apply_current_program_label_style()
         fields_layout.addWidget(self.lbl_program, 0, 1)
 
-        self.lbl_summary.setWordWrap(True)
-        fields_layout.addWidget(self.lbl_summary, 1, 0, 1, 2)
+        self.lbl_summary_title.setWordWrap(True)
+        fields_layout.addWidget(self.lbl_summary_title, 1, 0)
+        self.lbl_summary_value.setWordWrap(True)
+        self.lbl_summary_value.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        fields_layout.addWidget(self.lbl_summary_value, 1, 1)
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
 
@@ -67,7 +71,7 @@ class ProgramConfigWidget(QWidget):
 
     def set_program_info(self, program_path: str, motion_count: int) -> None:
         self.lbl_program.setText(self._format_program_name(program_path))
-        self.lbl_summary.setText(f"Mouvements: {int(motion_count)}")
+        self.lbl_summary_value.setText(str(int(motion_count)))
 
     def set_log_lines(self, lines: list[str]) -> None:
         visible_lines = [line for line in lines if line.strip()]

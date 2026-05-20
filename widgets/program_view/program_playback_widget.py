@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap, QPolygon
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget
 
 
 class _PlaybackIconButton(QPushButton):
@@ -12,7 +12,7 @@ class _PlaybackIconButton(QPushButton):
         self.setToolTip(tooltip)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(40, 40)
-        self.setIconSize(QSize(22, 22))
+        self.setIconSize(QSize(18, 18))
         self._refresh_icon()
 
     def changeEvent(self, event) -> None:  # type: ignore[override]
@@ -23,7 +23,7 @@ class _PlaybackIconButton(QPushButton):
     def _refresh_icon(self) -> None:
         accent_color = self.palette().color(QPalette.ColorRole.Highlight)
         if not self.isEnabled():
-            accent_color = self.palette().color(QPalette.ColorRole.ButtonText)
+            accent_color.setAlpha(90)
         self.setIcon(self._build_icon(accent_color))
 
     def _build_icon(self, color: QColor) -> QIcon:
@@ -59,21 +59,60 @@ class _PlaybackIconButton(QPushButton):
         return QPoint(x, y)
 
 
+class _SignedPercentSpinBox(QSpinBox):
+    _STEP_PERCENT = 50
+    _MIN_PERCENT = -100
+    _MAX_PERCENT = 100
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setRange(self._MIN_PERCENT, self._MAX_PERCENT)
+        self.setSingleStep(self._STEP_PERCENT)
+
+    def textFromValue(self, value: int) -> str:  # type: ignore[override]
+        signed_value = int(value)
+        if signed_value > 0:
+            return f"+{signed_value} %"
+        return f"{signed_value} %"
+
+    def valueFromText(self, text: str) -> int:  # type: ignore[override]
+        normalized_text = str(text).replace("%", "").strip()
+        try:
+            parsed_value = int(normalized_text)
+        except ValueError:
+            return 0
+        return self._snap_value(parsed_value)
+
+    def stepBy(self, steps: int) -> None:  # type: ignore[override]
+        next_value = self._snap_value(self.value() + (int(steps) * self._STEP_PERCENT))
+        self.setValue(next_value)
+
+    @classmethod
+    def _snap_value(cls, value: int) -> int:
+        clamped_value = max(cls._MIN_PERCENT, min(cls._MAX_PERCENT, int(value)))
+        snapped_steps = int(round(clamped_value / cls._STEP_PERCENT))
+        return snapped_steps * cls._STEP_PERCENT
+
+
 class ProgramPlaybackWidget(QWidget):
     play_requested = pyqtSignal()
     pause_requested = pyqtSignal()
     stop_requested = pyqtSignal()
     time_value_changed = pyqtSignal(float)
+    speed_offset_changed = pyqtSignal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._time_range = (0.0, 0.0)
+        self._is_playing = False
 
         self._background_widget = QWidget(self)
         self._background_widget.setObjectName("programPlaybackBar")
-        self.btn_play = _PlaybackIconButton("play", "Demarrer", self._background_widget)
-        self.btn_pause = _PlaybackIconButton("pause", "Pause", self._background_widget)
+        self.btn_play_pause = _PlaybackIconButton("play", "Demarrer", self._background_widget)
         self.btn_stop = _PlaybackIconButton("stop", "Stop", self._background_widget)
+        self.speed_label = QLabel("Vitesse :", self._background_widget)
+        self.speed_spinbox = _SignedPercentSpinBox(self._background_widget)
+        self.loop_checkbox = QCheckBox("Loop", self._background_widget)
         self.time_slider = QSlider(Qt.Orientation.Horizontal, self._background_widget)
         self.time_label = QLabel("0.00 s", self._background_widget)
 
@@ -90,22 +129,41 @@ class ProgramPlaybackWidget(QWidget):
         layout = QHBoxLayout(self._background_widget)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
+        speed_layout = QVBoxLayout()
+        speed_layout.setContentsMargins(0, 0, 0, 0)
+        speed_layout.setSpacing(2)
+        speed_row = QHBoxLayout()
+        speed_row.setContentsMargins(0, 0, 0, 0)
+        speed_row.setSpacing(6)
+        loop_row = QHBoxLayout()
+        loop_row.setContentsMargins(0, 0, 0, 0)
+        loop_row.setSpacing(0)
 
         self.time_slider.setRange(0, 1000)
         self.time_slider.setValue(0)
+        self.speed_spinbox.setValue(0)
+        self.speed_spinbox.setFixedWidth(92)
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.time_label.setMinimumWidth(64)
 
-        layout.addWidget(self.btn_play)
-        layout.addWidget(self.btn_pause)
+        layout.addWidget(self.btn_play_pause)
         layout.addWidget(self.btn_stop)
+        speed_row.addWidget(self.speed_label)
+        speed_row.addWidget(self.speed_spinbox)
+        speed_row.addStretch()
+        speed_layout.addLayout(speed_row)
+        loop_row.addSpacing(self.speed_label.sizeHint().width() + speed_row.spacing())
+        loop_row.addWidget(self.loop_checkbox, 0, Qt.AlignmentFlag.AlignHCenter)
+        loop_row.addStretch()
+        speed_layout.addLayout(loop_row)
+        layout.addLayout(speed_layout)
         layout.addWidget(self.time_slider, 1)
         layout.addWidget(self.time_label)
 
     def _setup_connections(self) -> None:
-        self.btn_play.clicked.connect(self.play_requested.emit)
-        self.btn_pause.clicked.connect(self.pause_requested.emit)
+        self.btn_play_pause.clicked.connect(self._on_play_pause_clicked)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
+        self.speed_spinbox.valueChanged.connect(self.speed_offset_changed.emit)
         self.time_slider.valueChanged.connect(self._on_slider_changed)
 
     def changeEvent(self, event) -> None:  # type: ignore[override]
@@ -114,21 +172,45 @@ class ProgramPlaybackWidget(QWidget):
             self._apply_styles()
 
     def _apply_styles(self) -> None:
-        base_color = self.palette().color(QPalette.ColorRole.Base)
-        background_rgba = (
-            f"rgba({base_color.red()}, {base_color.green()}, {base_color.blue()}, 215)"
+        text_color = self.palette().color(QPalette.ColorRole.Text)
+        text_rgba = (
+            f"rgba({text_color.red()}, {text_color.green()}, {text_color.blue()}, {text_color.alpha()})"
         )
-        border_color = self.palette().color(QPalette.ColorRole.Mid).name()
 
         self._background_widget.setStyleSheet(
             f"""
             QWidget#programPlaybackBar {{
-                background-color: {background_rgba};
-                border: 1px solid {border_color};
+                background-color: rgba(0, 0, 0, 18);
+                border: 1px solid rgba(255, 255, 255, 20);
                 border-radius: 10px;
+            }}
+            QLabel {{
+                color: {text_rgba};
             }}
             """
         )
+        self.speed_spinbox.setStyleSheet(f"color: {text_rgba};")
+        overlay_button_style = """
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid rgba(255, 255, 255, 28);
+                border-radius: 8px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 20);
+                border-color: rgba(255, 255, 255, 55);
+            }
+            QPushButton:pressed {
+                background-color: rgba(255, 255, 255, 28);
+            }
+            QPushButton:disabled {
+                border-color: rgba(255, 255, 255, 14);
+                background-color: transparent;
+            }
+        """
+        self.btn_play_pause.setStyleSheet(overlay_button_style)
+        self.btn_stop.setStyleSheet(overlay_button_style)
 
     def _on_slider_changed(self, value: int) -> None:
         time_value = self._slider_to_time(value)
@@ -147,10 +229,27 @@ class ProgramPlaybackWidget(QWidget):
 
     def set_playback_enabled(self, enabled: bool) -> None:
         playback_enabled = bool(enabled)
-        self.btn_play.setEnabled(playback_enabled)
-        self.btn_pause.setEnabled(playback_enabled)
+        self.btn_play_pause.setEnabled(playback_enabled)
         self.btn_stop.setEnabled(playback_enabled)
+        self.speed_spinbox.setEnabled(playback_enabled)
+        self.loop_checkbox.setEnabled(playback_enabled)
         self.time_slider.setEnabled(playback_enabled)
+        if not playback_enabled:
+            self.set_playing(False)
+
+    def set_playing(self, is_playing: bool) -> None:
+        self._is_playing = bool(is_playing)
+        icon_kind = "pause" if self._is_playing else "play"
+        tooltip = "Pause" if self._is_playing else "Demarrer"
+        self.btn_play_pause._icon_kind = icon_kind
+        self.btn_play_pause.setToolTip(tooltip)
+        self.btn_play_pause._refresh_icon()
+
+    def _on_play_pause_clicked(self) -> None:
+        if self._is_playing:
+            self.pause_requested.emit()
+            return
+        self.play_requested.emit()
 
     def _slider_to_time(self, slider_value: int) -> float:
         min_t, max_t = self._time_range
@@ -164,3 +263,9 @@ class ProgramPlaybackWidget(QWidget):
             return 0
         ratio = (float(time_value) - min_t) / (max_t - min_t)
         return int(round(max(0.0, min(1.0, ratio)) * 1000.0))
+
+    def get_speed_offset_percent(self) -> int:
+        return int(self.speed_spinbox.value())
+
+    def is_loop_enabled(self) -> bool:
+        return self.loop_checkbox.isChecked()

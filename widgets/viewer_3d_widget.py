@@ -1488,7 +1488,8 @@ class Viewer3DWidget(QWidget):
             self._loading_feedback_depth = 0
             self._clear_label_msg()
             try:
-                QApplication.restoreOverrideCursor()
+                while QApplication.overrideCursor() is not None:
+                    QApplication.restoreOverrideCursor()
             except Exception:
                 pass
         QApplication.processEvents()

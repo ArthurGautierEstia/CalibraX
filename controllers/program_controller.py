@@ -144,6 +144,8 @@ class ProgramController:
         self._playback_timer.timeout.connect(self._on_playback_tick)
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
+        self._playback_speed_scale = 1.0
+        self._simulation_dirty = False
         self._setup_connections()
         self._refresh_view()
 
@@ -158,6 +160,7 @@ class ProgramController:
         self.playback_widget.pause_requested.connect(self._on_pause_requested)
         self.playback_widget.stop_requested.connect(self._on_stop_requested)
         self.playback_widget.time_value_changed.connect(self._on_time_value_changed)
+        self.playback_widget.speed_offset_changed.connect(self._on_speed_offset_changed)
         self.actions_widget.trajectory_visibility_changed.connect(self._on_trajectory_visibility_changed)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
@@ -257,6 +260,7 @@ class ProgramController:
             self._compensated_cartesian_program = None
             self._compensated_articular_program = None
             self._compensation_computed = False
+            self._simulation_dirty = False
             self.actions_widget.set_compensated_checkbox_enabled(False)
             self.current_result = None
             self._display_keypoints = []
@@ -273,6 +277,7 @@ class ProgramController:
             self._nominal_cartesian_result = None
             self._nominal_articular_result = None
             self.current_result = None
+            self._simulation_dirty = False
             self._display_keypoints = []
             self._display_keypoint_tools = []
             self._display_target_refs = []
@@ -339,8 +344,9 @@ class ProgramController:
             self.MEASURED_PATH_COLORS,
         )
         self._compensated_segments_cache = []
+        self._simulation_dirty = False
 
-        self.actions_widget.set_compensation_enabled(True)
+        self.actions_widget.set_compensation_enabled(self.current_program is not None and not self._simulation_dirty)
 
         self._refresh_view()
 
@@ -422,6 +428,8 @@ class ProgramController:
             self.header_widget.set_program_info("", 0)
             self.header_widget.set_log_lines([])
             self.actions_widget.set_export_enabled(False)
+            self.actions_widget.set_simulation_enabled(False)
+            self.actions_widget.set_compensation_enabled(False)
             self.config_widget.set_program_base_edit_enabled(False)
             return
 
@@ -437,6 +445,9 @@ class ProgramController:
 
         self.header_widget.set_log_lines(log_lines)
         self.actions_widget.set_export_enabled(self._selected_compensated_program() is not None)
+        self.actions_widget.set_simulation_enabled(self._simulation_dirty)
+        is_simulated = self.current_result is not None and not self._simulation_dirty
+        self.actions_widget.set_compensation_enabled(is_simulated)
         self.config_widget.set_program_base_edit_enabled(True)
 
 
@@ -688,6 +699,17 @@ class ProgramController:
 
         self._apply_time_value(time_s)
 
+    def _on_speed_offset_changed(self, offset_percent: int) -> None:
+        normalized_percent = max(-100, min(100, int(offset_percent)))
+        if normalized_percent >= 0:
+            self._playback_speed_scale = 1.0 + (float(normalized_percent) / 100.0)
+        else:
+            self._playback_speed_scale = 1.0 / (1.0 + (abs(float(normalized_percent)) / 100.0))
+        if self._playback_wall_start_s is None:
+            return
+        self._playback_sim_start_s = float(self._current_time_s)
+        self._playback_wall_start_s = time.perf_counter()
+
 
 
     def _stop_playback(self) -> None:
@@ -695,6 +717,7 @@ class ProgramController:
         self._playback_wall_start_s = None
 
         self._playback_timer.stop()
+        self.playback_widget.set_playing(False)
 
 
 
@@ -706,11 +729,19 @@ class ProgramController:
 
             return
 
+        end_time_s = float(samples[-1].time_s)
+
+        if self._current_time_s >= end_time_s:
+
+            self._playback_index = 0
+            self._apply_time_value(0.0)
+
         self._playback_index = self._sample_index_at_time(self._current_time_s)
 
         self._playback_sim_start_s = float(self._current_time_s)
 
         self._playback_wall_start_s = time.perf_counter()
+        self.playback_widget.set_playing(True)
 
         self._playback_timer.start(20)
 
@@ -756,12 +787,17 @@ class ProgramController:
 
         elapsed_s = max(0.0, time.perf_counter() - wall_start)
 
-        target_time_s = self._playback_sim_start_s + elapsed_s
+        target_time_s = self._playback_sim_start_s + (elapsed_s * self._playback_speed_scale)
 
         end_time_s = float(samples[-1].time_s)
 
         if target_time_s >= end_time_s:
-
+            if self.playback_widget.is_loop_enabled():
+                self._playback_index = 0
+                self._apply_time_value(0.0)
+                self._playback_sim_start_s = 0.0
+                self._playback_wall_start_s = time.perf_counter()
+                return
             self._stop_playback()
 
             self._apply_time_value(end_time_s)
@@ -981,8 +1017,8 @@ class ProgramController:
             self._refresh_keypoint_table()
 
             self._refresh_viewer_keypoints()
-
-            self._refresh_viewer_segments()
+            self._mark_simulation_dirty()
+            self._refresh_status()
 
 
 
@@ -1071,7 +1107,11 @@ class ProgramController:
 
         self.current_program = replace(self.current_program, motions=updated_motions)
 
-        self._recompute_current_program()
+        self._mark_simulation_dirty()
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+        self._refresh_keypoint_table()
+        self._refresh_viewer_keypoints()
+        self._refresh_status()
 
         self.config_widget.select_row(row)
 
@@ -1176,12 +1216,19 @@ class ProgramController:
         self._compensated_cartesian_result = None
         self._compensated_articular_result = None
         self._compensation_computed = False
+        self._simulation_dirty = True
         self._nominal_segments_cache = []
         self._measured_segments_cache = []
         self._compensated_segments_cache = []
         self.actions_widget.set_compensated_checkbox_enabled(False)
-        self.actions_widget.set_compensation_enabled(True)
+        self.actions_widget.set_simulation_enabled(True)
+        self.actions_widget.set_compensation_enabled(False)
         self.viewer3d_controller.clear_trajectory_path()
+
+    def _mark_simulation_dirty(self) -> None:
+        if self.current_program is None:
+            return
+        self._invalidate_simulation_results()
 
     def _refresh_program_frame(self) -> None:
 
@@ -1654,20 +1701,24 @@ class ProgramController:
         if self.current_program is None:
             return
 
-        self._compute_compensation()
-        if self._compensation_computed:
-            self.config_widget.set_target_mode_enabled(True)
-            self.actions_widget.set_compensated_checkbox_enabled(True)
+        self.viewer3d_controller.begin_loading_feedback("Calcul de la compensation en cours ...")
+        try:
+            self._compute_compensation()
+            if self._compensation_computed:
+                self.config_widget.set_target_mode_enabled(True)
+                self.actions_widget.set_compensated_checkbox_enabled(True)
 
-        # Rafraichir pour afficher la compensation
-        motion_mode = self.config_widget.get_motion_mode()
-        self._compensated_segments_cache = self._build_segments(
-            self._get_samples_for_modes("COMPENSATED", motion_mode),
-            self.COMPENSATED_PATH_COLORS,
-            "measured",
-        )
-        self._refresh_viewer_segments()
-        self._refresh_error_graph()
+            # Rafraichir pour afficher la compensation
+            motion_mode = self.config_widget.get_motion_mode()
+            self._compensated_segments_cache = self._build_segments(
+                self._get_samples_for_modes("COMPENSATED", motion_mode),
+                self.COMPENSATED_PATH_COLORS,
+                "measured",
+            )
+            self._refresh_viewer_segments()
+            self._refresh_error_graph()
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _get_program_for_target_and_motion_mode(self, target_mode: str, motion_mode: str) -> RobotProgram | None:
         """Retourne le programme selon target_mode et motion_mode."""

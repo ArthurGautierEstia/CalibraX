@@ -7,6 +7,7 @@ from controllers.robot_view.robot_configuration_controller import RobotConfigura
 from controllers.robot_view.robot_mgi_configuration_controller import RobotMgiConfigurationController
 from controllers.tool_controller import ToolController
 from controllers.calibration_view.measurement_controller import MeasurementController
+from controllers.viewer3d_controller import Viewer3DController
 
 
 class RobotController(QObject):
@@ -18,6 +19,7 @@ class RobotController(QObject):
         tool_model: ToolModel,
         robot_view: RobotView,
         tool_view: ToolView,
+        viewer3d_controller: Viewer3DController | None = None,
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -25,12 +27,18 @@ class RobotController(QObject):
         self.tool_model = tool_model
         self.robot_view = robot_view
         self.tool_view = tool_view
+        self.viewer3d_controller = viewer3d_controller
 
-        self.tool_controller = ToolController(self.tool_model, self.tool_view.get_configuration_widget())
+        self.tool_controller = ToolController(
+            self.tool_model,
+            self.tool_view.get_configuration_widget(),
+            viewer3d_controller=self.viewer3d_controller,
+        )
         self.dh_controller = RobotConfigurationController(
             self.robot_model,
             self.robot_view.get_configuration_widget(),
             tool_controller=self.tool_controller,
+            viewer3d_controller=self.viewer3d_controller,
         )
         self.mgi_configuration_controller = RobotMgiConfigurationController(
             self.robot_model,

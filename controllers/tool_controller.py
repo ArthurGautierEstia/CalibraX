@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
@@ -10,6 +11,9 @@ from models.tool_config_file import ToolConfigFile
 from models.tool_model import ToolModel
 from utils.mgi import RobotTool
 from widgets.tool_view.tool_configuration_widget import ToolConfigurationWidget
+
+if TYPE_CHECKING:
+    from controllers.viewer3d_controller import Viewer3DController
 
 
 class ToolController(QObject):
@@ -25,11 +29,13 @@ class ToolController(QObject):
         self,
         tool_model: ToolModel,
         robot_configuration_widget: ToolConfigurationWidget,
+        viewer3d_controller: "Viewer3DController | None" = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.tool_model = tool_model
         self.robot_configuration_widget = robot_configuration_widget
+        self.viewer3d_controller = viewer3d_controller
         self._saved_snapshot: str | None = None
         self._has_saved_reference = False
         self._clean_status_text = ToolController.STATUS_UNSAVED
@@ -115,6 +121,8 @@ class ToolController(QObject):
         self._refresh_configuration_status()
 
     def load_tool_profile_from_path(self, file_path: str, show_errors: bool = False) -> bool:
+        if show_errors and self.viewer3d_controller is not None:
+            self.viewer3d_controller.begin_loading_feedback("Chargement configuration tool ...")
         try:
             profile = ToolConfigFile.load(file_path)
         except (OSError, ValueError, TypeError) as exc:
@@ -124,6 +132,8 @@ class ToolController(QObject):
                     "Tool invalide",
                     f"Impossible de charger {file_path}.\n{exc}",
                 )
+            if show_errors and self.viewer3d_controller is not None:
+                self.viewer3d_controller.end_loading_feedback()
             return False
 
         normalized_path = self.robot_configuration_widget._normalize_project_path(file_path)
@@ -135,6 +145,8 @@ class ToolController(QObject):
         self.tool_model.set_tool_colliders(profile.tool_colliders)
         self.tool_model.set_evaluated_robot_axis_colliders(profile.evaluated_robot_axis_colliders)
         self._mark_as_loaded_reference()
+        if show_errors and self.viewer3d_controller is not None:
+            self.viewer3d_controller.end_loading_feedback()
         return True
 
     @staticmethod
