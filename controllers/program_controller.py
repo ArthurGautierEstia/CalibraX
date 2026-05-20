@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from bisect import bisect_left
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -58,35 +57,9 @@ class ProgramController:
 
 
 
-    NOMINAL_PATH_COLORS = {
-
-        "PTP": (1.0, 0.55, 0.0, 1.0),
-
-        "LINEAR": (1.0, 0.55, 0.0, 1.0),
-
-        "CIRCULAR": (1.0, 0.55, 0.0, 1.0),
-
-    }
-
-    MEASURED_PATH_COLORS = {
-
-        "PTP": (0.0, 0.35, 1.0, 1.0),
-
-        "LINEAR": (0.0, 0.35, 1.0, 1.0),
-
-        "CIRCULAR": (0.0, 0.35, 1.0, 1.0),
-
-    }
-
-    COMPENSATED_PATH_COLORS = {
-
-        "PTP": (0.0, 0.85, 0.35, 1.0),
-
-        "LINEAR": (0.0, 0.85, 0.35, 1.0),
-
-        "CIRCULAR": (0.0, 0.85, 0.35, 1.0),
-
-    }
+    NOMINAL_COLOR: tuple[float, float, float, float] = (1.0, 0.55, 0.0, 1.0)
+    MEASURED_COLOR: tuple[float, float, float, float] = (0.0, 0.35, 1.0, 1.0)
+    COMPENSATED_COLOR: tuple[float, float, float, float] = (0.0, 0.85, 0.35, 1.0)
 
 
 
@@ -113,31 +86,27 @@ class ProgramController:
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
 
-        # NOUVEAU : Stockage des 4 versions de resultats
         self._nominal_cartesian_result: ProgramSimulationResult | None = None
         self._nominal_articular_result: ProgramSimulationResult | None = None
         self._compensated_cartesian_result: ProgramSimulationResult | None = None
         self._compensated_articular_result: ProgramSimulationResult | None = None
 
-        # NOUVEAU : Programmes convertis
         self._articular_program: RobotProgram | None = None
         self._cartesian_program: RobotProgram | None = None
         self._compensated_cartesian_program: RobotProgram | None = None
         self._compensated_articular_program: RobotProgram | None = None
 
-        # NOUVEAU : Flag de calcul de compensation
         self._compensation_computed: bool = False
         self._display_keypoints: list[TrajectoryKeypoint] = []
         self._display_keypoint_tools: list[RobotTool] = []
         self._display_target_refs: list[_ProgramTargetRef] = []
         self._selected_keypoint_index: int | None = None
-        self._tool_source: str = "CURRENT"  # CURRENT or PROGRAM
+        self._tool_source: str = "CURRENT"
         self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._compensated_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._current_time_s = 0.0
-        self._playback_index = 0
         self._playback_sample_times: list[float] = []
         self._playback_timer = QTimer()
         self._playback_timer.setSingleShot(False)
@@ -169,10 +138,8 @@ class ProgramController:
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
         self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
         self.config_widget.editToolOrientationRequested.connect(self._on_edit_tool_orientation_requested)
-        self.config_widget.keypoints_changed.connect(self._on_program_keypoints_changed)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
         self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
-        # NOUVEAU : Connexions pour Mode et Cibles
         self.config_widget.motionModeChanged.connect(self._on_motion_mode_changed)
         self.config_widget.targetModeChanged.connect(self._on_target_mode_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
@@ -286,10 +253,8 @@ class ProgramController:
             self._refresh_view()
             return
 
-        # Detection type + mode par defaut
         program_type = self._detect_program_type()
 
-        # Calcul des 2 versions nominales
         if program_type == "CARTESIAN":
             self._nominal_cartesian_result = self.program_simulator.simulate_program(
                 simulation_program, include_compensation=False
@@ -313,7 +278,6 @@ class ProgramController:
             else:
                 self._nominal_cartesian_result = None
 
-        # Reinitialisation compensation
         self._compensated_cartesian_result = None
         self._compensated_articular_result = None
         self._compensated_cartesian_program = None
@@ -321,7 +285,6 @@ class ProgramController:
         self._compensation_computed = False
         self.actions_widget.set_compensated_checkbox_enabled(False)
 
-        # Modes actifs apres recalcul
         if reset_modes:
             active_motion_mode = program_type
             active_target_mode = "THEORETICAL"
@@ -331,19 +294,16 @@ class ProgramController:
             active_motion_mode = self.config_widget.get_motion_mode()
             active_target_mode = self.config_widget.get_target_mode()
 
-        # Mise a jour current_result
         self._update_current_result_from_modes(active_target_mode, active_motion_mode)
 
-        # Build display keypoints
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
             self._build_display_keypoints_for_mode(active_motion_mode, active_target_mode)
         )
 
-        # Build caches — Lot D : une seule passe pour nominal + measured
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             self._get_samples_for_modes("THEORETICAL", active_motion_mode),
-            self.NOMINAL_PATH_COLORS,
-            self.MEASURED_PATH_COLORS,
+            self.NOMINAL_COLOR,
+            self.MEASURED_COLOR,
         )
         self._compensated_segments_cache = []
         self._simulation_dirty = False
@@ -351,39 +311,6 @@ class ProgramController:
         self.actions_widget.set_compensation_enabled(self.current_program is not None and not self._simulation_dirty)
 
         self._refresh_view()
-
-
-    def _ensure_compensation_result(self) -> None:
-        if self.current_program is None or self.current_result is None:
-
-            return
-
-        if self.current_result.compensation_computed:
-
-            return
-
-        compensated_result = self.program_simulator.simulate_program(self._get_simulation_program(), include_compensation=True)
-
-        self.current_result = replace(
-
-            compensated_result,
-
-            nominal_samples=self.current_result.nominal_samples,
-
-            warnings=list(dict.fromkeys([*self.current_result.warnings, *compensated_result.warnings])),
-
-        )
-
-        self._compensated_segments_cache = self._build_segments(
-
-            self._selected_compensated_samples(),
-
-            self.COMPENSATED_PATH_COLORS,
-
-            "measured",
-
-        )
-
 
 
     def _refresh_view(self) -> None:
@@ -401,26 +328,6 @@ class ProgramController:
             return
         self._refresh_viewer_segments()
         self._refresh_error_graph()
-
-
-
-    def _refresh_display_only(self) -> None:
-
-        if self.current_result is not None and self.config_widget.get_target_mode() == "COMPENSATED":
-            self._ensure_compensation_result()
-
-        if self.current_result is not None:
-            self._compensated_segments_cache = self._build_segments(
-                self._selected_compensated_samples(),
-                self.COMPENSATED_PATH_COLORS,
-                "measured",
-            )
-
-        self._refresh_status()
-        self._refresh_viewer_segments()
-        self._refresh_error_graph()
-        self._refresh_timeline()
-        self._refresh_keypoint_table()
 
 
 
@@ -596,7 +503,7 @@ class ProgramController:
         if not samples:
             self.playback_widget.set_time_range(0.0, 0.0)
             self.playback_widget.set_playback_enabled(False)
-            self._apply_time_value(0.0)
+            self._apply_time_value(0.0, samples)
             return
 
         end_time = float(samples[-1].time_s)
@@ -604,7 +511,7 @@ class ProgramController:
         self.playback_widget.set_time_range(0.0, end_time)
         self.playback_widget.set_playback_enabled(True)
 
-        self._apply_time_value(min(self._current_time_s, end_time))
+        self._apply_time_value(min(self._current_time_s, end_time), samples)
 
 
 
@@ -641,30 +548,17 @@ class ProgramController:
         target_mode = self.config_widget.get_target_mode()
         return self._get_samples_for_modes(target_mode, motion_mode)
 
-        if self.config_widget.get_target_mode() == "COMPENSATED":
-
-            return self._selected_compensated_samples()
-
-        return self.current_result.nominal_samples
 
 
-
-    def _apply_time_value(self, time_s: float) -> None:
-
-        samples = self._playback_samples()
-
+    def _apply_time_value(self, time_s: float, samples: list[ProgramSimulationSample] | None = None) -> None:
+        if samples is None:
+            samples = self._playback_samples()
         self._current_time_s = max(0.0, float(time_s))
-
         self.playback_widget.set_time_value(self._current_time_s)
-
         if not samples:
-
             return
-
         sample_index = self._sample_index_at_time(self._current_time_s)
-
         sample = samples[sample_index]
-
         self.robot_model.set_joints(sample.joints_deg.to_list())
 
 
@@ -728,29 +622,16 @@ class ProgramController:
 
 
     def _on_play_requested(self) -> None:
-
         samples = self._playback_samples()
-
         if not samples:
-
             return
-
         end_time_s = float(samples[-1].time_s)
-
         if self._current_time_s >= end_time_s:
-
-            self._playback_index = 0
-            self._apply_time_value(0.0)
-
-        self._playback_index = self._sample_index_at_time(self._current_time_s)
-
+            self._apply_time_value(0.0, samples)
         self._playback_sim_start_s = float(self._current_time_s)
-
         self._playback_wall_start_s = time.perf_counter()
         self.playback_widget.set_playing(True)
-
         self._playback_timer.start(20)
-
         self._on_playback_tick()
 
 
@@ -762,57 +643,34 @@ class ProgramController:
 
 
     def _on_stop_requested(self) -> None:
-
         self._stop_playback()
-
-        self._playback_index = 0
-
         self._apply_time_value(0.0)
 
 
 
     def _on_playback_tick(self) -> None:
-
         samples = self._playback_samples()
-
         if not samples:
-
             self._stop_playback()
-
             return
-
         wall_start = self._playback_wall_start_s
-
         if wall_start is None:
-
             self._playback_wall_start_s = time.perf_counter()
-
             self._playback_sim_start_s = float(self._current_time_s)
-
             wall_start = self._playback_wall_start_s
-
         elapsed_s = max(0.0, time.perf_counter() - wall_start)
-
         target_time_s = self._playback_sim_start_s + (elapsed_s * self._playback_speed_scale)
-
         end_time_s = float(samples[-1].time_s)
-
         if target_time_s >= end_time_s:
             if self.playback_widget.is_loop_enabled():
-                self._playback_index = 0
-                self._apply_time_value(0.0)
+                self._apply_time_value(0.0, samples)
                 self._playback_sim_start_s = 0.0
                 self._playback_wall_start_s = time.perf_counter()
                 return
             self._stop_playback()
-
-            self._apply_time_value(end_time_s)
-
+            self._apply_time_value(end_time_s, samples)
             return
-
-        self._playback_index = self._sample_index_at_time(target_time_s)
-
-        self._apply_time_value(target_time_s)
+        self._apply_time_value(target_time_s, samples)
 
 
 
@@ -919,9 +777,6 @@ class ProgramController:
 
 
     def _get_simulation_program(self) -> RobotProgram | None:
-
-        """Retourne le programme à simuler, avec les tools adaptés selon le mode sélectionné."""
-
         if self.current_program is None:
 
             return None
@@ -929,69 +784,33 @@ class ProgramController:
         
 
         if self._tool_source == "CURRENT":
-
-            # En mode Tool Robot : toutes les motions utilisent le tool robot actuel
-
             current_tool = self.tool_model.get_tool()
-
             tool_pose = self.program_simulator._tool_to_pose(current_tool)
-
             if tool_pose is None:
-
                 return self.current_program
-
-            
-
-            # Créer un programme temporaire avec le tool robot pour toutes les motions
-
             motions_with_robot_tool = []
-
             for motion in self.current_program.motions:
-
                 updated_motion = replace(motion, tool_pose=tool_pose)
-
                 motions_with_robot_tool.append(updated_motion)
-
             return replace(self.current_program, motions=motions_with_robot_tool)
-
         else:
-
-            # En mode Tool Programme : utiliser le programme original avec ses tools
-
             return self.current_program
 
 
 
     def _apply_program_tool(self) -> None:
-
-        """Applique le tool de la première motion du programme au tool_model."""
-
         if self.current_program is None or self._saved_robot_tool is not None:
-
             return
-
-        # Sauvegarde du tool actuel
-
         self._saved_robot_tool = self.tool_model.get_tool()
-
-        # Applique le tool de la première motion
-
         for motion in self.current_program.motions:
-
             program_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
-
             if program_tool is not None:
-
                 self.tool_model.set_tool(program_tool)
-
                 break
 
 
 
     def _restore_robot_tool(self) -> None:
-
-        """Restaure le tool robot original."""
-
         if self._saved_robot_tool is not None:
 
             self.tool_model.set_tool(self._saved_robot_tool)
@@ -1107,18 +926,6 @@ class ProgramController:
 
 
 
-    def _on_program_table_item_double_clicked(self, item) -> None:
-
-        row = item.row()
-
-        if row < 0:
-
-            return
-
-        self._edit_program_target_at_row(row)
-
-
-
     def _edit_program_target_at_row(self, row: int) -> None:
 
         if self.current_program is None or row < 0 or row >= len(self._display_target_refs):
@@ -1158,12 +965,6 @@ class ProgramController:
         self._refresh_status()
 
         self.config_widget.select_row(row)
-
-
-
-    def _on_program_keypoints_changed(self, _keypoints: list[TrajectoryKeypoint]) -> None:
-
-        return
 
 
 
@@ -1385,62 +1186,6 @@ class ProgramController:
 
 
 
-    def _build_display_keypoints(self) -> tuple[list[TrajectoryKeypoint], list[RobotTool], list[_ProgramTargetRef]]:
-
-        if self.current_program is None:
-
-            return [], [], []
-
-        keypoints: list[TrajectoryKeypoint] = []
-
-        keypoint_tools: list[RobotTool] = []
-
-        target_refs: list[_ProgramTargetRef] = []
-
-        display_frame = ReferenceFrame.from_value(
-
-            self.config_widget.cartesian_display_frame_combo.currentData(),
-
-            ReferenceFrame.PROGRAM,
-
-        )
-
-        # Toutes les motions utilisent le tool actuellement configuré dans tool_model
-
-        current_tool = self.tool_model.get_tool()
-
-        for motion_index, motion in enumerate(self.current_program.motions):
-
-            # Utilise le tool courant (robot ou programme selon la sélection)
-
-            motion_tool = current_tool
-
-            if motion.mode.value == "CIRCULAR" and motion.via_target is not None:
-
-                via_keypoint = self._motion_target_to_keypoint(motion, motion.via_target, is_circular=True, display_frame=display_frame)
-
-                if via_keypoint is not None:
-
-                    keypoints.append(via_keypoint)
-
-                    keypoint_tools.append(motion_tool)
-
-                    target_refs.append(_ProgramTargetRef(motion_index=motion_index, is_via_target=True))
-
-            keypoint = self._motion_target_to_keypoint(motion, motion.target, is_circular=False, display_frame=display_frame)
-
-            if keypoint is not None:
-
-                keypoints.append(keypoint)
-
-                keypoint_tools.append(motion_tool)
-
-                target_refs.append(_ProgramTargetRef(motion_index=motion_index, is_via_target=False))
-
-        return keypoints, keypoint_tools, target_refs
-
-
-
     @staticmethod
 
     def _downsample_segments(
@@ -1543,12 +1288,7 @@ class ProgramController:
 
 
 
-    # =========================================================================
-    # NOUVELLES METHODES POUR GESTION MODE CARTESIEN/ARTICULAIRE
-    # =========================================================================
-
     def _detect_program_type(self) -> str:
-        """Detecte si le programme est CARTESIEN ou ARTICULAIRE."""
         if self.current_program is None:
             return "CARTESIAN"
         has_cartesian = any(
@@ -1558,7 +1298,6 @@ class ProgramController:
         return "CARTESIAN" if has_cartesian else "ARTICULAR"
 
     def _build_articular_program(self, source_program: RobotProgram | None = None) -> RobotProgram | None:
-        """Convertit le programme en version purement articulaire (tout en PTP avec cibles JOINT)."""
         program = source_program or self.current_program
         if program is None:
             return None
@@ -1621,7 +1360,6 @@ class ProgramController:
         return replace(self.current_program, motions=new_motions)
 
     def _build_cartesian_program(self, source_program: RobotProgram | None = None) -> RobotProgram | None:
-        """Convertit le programme en version cartesienne (cibles CARTESIAN)."""
         program = source_program or self.current_program
         if program is None:
             return None
@@ -1680,7 +1418,6 @@ class ProgramController:
         return replace(self.current_program, motions=new_motions)
 
     def _compute_compensation(self) -> None:
-        """Calcule les 2 versions compensees."""
         if self.current_program is None:
             self._compensation_computed = False
             return
@@ -1690,7 +1427,6 @@ class ProgramController:
             self._compensation_computed = False
             return
 
-        # Calcul compensation cartesienne
         cartesian_prog = self._get_program_for_mode("CARTESIAN") or self.current_program
         cartesian_comp_program = self.program_simulator._build_compensated_program(
             cartesian_prog, ProgramCompensationOutputMode.CARTESIAN, measured_dh
@@ -1701,7 +1437,6 @@ class ProgramController:
                 cartesian_comp_program, include_compensation=False
             )
 
-        # Calcul compensation articulaire (toujours depuis les cibles cartesiennes)
         articular_prog = self._cartesian_program or self.current_program
         articular_comp_program = self.program_simulator._build_compensated_program(
             articular_prog, ProgramCompensationOutputMode.ARTICULAR, measured_dh
@@ -1715,27 +1450,24 @@ class ProgramController:
         self._compensation_computed = True
 
     def _get_samples_for_modes(self, target_mode: str, motion_mode: str) -> list[ProgramSimulationSample]:
-        """Retourne les samples selon target_mode et motion_mode."""
         if target_mode == "THEORETICAL":
             if motion_mode == "ARTICULAR" and self._nominal_articular_result:
                 return self._nominal_articular_result.nominal_samples
-            elif self._nominal_cartesian_result:
+            if self._nominal_cartesian_result:
                 return self._nominal_cartesian_result.nominal_samples
         else:
             if motion_mode == "ARTICULAR" and self._compensated_articular_result:
                 return self._compensated_articular_result.nominal_samples
-            elif self._compensated_cartesian_result:
+            if self._compensated_cartesian_result:
                 return self._compensated_cartesian_result.nominal_samples
         return []
 
     def _get_program_for_mode(self, motion_mode: str) -> RobotProgram | None:
-        """Retourne le programme selon motion_mode."""
         if motion_mode == "ARTICULAR":
             return self._articular_program or self.current_program
         return self._cartesian_program or self.current_program
 
     def _update_current_result_from_modes(self, target_mode: str, motion_mode: str) -> None:
-        """Met a jour current_result selon les modes."""
         if target_mode == "THEORETICAL":
             if motion_mode == "ARTICULAR":
                 self.current_result = self._nominal_articular_result
@@ -1756,7 +1488,6 @@ class ProgramController:
             )
 
     def _collect_all_warnings(self) -> list[str]:
-        """Collecte tous les warnings des 4 resultats."""
         warnings: list[str] = []
         for result in [
             self._nominal_cartesian_result,
@@ -1771,46 +1502,38 @@ class ProgramController:
         return list(dict.fromkeys(warnings))
 
     def _on_motion_mode_changed(self, motion_mode: str) -> None:
-        """Handler pour changement de mode CARTESIEN/ARTICULAIRE."""
         if self.current_program is None:
             return
 
         target_mode = self.config_widget.get_target_mode()
         self._update_current_result_from_modes(target_mode, motion_mode)
 
-        # Rebuild display keypoints selon le nouveau mode et le target mode courant
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
             self._build_display_keypoints_for_mode(motion_mode, target_mode)
         )
 
-        # Mise a jour des caches — Lot D : une seule passe pour nominal + measured
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             self._get_samples_for_modes("THEORETICAL", motion_mode),
-            self.NOMINAL_PATH_COLORS,
-            self.MEASURED_PATH_COLORS,
+            self.NOMINAL_COLOR,
+            self.MEASURED_COLOR,
         )
         self._compensated_segments_cache = self._build_segments(
             self._get_samples_for_modes("COMPENSATED", motion_mode),
-            self.COMPENSATED_PATH_COLORS,
-            "measured",
+            self.COMPENSATED_COLOR,
         ) if self._compensation_computed else []
 
         self._refresh_view()
 
     def _on_target_mode_changed(self, target_mode: str) -> None:
-        """Handler pour changement de cible THEORIQUE/COMPENSE."""
         if self.current_program is None:
             return
 
         motion_mode = self.config_widget.get_motion_mode()
         self._update_current_result_from_modes(target_mode, motion_mode)
 
-        # Rebuild keypoints selon le nouveau target_mode (theorique vs compense)
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
             self._build_display_keypoints_for_mode(motion_mode, target_mode)
         )
-
-        # Rafraichir uniquement ce qui depend de target_mode
         self._refresh_status()
         self._refresh_keypoint_table()
         self._refresh_viewer_segments()
@@ -1818,7 +1541,6 @@ class ProgramController:
         self._refresh_timeline()
 
     def _on_compute_compensation_requested(self) -> None:
-        """Handler pour le bouton Calculer compensation."""
         if self.current_program is None:
             return
 
@@ -1829,12 +1551,10 @@ class ProgramController:
                 self.config_widget.set_target_mode_enabled(True)
                 self.actions_widget.set_compensated_checkbox_enabled(True)
 
-            # Rafraichir pour afficher la compensation
             motion_mode = self.config_widget.get_motion_mode()
             self._compensated_segments_cache = self._build_segments(
                 self._get_samples_for_modes("COMPENSATED", motion_mode),
-                self.COMPENSATED_PATH_COLORS,
-                "measured",
+                self.COMPENSATED_COLOR,
             )
             self._refresh_viewer_segments()
             self._refresh_error_graph()
@@ -1842,7 +1562,6 @@ class ProgramController:
             self.viewer3d_controller.end_loading_feedback()
 
     def _get_program_for_target_and_motion_mode(self, target_mode: str, motion_mode: str) -> RobotProgram | None:
-        """Retourne le programme selon target_mode et motion_mode."""
         if target_mode == "COMPENSATED" and self._compensation_computed:
             if motion_mode == "ARTICULAR":
                 return self._compensated_articular_program or self._compensated_cartesian_program
@@ -1850,7 +1569,6 @@ class ProgramController:
         return self._get_program_for_mode(motion_mode)
 
     def _build_display_keypoints_for_mode(self, motion_mode: str, target_mode: str | None = None) -> tuple[list[TrajectoryKeypoint], list[RobotTool], list[_ProgramTargetRef]]:
-        """Build keypoints pour un mode specifique."""
         resolved_target_mode = target_mode or self.config_widget.get_target_mode()
         program = self._get_program_for_target_and_motion_mode(resolved_target_mode, motion_mode)
         if program is None:
@@ -1873,7 +1591,7 @@ class ProgramController:
             else:
                 motion_tool = robot_tool
 
-            if motion.mode.value == "CIRCULAR" and motion.via_target is not None:
+            if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
                 via_keypoint = self._motion_target_to_keypoint(motion, motion.via_target, is_circular=True, display_frame=display_frame)
                 if via_keypoint is not None:
                     keypoints.append(via_keypoint)
@@ -1889,7 +1607,6 @@ class ProgramController:
         return keypoints, keypoint_tools, target_refs
 
     def _build_display_keypoints(self) -> tuple[list[TrajectoryKeypoint], list[RobotTool], list[_ProgramTargetRef]]:
-        """Build keypoints selon le mode courant."""
         motion_mode = self.config_widget.get_motion_mode()
         return self._build_display_keypoints_for_mode(motion_mode)
 
@@ -1897,13 +1614,12 @@ class ProgramController:
     @staticmethod
     def _build_nominal_and_measured_segments(
         samples: list[ProgramSimulationSample],
-        nominal_colors: dict[str, tuple[float, float, float, float]],
-        measured_colors: dict[str, tuple[float, float, float, float]],
+        nominal_color: tuple[float, float, float, float],
+        measured_color: tuple[float, float, float, float],
     ) -> tuple[
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
     ]:
-        """Lot D : construit les segments nominal et measured en une seule passe sur les samples."""
         nominal_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         measured_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
 
@@ -1921,10 +1637,10 @@ class ProgramController:
 
             if current_key is not None and motion_key != current_key:
                 if len(nom_points) >= 2:
-                    nominal_segments.append((nom_points, nominal_colors.get(current_key[0], (1.0, 0.55, 0.0, 1.0))))
+                    nominal_segments.append((nom_points, nominal_color))
                     nom_points = [nom_points[-1]]
                 if len(meas_points) >= 2:
-                    measured_segments.append((meas_points, measured_colors.get(current_key[0], (0.0, 0.35, 1.0, 1.0))))
+                    measured_segments.append((meas_points, measured_color))
                     meas_points = [meas_points[-1]]
 
             current_key = motion_key
@@ -1935,49 +1651,34 @@ class ProgramController:
 
         if current_key is not None:
             if len(nom_points) >= 2:
-                nominal_segments.append((nom_points, nominal_colors.get(current_key[0], (1.0, 0.55, 0.0, 1.0))))
+                nominal_segments.append((nom_points, nominal_color))
             if len(meas_points) >= 2:
-                measured_segments.append((meas_points, measured_colors.get(current_key[0], (0.0, 0.35, 1.0, 1.0))))
+                measured_segments.append((meas_points, measured_color))
 
         return nominal_segments, measured_segments
 
     def _build_segments(
         self,
         samples: list[ProgramSimulationSample],
-        colors: dict[str, tuple[float, float, float, float]],
-        pose_kind: str
-
+        color: tuple[float, float, float, float],
     ) -> list[tuple[list[list[float]], tuple[float, float, float, float]]]:
-
         segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
-
         current_points: list[list[float]] = []
-
         current_key: tuple[str, int] | None = None
 
         for sample in samples:
-
-            pose = sample.nominal_pose_base if pose_kind == "nominal" else sample.measured_pose_base
-
+            pose = sample.measured_pose_base
             if pose is None:
-
                 continue
-
             motion_key = (sample.motion_mode.value, int(sample.source_line))
-
             if current_key is not None and motion_key != current_key and len(current_points) >= 2:
-
-                segments.append((current_points, colors.get(current_key[0], (1.0, 0.55, 0.0, 1.0))))
-
+                segments.append((current_points, color))
                 current_points = [current_points[-1]]
-
             current_key = motion_key
-
             current_points.append([pose.x, pose.y, pose.z])
 
         if current_key is not None and len(current_points) >= 2:
-
-            segments.append((current_points, colors.get(current_key[0], (1.0, 0.55, 0.0, 1.0))))
+            segments.append((current_points, color))
 
         return segments
 

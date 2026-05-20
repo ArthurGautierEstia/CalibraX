@@ -1,8 +1,6 @@
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from models.robot_program import ProgramCompensationOutputMode
-
 
 class ProgramActionsWidget(QWidget):
     recompute_requested = pyqtSignal()
@@ -55,24 +53,17 @@ class ProgramActionsWidget(QWidget):
         self.cb_show_measured.stateChanged.connect(lambda _: self.trajectory_visibility_changed.emit())
         self.cb_show_compensated.stateChanged.connect(lambda _: self.trajectory_visibility_changed.emit())
 
-    def selected_output_mode(self) -> ProgramCompensationOutputMode:
-        return ProgramCompensationOutputMode.CARTESIAN
-
-    def is_compensated_display(self) -> bool:
-        return False
-
     def set_status_text(self, text: str) -> None:
         self.status_label.setText(text)
 
     def set_export_enabled(self, enabled: bool) -> None:
-        self.btn_export.setEnabled(bool(enabled))
+        self.btn_export.setEnabled(enabled)
 
     def set_compensation_enabled(self, enabled: bool) -> None:
-        """Active/desactive le bouton de calcul de compensation."""
         self.btn_compute_compensation.setEnabled(enabled)
 
     def set_simulation_enabled(self, enabled: bool) -> None:
-        self.btn_recompute.setEnabled(bool(enabled))
+        self.btn_recompute.setEnabled(enabled)
 
     def is_theoretical_visible(self) -> bool:
         return self.cb_show_theoretical.isChecked()

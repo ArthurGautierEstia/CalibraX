@@ -180,9 +180,6 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_edit_program_base.clicked.connect(self.editProgramBaseRequested.emit)
         self.btn_edit_tool_orientation.clicked.connect(self.editToolOrientationRequested.emit)
 
-    def _emit_keypoints_changed(self) -> None:
-        self.keypoints_changed.emit(self.get_keypoints())
-
     def _emit_selection_changed(self) -> None:
         self.keypointSelectionChanged.emit(self._selected_row())
 
@@ -357,15 +354,6 @@ class ProgramKeypointsWidget(QWidget):
         self._keypoints = []
         self._refresh_table()
 
-    def keypoints_table(self) -> QTableWidget:
-        return self.keypoints_table
-
-    def cartesian_display_frame_combo(self) -> QComboBox:
-        return self.cartesian_display_frame_combo
-
-    def tool_source_combo(self) -> QComboBox:
-        return self.tool_source_combo
-
     def select_row(self, row: int) -> None:
         if 0 <= row < self.keypoints_table.rowCount():
             self.keypoints_table.selectRow(row)
@@ -378,7 +366,7 @@ class ProgramKeypointsWidget(QWidget):
             self.set_target_mode("THEORETICAL", emit_signal=True)
 
     def set_program_base_edit_enabled(self, enabled: bool) -> None:
-        self.btn_edit_program_base.setEnabled(bool(enabled))
+        self.btn_edit_program_base.setEnabled(enabled)
 
     def set_tool_orientation_edit_enabled(self, enabled: bool) -> None:
-        self.btn_edit_tool_orientation.setEnabled(bool(enabled))
+        self.btn_edit_tool_orientation.setEnabled(enabled)
