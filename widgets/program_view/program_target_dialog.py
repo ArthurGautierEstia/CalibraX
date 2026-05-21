@@ -51,7 +51,7 @@ class ProgramTargetDialog(QDialog):
         self.frame_combo = QComboBox()
         self.cartesian_widget = CartesianControlWidget(compact=True)
         self.joint_widget = JointsControlWidget(compact=True)
-        self.apply_home_position_button = QPushButton("Appliquer la position home courante")
+        self.apply_current_position_button = QPushButton("Appliquer la position courante")
         self.target_stack = QStackedWidget()
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
 
@@ -85,14 +85,14 @@ class ProgramTargetDialog(QDialog):
         self.target_stack.addWidget(self.joint_widget)
         layout.addWidget(self.target_stack)
         joint_actions_layout = QHBoxLayout()
-        joint_actions_layout.addWidget(self.apply_home_position_button)
+        joint_actions_layout.addWidget(self.apply_current_position_button)
         joint_actions_layout.addStretch()
         layout.addLayout(joint_actions_layout)
         layout.addWidget(self.button_box)
 
     def _setup_connections(self) -> None:
         self.frame_combo.currentIndexChanged.connect(self._on_frame_changed)
-        self.apply_home_position_button.clicked.connect(self._on_apply_home_position_clicked)
+        self.apply_current_position_button.clicked.connect(self._on_apply_current_position_clicked)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
 
@@ -106,7 +106,7 @@ class ProgramTargetDialog(QDialog):
 
         is_joint_target = self._target.target_type == RobotProgramTargetType.JOINT
         self.frame_combo.setVisible(not is_joint_target)
-        self.apply_home_position_button.setVisible(is_joint_target)
+        self.apply_current_position_button.setVisible(is_joint_target)
         if is_joint_target:
             self.target_stack.setCurrentWidget(self.joint_widget)
             self.joint_widget.set_all_joints(self._target.joint_angles.to_list())
@@ -132,9 +132,9 @@ class ProgramTargetDialog(QDialog):
         self._current_frame = next_frame
         self.cartesian_widget.set_all_cartesian(next_pose)
 
-    def _on_apply_home_position_clicked(self) -> None:
-        home_joint_angles = JointAngles6.from_values(self._robot_model.get_home_position())
-        self.joint_widget.set_all_joints(home_joint_angles.to_list())
+    def _on_apply_current_position_clicked(self) -> None:
+        current_joint_angles = JointAngles6.from_values(self._robot_model.get_joints())
+        self.joint_widget.set_all_joints(current_joint_angles.to_list())
 
     def get_target(self) -> RobotProgramTarget:
         if self._target.target_type == RobotProgramTargetType.JOINT:
