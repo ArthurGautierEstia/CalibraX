@@ -7,13 +7,18 @@ from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QText
 
 class ProgramConfigWidget(QWidget):
     load_program_requested = pyqtSignal()
+    save_program_requested = pyqtSignal()
+    save_program_as_requested = pyqtSignal()
     clear_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
-        self.btn_load_program = QPushButton("Importer")
+        self.btn_load_program = QPushButton("Charger")
+        self.btn_save_program = QPushButton("Enregistrer")
+        self.btn_save_program_as = QPushButton("Enregistrer sous")
         self.btn_clear = QPushButton("Effacer")
         self.lbl_program = QLabel("Aucun programme")
+        self.status_label = QLabel("Aucun programme charge")
         self.lbl_summary_title = QLabel("Mouvements :")
         self.lbl_summary_value = QLabel("0")
         self.log_text = QTextEdit()
@@ -32,7 +37,13 @@ class ProgramConfigWidget(QWidget):
 
         title_label = QLabel("Editer un programme KRL")
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(title_label)
+        title_row = QHBoxLayout()
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(self.status_label)
+        layout.addLayout(title_row)
 
         fields_layout = QGridLayout()
         current_program_title_label = QLabel("Programme courant :")
@@ -56,8 +67,12 @@ class ProgramConfigWidget(QWidget):
         actions_layout = QHBoxLayout()
         actions_layout.addStretch()
         self.btn_load_program.setFixedWidth(120)
+        self.btn_save_program.setFixedWidth(120)
+        self.btn_save_program_as.setFixedWidth(140)
         self.btn_clear.setFixedWidth(120)
         actions_layout.addWidget(self.btn_load_program)
+        actions_layout.addWidget(self.btn_save_program)
+        actions_layout.addWidget(self.btn_save_program_as)
         actions_layout.addWidget(self.btn_clear)
 
         self.log_text.setMinimumHeight(140)
@@ -67,6 +82,8 @@ class ProgramConfigWidget(QWidget):
 
     def _setup_connections(self) -> None:
         self.btn_load_program.clicked.connect(self.load_program_requested.emit)
+        self.btn_save_program.clicked.connect(self.save_program_requested.emit)
+        self.btn_save_program_as.clicked.connect(self.save_program_as_requested.emit)
         self.btn_clear.clicked.connect(self.clear_requested.emit)
 
     def set_program_info(self, program_path: str, motion_count: int) -> None:
@@ -77,6 +94,16 @@ class ProgramConfigWidget(QWidget):
         visible_lines = [line for line in lines if line.strip()]
         self.log_text.setPlainText("\n".join(visible_lines))
         self.log_text.setVisible(bool(visible_lines))
+
+    def set_program_save_enabled(self, enabled: bool) -> None:
+        self.btn_save_program.setEnabled(bool(enabled))
+
+    def set_program_save_as_enabled(self, enabled: bool) -> None:
+        self.btn_save_program_as.setEnabled(bool(enabled))
+
+    def set_program_status(self, text: str, color: str) -> None:
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
 
     def _apply_current_program_label_style(self) -> None:
         accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()

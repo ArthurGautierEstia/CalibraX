@@ -148,13 +148,21 @@ def load_kuka_src_program(path: str | Path) -> RobotProgram:
     )
 
 
-def export_kuka_src_program(path: str | Path, source_text: str, motions: list[RobotProgramMotion]) -> None:
+def export_kuka_src_program(
+    path: str | Path,
+    source_text: str,
+    motions: list[RobotProgramMotion],
+    program_base_pose: Pose6 | None = None,
+) -> None:
     motions_by_line: dict[int, list[RobotProgramMotion]] = {}
     for motion in motions:
         motions_by_line.setdefault(int(motion.line_number), []).append(motion)
 
     lines = source_text.splitlines(keepends=True)
+    base_line_indexes: list[int] = []
     for line_number, line in enumerate(lines, start=1):
+        if _BASE_RE.match(_strip_comment(line)):
+            base_line_indexes.append(line_number - 1)
         line_motions = motions_by_line.get(line_number)
         if not line_motions:
             continue
@@ -165,6 +173,24 @@ def export_kuka_src_program(path: str | Path, source_text: str, motions: list[Ro
             f"{indent}{_format_kuka_motion_line(motion)}{line_ending}"
             for motion in line_motions
         )
+
+    if program_base_pose is not None:
+        formatted_base_line = _format_kuka_base_line(program_base_pose)
+        if base_line_indexes:
+            for line_index in base_line_indexes:
+                source_line = lines[line_index]
+                indent_match = re.match(r"^\s*", source_line)
+                indent = indent_match.group(0) if indent_match is not None else ""
+                line_ending = "\r\n" if source_line.endswith("\r\n") else "\n"
+                lines[line_index] = f"{indent}{formatted_base_line}{line_ending}"
+        else:
+            insert_index = 0
+            for index, line in enumerate(lines):
+                if _MOTION_RE.match(_strip_comment(line)):
+                    insert_index = index
+                    break
+            line_ending = "\r\n" if any(line.endswith("\r\n") for line in lines) else "\n"
+            lines.insert(insert_index, f"{formatted_base_line}{line_ending}")
 
     Path(path).write_text("".join(lines), encoding="utf-8")
 
@@ -222,5 +248,19 @@ def _format_kuka_target(target: RobotProgramTarget) -> str:
         "{X "
         f"{pose[0]:.3f},Y {pose[1]:.3f},Z {pose[2]:.3f},"
         f"A {pose[3]:.3f},B {pose[4]:.3f},C {pose[5]:.3f}"
+        "}"
+    )
+
+
+def _format_kuka_base_line(base_pose: Pose6) -> str:
+    return f"$BASE = {_format_kuka_pose(base_pose)}"
+
+
+def _format_kuka_pose(pose: Pose6) -> str:
+    values = pose.to_list()
+    return (
+        "{X "
+        f"{values[0]:.3f},Y {values[1]:.3f},Z {values[2]:.3f},"
+        f"A {values[3]:.3f},B {values[4]:.3f},C {values[5]:.3f}"
         "}"
     )

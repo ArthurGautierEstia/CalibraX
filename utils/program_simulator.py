@@ -85,9 +85,7 @@ class ProgramSimulator:
             articular_samples: list[ProgramSimulationSample] = []
 
             measured_dh = self._cached_measured_dh
-            if measured_dh is None:
-                warnings.append("Aucun modele mesure disponible: trajectoire reelle et compensation indisponibles.")
-            elif include_compensation:
+            if measured_dh is not None and include_compensation:
                 cartesian_program = self._build_compensated_program(program, ProgramCompensationOutputMode.CARTESIAN, measured_dh)
                 articular_program = self._build_compensated_program(program, ProgramCompensationOutputMode.ARTICULAR, measured_dh)
                 if cartesian_program is not None:
