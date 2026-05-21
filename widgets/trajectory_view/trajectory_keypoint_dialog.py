@@ -1432,6 +1432,11 @@ class TrajectoryKeypointDialog(QDialog):
             self.pass_mode_combo.setCurrentIndex(pass_idx)
             self.pass_mode_combo.blockSignals(False)
 
+        self.speed_spin.blockSignals(True)
+        self.speed_spin.setValue(self._linear_speed_mps if keypoint.mode != KeypointMotionMode.PTP else self._ptp_speed_percent)
+        self.speed_spin.interpretText()  # Ensure the value is updated in case of locale issues (e.g. comma vs dot)
+        self.speed_spin.blockSignals(False)
+
         for spin, value in zip(self.bezier_vector_1, keypoint.bezier_vectors[0].to_tuple()):
             spin.setValue(value)
         for spin, value in zip(self.bezier_vector_2, keypoint.bezier_vectors[1].to_tuple()):
