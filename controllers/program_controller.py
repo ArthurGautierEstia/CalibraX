@@ -942,7 +942,7 @@ class ProgramController:
 
             return
 
-        dialog = ProgramTargetDialog(motion, target, target_ref.is_via_target, self.program_view)
+        dialog = ProgramTargetDialog(self.robot_model, motion, target, target_ref.is_via_target, self.program_view)
 
         if dialog.exec() != dialog.DialogCode.Accepted:
 
