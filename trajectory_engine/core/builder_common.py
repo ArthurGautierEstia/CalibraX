@@ -194,7 +194,7 @@ class TrajectoryBuilderCommon:
 
     @staticmethod
     def _is_cartesian_mode(mode: KeypointMotionMode) -> bool:
-        return mode in (KeypointMotionMode.LINEAR, KeypointMotionMode.CUBIC)
+        return mode in (KeypointMotionMode.LINEAR, KeypointMotionMode.BEZIER)
 
     def _build_curve(self, segment: TrajectorySegment) -> tuple[Bezier7Curve3D, XYZ3, XYZ3] | None:
         start_pose = self._resolve_keypoint_pose(segment.from_keypoint)
@@ -210,7 +210,7 @@ class TrajectoryBuilderCommon:
             return curve, direction, XYZ3(-direction.x, -direction.y, -direction.z)
 
         segment_length = ((end.x - start.x) ** 2 + (end.y - start.y) ** 2 + (end.z - start.z) ** 2) ** 0.5
-        out_direction, in_direction = segment.to_keypoint.resolve_cubic_tangent_vectors(segment_length)
+        out_direction, in_direction = segment.to_keypoint.resolve_bezier_tangent_vectors(segment_length)
         return Bezier7Curve3D.from_handles(start, end, out_direction, in_direction), out_direction, in_direction
 
     def _segment_exit_speed(self, segments: list[TrajectorySegment], index: int) -> float:

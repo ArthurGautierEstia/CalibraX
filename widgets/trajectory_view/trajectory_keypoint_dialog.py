@@ -93,7 +93,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.target_stack = QStackedWidget()
         self.main_tabs = QTabWidget()
         self.target_tab = QWidget()
-        self.cubic_tab = QWidget()
+        self.bezier_tab = QWidget()
         self.config_tab = QWidget()
 
         self.cartesian_target_widget = CartesianControlWidget(compact=True)
@@ -121,24 +121,24 @@ class TrajectoryKeypointDialog(QDialog):
         self._updating_linear_tangent_fields = False
         self._last_cartesian_reference_frame = ReferenceFrame.ROBOT.value
 
-        self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
+        self.bezier_group = QGroupBox("Vecteurs du segment Bézier (entrant)")
         self.linear_group = QGroupBox("Tangentes du segment linéaire (entrant)")
-        self.cubic_vector_1: list[QDoubleSpinBox] = []
-        self.cubic_vector_2: list[QDoubleSpinBox] = []
-        self.cubic_amplitude_1 = QDoubleSpinBox()
-        self.cubic_amplitude_2 = QDoubleSpinBox()
+        self.bezier_vector_1: list[QDoubleSpinBox] = []
+        self.bezier_vector_2: list[QDoubleSpinBox] = []
+        self.bezier_amplitude_1 = QDoubleSpinBox()
+        self.bezier_amplitude_2 = QDoubleSpinBox()
         self.linear_tangent_ratio_1 = QDoubleSpinBox()
         self.linear_tangent_ratio_2 = QDoubleSpinBox()
         self.linear_tangent_amplitude_1 = QDoubleSpinBox()
         self.linear_tangent_amplitude_2 = QDoubleSpinBox()
         self.linear_tangent_link_checkbox = QCheckBox("Lier debut/fin")
-        self.cubic_auto_start_btn = QPushButton("Auto (segment précedent)")
-        self.cubic_auto_end_btn = QPushButton("Auto (segment suivant)")
-        self.cubic_auto_update_adjacent_checkbox = QCheckBox(
+        self.bezier_auto_start_btn = QPushButton("Auto (segment précedent)")
+        self.bezier_auto_end_btn = QPushButton("Auto (segment suivant)")
+        self.bezier_auto_update_adjacent_checkbox = QCheckBox(
             "Mettre à jour automatiquement les tangentes des segments adjacents"
         )
-        self.cubic_auto_update_adjacent_checkbox.setChecked(True)
-        self.cubic_hint_label = QLabel(
+        self.bezier_auto_update_adjacent_checkbox.setChecked(True)
+        self.bezier_hint_label = QLabel(
             "Direction : le triplet X/Y/Z est normalisé automatiquement. "
             "Amplitude : longueur réelle de tangente en mm (min 0, pas de maximum)."
         )
@@ -186,7 +186,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.target_type_combo.addItem("Articulaire (J1 J2 J3 J4 J5 J6)", KeypointTargetType.JOINT.value)
         self.mode_combo.addItem(KeypointMotionMode.PTP.value, KeypointMotionMode.PTP.value)
         self.mode_combo.addItem(KeypointMotionMode.LINEAR.value, KeypointMotionMode.LINEAR.value)
-        self.mode_combo.addItem("BEZIER", KeypointMotionMode.CUBIC.value)
+        self.mode_combo.addItem("Bézier", KeypointMotionMode.BEZIER.value)
         self.pass_mode_combo.addItem("Stop", TrajectoryPassMode.STOP.value)
         self.pass_mode_combo.addItem("Fly-by", TrajectoryPassMode.FLY_BY.value)
         top_controls_layout.addWidget(QLabel("Type de target"))
@@ -216,7 +216,7 @@ class TrajectoryKeypointDialog(QDialog):
         target_tab_layout.addLayout(target_actions_layout)
         target_tab_layout.addWidget(self.target_stack)
 
-        cubic_tab_layout = QVBoxLayout(self.cubic_tab)
+        bezier_tab_layout = QVBoxLayout(self.bezier_tab)
 
         linear_layout = QGridLayout()
         linear_label_width = 140
@@ -253,81 +253,81 @@ class TrajectoryKeypointDialog(QDialog):
         linear_layout.setColumnStretch(5, 1)
         self.linear_group.setLayout(linear_layout)
 
-        cubic_layout = QVBoxLayout()
+        bezier_layout = QVBoxLayout()
 
-        cubic_label_width = 120
+        bezier_label_width = 120
 
         start_group = QGroupBox("Debut de segment")
         start_layout = QGridLayout()
         start_direction_label = QLabel("Direction (X/Y/Z)")
-        start_direction_label.setMinimumWidth(cubic_label_width)
+        start_direction_label.setMinimumWidth(bezier_label_width)
         start_layout.addWidget(start_direction_label, 0, 0)
         for i in range(3):
             spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
-            self.cubic_vector_1.append(spin)
+            self.bezier_vector_1.append(spin)
             start_layout.addWidget(spin, 0, i + 1)
 
         start_amp_label = QLabel("Amplitude (mm)")
-        start_amp_label.setMinimumWidth(cubic_label_width)
+        start_amp_label.setMinimumWidth(bezier_label_width)
         start_layout.addWidget(start_amp_label, 1, 0)
-        self.cubic_amplitude_1.setRange(0.0, 1_000_000.0)
-        self.cubic_amplitude_1.setDecimals(3)
-        self.cubic_amplitude_1.setSingleStep(1.0)
-        start_layout.addWidget(self.cubic_amplitude_1, 1, 1)
+        self.bezier_amplitude_1.setRange(0.0, 1_000_000.0)
+        self.bezier_amplitude_1.setDecimals(3)
+        self.bezier_amplitude_1.setSingleStep(1.0)
+        start_layout.addWidget(self.bezier_amplitude_1, 1, 1)
 
-        self.cubic_auto_start_btn.setToolTip(
+        self.bezier_auto_start_btn.setToolTip(
             "Calcule la tangente de debut du segment courant à partir du segment précedent."
         )
         start_auto_label = QLabel()
-        start_auto_label.setMinimumWidth(cubic_label_width)
+        start_auto_label.setMinimumWidth(bezier_label_width)
         start_layout.addWidget(start_auto_label, 2, 0)
-        start_layout.addWidget(self.cubic_auto_start_btn, 2, 1)
+        start_layout.addWidget(self.bezier_auto_start_btn, 2, 1)
         start_layout.setColumnStretch(4, 1)
         start_group.setLayout(start_layout)
-        cubic_layout.addWidget(start_group)
+        bezier_layout.addWidget(start_group)
 
         end_group = QGroupBox("Fin de segment")
         end_layout = QGridLayout()
         end_direction_label = QLabel("Direction (X/Y/Z)")
-        end_direction_label.setMinimumWidth(cubic_label_width)
+        end_direction_label.setMinimumWidth(bezier_label_width)
         end_layout.addWidget(end_direction_label, 0, 0)
         for i in range(3):
             spin = self._make_spin(-1000.0, 1000.0, 3, 0.1)
-            self.cubic_vector_2.append(spin)
+            self.bezier_vector_2.append(spin)
             end_layout.addWidget(spin, 0, i + 1)
 
         end_amp_label = QLabel("Amplitude (mm)")
-        end_amp_label.setMinimumWidth(cubic_label_width)
+        end_amp_label.setMinimumWidth(bezier_label_width)
         end_layout.addWidget(end_amp_label, 1, 0)
-        self.cubic_amplitude_2.setRange(0.0, 1_000_000.0)
-        self.cubic_amplitude_2.setDecimals(3)
-        self.cubic_amplitude_2.setSingleStep(1.0)
-        end_layout.addWidget(self.cubic_amplitude_2, 1, 1)
+        self.bezier_amplitude_2.setRange(0.0, 1_000_000.0)
+        self.bezier_amplitude_2.setDecimals(3)
+        self.bezier_amplitude_2.setSingleStep(1.0)
+        end_layout.addWidget(self.bezier_amplitude_2, 1, 1)
 
-        self.cubic_auto_end_btn.setToolTip(
+        self.bezier_auto_end_btn.setToolTip(
             "Calcule la tangente de fin du segment courant à partir du segment suivant."
         )
         end_auto_label = QLabel()
-        end_auto_label.setMinimumWidth(cubic_label_width)
+        end_auto_label.setMinimumWidth(bezier_label_width)
         end_layout.addWidget(end_auto_label, 2, 0)
-        end_layout.addWidget(self.cubic_auto_end_btn, 2, 1)
+        end_layout.addWidget(self.bezier_auto_end_btn, 2, 1)
         end_layout.setColumnStretch(4, 1)
         end_group.setLayout(end_layout)
-        cubic_layout.addWidget(end_group)
+        bezier_layout.addWidget(end_group)
 
-        cubic_group_layout = QVBoxLayout()
-        cubic_group_layout.addLayout(cubic_layout)
-        self.cubic_hint_label.setWordWrap(True)
-        self.cubic_hint_label.setStyleSheet("color: #b0b0b0;")
-        cubic_group_layout.addWidget(self.cubic_hint_label)
-        self.cubic_group.setLayout(cubic_group_layout)
+        bezier_group_layout = QVBoxLayout()
+        bezier_group_layout.addLayout(bezier_layout)
+        self.bezier_hint_label.setWordWrap(True)
+        self.bezier_hint_label.setStyleSheet("color: #b0b0b0;")
+        bezier_group_layout.addWidget(self.bezier_hint_label)
+        self.bezier_group.setLayout(bezier_group_layout)
 
-        self.cubic_auto_update_adjacent_checkbox.setToolTip(
-            "En edition, ajuste automatiquement les tangentes des segments cubiques précedent/suivant."
+        self.bezier_auto_update_adjacent_checkbox.setToolTip(
+            "En edition, ajuste automatiquement les tangentes des segments Bézier précedent/suivant."
         )
-        cubic_tab_layout.addWidget(self.linear_group)
-        cubic_tab_layout.addWidget(self.cubic_group)
-        cubic_tab_layout.addStretch()
+        bezier_tab_layout.addWidget(self.linear_group)
+        bezier_tab_layout.addWidget(self.bezier_group)
+        bezier_tab_layout.addStretch()
 
         config_group = QGroupBox("Configurations")
         config_layout = QVBoxLayout()
@@ -356,10 +356,10 @@ class TrajectoryKeypointDialog(QDialog):
         config_tab_layout.addWidget(config_group)
 
         self.main_tabs.addTab(self.target_tab, "Target")
-        self.main_tabs.addTab(self.cubic_tab, "Tangentes")
+        self.main_tabs.addTab(self.bezier_tab, "Tangentes")
         self.main_tabs.addTab(self.config_tab, "Configs")
         layout.addWidget(self.main_tabs)
-        layout.addWidget(self.cubic_auto_update_adjacent_checkbox)
+        layout.addWidget(self.bezier_auto_update_adjacent_checkbox)
 
         self.current_segment_status_label.setWordWrap(True)
         self.current_segment_status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
@@ -447,19 +447,19 @@ class TrajectoryKeypointDialog(QDialog):
         self.speed_spin.editingFinished.connect(self._on_speed_changed)
         self.config_policy_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
         self.forced_config_combo.currentIndexChanged.connect(self._on_configuration_policy_changed)
-        for spin in self.cubic_vector_1:
-            spin.valueChanged.connect(self._on_cubic_vectors_changed)
-        for spin in self.cubic_vector_2:
-            spin.valueChanged.connect(self._on_cubic_vectors_changed)
-        self.cubic_amplitude_1.valueChanged.connect(self._on_cubic_vectors_changed)
-        self.cubic_amplitude_2.valueChanged.connect(self._on_cubic_vectors_changed)
+        for spin in self.bezier_vector_1:
+            spin.valueChanged.connect(self._on_bezier_vectors_changed)
+        for spin in self.bezier_vector_2:
+            spin.valueChanged.connect(self._on_bezier_vectors_changed)
+        self.bezier_amplitude_1.valueChanged.connect(self._on_bezier_vectors_changed)
+        self.bezier_amplitude_2.valueChanged.connect(self._on_bezier_vectors_changed)
         self.linear_tangent_ratio_1.valueChanged.connect(self._on_linear_tangent_start_ratio_changed)
         self.linear_tangent_ratio_2.valueChanged.connect(self._on_linear_tangent_end_ratio_changed)
         self.linear_tangent_amplitude_1.valueChanged.connect(self._on_linear_tangent_start_amplitude_changed)
         self.linear_tangent_amplitude_2.valueChanged.connect(self._on_linear_tangent_end_amplitude_changed)
         self.linear_tangent_link_checkbox.toggled.connect(self._on_linear_tangent_link_toggled)
-        self.cubic_auto_start_btn.clicked.connect(self._on_auto_start_tangent_clicked)
-        self.cubic_auto_end_btn.clicked.connect(self._on_auto_end_tangent_clicked)
+        self.bezier_auto_start_btn.clicked.connect(self._on_auto_start_tangent_clicked)
+        self.bezier_auto_end_btn.clicked.connect(self._on_auto_end_tangent_clicked)
         self.joint_target_widget.joint_value_changed.connect(self._on_joint_target_changed)
         self.cartesian_target_widget.cartesian_value_changed.connect(self._on_cartesian_target_changed)
         self.cartesian_target_widget.reference_frame_changed.connect(self._on_cartesian_reference_frame_changed)
@@ -835,20 +835,20 @@ class TrajectoryKeypointDialog(QDialog):
         self._context_keypoints = list(keypoints)
         self._context_edited_row_index = edited_row_index if isinstance(edited_row_index, int) else None
         self._context_trajectory_result = trajectory_result
-        has_adjacent_cubic_candidate = False
+        has_adjacent_bezier_candidate = False
         row = self._context_edited_row_index
         if row is not None:
             if 0 <= row < len(self._context_keypoints):
-                has_adjacent_cubic_candidate = row > 0 or (row + 1) < len(self._context_keypoints)
+                has_adjacent_bezier_candidate = row > 0 or (row + 1) < len(self._context_keypoints)
             elif row == len(self._context_keypoints):
-                has_adjacent_cubic_candidate = row > 0
-        self.cubic_auto_update_adjacent_checkbox.setEnabled(has_adjacent_cubic_candidate)
+                has_adjacent_bezier_candidate = row > 0
+        self.bezier_auto_update_adjacent_checkbox.setEnabled(has_adjacent_bezier_candidate)
         self._refresh_linear_tangent_amplitudes_from_ratios()
         self._update_auto_tangent_buttons_state()
         self._update_context_status_labels()
 
-    def should_auto_update_adjacent_cubic_tangents(self) -> bool:
-        return self.cubic_auto_update_adjacent_checkbox.isEnabled() and self.cubic_auto_update_adjacent_checkbox.isChecked()
+    def should_auto_update_adjacent_bezier_tangents(self) -> bool:
+        return self.bezier_auto_update_adjacent_checkbox.isEnabled() and self.bezier_auto_update_adjacent_checkbox.isChecked()
 
     def _resolve_current_target_xyz(self) -> XYZ3 | None:
         if self._current_target_type() == KeypointTargetType.CARTESIAN:
@@ -883,8 +883,8 @@ class TrajectoryKeypointDialog(QDialog):
         if keypoint.mode == KeypointMotionMode.PTP:
             return None
 
-        if keypoint.mode == KeypointMotionMode.CUBIC:
-            return keypoint.resolve_cubic_tangent_vectors(0.0)
+        if keypoint.mode == KeypointMotionMode.BEZIER:
+            return keypoint.resolve_bezier_tangent_vectors(0.0)
 
         if keypoint.mode != KeypointMotionMode.LINEAR:
             return None
@@ -937,41 +937,41 @@ class TrajectoryKeypointDialog(QDialog):
         return tangents[0]
 
     def _update_auto_tangent_buttons_state(self) -> None:
-        is_cubic = self._current_mode() == KeypointMotionMode.CUBIC
-        self.cubic_auto_start_btn.setEnabled(
-            is_cubic and self._get_previous_segment_end_tangent_for_auto() is not None
+        is_bezier = self._current_mode() == KeypointMotionMode.BEZIER
+        self.bezier_auto_start_btn.setEnabled(
+            is_bezier and self._get_previous_segment_end_tangent_for_auto() is not None
         )
-        self.cubic_auto_end_btn.setEnabled(
-            is_cubic and self._get_next_segment_start_tangent_for_auto() is not None
+        self.bezier_auto_end_btn.setEnabled(
+            is_bezier and self._get_next_segment_start_tangent_for_auto() is not None
         )
 
-    def _apply_cubic_start_tangent_direction(self, direction_xyz: XYZ3, emit_preview: bool = True) -> None:
-        for spin, value in zip(self.cubic_vector_1, direction_xyz.to_tuple()):
+    def _apply_bezier_start_tangent_direction(self, direction_xyz: XYZ3, emit_preview: bool = True) -> None:
+        for spin, value in zip(self.bezier_vector_1, direction_xyz.to_tuple()):
             spin.blockSignals(True)
             spin.setValue(value)
             spin.blockSignals(False)
         if emit_preview:
             self._emit_live_preview()
 
-    def _apply_cubic_end_tangent_direction(self, direction_xyz: XYZ3, emit_preview: bool = True) -> None:
-        for spin, value in zip(self.cubic_vector_2, direction_xyz.to_tuple()):
+    def _apply_bezier_end_tangent_direction(self, direction_xyz: XYZ3, emit_preview: bool = True) -> None:
+        for spin, value in zip(self.bezier_vector_2, direction_xyz.to_tuple()):
             spin.blockSignals(True)
             spin.setValue(value)
             spin.blockSignals(False)
         if emit_preview:
             self._emit_live_preview()
 
-    def _set_cubic_start_amplitude_mm(self, amplitude_mm: float, emit_preview: bool = True) -> None:
-        self.cubic_amplitude_1.blockSignals(True)
-        self.cubic_amplitude_1.setValue(max(0.0, float(amplitude_mm)))
-        self.cubic_amplitude_1.blockSignals(False)
+    def _set_bezier_start_amplitude_mm(self, amplitude_mm: float, emit_preview: bool = True) -> None:
+        self.bezier_amplitude_1.blockSignals(True)
+        self.bezier_amplitude_1.setValue(max(0.0, float(amplitude_mm)))
+        self.bezier_amplitude_1.blockSignals(False)
         if emit_preview:
             self._emit_live_preview()
 
-    def _set_cubic_end_amplitude_mm(self, amplitude_mm: float, emit_preview: bool = True) -> None:
-        self.cubic_amplitude_2.blockSignals(True)
-        self.cubic_amplitude_2.setValue(max(0.0, float(amplitude_mm)))
-        self.cubic_amplitude_2.blockSignals(False)
+    def _set_bezier_end_amplitude_mm(self, amplitude_mm: float, emit_preview: bool = True) -> None:
+        self.bezier_amplitude_2.blockSignals(True)
+        self.bezier_amplitude_2.setValue(max(0.0, float(amplitude_mm)))
+        self.bezier_amplitude_2.blockSignals(False)
         if emit_preview:
             self._emit_live_preview()
 
@@ -1130,19 +1130,19 @@ class TrajectoryKeypointDialog(QDialog):
             return
         start_amplitude_mm = direction.norm()
         start_direction = -direction
-        self._apply_cubic_start_tangent_direction(start_direction, emit_preview=False)
-        self._set_cubic_start_amplitude_mm(start_amplitude_mm, emit_preview=False)
+        self._apply_bezier_start_tangent_direction(start_direction, emit_preview=False)
+        self._set_bezier_start_amplitude_mm(start_amplitude_mm, emit_preview=False)
 
         current_end_direction = XYZ3(
-            self.cubic_vector_2[0].value(),
-            self.cubic_vector_2[1].value(),
-            self.cubic_vector_2[2].value(),
+            self.bezier_vector_2[0].value(),
+            self.bezier_vector_2[1].value(),
+            self.bezier_vector_2[2].value(),
         )
         if current_end_direction.norm() <= 1e-9:
             end_direction = self._compute_end_tangent_from_first_tangent_look_at(start_direction)
             if end_direction is not None:
-                self._apply_cubic_end_tangent_direction(end_direction, emit_preview=False)
-                self._set_cubic_end_amplitude_mm(end_direction.norm(), emit_preview=False)
+                self._apply_bezier_end_tangent_direction(end_direction, emit_preview=False)
+                self._set_bezier_end_amplitude_mm(end_direction.norm(), emit_preview=False)
         self._emit_live_preview()
 
     def _on_auto_end_tangent_clicked(self) -> None:
@@ -1151,19 +1151,19 @@ class TrajectoryKeypointDialog(QDialog):
             return
         end_amplitude_mm = direction.norm()
         end_direction = -direction
-        self._apply_cubic_end_tangent_direction(end_direction, emit_preview=False)
-        self._set_cubic_end_amplitude_mm(end_amplitude_mm, emit_preview=False)
+        self._apply_bezier_end_tangent_direction(end_direction, emit_preview=False)
+        self._set_bezier_end_amplitude_mm(end_amplitude_mm, emit_preview=False)
 
         current_start_direction = XYZ3(
-            self.cubic_vector_1[0].value(),
-            self.cubic_vector_1[1].value(),
-            self.cubic_vector_1[2].value(),
+            self.bezier_vector_1[0].value(),
+            self.bezier_vector_1[1].value(),
+            self.bezier_vector_1[2].value(),
         )
         if current_start_direction.norm() <= 1e-9:
             start_direction = self._compute_start_tangent_from_end_tangent_look_at(end_direction)
             if start_direction is not None:
-                self._apply_cubic_start_tangent_direction(start_direction, emit_preview=False)
-                self._set_cubic_start_amplitude_mm(start_direction.norm(), emit_preview=False)
+                self._apply_bezier_start_tangent_direction(start_direction, emit_preview=False)
+                self._set_bezier_start_amplitude_mm(start_direction.norm(), emit_preview=False)
         self._emit_live_preview()
 
     def _store_current_speed(self) -> None:
@@ -1206,9 +1206,9 @@ class TrajectoryKeypointDialog(QDialog):
         previous_mode = self._last_mode
         self._store_current_speed()
         self._last_mode = self._current_mode()
-        self._update_cubic_visibility()
+        self._update_bezier_visibility()
         self._update_speed_editor()
-        if previous_mode != KeypointMotionMode.CUBIC and self._last_mode == KeypointMotionMode.CUBIC:
+        if previous_mode != KeypointMotionMode.BEZIER and self._last_mode == KeypointMotionMode.BEZIER:
             self._on_auto_start_tangent_clicked()
             self._on_auto_end_tangent_clicked()
         self._try_minimize_window_size()
@@ -1278,7 +1278,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._remember_preview_speed()
         self._emit_live_preview()
 
-    def _on_cubic_vectors_changed(self, *_args) -> None:
+    def _on_bezier_vectors_changed(self, *_args) -> None:
         self._emit_live_preview()
 
     def _on_linear_tangent_start_ratio_changed(self, *_args) -> None:
@@ -1366,21 +1366,21 @@ class TrajectoryKeypointDialog(QDialog):
             self._refresh_cartesian_solutions_table()
         self._last_target_type = KeypointTargetType.JOINT if is_joint else KeypointTargetType.CARTESIAN
 
-    def _update_cubic_visibility(self) -> None:
+    def _update_bezier_visibility(self) -> None:
         mode = self._current_mode()
-        is_cubic = mode == KeypointMotionMode.CUBIC
+        is_bezier = mode == KeypointMotionMode.BEZIER
         is_linear = mode == KeypointMotionMode.LINEAR
-        show_interp_tab = is_cubic or is_linear
-        cubic_tab_index = self.main_tabs.indexOf(self.cubic_tab)
-        if cubic_tab_index >= 0:
-            self.main_tabs.setTabEnabled(cubic_tab_index, show_interp_tab)
+        show_interp_tab = is_bezier or is_linear
+        bezier_tab_index = self.main_tabs.indexOf(self.bezier_tab)
+        if bezier_tab_index >= 0:
+            self.main_tabs.setTabEnabled(bezier_tab_index, show_interp_tab)
             if hasattr(self.main_tabs, "setTabVisible"):
-                self.main_tabs.setTabVisible(cubic_tab_index, show_interp_tab)
-            if not show_interp_tab and self.main_tabs.currentIndex() == cubic_tab_index:
+                self.main_tabs.setTabVisible(bezier_tab_index, show_interp_tab)
+            if not show_interp_tab and self.main_tabs.currentIndex() == bezier_tab_index:
                 self.main_tabs.setCurrentWidget(self.target_tab)
-        self.cubic_group.setVisible(is_cubic)
+        self.bezier_group.setVisible(is_bezier)
         self.linear_group.setVisible(is_linear)
-        self.cubic_auto_update_adjacent_checkbox.setVisible(is_cubic)
+        self.bezier_auto_update_adjacent_checkbox.setVisible(is_bezier)
         self._update_auto_tangent_buttons_state()
 
     def _update_speed_editor(self) -> None:
@@ -1432,12 +1432,12 @@ class TrajectoryKeypointDialog(QDialog):
             self.pass_mode_combo.setCurrentIndex(pass_idx)
             self.pass_mode_combo.blockSignals(False)
 
-        for spin, value in zip(self.cubic_vector_1, keypoint.cubic_vectors[0].to_tuple()):
+        for spin, value in zip(self.bezier_vector_1, keypoint.bezier_vectors[0].to_tuple()):
             spin.setValue(value)
-        for spin, value in zip(self.cubic_vector_2, keypoint.cubic_vectors[1].to_tuple()):
+        for spin, value in zip(self.bezier_vector_2, keypoint.bezier_vectors[1].to_tuple()):
             spin.setValue(value)
-        self.cubic_amplitude_1.setValue(float(keypoint.cubic_amplitudes_mm[0]))
-        self.cubic_amplitude_2.setValue(float(keypoint.cubic_amplitudes_mm[1]))
+        self.bezier_amplitude_1.setValue(float(keypoint.bezier_amplitudes_mm[0]))
+        self.bezier_amplitude_2.setValue(float(keypoint.bezier_amplitudes_mm[1]))
         self._set_linear_tangent_ratios(
             float(keypoint.linear_tangent_ratios[0]),
             float(keypoint.linear_tangent_ratios[1]),
@@ -1461,7 +1461,7 @@ class TrajectoryKeypointDialog(QDialog):
             self.forced_config_combo.blockSignals(False)
 
         self._update_target_editors()
-        self._update_cubic_visibility()
+        self._update_bezier_visibility()
         self._update_speed_editor()
         self._refresh_cartesian_solutions_table()
         self._try_minimize_window_size()
@@ -1493,13 +1493,13 @@ class TrajectoryKeypointDialog(QDialog):
             cartesian_frame=ReferenceFrame.from_value(self.cartesian_target_widget.get_reference_frame()),
             joint_target=self.joint_target_widget.get_all_joints(),
             mode=mode,
-            cubic_vectors=[
-                XYZ3(self.cubic_vector_1[0].value(), self.cubic_vector_1[1].value(), self.cubic_vector_1[2].value()),
-                XYZ3(self.cubic_vector_2[0].value(), self.cubic_vector_2[1].value(), self.cubic_vector_2[2].value()),
+            bezier_vectors=[
+                XYZ3(self.bezier_vector_1[0].value(), self.bezier_vector_1[1].value(), self.bezier_vector_1[2].value()),
+                XYZ3(self.bezier_vector_2[0].value(), self.bezier_vector_2[1].value(), self.bezier_vector_2[2].value()),
             ],
-            cubic_amplitudes_mm=[
-                self.cubic_amplitude_1.value(),
-                self.cubic_amplitude_2.value(),
+            bezier_amplitudes_mm=[
+                self.bezier_amplitude_1.value(),
+                self.bezier_amplitude_2.value(),
             ],
             linear_tangent_ratios=[
                 self._percent_to_ratio(self.linear_tangent_ratio_1.value()),

@@ -301,8 +301,8 @@ class ProgramKeypointsWidget(QWidget):
 
     @staticmethod
     def _mode_text(keypoint: TrajectoryKeypoint) -> str:
-        if keypoint.mode == KeypointMotionMode.CUBIC:
-            return "BEZIER"
+        if keypoint.mode == KeypointMotionMode.BEZIER:
+            return "Bézier"
         return keypoint.mode.value
 
     @staticmethod

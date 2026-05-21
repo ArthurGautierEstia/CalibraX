@@ -159,7 +159,7 @@ class TrajectoryBuilder(TrajectoryBuilderCommon):
             target_type=KeypointTargetType.JOINT,
             joint_target=joints,
             mode=to_keypoint.mode,
-            cubic_vectors=[XYZ3.zeros(), XYZ3.zeros()],
+            bezier_vectors=[XYZ3.zeros(), XYZ3.zeros()],
             configuration_policy=ConfigurationPolicy.FORCED,
             forced_config=config_key,
             ptp_speed_percent=to_keypoint.ptp_speed_percent,

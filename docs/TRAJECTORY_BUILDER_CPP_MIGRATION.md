@@ -63,7 +63,7 @@ Preview properties:
 - it stores lightweight preview segments and preview samples
 - it is suitable for drawing graphs and 3D path previews
 - it does not always contain full joint-space information
-- for LIN / CUBIC segments, preview samples often only carry cartesian pose data
+- for LIN / BEZIER segments, preview samples often only carry cartesian pose data
 
 Important consequence:
 
@@ -133,10 +133,10 @@ Keypoints encode:
 - motion mode
 - speed settings
 - configuration policy
-- cubic tangent data
+- bezier tangent data
 - linear tangent ratios
 
-Important detail for CUBIC:
+Important detail for BEZIER:
 
 - tangent semantics are segment-in semantics
 - the tangents stored on a keypoint describe the segment that ends at that keypoint
@@ -203,9 +203,9 @@ Important sequential dependencies include:
 This means the complete sample generation phase should still be considered mostly sequential.
 
 
-### LIN and CUBIC may be grouped into chained super-segments
+### LIN and BEZIER may be grouped into chained super-segments
 
-In the current builder, LIN and CUBIC segments can be grouped into larger chained units when continuity conditions are met.
+In the current builder, LIN and BEZIER segments can be grouped into larger chained units when continuity conditions are met.
 
 Implications:
 
@@ -406,7 +406,7 @@ Incremental rebuild should not start from the assumption:
 
 That assumption is too weak because of:
 
-- chained LIN / CUBIC segments
+- chained LIN / BEZIER segments
 - tangent propagation to neighbors
 - time propagation
 - IK / configuration continuity

@@ -18,7 +18,7 @@ class KeypointTargetType(Enum):
 class KeypointMotionMode(Enum):
     PTP = "PTP"
     LINEAR = "LINEAR"
-    CUBIC = "CUBIC"
+    BEZIER = "BEZIER"
 
 
 class ConfigurationPolicy(Enum):
@@ -28,7 +28,7 @@ class ConfigurationPolicy(Enum):
 
 
 class TrajectoryKeypoint:
-    DEFAULT_CUBIC_AMPLITUDE_MM = 30.0
+    DEFAULT_BEZIER_AMPLITUDE_MM = 30.0
     DEFAULT_LINEAR_TANGENT_RATIO = 0.3
 
     def __init__(
@@ -38,8 +38,8 @@ class TrajectoryKeypoint:
         cartesian_frame: ReferenceFrame | str = ReferenceFrame.ROBOT,
         joint_target: list[float] | None = None,
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
-        cubic_vectors: Sequence[XYZ3] | None = None,
-        cubic_amplitudes_mm: list[float] | None = None,
+        bezier_vectors: Sequence[XYZ3] | None = None,
+        bezier_amplitudes_mm: list[float] | None = None,
         linear_tangent_ratios: list[float] | None = None,
         linear_tangent_ratios_linked: bool = True,
         configuration_policy: ConfigurationPolicy = ConfigurationPolicy.AUTO,
@@ -60,24 +60,24 @@ class TrajectoryKeypoint:
         )
 
         # Segment-in semantics (for the segment that ends at this keypoint):
-        # cubic_vectors[0] = direction at segment start (previous point side)
-        # cubic_vectors[1] = direction at segment end (current point side)
-        vectors = list(cubic_vectors) if cubic_vectors is not None else []
+        # bezier_vectors[0] = direction at segment start (previous point side)
+        # bezier_vectors[1] = direction at segment end (current point side)
+        vectors = list(bezier_vectors) if bezier_vectors is not None else []
         vec1 = vectors[0] if len(vectors) > 0 else None
         vec2 = vectors[1] if len(vectors) > 1 else None
-        self.cubic_vectors = [
+        self.bezier_vectors = [
             self._normalize_direction_vector(vec1),
             self._normalize_direction_vector(vec2),
         ]
         amplitudes = (
-            [self.DEFAULT_CUBIC_AMPLITUDE_MM, self.DEFAULT_CUBIC_AMPLITUDE_MM]
-            if cubic_amplitudes_mm is None
-            else list(cubic_amplitudes_mm)
+            [self.DEFAULT_BEZIER_AMPLITUDE_MM, self.DEFAULT_BEZIER_AMPLITUDE_MM]
+            if bezier_amplitudes_mm is None
+            else list(bezier_amplitudes_mm)
         )
-        amp1 = amplitudes[0] if len(amplitudes) > 0 else self.DEFAULT_CUBIC_AMPLITUDE_MM
-        amp2 = amplitudes[1] if len(amplitudes) > 1 else self.DEFAULT_CUBIC_AMPLITUDE_MM
-        amp_values = self._normalize_float_list([amp1, amp2], 2, self.DEFAULT_CUBIC_AMPLITUDE_MM)
-        self.cubic_amplitudes_mm = [
+        amp1 = amplitudes[0] if len(amplitudes) > 0 else self.DEFAULT_BEZIER_AMPLITUDE_MM
+        amp2 = amplitudes[1] if len(amplitudes) > 1 else self.DEFAULT_BEZIER_AMPLITUDE_MM
+        amp_values = self._normalize_float_list([amp1, amp2], 2, self.DEFAULT_BEZIER_AMPLITUDE_MM)
+        self.bezier_amplitudes_mm = [
             self._clamp_min(amp_values[0], 0.0),
             self._clamp_min(amp_values[1], 0.0),
         ]
@@ -145,12 +145,12 @@ class TrajectoryKeypoint:
         inv_norm = 1.0 / norm
         return XYZ3(vector.x * inv_norm, vector.y * inv_norm, vector.z * inv_norm)
 
-    def resolve_cubic_tangent_vectors(self, segment_length_mm: float) -> tuple[XYZ3, XYZ3]:
+    def resolve_bezier_tangent_vectors(self, segment_length_mm: float) -> tuple[XYZ3, XYZ3]:
         _ = segment_length_mm
-        start_direction = self.cubic_vectors[0]
-        end_direction = self.cubic_vectors[1]
-        start_amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[0]), 0.0)
-        end_amplitude_mm = self._clamp_min(float(self.cubic_amplitudes_mm[1]), 0.0)
+        start_direction = self.bezier_vectors[0]
+        end_direction = self.bezier_vectors[1]
+        start_amplitude_mm = self._clamp_min(float(self.bezier_amplitudes_mm[0]), 0.0)
+        end_amplitude_mm = self._clamp_min(float(self.bezier_amplitudes_mm[1]), 0.0)
         return (
             XYZ3(
                 start_direction.x * start_amplitude_mm,
@@ -204,8 +204,8 @@ class TrajectoryKeypoint:
             cartesian_frame=self.cartesian_frame,
             joint_target=list(self.joint_target),
             mode=self.mode,
-            cubic_vectors=[self.cubic_vectors[0].copy(), self.cubic_vectors[1].copy()],
-            cubic_amplitudes_mm=list(self.cubic_amplitudes_mm),
+            bezier_vectors=[self.bezier_vectors[0].copy(), self.bezier_vectors[1].copy()],
+            bezier_amplitudes_mm=list(self.bezier_amplitudes_mm),
             linear_tangent_ratios=list(self.linear_tangent_ratios),
             linear_tangent_ratios_linked=self.linear_tangent_ratios_linked,
             configuration_policy=self.configuration_policy,
@@ -222,13 +222,13 @@ class TrajectoryKeypoint:
             "cartesian_frame": self.cartesian_frame.value,
             "joint_target": [float(v) for v in self.joint_target[:6]],
             "mode": self.mode.value,
-            "cubic_vectors": [
-                self.cubic_vectors[0].to_list(),
-                self.cubic_vectors[1].to_list(),
+            "bezier_vectors": [
+                self.bezier_vectors[0].to_list(),
+                self.bezier_vectors[1].to_list(),
             ],
-            "cubic_amplitudes_mm": [
-                float(self.cubic_amplitudes_mm[0]),
-                float(self.cubic_amplitudes_mm[1]),
+            "bezier_amplitudes_mm": [
+                float(self.bezier_amplitudes_mm[0]),
+                float(self.bezier_amplitudes_mm[1]),
             ],
             "linear_tangent_ratios": [
                 float(self.linear_tangent_ratios[0]),
@@ -271,17 +271,17 @@ class TrajectoryKeypoint:
             except KeyError:
                 forced_config = None
 
-        cubic_vectors_raw = raw.get("cubic_vectors")
-        cubic_vectors: list[XYZ3] | None = None
-        if isinstance(cubic_vectors_raw, list):
-            cubic_vectors = [
-                XYZ3.from_values(cubic_vectors_raw[0]) if len(cubic_vectors_raw) > 0 else XYZ3.zeros(),
-                XYZ3.from_values(cubic_vectors_raw[1]) if len(cubic_vectors_raw) > 1 else XYZ3.zeros(),
+        bezier_vectors_raw = raw.get("bezier_vectors")
+        bezier_vectors: list[XYZ3] | None = None
+        if isinstance(bezier_vectors_raw, list):
+            bezier_vectors = [
+                XYZ3.from_values(bezier_vectors_raw[0]) if len(bezier_vectors_raw) > 0 else XYZ3.zeros(),
+                XYZ3.from_values(bezier_vectors_raw[1]) if len(bezier_vectors_raw) > 1 else XYZ3.zeros(),
             ]
-        cubic_amplitudes_mm = raw.get("cubic_amplitudes_mm")
-        if not isinstance(cubic_amplitudes_mm, list) or len(cubic_amplitudes_mm) < 2:
+        bezier_amplitudes_mm = raw.get("bezier_amplitudes_mm")
+        if not isinstance(bezier_amplitudes_mm, list) or len(bezier_amplitudes_mm) < 2:
             raise ValueError(
-                "Format invalide: 'cubic_amplitudes_mm' doit etre une liste "
+                "Format invalide: 'bezier_amplitudes_mm' doit etre une liste "
                 "de 2 valeurs."
             )
         linear_tangent_ratios = raw.get("linear_tangent_ratios")
@@ -302,8 +302,8 @@ class TrajectoryKeypoint:
             cartesian_frame=ReferenceFrame.from_value(raw.get("cartesian_frame")),
             joint_target=raw.get("joint_target"),
             mode=mode,
-            cubic_vectors=cubic_vectors,
-            cubic_amplitudes_mm=cubic_amplitudes_mm,
+            bezier_vectors=bezier_vectors,
+            bezier_amplitudes_mm=bezier_amplitudes_mm,
             linear_tangent_ratios=linear_tangent_ratios,
             linear_tangent_ratios_linked=linear_tangent_ratios_linked,
             configuration_policy=configuration_policy,
