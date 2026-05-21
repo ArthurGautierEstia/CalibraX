@@ -119,7 +119,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._last_target_type = KeypointTargetType.CARTESIAN
         self._suspend_preview_emission = False
         self._updating_linear_tangent_fields = False
-        self._last_cartesian_reference_frame = ReferenceFrame.BASE.value
+        self._last_cartesian_reference_frame = ReferenceFrame.ROBOT.value
 
         self.cubic_group = QGroupBox("Vecteurs du segment cubique (entrant)")
         self.linear_group = QGroupBox("Tangentes du segment linéaire (entrant)")

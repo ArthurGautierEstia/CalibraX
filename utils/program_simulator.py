@@ -34,6 +34,14 @@ class _PtpProbeSample:
     pose_base: Pose6
 
 
+@dataclass(frozen=True)
+class _ProgramStartState:
+    initial_joints_deg: JointAngles6
+    initial_pose_base: Pose6
+    remaining_motions: list[RobotProgramMotion]
+    initial_sample_motion: RobotProgramMotion | None
+
+
 class ProgramSimulator:
     DEFAULT_DT_S = 0.02
     DEFAULT_LINEAR_SPEED_MPS = 0.2
@@ -173,11 +181,11 @@ class ProgramSimulator:
     # =========================================================================
 
     def _estimate_total_path_length_mm(self, motions: list[RobotProgramMotion]) -> float:
-        current_joints_deg = self._normalize_joints(self.robot_model.get_joints())
-        initial_tool = self.tool_model.get_tool() if not motions else self._tool_from_pose(motions[0].tool_pose)
-        current_pose = self._fk_nominal_pose_base(current_joints_deg, initial_tool)
+        start_state = self._resolve_program_start_state(motions)
+        current_joints_deg = start_state.initial_joints_deg.to_list()
+        current_pose = start_state.initial_pose_base
         total_mm = 0.0
-        for motion in motions:
+        for motion in start_state.remaining_motions:
             motion_tool = self._tool_from_pose(motion.tool_pose)
             if motion.mode == RobotProgramMotionMode.PTP:
                 target_joints = self._resolve_ptp_target_joints(motion, current_joints_deg, motion_tool)
@@ -203,13 +211,24 @@ class ProgramSimulator:
     # =========================================================================
 
     def _simulate_motion_list(self, motions: list[RobotProgramMotion]) -> list[ProgramSimulationSample]:
-        current_joints_deg = self._normalize_joints(self.robot_model.get_joints())
-        initial_tool = self.tool_model.get_tool() if not motions else self._tool_from_pose(motions[0].tool_pose)
-        current_pose_base = self._fk_nominal_pose_base(current_joints_deg, initial_tool)
+        start_state = self._resolve_program_start_state(motions)
+        current_joints_deg = start_state.initial_joints_deg.to_list()
+        current_pose_base = start_state.initial_pose_base.copy()
         current_time_s = 0.0
         samples: list[ProgramSimulationSample] = []
 
-        for motion in motions:
+        if start_state.initial_sample_motion is not None:
+            initial_motion_tool = self._tool_from_pose(start_state.initial_sample_motion.tool_pose)
+            samples.append(
+                self._build_sample(
+                    0.0,
+                    start_state.initial_sample_motion,
+                    current_joints_deg,
+                    initial_motion_tool,
+                )
+            )
+
+        for motion in start_state.remaining_motions:
             motion_tool = self._tool_from_pose(motion.tool_pose)
             generated_samples = self._simulate_motion(
                 motion,
@@ -225,6 +244,49 @@ class ProgramSimulator:
             current_pose_base = generated_samples[-1].nominal_pose_base.copy()
             current_time_s = float(generated_samples[-1].time_s)
         return samples
+
+    def _resolve_program_start_state(self, motions: list[RobotProgramMotion]) -> _ProgramStartState:
+        fallback_joints_deg = JointAngles6.from_values(self._normalize_joints(self.robot_model.get_joints()))
+        fallback_tool = self.tool_model.get_tool() if not motions else self._tool_from_pose(motions[0].tool_pose)
+        fallback_pose_base = self._fk_nominal_pose_base(fallback_joints_deg.to_list(), fallback_tool)
+        if not motions:
+            return _ProgramStartState(
+                initial_joints_deg=fallback_joints_deg,
+                initial_pose_base=fallback_pose_base,
+                remaining_motions=[],
+                initial_sample_motion=None,
+            )
+
+        first_motion = motions[0]
+        first_motion_tool = self._tool_from_pose(first_motion.tool_pose)
+        first_target_joints_deg = self._resolve_initial_target_joints(first_motion, fallback_joints_deg.to_list(), first_motion_tool)
+        if first_target_joints_deg is None:
+            return _ProgramStartState(
+                initial_joints_deg=fallback_joints_deg,
+                initial_pose_base=fallback_pose_base,
+                remaining_motions=motions,
+                initial_sample_motion=motions[0],
+            )
+
+        initial_joints_deg = JointAngles6.from_values(first_target_joints_deg)
+        initial_pose_base = self._fk_nominal_pose_base(initial_joints_deg.to_list(), first_motion_tool)
+        return _ProgramStartState(
+            initial_joints_deg=initial_joints_deg,
+            initial_pose_base=initial_pose_base,
+            remaining_motions=motions[1:],
+            initial_sample_motion=first_motion,
+        )
+
+    def _resolve_initial_target_joints(
+        self,
+        motion: RobotProgramMotion,
+        reference_joints_deg: list[float],
+        motion_tool: RobotTool,
+    ) -> list[float] | None:
+        if motion.target.target_type == RobotProgramTargetType.JOINT:
+            return motion.target.joint_angles.to_list()
+        target_pose_base = self._target_pose_base(motion, motion.target, motion_tool)
+        return self._select_joints_for_pose(target_pose_base, reference_joints_deg, motion_tool)
 
     def _simulate_motion(
         self,
