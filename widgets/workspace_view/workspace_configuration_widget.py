@@ -27,7 +27,7 @@ from widgets.workspace_view.workspace_primitive_zones_editor_widget import Works
 
 class WorkspaceConfigurationWidget(QWidget):
     scene_name_changed = pyqtSignal(str)
-    robot_base_pose_world_changed = pyqtSignal(list)
+    robot_base_pose_world_changed = pyqtSignal(object)
     workspace_save_requested = pyqtSignal()
     workspace_load_requested = pyqtSignal()
     workspace_clear_requested = pyqtSignal()
