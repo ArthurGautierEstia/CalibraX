@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 
 class ToolController(QObject):
+    STATUS_OK_COLOR = "#6fcf97"
+    STATUS_NONE = "Configuration non charg\u00e9e"
     STATUS_UNSAVED = "Configuration tool non enregistrée"
     STATUS_MODIFIED = "Modifications non enregistrées"
     STATUS_SAVED = "Configuration tool enregistrée"
@@ -38,12 +40,12 @@ class ToolController(QObject):
         self.viewer3d_controller = viewer3d_controller
         self._saved_snapshot: str | None = None
         self._has_saved_reference = False
-        self._clean_status_text = ToolController.STATUS_UNSAVED
+        self._clean_status_text = ToolController.STATUS_NONE
         self._was_dirty_since_reference = False
         self._validation_icon_visible = False
         self._setup_connections()
         self.update_tool_view()
-        self._mark_as_unsaved_reference()
+        self._mark_as_none_reference()
 
     def _setup_connections(self) -> None:
         self.tool_model.tool_changed.connect(self.update_tool_view)
@@ -103,7 +105,7 @@ class ToolController(QObject):
         self.tool_model.set_tool_cad_offset_rz(0.0)
         self.tool_model.set_tool_colliders([])
         self.tool_model.set_evaluated_robot_axis_colliders([True] * 6)
-        self._mark_as_unsaved_reference()
+        self._mark_as_none_reference()
         self.empty_tool_applied.emit()
 
     def reset_tool_configuration(self) -> None:
@@ -195,6 +197,13 @@ class ToolController(QObject):
         self._was_dirty_since_reference = False
         self._refresh_configuration_status()
 
+    def _mark_as_none_reference(self) -> None:
+        self._saved_snapshot = self._capture_current_snapshot()
+        self._has_saved_reference = False
+        self._clean_status_text = ToolController.STATUS_NONE
+        self._was_dirty_since_reference = False
+        self._refresh_configuration_status()
+
     def _is_dirty(self) -> bool:
         current_snapshot = self._capture_current_snapshot()
         return self._saved_snapshot is None or current_snapshot != self._saved_snapshot
@@ -205,8 +214,14 @@ class ToolController(QObject):
             self._validation_icon_visible = show_validation_icon
             self.validation_state_changed.emit(show_validation_icon)
         if not self._has_saved_reference:
+            if self._is_dirty():
+                self.robot_configuration_widget.set_configuration_status(
+                    ToolController.STATUS_UNSAVED,
+                    "#808080",
+                )
+                return
             self.robot_configuration_widget.set_configuration_status(
-                ToolController.STATUS_UNSAVED,
+                ToolController.STATUS_NONE,
                 "#808080",
             )
             return
@@ -220,19 +235,22 @@ class ToolController(QObject):
         if self._was_dirty_since_reference:
             self.robot_configuration_widget.set_configuration_status(
                 ToolController.STATUS_UP_TO_DATE,
-                "#15803d",
+                ToolController.STATUS_OK_COLOR,
             )
             return
         self.robot_configuration_widget.set_configuration_status(
             self._clean_status_text,
-            "#15803d",
+            ToolController.STATUS_OK_COLOR,
         )
 
     def _should_show_validation_icon(self) -> bool:
         if not self._has_saved_reference:
-            return False
+            return self._is_dirty()
         if self._is_dirty():
             return True
         if self._was_dirty_since_reference:
             return True
-        return self._clean_status_text != ToolController.STATUS_UNSAVED
+        return self._clean_status_text not in {
+            ToolController.STATUS_UNSAVED,
+            ToolController.STATUS_NONE,
+        }

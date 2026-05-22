@@ -52,10 +52,10 @@ class _ProgramTargetRef:
 
 
 class ProgramController:
-    STATUS_NONE = "Aucun programme charge"
-    STATUS_LOADED = "Programme charge"
-    STATUS_SAVED = "Programme enregistre"
-    STATUS_MODIFIED = "Programme modifie"
+    STATUS_NONE = "Aucun programme chargé"
+    STATUS_LOADED = "Programme chargé"
+    STATUS_SAVED = "Programme enregistré"
+    STATUS_MODIFIED = "Programme modifié"
 
     DEFAULT_PROGRAMS_DIR = Path(__file__).resolve().parents[1] / "user_data" / "programs"
 
@@ -1569,7 +1569,10 @@ class ProgramController:
             self.header_widget.set_program_status(ProgramController.STATUS_MODIFIED, "#f2c94c")
             return
         status_text = self._clean_status_text or ProgramController.STATUS_LOADED
-        status_color = "#6fcf97" if status_text == ProgramController.STATUS_SAVED else "#808080"
+        status_color = "#6fcf97" if status_text in {
+            ProgramController.STATUS_LOADED,
+            ProgramController.STATUS_SAVED,
+        } else "#808080"
         self.header_widget.set_program_status(status_text, status_color)
 
     def _refresh_program_frame(self) -> None:

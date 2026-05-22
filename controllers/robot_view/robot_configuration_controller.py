@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 
 class RobotConfigurationController(QObject):
     DEFAULT_ROBOT_CONFIG_DIRECTORY = os.path.join("user_data", "configurations")
+    STATUS_OK_COLOR = "#6fcf97"
+    STATUS_NONE = "Configuration non charg\u00e9e"
     STATUS_UNSAVED = "Configuration robot non enregistrée"
     STATUS_MODIFIED = "Modifications non enregistrées"
     STATUS_SAVED = "Configuration robot enregistrée"
@@ -48,12 +50,12 @@ class RobotConfigurationController(QObject):
         self._default_tool_auto_load_on_startup = False
         self._saved_snapshot: str | None = None
         self._has_saved_reference = False
-        self._clean_status_text = RobotConfigurationController.STATUS_UNSAVED
+        self._clean_status_text = RobotConfigurationController.STATUS_NONE
         self._was_dirty_since_reference = False
         self._validation_icon_visible = False
         self._setup_connections()
         self._on_robot_configuration_changed()
-        self._mark_as_unsaved_reference()
+        self._mark_as_none_reference()
 
     def _setup_connections(self) -> None:
         self.robot_model.configuration_changed.connect(self._on_robot_configuration_changed)
@@ -308,6 +310,13 @@ class RobotConfigurationController(QObject):
         self._was_dirty_since_reference = False
         self._refresh_configuration_status()
 
+    def _mark_as_none_reference(self) -> None:
+        self._saved_snapshot = self._capture_current_snapshot()
+        self._has_saved_reference = False
+        self._clean_status_text = RobotConfigurationController.STATUS_NONE
+        self._was_dirty_since_reference = False
+        self._refresh_configuration_status()
+
     def _is_dirty(self) -> bool:
         current_snapshot = self._capture_current_snapshot()
         return self._saved_snapshot is None or current_snapshot != self._saved_snapshot
@@ -318,8 +327,14 @@ class RobotConfigurationController(QObject):
             self._validation_icon_visible = show_validation_icon
             self.validation_state_changed.emit(show_validation_icon)
         if not self._has_saved_reference:
+            if self._is_dirty():
+                self.robot_configuration_widget.set_configuration_status(
+                    RobotConfigurationController.STATUS_UNSAVED,
+                    "#808080",
+                )
+                return
             self.robot_configuration_widget.set_configuration_status(
-                RobotConfigurationController.STATUS_UNSAVED,
+                RobotConfigurationController.STATUS_NONE,
                 "#808080",
             )
             return
@@ -334,22 +349,25 @@ class RobotConfigurationController(QObject):
         if self._was_dirty_since_reference:
             self.robot_configuration_widget.set_configuration_status(
                 RobotConfigurationController.STATUS_UP_TO_DATE,
-                "#15803d",
+                RobotConfigurationController.STATUS_OK_COLOR,
             )
             return
         self.robot_configuration_widget.set_configuration_status(
             self._clean_status_text,
-            "#15803d",
+            RobotConfigurationController.STATUS_OK_COLOR,
         )
 
     def _should_show_validation_icon(self) -> bool:
         if not self._has_saved_reference:
-            return False
+            return self._is_dirty()
         if self._is_dirty():
             return True
         if self._was_dirty_since_reference:
             return True
-        return self._clean_status_text != RobotConfigurationController.STATUS_UNSAVED
+        return self._clean_status_text not in {
+            RobotConfigurationController.STATUS_UNSAVED,
+            RobotConfigurationController.STATUS_NONE,
+        }
 
     def load_configuration(self) -> None:
         configuration_dir = self._robot_configuration_directory()
@@ -420,7 +438,7 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget.set_default_tool_auto_load_on_startup(False)
         if self.tool_controller is not None:
             self.tool_controller.reset_tool_configuration()
-        self._mark_as_unsaved_reference()
+        self._mark_as_none_reference()
 
     def load_configuration_from_path(self, file_path: str, show_errors: bool = True) -> bool:
         _, data = FileIOHandler.load_json(file_path)
