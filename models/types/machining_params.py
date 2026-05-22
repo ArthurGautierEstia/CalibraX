@@ -46,9 +46,12 @@ class RobotMechanicalParams:
     """Paramètres mécaniques du robot pour le calcul de déformation articulaire."""
 
     joint_stiffness_Nm_per_rad: list[float] = field(
-        default_factory=lambda: [1.5e6, 1.2e6, 0.8e6, 0.5e6, 0.4e6, 0.3e6]
+        default_factory=lambda: [6.93e6, 7.81e6, 2.0e6, 1.0e6, 0.6e6, 0.3e6]
     )
-    """Raideurs articulaires k_i (N·m/rad). Valeurs KR500-3 identifiées par Dumas et al., 2014."""
+    """Raideurs articulaires k_i (N·m/rad).
+    k1 et k2 : valeurs identifiées expérimentalement sur le KR500 (Jubien, Abba, Gautier — ICINCO 2014,
+    Méthode 2 capteur effort, précision 0.77 % et 0.98 %).
+    k3..k6 : valeurs indicatives décroissantes — NON identifiées, à mesurer ou confirmer."""
 
     joint_torque_max_Nm: list[float] = field(
         default_factory=lambda: [5000.0, 5000.0, 3000.0, 1500.0, 1000.0, 600.0]

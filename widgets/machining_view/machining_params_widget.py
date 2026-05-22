@@ -37,8 +37,10 @@ class MachiningParamsWidget(QWidget):
         self._kae_spin = self._make_double_spin(0.0, 1000.0, 1, 1.0, " N/mm", 0.0)
 
         # --- Groupe Mécanique robot (raideurs + couples max) ---
-        # k_i (N·m/rad) — raideurs KR500-3 selon Dumas et al., 2014
-        k_defaults = [1.5e6, 1.2e6, 0.8e6, 0.5e6, 0.4e6, 0.3e6]
+        # k_i (N·m/rad) :
+        #   k1, k2 identifiés sur KR500 par Jubien et al., ICINCO 2014 (Méthode 2, capteur effort)
+        #   k3..k6 : valeurs indicatives — non identifiées, à confirmer expérimentalement
+        k_defaults = [6.93e6, 7.81e6, 2.0e6, 1.0e6, 0.6e6, 0.3e6]
         # τ_max_i (N·m) — à confirmer fiche constructeur KR500-3
         tau_defaults = [5000.0, 5000.0, 3000.0, 1500.0, 1000.0, 600.0]
 
