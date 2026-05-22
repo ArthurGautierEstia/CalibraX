@@ -8,6 +8,7 @@ from models.workspace_model import WorkspaceModel
 from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
 from views.joint_control_view import JointControlView
+from views.machining_view import MachiningView
 from views.mgi_view import MgiView
 from views.program_view import ProgramView
 from views.robot_view import RobotView
@@ -58,6 +59,7 @@ class MainWindow(QMainWindow):
         self.mgi_view = MgiView()
         self.trajectory_view = TrajectoryView(robot_model, tool_model, workspace_model)
         self.program_view = ProgramView(robot_model, tool_model, workspace_model)
+        self.machining_view = MachiningView()
 
         self.viewer3d = Viewer3DWidget()
 
@@ -79,6 +81,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.mgi_view, "MGI")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
         self.tabs.addTab(self.program_view, "Programme")
+        self.tabs.addTab(self.machining_view, "Usinage")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
         self.main_splitter.setHandleWidth(6)
@@ -221,6 +224,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue programme."""
         return self.program_view
 
+    def get_machining_view(self) -> MachiningView:
+        """Retourne la vue de simulation d'usinage."""
+        return self.machining_view
+
     #####################
     # Functions
     #####################
@@ -236,6 +243,7 @@ class MainWindow(QMainWindow):
             self.mgi_view,
             self.trajectory_view,
             self.program_view,
+            self.machining_view,
         )
 
         for control_view in always_enabled_views:

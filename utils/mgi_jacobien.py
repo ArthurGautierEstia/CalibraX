@@ -250,6 +250,17 @@ def _clamper_limites(q_deg: list[float],
 # RÉGION: Solveur principal
 # ============================================================================
 
+def compute_jacobian_numeric(q_deg: list[float],
+                             robot_model,
+                             epsilon_rad: float = 1e-6,
+                             tool=None) -> np.ndarray:
+    """Alias public de _compute_jacobienne_numerique pour usage externe (ex. module usinage).
+
+    Shape (6,6), unités : [mm/rad ; mm/rad ; mm/rad ; rad/rad ; rad/rad ; rad/rad].
+    """
+    return _compute_jacobienne_numerique(q_deg, robot_model, epsilon_rad, tool)
+
+
 def mgi_jacobien(target: list[float],
                  robot_model,
                  q_initial: list[float],

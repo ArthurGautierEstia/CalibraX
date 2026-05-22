@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QMessageBox
 from controllers.calibration_controller import CalibrationController
 from controllers.cartesian_control_controller import CartesianControlController
 from controllers.joint_control_controller import JointControlController
+from controllers.machining_controller import MachiningController
 from controllers.mgi_controller import MgiController
 from controllers.program_controller import ProgramController
 from controllers.robot_controller import RobotController
@@ -106,6 +107,12 @@ class MainController(QObject):
             self.viewer3d_controller,
         )
         self.workspace_controller = WorkspaceController(workspace_model, main_window.get_workspace_view())
+        self.machining_controller = MachiningController(
+            robot_model,
+            tool_model,
+            main_window.get_machining_view(),
+            self.program_controller,
+        )
 
         self._on_robot_model_config_changed()
         self._setup_connections()
