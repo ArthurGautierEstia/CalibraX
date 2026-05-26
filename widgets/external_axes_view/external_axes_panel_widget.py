@@ -28,6 +28,8 @@ class ExternalAxesPanelWidget(QWidget):
     axis_updated = pyqtSignal(str, object)   # axis_id, ExternalAxis
     robot_mount_parent_changed = pyqtSignal(object)   # str | None
     axis_joint_value_changed = pyqtSignal(str, int, float)  # axis_id, joint_index, value
+    save_config_requested = pyqtSignal()
+    load_config_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -65,6 +67,20 @@ class ExternalAxesPanelWidget(QWidget):
         btn_row_layout.addWidget(btn_add)
         btn_row_layout.addWidget(btn_remove)
         left_layout.addWidget(btn_row)
+
+        # Boutons sauvegarde / chargement
+        io_row = QWidget()
+        io_layout = QHBoxLayout(io_row)
+        io_layout.setContentsMargins(0, 0, 0, 0)
+        btn_save = QPushButton("💾 Sauvegarder config")
+        btn_save.setToolTip("Exporter la configuration des axes externes vers un fichier JSON")
+        btn_save.clicked.connect(self.save_config_requested)
+        btn_load = QPushButton("📂 Charger config")
+        btn_load.setToolTip("Importer une configuration des axes externes depuis un fichier JSON")
+        btn_load.clicked.connect(self.load_config_requested)
+        io_layout.addWidget(btn_save)
+        io_layout.addWidget(btn_load)
+        left_layout.addWidget(io_row)
 
         # Section montage robot
         robot_box = QGroupBox("Montage robot")

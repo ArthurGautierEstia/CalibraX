@@ -1,16 +1,24 @@
 """Contrôleur pour l'onglet Axes externes."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 from PyQt6.QtCore import QObject
 
 from models.external_axis import ExternalAxis
 from models.external_axes_model import ExternalAxesModel
 from models.workspace_model import WorkspaceModel
+from utils.file_io import FileIOHandler
 from utils.reference_frame_utils import FrameTransform
 from utils.math_utils import matrix_to_pose_zyx
 from views.external_axes_view import ExternalAxesView
 from widgets.external_axes_view.external_axes_panel_widget import ExternalAxesPanelWidget
+
+# Répertoire proposé par défaut pour la sauvegarde des configs axes
+_DEFAULT_CONFIG_DIR = str(
+    Path(__file__).parent.parent / "default_data" / "external_axes_configs"
+)
 
 
 class ExternalAxesController(QObject):
@@ -42,6 +50,8 @@ class ExternalAxesController(QObject):
         self._panel.axis_updated.connect(self._on_axis_updated)
         self._panel.robot_mount_parent_changed.connect(self._on_robot_mount_changed)
         self._panel.axis_joint_value_changed.connect(self._on_axis_joint_value_changed)
+        self._panel.save_config_requested.connect(self._on_save_config)
+        self._panel.load_config_requested.connect(self._on_load_config)
 
         # Modèle → vue + viewer
         self.model.axes_changed.connect(self._on_model_axes_changed)
@@ -107,6 +117,34 @@ class ExternalAxesController(QObject):
         if hasattr(self.viewer3d_controller, 'viewer_3d_widget'):
             world_transforms = self.model.compute_world_transforms()
             self.viewer3d_controller.viewer_3d_widget.update_external_axes_poses(world_transforms)
+
+    # ------------------------------------------------------------------
+    # Sauvegarde / chargement manuel (boutons du panneau)
+    # ------------------------------------------------------------------
+
+    def _on_save_config(self) -> None:
+        """Exporte la configuration des axes externes vers un fichier JSON."""
+        import os
+        os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
+        data = self.get_serializable_state()
+        FileIOHandler.save_json(
+            self._panel,
+            "Sauvegarder la configuration des axes externes",
+            data,
+            directory=_DEFAULT_CONFIG_DIR,
+        )
+
+    def _on_load_config(self) -> None:
+        """Importe une configuration des axes externes depuis un fichier JSON."""
+        import os
+        os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
+        _, data = FileIOHandler.select_and_load_json(
+            self._panel,
+            "Charger une configuration des axes externes",
+            directory=_DEFAULT_CONFIG_DIR,
+        )
+        if data:
+            self.restore_state(data)
 
     # ------------------------------------------------------------------
     # Sérialisation

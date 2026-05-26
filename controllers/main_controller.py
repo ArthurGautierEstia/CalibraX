@@ -201,6 +201,11 @@ class MainController(QObject):
         if workspace_path:
             self.workspace_controller.load_workspace_from_path(workspace_path, show_errors=False)
 
+        # Restauration des axes externes
+        external_axes_data = startup.get("external_axes_data") or {}
+        if external_axes_data:
+            self.external_axes_controller.restore_state(external_axes_data)
+
         self._startup_completed = True
         self._schedule_session_save()
 
@@ -210,6 +215,7 @@ class MainController(QObject):
             tool_profile_path=self._session_tool_profile_path(),
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
             viewer_state=self.main_window.get_viewer3d().get_display_state(),
+            external_axes_data=self.external_axes_controller.get_serializable_state(),
         )
 
         session_dir = os.path.dirname(self.session_path)
@@ -255,6 +261,7 @@ class MainController(QObject):
             "tool": tool_override or (session.tool_profile_path if session is not None else ""),
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),
             "viewer_state": session.viewer_state if session is not None else None,
+            "external_axes_data": session.external_axes_data if session is not None else {},
         }
 
     def _session_tool_profile_path(self) -> str:
