@@ -105,6 +105,8 @@ class ExternalAxesController(QObject):
         override = self.model.get_robot_world_base_matrix()
         if hasattr(self.viewer3d_controller, 'viewer_3d_widget'):
             self.viewer3d_controller.viewer_3d_widget.set_external_robot_base_override(override)
+        if hasattr(self.viewer3d_controller, 'refresh_tcp_overlay'):
+            self.viewer3d_controller.refresh_tcp_overlay()
 
     def _refresh_viewer_cad(self) -> None:
         if hasattr(self.viewer3d_controller, 'viewer_3d_widget'):

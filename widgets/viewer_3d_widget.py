@@ -3352,9 +3352,10 @@ class Viewer3DWidget(QWidget):
         Quand matrix est None, le positionnement revient à workspace_model.robot_base.
         """
         self._external_robot_base_override = matrix.copy() if matrix is not None else None
-        # Propager immédiatement aux poses robots déjà calculées
         if hasattr(self, "last_corrected_matrices") and self.last_corrected_matrices:
             self.update_robot_poses(self.last_corrected_matrices)
+        if hasattr(self, "last_dh_matrices") and self.last_dh_matrices:
+            self.draw_all_frames(self.last_dh_matrices)
 
     def _transform_robot_matrix_to_world(self, transform: np.ndarray) -> np.ndarray:
         if self._external_robot_base_override is not None:

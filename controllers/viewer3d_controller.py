@@ -265,6 +265,10 @@ class Viewer3DController(QObject):
         except Exception as exc:
             print(f"Erreur lors du jog cartésien overlay: {exc}")
 
+    def refresh_tcp_overlay(self) -> None:
+        """Rafraîchit l'affichage cartésien de l'overlay avec le TCP courant."""
+        self._overlay_cartesian_controller._on_model_tcp_changed()
+
     # ------------------------------------------------------------------
     # Axes externes — overlay
     # ------------------------------------------------------------------
