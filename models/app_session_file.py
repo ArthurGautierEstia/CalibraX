@@ -49,6 +49,8 @@ class ViewerDisplayState:
     workspace_collision_zones_visible: bool = True
     robot_colliders_visible: bool = True
     tool_colliders_visible: bool = True
+    ext_axes_transparency_enabled: bool = False
+    workspace_transparency_enabled: bool = True
     theme: ViewerThemeState = field(default_factory=ViewerThemeState)
     selected_theme_name: str = ""
 
@@ -69,6 +71,8 @@ class ViewerDisplayState:
             workspace_collision_zones_visible=bool(payload.get("workspace_collision_zones_visible", True)),
             robot_colliders_visible=bool(payload.get("robot_colliders_visible", True)),
             tool_colliders_visible=bool(payload.get("tool_colliders_visible", True)),
+            ext_axes_transparency_enabled=bool(payload.get("ext_axes_transparency_enabled", False)),
+            workspace_transparency_enabled=bool(payload.get("workspace_transparency_enabled", True)),
             theme=ViewerThemeState.from_dict(payload.get("theme")),
             selected_theme_name="" if payload.get("selected_theme_name") is None else str(payload.get("selected_theme_name")),
         )

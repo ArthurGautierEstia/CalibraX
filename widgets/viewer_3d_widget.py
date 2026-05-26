@@ -966,6 +966,8 @@ class Viewer3DWidget(QWidget):
         self._robot_colliders_visible = True
         self._tool_colliders_visible = True
         self.transparency_enabled = False
+        self.ext_axes_transparency_enabled = False
+        self.workspace_transparency_enabled = True
         self._loading_feedback_depth = 0
         self._position_match_tolerance_deg = 0.05
         self._robot_controls_collapsed = False
@@ -1236,7 +1238,8 @@ class Viewer3DWidget(QWidget):
         toolbar_layout.setSpacing(8)
 
         self.btn_toggle_cad = self._create_overlay_button("Affichage CAD", "cad")
-        self.btn_toggle_transparency = self._create_overlay_button("Transparence", "transparency")
+        self.btn_toggle_transparency = self._create_overlay_button("Transparence robot", "transparency")
+        self.btn_toggle_ext_axes_transparency = self._create_overlay_button("Transparence axes externes", "ext_axes_transparency")
         self.btn_toggle_robot_controls = self._create_overlay_button("Contrôles robot", "robot_controls")
         self.btn_toggle_frame_lists = self._create_overlay_button("Liste de repères", "frame_list")
         self.btn_toggle_axes = self._create_overlay_button("Afficher / Masquer tous les repères", "axes")
@@ -1245,13 +1248,18 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_perspective = self._create_overlay_button("Perspective", "perspective")
         self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zone de travail", "tcp_zones")
         self.btn_toggle_workspace_collision_zones = self._create_overlay_button("Zone de collision", "collision_zones")
+        self.btn_toggle_workspace_transparency = self._create_overlay_button("Transparence workspace", "workspace_transparency")
         self.btn_toggle_robot_colliders = self._create_overlay_button("Colliders robot", "robot_colliders")
         self.btn_toggle_tool_colliders = self._create_overlay_button("Colliders tool", "tool_colliders")
 
         for zone_widget in (
             self._create_toolbar_zone(
                 "Robot",
-                (self.btn_toggle_cad, self.btn_toggle_transparency, self.btn_toggle_robot_controls),
+                (self.btn_toggle_cad, self.btn_toggle_robot_controls),
+            ),
+            self._create_toolbar_zone(
+                "Transparence",
+                (self.btn_toggle_transparency, self.btn_toggle_ext_axes_transparency, self.btn_toggle_workspace_transparency),
             ),
             self._create_toolbar_zone(
                 "Repères",
@@ -1310,6 +1318,8 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_robot_controls.clicked.connect(self._toggle_robot_controls_overlay)
         self.btn_toggle_cad.clicked.connect(self._on_cad_button_clicked)
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
+        self.btn_toggle_ext_axes_transparency.clicked.connect(self._on_ext_axes_transparency_button_clicked)
+        self.btn_toggle_workspace_transparency.clicked.connect(self._on_workspace_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
         self.btn_toggle_frame_lists.clicked.connect(self._on_frame_lists_button_clicked)
         self.btn_toggle_viewer_style.clicked.connect(self._on_viewer_style_button_clicked)
@@ -1984,6 +1994,7 @@ class Viewer3DWidget(QWidget):
     def _iter_overlay_buttons(self):
         yield self.btn_toggle_cad
         yield self.btn_toggle_transparency
+        yield self.btn_toggle_ext_axes_transparency
         yield self.btn_toggle_robot_controls
         yield self.btn_toggle_frame_lists
         yield self.btn_toggle_axes
@@ -1992,6 +2003,7 @@ class Viewer3DWidget(QWidget):
         yield self.btn_toggle_perspective
         yield self.btn_toggle_workspace_tcp_zones
         yield self.btn_toggle_workspace_collision_zones
+        yield self.btn_toggle_workspace_transparency
         yield self.btn_toggle_robot_colliders
         yield self.btn_toggle_tool_colliders
         yield self.btn_go_position_calibration_overlay
@@ -2109,6 +2121,8 @@ class Viewer3DWidget(QWidget):
         return ViewerDisplayState(
             cad_visible=bool(self._cad_showed),
             transparency_enabled=bool(self.transparency_enabled),
+            ext_axes_transparency_enabled=bool(self.ext_axes_transparency_enabled),
+            workspace_transparency_enabled=bool(self.workspace_transparency_enabled),
             show_axes=bool(self.show_axes),
             frames_visibility=[bool(v) for v in self.frames_visibility],
             workspace_frames_visibility=[bool(v) for v in self.workspace_frames_visibility],
@@ -2123,6 +2137,8 @@ class Viewer3DWidget(QWidget):
     def apply_display_state(self, state: ViewerDisplayState, emit_signal: bool = False) -> None:
         self._cad_showed = bool(state.cad_visible)
         self.transparency_enabled = bool(state.transparency_enabled)
+        self.ext_axes_transparency_enabled = bool(state.ext_axes_transparency_enabled)
+        self.workspace_transparency_enabled = bool(state.workspace_transparency_enabled)
         self.show_axes = bool(state.show_axes)
         self.frames_visibility = [bool(v) for v in state.frames_visibility]
         self.workspace_frames_visibility = [bool(v) for v in state.workspace_frames_visibility]
@@ -2142,6 +2158,8 @@ class Viewer3DWidget(QWidget):
         self._clear_and_refresh()
         if self.transparency_enabled:
             self.set_transparency(True, emit_signal=False)
+        if self.ext_axes_transparency_enabled:
+            self.set_ext_axes_transparency(True, emit_signal=False)
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
@@ -2216,6 +2234,7 @@ class Viewer3DWidget(QWidget):
     def _refresh_toolbar_buttons(self) -> None:
         self._set_overlay_button_state(self.btn_toggle_cad, self._cad_showed)
         self._set_overlay_button_state(self.btn_toggle_transparency, self.transparency_enabled)
+        self._set_overlay_button_state(self.btn_toggle_ext_axes_transparency, self.ext_axes_transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_axes, self.show_axes)
         self._set_overlay_button_state(self.btn_toggle_frame_lists, self._is_frame_lists_overlay_visible())
         self._set_overlay_button_state(self.btn_toggle_viewer_style, self.viewer_style_overlay.isVisible())
@@ -2223,6 +2242,7 @@ class Viewer3DWidget(QWidget):
         self._set_overlay_button_state(self.btn_toggle_perspective, self.viewer.is_perspective_enabled())
         self._set_overlay_button_state(self.btn_toggle_workspace_tcp_zones, self._workspace_tcp_zones_visible)
         self._set_overlay_button_state(self.btn_toggle_workspace_collision_zones, self._workspace_collision_zones_visible)
+        self._set_overlay_button_state(self.btn_toggle_workspace_transparency, self.workspace_transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_robot_colliders, self._robot_colliders_visible)
         self._set_overlay_button_state(self.btn_toggle_tool_colliders, self._tool_colliders_visible)
 
@@ -2454,6 +2474,16 @@ class Viewer3DWidget(QWidget):
             painter.drawLine(15, 6, 17, 10)
             painter.drawEllipse(2, 10, 3, 3)
             painter.drawEllipse(15, 10, 3, 3)
+        elif icon_kind == "ext_axes_transparency":
+            painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 70)))
+            painter.drawRect(3, 8, 14, 7)
+            painter.setPen(QPen(color, 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(7, 4, 7, 8)
+            painter.drawLine(13, 4, 13, 8)
+        elif icon_kind == "workspace_transparency":
+            painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 70)))
+            painter.drawPolygon(QPolygonF([QPointF(3, 13), QPointF(10, 8), QPointF(17, 13), QPointF(10, 18)]))
         elif icon_kind == "calibration_pose":
             painter.drawEllipse(4, 4, 12, 12)
             painter.drawEllipse(8, 8, 4, 4)
@@ -2823,6 +2853,7 @@ class Viewer3DWidget(QWidget):
                     width=2,
                     antialias=True,
                 )
+                path_item.setGLOptions('additive')
                 self._trajectory_path_items.append(path_item)
                 self.viewer.addItem(path_item)
 
@@ -2845,6 +2876,7 @@ class Viewer3DWidget(QWidget):
                     size=9,
                     pxMode=True,
                 )
+                self._trajectory_keypoints_item.setGLOptions('additive')
                 self.viewer.addItem(self._trajectory_keypoints_item)
 
             if selected_idx is not None and 0 <= selected_idx < len(points):
@@ -2855,6 +2887,7 @@ class Viewer3DWidget(QWidget):
                     size=13,
                     pxMode=True,
                 )
+                self._trajectory_keypoint_selected_item.setGLOptions('additive')
                 self.viewer.addItem(self._trajectory_keypoint_selected_item)
 
             if editing_idx is not None and 0 <= editing_idx < len(points):
@@ -2865,6 +2898,7 @@ class Viewer3DWidget(QWidget):
                     size=15,
                     pxMode=True,
                 )
+                self._trajectory_keypoint_editing_item.setGLOptions('additive')
                 self.viewer.addItem(self._trajectory_keypoint_editing_item)
 
         if self._trajectory_tangent_out_segments is not None:
@@ -2878,6 +2912,7 @@ class Viewer3DWidget(QWidget):
                     width=2,
                     antialias=True,
                 )
+                item.setGLOptions('additive')
                 self._trajectory_tangent_out_items.append(item)
                 self.viewer.addItem(item)
 
@@ -2892,6 +2927,7 @@ class Viewer3DWidget(QWidget):
                     width=2,
                     antialias=True,
                 )
+                item.setGLOptions('additive')
                 self._trajectory_tangent_in_items.append(item)
                 self.viewer.addItem(item)
 
@@ -2932,6 +2968,14 @@ class Viewer3DWidget(QWidget):
         for i, transform in enumerate(self._workspace_frame_matrices):
             if i < len(self.workspace_frames_visibility) and self.workspace_frames_visibility[i]:
                 self._workspace_frame_items.extend(self.draw_frame(transform))
+
+    def draw_external_axes_frames(self) -> None:
+        """Redessine tous les repères des axes externes en respectant leur visibilité."""
+        self._clear_viewer_items(self._external_axes_frame_items)
+        for axis in self._last_external_axes_snapshot:
+            transforms = self._last_external_world_transforms.get(axis.id)
+            if transforms is not None:
+                self._draw_external_axis_frames(axis, transforms)
 
     def set_program_frame(self, program_base_pose: Pose6 | None, label: str = "Program Frame") -> None:
         self._program_frame_pose_base = None if program_base_pose is None else program_base_pose.copy()
@@ -3440,6 +3484,7 @@ class Viewer3DWidget(QWidget):
                 color_base = getattr(axis, "base_cad_color", (0.3, 0.3, 0.35, 1.0))
                 item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
                 if item:
+                    self._apply_ext_axis_item_transparency(item)
                     self.viewer.addItem(item)
                     self._external_axes_links.append(item)
                     self._external_axes_link_keys.append((axis.id, -1))
@@ -3459,6 +3504,7 @@ class Viewer3DWidget(QWidget):
                     T_render = T_joint @ cad_offset
                     item = self.load_robot_mesh(joint.cad_model, T_render, color_link)
                     if item:
+                        self._apply_ext_axis_item_transparency(item)
                         self.viewer.addItem(item)
                         self._external_axes_links.append(item)
                         self._external_axes_link_keys.append((axis.id, ji))
@@ -3601,10 +3647,11 @@ class Viewer3DWidget(QWidget):
             self._workspace_frame_labels.append(element.name)
             if element.cad_model == "":
                 continue
-            item = self.load_robot_mesh(element.cad_model, transform, (0.65, 0.70, 0.80, 0.45))
+            alpha = 0.45 if self.workspace_transparency_enabled else 1.0
+            item = self.load_robot_mesh(element.cad_model, transform, (0.65, 0.70, 0.80, alpha))
             if item is None:
                 continue
-            item.setGLOptions('translucent')
+            item.setGLOptions('translucent' if self.workspace_transparency_enabled else 'opaque')
             self.viewer.addItem(item)
             self._workspace_element_items.append(item)
 
@@ -3670,21 +3717,21 @@ class Viewer3DWidget(QWidget):
         if len(self.frames_visibility) != num_frames:
             self.frames_visibility = [True] * num_frames
 
-        self.draw_all_frames(self.last_dh_matrices)
-
         if self._cad_loaded:
             self.update_robot_poses(self.last_corrected_matrices)
 
         if self.last_ghost_corrected_matrices:
             self._update_robot_ghost_poses(self.last_ghost_corrected_matrices)
-            for mesh_item in self.robot_ghost_links:
-                if self._ghost_visible:
-                    mesh_item.show()
-                else:
-                    mesh_item.hide()
+
+        for mesh_item in self.robot_ghost_links:
+            if self._ghost_visible:
+                mesh_item.show()
+            else:
+                mesh_item.hide()
 
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
+        self.draw_all_frames(self.last_dh_matrices)
         self._render_trajectory_overlay()
         self.update_frame_list_ui()
 
@@ -3701,11 +3748,8 @@ class Viewer3DWidget(QWidget):
         self.clear_viewer()
         self._workspace_frame_matrices = []
         self._workspace_frame_labels = []
-        
-        # Afficher les repères selon la visibilité
-        self.draw_all_frames(self.last_dh_matrices)
-        
-        # Mettre à jour le CAD si chargé
+
+        # 1. Tous les meshes d'abord (opaque/translucent)
         if self._cad_loaded:
             self.update_robot_poses(self.last_corrected_matrices)
 
@@ -3721,12 +3765,19 @@ class Viewer3DWidget(QWidget):
 
         self._render_workspace_models()
         self._normalize_workspace_frames_visibility()
-        self.draw_workspace_frames()
         self._render_workspace_zones()
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
-        self._render_trajectory_overlay()
         self._restore_external_axes()
+
+        # 2. Repères après tous les meshes (additive → toujours visibles par dessus)
+        self.draw_all_frames(self.last_dh_matrices)
+        self.draw_workspace_frames()
+        self.draw_external_axes_frames()
+
+        # 3. Trajectoire en dernier (additive → au premier plan absolu)
+        self._render_trajectory_overlay()
+
         self.update_frame_list_ui()
 
     def update_robot_poses(self, matrices):
@@ -3999,6 +4050,45 @@ class Viewer3DWidget(QWidget):
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
+
+    def _apply_ext_axis_item_transparency(self, item) -> None:
+        if self.ext_axes_transparency_enabled:
+            c = item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
+            item.setColor((c[0], c[1], c[2], 0.3))
+            item.setGLOptions('translucent')
+
+    def set_ext_axes_transparency(self, enabled: bool, emit_signal: bool = True) -> None:
+        self.ext_axes_transparency_enabled = enabled
+        for item in self._external_axes_links:
+            c = item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
+            if enabled:
+                item.setColor((c[0], c[1], c[2], 0.3))
+                item.setGLOptions('translucent')
+            else:
+                item.setColor((c[0], c[1], c[2], 1.0))
+                item.setGLOptions('opaque')
+        self._refresh_toolbar_buttons()
+        if emit_signal:
+            self._emit_display_state_changed()
+
+    def set_workspace_transparency(self, enabled: bool, emit_signal: bool = True) -> None:
+        self.workspace_transparency_enabled = enabled
+        for item in self._workspace_element_items:
+            if enabled:
+                item.setColor((0.65, 0.70, 0.80, 0.45))
+                item.setGLOptions('translucent')
+            else:
+                item.setColor((0.65, 0.70, 0.80, 1.0))
+                item.setGLOptions('opaque')
+        self._refresh_toolbar_buttons()
+        if emit_signal:
+            self._emit_display_state_changed()
+
+    def _on_ext_axes_transparency_button_clicked(self) -> None:
+        self.set_ext_axes_transparency(not self.ext_axes_transparency_enabled)
+
+    def _on_workspace_transparency_button_clicked(self) -> None:
+        self.set_workspace_transparency(not self.workspace_transparency_enabled)
 
     def toogle_base_axis_frames(self):
         self.show_axes = True
