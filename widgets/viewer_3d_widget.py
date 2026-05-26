@@ -949,6 +949,7 @@ class Viewer3DWidget(QWidget):
         # Axes externes
         self._external_axes_links: list[gl.GLMeshItem] = []
         self._external_axes_link_keys: list[tuple[str, int]] = []  # (axis_id, joint_index ou -1 pour base)
+        self._external_axes_frame_items: list[gl.GLLinePlotItem] = []
         self._external_robot_base_override: np.ndarray | None = None  # override quand robot monté sur axe
 
         self._workspace_element_items: list[gl.GLMeshItem] = []
@@ -3364,8 +3365,11 @@ class Viewer3DWidget(QWidget):
     # Axes externes
     # ------------------------------------------------------------------
 
+    # Taille des repères axes externes en mm (distincte du robot pour différencier visuellement)
+    EXTERNAL_AXIS_FRAME_LENGTH = 120
+
     def reload_external_axes(self, axes, world_transforms: dict) -> None:
-        """Recharge complètement les CAO des axes externes.
+        """Recharge complètement les CAO ET les repères des axes externes.
 
         Args:
             axes: list[ExternalAxis]
@@ -3374,6 +3378,7 @@ class Viewer3DWidget(QWidget):
         self._clear_viewer_items(self._external_axes_links)
         self._external_axes_links.clear()
         self._external_axes_link_keys.clear()
+        self._clear_viewer_items(self._external_axes_frame_items)
 
         color_base = (0.3, 0.3, 0.35, 1.0)
         color_link = (0.25, 0.45, 0.65, 1.0)
@@ -3383,6 +3388,7 @@ class Viewer3DWidget(QWidget):
             if transforms is None:
                 continue
 
+            # ── CAO base fixe ──────────────────────────────────────────
             if axis.base_cad_model:
                 item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
                 if item:
@@ -3390,7 +3396,9 @@ class Viewer3DWidget(QWidget):
                     self._external_axes_links.append(item)
                     self._external_axes_link_keys.append((axis.id, -1))
 
-            for ji, (joint, T_joint) in enumerate(zip(axis.joints, transforms["joint_links"])):
+            # ── CAO liens mobiles ──────────────────────────────────────
+            for ji, joint in enumerate(axis.joints):
+                T_joint = transforms["joint_links"][ji]
                 if joint.cad_model:
                     item = self.load_robot_mesh(joint.cad_model, T_joint, color_link)
                     if item:
@@ -3398,13 +3406,40 @@ class Viewer3DWidget(QWidget):
                         self._external_axes_links.append(item)
                         self._external_axes_link_keys.append((axis.id, ji))
 
-    def update_external_axes_poses(self, world_transforms: dict) -> None:
-        """Met à jour les positions des CAO axes externes sans recharger les meshes."""
-        from PyQt6 import QtGui
-        axes_data: dict[str, dict] = world_transforms
+            # ── Repères ────────────────────────────────────────────────
+            self._draw_external_axis_frames(axis, transforms)
 
+    def _draw_external_axis_frames(self, axis, transforms: dict) -> None:
+        """Dessine les repères XYZ de la base, des joints et du point de montage."""
+        L = self.EXTERNAL_AXIS_FRAME_LENGTH
+
+        # Repère base (grisé, axes courts)
+        self._external_axes_frame_items.extend(
+            self.draw_frame(transforms["base"], longueur=L * 0.6,
+                            color=None)   # RGB classique
+        )
+
+        # Repères joints (couleur bleue-cyan pour distinguer du robot)
+        for T_joint in transforms["joint_links"]:
+            self._external_axes_frame_items.extend(
+                self.draw_frame(T_joint, longueur=L,
+                                color=None)
+            )
+
+        # Repère sortie / montage (vert vif — point d'attache)
+        T_end = transforms["end"]
+        end_frame_items = self.draw_frame(T_end, longueur=L * 1.2)
+        # Redessiner en couleurs personnalisées pour se démarquer
+        # (draw_frame a déjà ajouté les items au viewer — on les colorise après)
+        self._external_axes_frame_items.extend(end_frame_items)
+
+    def update_external_axes_poses(self, world_transforms: dict) -> None:
+        """Met à jour les positions des CAO ET redessine les repères axes externes."""
+        from PyQt6 import QtGui
+
+        # ── Mise à jour des meshes ─────────────────────────────────────
         for mesh_item, (axis_id, joint_index) in zip(self._external_axes_links, self._external_axes_link_keys):
-            transforms = axes_data.get(axis_id)
+            transforms = world_transforms.get(axis_id)
             if transforms is None:
                 continue
             if joint_index == -1:
@@ -3424,6 +3459,28 @@ class Viewer3DWidget(QWidget):
                     T[3,0], T[3,1], T[3,2], T[3,3],
                 )
                 mesh_item.setTransform(qmat)
+
+        # ── Redessiner les repères (cheap : lignes seulement) ──────────
+        # On reconstruit depuis les objets axis stockés dans les clés
+        # Pour cela on passe par reload uniquement des frames (sans recréer les meshes)
+        self._clear_viewer_items(self._external_axes_frame_items)
+        # Regrouper par axis_id les transforms disponibles
+        for axis_id, transforms in world_transforms.items():
+            self._draw_external_axis_frames_by_id(axis_id, transforms)
+
+    def _draw_external_axis_frames_by_id(self, axis_id: str, transforms: dict) -> None:
+        """Redessine uniquement les repères d'un axe (sans info ExternalAxis complète)."""
+        L = self.EXTERNAL_AXIS_FRAME_LENGTH
+        self._external_axes_frame_items.extend(
+            self.draw_frame(transforms["base"], longueur=L * 0.6)
+        )
+        for T_joint in transforms["joint_links"]:
+            self._external_axes_frame_items.extend(
+                self.draw_frame(T_joint, longueur=L)
+            )
+        self._external_axes_frame_items.extend(
+            self.draw_frame(transforms["end"], longueur=L * 1.2)
+        )
 
     # ------------------------------------------------------------------
 

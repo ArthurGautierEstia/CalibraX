@@ -140,6 +140,13 @@ class ExternalAxesPanelWidget(QWidget):
         if self._current_id is None or self._updating_ui:
             return
         axis = self._config_widget.get_axis(self._current_id)
+        # Préserver les valeurs articulaires actuelles (modifiées par le jog)
+        # pour ne pas réinitialiser la position en cours d'édition de la config.
+        for existing in self._axes:
+            if existing.id == self._current_id:
+                for new_j, old_j in zip(axis.joints, existing.joints):
+                    new_j.value = old_j.value
+                break
         self.axis_updated.emit(self._current_id, axis)
 
     # ------------------------------------------------------------------
