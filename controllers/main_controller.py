@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QMessageBox
 
 from controllers.calibration_controller import CalibrationController
 from controllers.cartesian_control_controller import CartesianControlController
+from controllers.external_axes_controller import ExternalAxesController
 from controllers.joint_control_controller import JointControlController
 from controllers.machining_controller import MachiningController
 from controllers.mgi_controller import MgiController
@@ -17,6 +18,7 @@ from controllers.viewer3d_controller import Viewer3DController
 from controllers.workspace_controller import WorkspaceController
 from models.app_session_file import AppSessionFile, ViewerDisplayState
 from models.collision_scene_model import CollisionSceneModel
+from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
@@ -31,6 +33,7 @@ class MainController(QObject):
         robot_model: RobotModel,
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
+        external_axes_model: ExternalAxesModel,
         main_window: MainWindow,
         startup_options: dict | None = None,
         trajectory_benchmark_verbose: bool = False,
@@ -42,6 +45,7 @@ class MainController(QObject):
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self.external_axes_model = external_axes_model
         self.main_window = main_window
         self.startup_options = dict(startup_options or {})
         self.project_root = os.getcwd()
@@ -107,6 +111,12 @@ class MainController(QObject):
             self.viewer3d_controller,
         )
         self.workspace_controller = WorkspaceController(workspace_model, main_window.get_workspace_view())
+        self.external_axes_controller = ExternalAxesController(
+            external_axes_model,
+            workspace_model,
+            main_window.get_external_axes_view(),
+            self.viewer3d_controller,
+        )
         self.machining_controller = MachiningController(
             robot_model,
             tool_model,

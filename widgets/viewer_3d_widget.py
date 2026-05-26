@@ -946,6 +946,11 @@ class Viewer3DWidget(QWidget):
         self._workspace_collision_zones: list[PrimitiveCollider] = []
         self._robot_colliders: list[PrimitiveCollider] = []
         self._tool_colliders: list[PrimitiveCollider] = []
+        # Axes externes
+        self._external_axes_links: list[gl.GLMeshItem] = []
+        self._external_axes_link_keys: list[tuple[str, int]] = []  # (axis_id, joint_index ou -1 pour base)
+        self._external_robot_base_override: np.ndarray | None = None  # override quand robot monté sur axe
+
         self._workspace_element_items: list[gl.GLMeshItem] = []
         self._workspace_tcp_zone_items: list[gl.GLMeshItem] = []
         self._workspace_collision_zone_items: list[gl.GLMeshItem] = []
@@ -3339,11 +3344,88 @@ class Viewer3DWidget(QWidget):
     def _get_robot_base_world_transform(self) -> np.ndarray:
         return self._robot_base_transform_world.matrix.copy()
 
+    def set_external_robot_base_override(self, matrix: np.ndarray | None) -> None:
+        """Positionne la base robot dans le monde via un axe externe.
+
+        Quand matrix est None, le positionnement revient à workspace_model.robot_base.
+        Appeler update_robot() après pour propager le changement visuel.
+        """
+        self._external_robot_base_override = matrix.copy() if matrix is not None else None
+
     def _transform_robot_matrix_to_world(self, transform: np.ndarray) -> np.ndarray:
+        if self._external_robot_base_override is not None:
+            return self._external_robot_base_override @ transform
         return transform_matrix_base_to_world(transform, self._robot_base_transform_world)
 
     def _transform_robot_points_to_world(self, points_xyz: np.ndarray) -> np.ndarray:
         return transform_points_base_to_world(points_xyz, self._robot_base_transform_world)
+
+    # ------------------------------------------------------------------
+    # Axes externes
+    # ------------------------------------------------------------------
+
+    def reload_external_axes(self, axes, world_transforms: dict) -> None:
+        """Recharge complètement les CAO des axes externes.
+
+        Args:
+            axes: list[ExternalAxis]
+            world_transforms: dict retourné par ExternalAxesModel.compute_world_transforms()
+        """
+        self._clear_viewer_items(self._external_axes_links)
+        self._external_axes_links.clear()
+        self._external_axes_link_keys.clear()
+
+        color_base = (0.3, 0.3, 0.35, 1.0)
+        color_link = (0.25, 0.45, 0.65, 1.0)
+
+        for axis in axes:
+            transforms = world_transforms.get(axis.id)
+            if transforms is None:
+                continue
+
+            if axis.base_cad_model:
+                item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
+                if item:
+                    self.viewer.addItem(item)
+                    self._external_axes_links.append(item)
+                    self._external_axes_link_keys.append((axis.id, -1))
+
+            for ji, (joint, T_joint) in enumerate(zip(axis.joints, transforms["joint_links"])):
+                if joint.cad_model:
+                    item = self.load_robot_mesh(joint.cad_model, T_joint, color_link)
+                    if item:
+                        self.viewer.addItem(item)
+                        self._external_axes_links.append(item)
+                        self._external_axes_link_keys.append((axis.id, ji))
+
+    def update_external_axes_poses(self, world_transforms: dict) -> None:
+        """Met à jour les positions des CAO axes externes sans recharger les meshes."""
+        from PyQt6 import QtGui
+        axes_data: dict[str, dict] = world_transforms
+
+        for mesh_item, (axis_id, joint_index) in zip(self._external_axes_links, self._external_axes_link_keys):
+            transforms = axes_data.get(axis_id)
+            if transforms is None:
+                continue
+            if joint_index == -1:
+                T = transforms["base"]
+            else:
+                links = transforms["joint_links"]
+                if joint_index >= len(links):
+                    continue
+                T = links[joint_index]
+
+            if mesh_item:
+                mesh_item.resetTransform()
+                qmat = QtGui.QMatrix4x4(
+                    T[0,0], T[0,1], T[0,2], T[0,3],
+                    T[1,0], T[1,1], T[1,2], T[1,3],
+                    T[2,0], T[2,1], T[2,2], T[2,3],
+                    T[3,0], T[3,1], T[3,2], T[3,3],
+                )
+                mesh_item.setTransform(qmat)
+
+    # ------------------------------------------------------------------
 
     def _render_workspace_models(self) -> None:
         self._clear_viewer_items(self._workspace_element_items)

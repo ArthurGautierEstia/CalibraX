@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject, QTimer
 import numpy as np
 from typing import Tuple, Optional
 
+from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
@@ -13,20 +14,22 @@ from utils.reference_frame_utils import convert_pose_from_base_frame
 
 class JogController(QObject):
     """Contrôleur pour la vue Jog - gère les interactions de jog articulaire et cartésien avec jog continu"""
-    
+
     def __init__(
         self,
         robot_model: RobotModel,
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
         jog_view: JogView,
+        external_axes_model: ExternalAxesModel | None = None,
         parent: QObject = None,
     ):
         super().__init__(parent)
-        
+
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self.external_axes_model = external_axes_model
         self.jog_view = jog_view
 
         self.jog_joint_widget = self.jog_view.get_jog_joint_widget()
@@ -46,17 +49,19 @@ class JogController(QObject):
         # État du jog continu
         self._jog_active_joint: Optional[Tuple[int, int]] = None  # (index, direction: -1 or 1)
         self._jog_active_cartesian: Optional[Tuple[int, int]] = None  # (index, direction: -1 or 1)
-        
+        self._jog_active_external: Optional[Tuple[str, int, int]] = None  # (axis_id, joint_idx, dir)
+
         # Timer pour jog continu
         self.jog_timer = QTimer()
         self.jog_timer.timeout.connect(self._on_jog_timer_tick)
-        
+
         self.jog_joint_widget.set_delta(self.jog_step_joint)
         self.jog_cartesian_widget.set_delta(self.jog_step_cartesian)
 
         self._update_axis_limits()
         self._update_display_from_model()
         self._setup_connections()
+        self._rebuild_external_axes_jog()
     
     def _setup_connections(self) -> None:
         """Configure les connexions entre la vue et le modèle"""
@@ -82,6 +87,22 @@ class JogController(QObject):
         self.robot_model.tcp_pose_changed.connect(self._update_display_from_model)
         self.robot_model.axis_limits_changed.connect(self._update_axis_limits)
         self.workspace_model.workspace_changed.connect(self._update_display_from_model)
+
+        # Axes externes
+        self.jog_joint_widget.jog_external_minus_pressed.connect(
+            lambda aid, ji: self._on_jog_external_pressed(aid, ji, -1)
+        )
+        self.jog_joint_widget.jog_external_minus_released.connect(
+            lambda aid, ji: self._on_jog_external_released(aid, ji)
+        )
+        self.jog_joint_widget.jog_external_plus_pressed.connect(
+            lambda aid, ji: self._on_jog_external_pressed(aid, ji, 1)
+        )
+        self.jog_joint_widget.jog_external_plus_released.connect(
+            lambda aid, ji: self._on_jog_external_released(aid, ji)
+        )
+        if self.external_axes_model is not None:
+            self.external_axes_model.axes_changed.connect(self._rebuild_external_axes_jog)
     
     def _on_jog_joint_delta_changed(self, value: float):
         self.jog_step_joint = value
@@ -134,10 +155,14 @@ class JogController(QObject):
         if self._jog_active_joint:
             joint_index, direction = self._jog_active_joint
             self._jog_joint(joint_index, direction * self.jog_step_joint)
-        
+
         elif self._jog_active_cartesian:
             axis_index, direction = self._jog_active_cartesian
             self._jog_cartesian(axis_index, direction * self.jog_step_cartesian)
+
+        elif self._jog_active_external:
+            axis_id, joint_index, direction = self._jog_active_external
+            self._jog_external(axis_id, joint_index, direction * self.jog_step_joint)
     
     def _jog_joint(self, joint_index: int, delta: float) -> None:
         """Effectue un jog articulaire en modifiant la valeur du joint"""
@@ -226,6 +251,38 @@ class JogController(QObject):
     
     def _on_tcp_display_frame_changed(self, _frame: str) -> None:
         self._update_display_from_model()
+
+    def _on_jog_external_pressed(self, axis_id: str, joint_index: int, direction: int) -> None:
+        self.jog_timer.stop()
+        self._jog_active_joint = None
+        self._jog_active_cartesian = None
+        self._jog_active_external = (axis_id, joint_index, direction)
+        self.jog_timer.start(self.jog_timer_interval)
+
+    def _on_jog_external_released(self, axis_id: str, joint_index: int) -> None:
+        if self._jog_active_external and self._jog_active_external[:2] == (axis_id, joint_index):
+            self.jog_timer.stop()
+            self._jog_active_external = None
+
+    def _jog_external(self, axis_id: str, joint_index: int, delta: float) -> None:
+        if self.external_axes_model is None:
+            return
+        current = self.external_axes_model.get_axis_joint_value(axis_id, joint_index)
+        self.external_axes_model.set_axis_joint_value(axis_id, joint_index, current + delta)
+
+    def _rebuild_external_axes_jog(self) -> None:
+        """Reconstruit les lignes E1/E2/… dans le widget jog."""
+        if self.external_axes_model is None:
+            self.jog_joint_widget.set_external_axes([])
+            return
+        axes_info: list[tuple[str, int, str, str]] = []
+        ext_counter = 1
+        for axis in self.external_axes_model.get_axes():
+            for ji, joint in enumerate(axis.joints):
+                label = f"E{ext_counter}"
+                axes_info.append((axis.id, ji, label, joint.unit()))
+                ext_counter += 1
+        self.jog_joint_widget.set_external_axes(axes_info)
 
     def _update_display_from_model(self) -> None:
         """Met à jour l'affichage depuis les données du modèle"""

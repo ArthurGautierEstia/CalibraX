@@ -7,6 +7,7 @@ from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from views.calibration_view import CalibrationView
 from views.cartesian_control_view import CartesianControlView
+from views.external_axes_view import ExternalAxesView
 from views.joint_control_view import JointControlView
 from views.machining_view import MachiningView
 from views.mgi_view import MgiView
@@ -31,6 +32,7 @@ class MainTabsBar(QTabBar):
 class MainWindow(QMainWindow):
     ROBOT_TAB_INDEX = 0
     TOOL_TAB_INDEX = 1
+    EXTERNAL_AXES_TAB_INDEX = 2
 
     def __init__(
         self,
@@ -52,6 +54,7 @@ class MainWindow(QMainWindow):
 
         self.robot_view = RobotView()
         self.tool_view = ToolView()
+        self.external_axes_view = ExternalAxesView()
         self.workspace_view = WorkspaceView()
         self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
@@ -76,6 +79,7 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.robot_view, "Robot")
         self.tabs.addTab(self.tool_view, "Tool")
+        self.tabs.addTab(self.external_axes_view, "Axes externes")
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.mgi_view, "MGI")
@@ -196,6 +200,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue de configuration du tool."""
         return self.tool_view
 
+    def get_external_axes_view(self) -> ExternalAxesView:
+        """Retourne la vue des axes externes."""
+        return self.external_axes_view
+
     def get_workspace_view(self) -> WorkspaceView:
         """Retourne la vue workspace."""
         return self.workspace_view
@@ -236,6 +244,7 @@ class MainWindow(QMainWindow):
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
         always_enabled_views = (
             self.tool_view,
+            self.external_axes_view,
             self.calibration_view,
         )
         configuration_required_views = (
