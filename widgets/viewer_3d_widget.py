@@ -952,6 +952,9 @@ class Viewer3DWidget(QWidget):
         self._external_axes_cad_offsets: list[np.ndarray] = []  # offset CAO par mesh (matrice 4×4)
         self._external_axes_frame_items: list[gl.GLLinePlotItem] = []
         self._external_robot_base_override: np.ndarray | None = None  # override quand robot monté sur axe
+        self._ext_axis_frames_visible: dict[str, bool] = {}  # visibilité repères par axis_id
+        self._last_external_axes_snapshot: list = []  # snapshot pour restauration après clear
+        self._last_external_world_transforms: dict = {}  # transforms correspondants
 
         self._workspace_element_items: list[gl.GLMeshItem] = []
         self._workspace_tcp_zone_items: list[gl.GLMeshItem] = []
@@ -1074,8 +1077,23 @@ class Viewer3DWidget(QWidget):
         scene_column.setAlignment(Qt.AlignmentFlag.AlignTop)
         scene_column.addWidget(self.scene_frame_list_label)
         scene_column.addWidget(self.workspace_frame_list)
+        self.ext_axes_frame_list_label = QLabel("Axes ext.", self.frame_lists_overlay)
+        self.ext_axes_frame_list = QListWidget(self.frame_lists_overlay)
+        self.ext_axes_frame_list.setFixedWidth(frame_column_width)
+        self.ext_axes_frame_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.ext_axes_frame_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.ext_axes_frame_column = QWidget(self.frame_lists_overlay)
+        self.ext_axes_frame_column.setObjectName("viewerFrameListZone")
+        self.ext_axes_frame_column.setFixedWidth(frame_column_width)
+        ext_axes_column_layout = QVBoxLayout(self.ext_axes_frame_column)
+        ext_axes_column_layout.setContentsMargins(6, 6, 6, 6)
+        ext_axes_column_layout.setSpacing(4)
+        ext_axes_column_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        ext_axes_column_layout.addWidget(self.ext_axes_frame_list_label)
+        ext_axes_column_layout.addWidget(self.ext_axes_frame_list)
         frame_lists_layout.addWidget(self.robot_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.scene_frame_column, 0, Qt.AlignmentFlag.AlignTop)
+        frame_lists_layout.addWidget(self.ext_axes_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         self.frame_lists_overlay.hide()
         self.viewer_style_overlay = QWidget(self.viewer)
         self.viewer_style_overlay.setObjectName("viewerStyleOverlay")
@@ -2497,6 +2515,8 @@ class Viewer3DWidget(QWidget):
             self.frames_visibility[i] = self.show_axes
         for i in range(len(self.workspace_frames_visibility)):
             self.workspace_frames_visibility[i] = self.show_axes
+        for axis_id in self._ext_axis_frames_visible:
+            self._ext_axis_frames_visible[axis_id] = self.show_axes
         self._clear_and_refresh()
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
@@ -2543,6 +2563,7 @@ class Viewer3DWidget(QWidget):
             self.workspace_frames_visibility,
             self._workspace_frame_labels,
         )
+        self._sync_ext_axes_frame_list_widget()
         self._refresh_frame_lists_overlay()
         return
         """Met à jour l'apparence de la liste (Gras = Visible)"""
@@ -2640,13 +2661,19 @@ class Viewer3DWidget(QWidget):
     def _refresh_frame_lists_overlay(self) -> None:
         has_robot_frames = self.frame_list.count() > 0
         has_scene_frames = self.workspace_frame_list.count() > 0
+        has_ext_axes = self.ext_axes_frame_list.count() > 0
         self.robot_frame_column.setVisible(has_robot_frames)
         self.robot_frame_list_label.setVisible(has_robot_frames)
         self.frame_list.setVisible(has_robot_frames)
         self.scene_frame_column.setVisible(has_scene_frames)
         self.scene_frame_list_label.setVisible(has_scene_frames)
         self.workspace_frame_list.setVisible(has_scene_frames)
-        should_show_overlay = self.btn_toggle_frame_lists.isChecked() and (has_robot_frames or has_scene_frames)
+        self.ext_axes_frame_column.setVisible(has_ext_axes)
+        self.ext_axes_frame_list_label.setVisible(has_ext_axes)
+        self.ext_axes_frame_list.setVisible(has_ext_axes)
+        should_show_overlay = self.btn_toggle_frame_lists.isChecked() and (
+            has_robot_frames or has_scene_frames or has_ext_axes
+        )
         self.frame_lists_overlay.setVisible(should_show_overlay)
         self.frame_lists_overlay.adjustSize()
         self._position_overlays()
@@ -2681,6 +2708,10 @@ class Viewer3DWidget(QWidget):
         self._trajectory_keypoint_editing_item = None
         self._trajectory_tangent_out_items = []
         self._trajectory_tangent_in_items = []
+        self._external_axes_links = []
+        self._external_axes_link_keys = []
+        self._external_axes_cad_offsets = []
+        self._external_axes_frame_items = []
 
     def set_trajectory_path_segments(
         self,
@@ -3380,6 +3411,19 @@ class Viewer3DWidget(QWidget):
             world_transforms: dict retourné par ExternalAxesModel.compute_world_transforms()
         """
         from utils.math_utils import pose_zyx_to_matrix
+        # Sauvegarder le snapshot pour la restauration après clear_viewer()
+        self._last_external_axes_snapshot = list(axes)
+        self._last_external_world_transforms = dict(world_transforms)
+        # Initialiser la visibilité des nouveaux axes (défaut : visible)
+        current_ids = {axis.id for axis in axes}
+        for axis in axes:
+            if axis.id not in self._ext_axis_frames_visible:
+                self._ext_axis_frames_visible[axis.id] = True
+        # Supprimer les entrées pour les axes supprimés
+        for axis_id in list(self._ext_axis_frames_visible.keys()):
+            if axis_id not in current_ids:
+                del self._ext_axis_frames_visible[axis_id]
+
         self._clear_viewer_items(self._external_axes_links)
         self._external_axes_links.clear()
         self._external_axes_link_keys.clear()
@@ -3425,6 +3469,8 @@ class Viewer3DWidget(QWidget):
 
     def _draw_external_axis_frames(self, axis, transforms: dict) -> None:
         """Dessine les repères XYZ de la base, des joints et du point de montage."""
+        if not self._ext_axis_frames_visible.get(axis.id, True):
+            return
         L = self.EXTERNAL_AXIS_FRAME_LENGTH
 
         # Repère base (grisé, axes courts)
@@ -3491,6 +3537,8 @@ class Viewer3DWidget(QWidget):
 
     def _draw_external_axis_frames_by_id(self, axis_id: str, transforms: dict) -> None:
         """Redessine uniquement les repères d'un axe (sans info ExternalAxis complète)."""
+        if not self._ext_axis_frames_visible.get(axis_id, True):
+            return
         L = self.EXTERNAL_AXIS_FRAME_LENGTH
         self._external_axes_frame_items.extend(
             self.draw_frame(transforms["base"], longueur=L * 0.6)
@@ -3502,6 +3550,42 @@ class Viewer3DWidget(QWidget):
         self._external_axes_frame_items.extend(
             self.draw_frame(transforms["end"], longueur=L * 1.2)
         )
+
+    def _restore_external_axes(self) -> None:
+        """Recharge les axes externes depuis le snapshot après un clear_viewer()."""
+        if self._last_external_axes_snapshot:
+            self.reload_external_axes(
+                self._last_external_axes_snapshot,
+                self._last_external_world_transforms,
+            )
+
+    def _sync_ext_axes_frame_list_widget(self) -> None:
+        """Remplit la liste des repères axes externes dans l'overlay."""
+        self.ext_axes_frame_list.clear()
+        axes = self._last_external_axes_snapshot
+        for axis in axes:
+            is_visible = self._ext_axis_frames_visible.get(axis.id, True)
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 28))
+            self.ext_axes_frame_list.addItem(item)
+            label = axis.name if axis.name else axis.id
+            checkbox = QCheckBox(label, self.ext_axes_frame_list)
+            checkbox.setChecked(bool(is_visible))
+            checkbox.toggled.connect(
+                lambda checked, axis_id=axis.id: self._on_ext_axis_frame_toggled(axis_id, checked)
+            )
+            self.ext_axes_frame_list.setItemWidget(item, checkbox)
+        self._set_frame_list_height(self.ext_axes_frame_list, len(axes))
+
+    def _on_ext_axis_frame_toggled(self, axis_id: str, checked: bool) -> None:
+        if self._ext_axis_frames_visible.get(axis_id) == bool(checked):
+            return
+        self._ext_axis_frames_visible[axis_id] = bool(checked)
+        self._clear_viewer_items(self._external_axes_frame_items)
+        for aid, transforms in self._last_external_world_transforms.items():
+            self._draw_external_axis_frames_by_id(aid, transforms)
+        self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
 
     # ------------------------------------------------------------------
 
@@ -3642,6 +3726,7 @@ class Viewer3DWidget(QWidget):
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
         self._render_trajectory_overlay()
+        self._restore_external_axes()
         self.update_frame_list_ui()
 
     def update_robot_poses(self, matrices):

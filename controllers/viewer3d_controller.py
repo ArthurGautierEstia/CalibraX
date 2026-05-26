@@ -282,6 +282,7 @@ class Viewer3DController(QObject):
             for ji, joint in enumerate(axis.joints):
                 axes_info.append((axis.id, ji, joint.q_min, joint.q_max, joint.value, joint.unit()))
         self.viewer_3d_widget.get_overlay_joints_widget().set_external_axes(axes_info)
+        self.viewer_3d_widget._position_overlays()
 
     def _on_external_axes_values_changed(self) -> None:
         if self.external_axes_model is None:
