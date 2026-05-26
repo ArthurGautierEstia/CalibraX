@@ -41,6 +41,7 @@ class ExternalAxesController(QObject):
         self._panel.axis_removed.connect(self._on_axis_removed)
         self._panel.axis_updated.connect(self._on_axis_updated)
         self._panel.robot_mount_parent_changed.connect(self._on_robot_mount_changed)
+        self._panel.axis_joint_value_changed.connect(self._on_axis_joint_value_changed)
 
         # Modèle → vue + viewer
         self.model.axes_changed.connect(self._on_model_axes_changed)
@@ -62,6 +63,9 @@ class ExternalAxesController(QObject):
 
     def _on_robot_mount_changed(self, parent_id) -> None:
         self.model.set_robot_mount_parent_id(parent_id)
+
+    def _on_axis_joint_value_changed(self, axis_id: str, joint_index: int, value: float) -> None:
+        self.model.set_axis_joint_value(axis_id, joint_index, value)
 
     # ------------------------------------------------------------------
     # Modèle → vue + viewer

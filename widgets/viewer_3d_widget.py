@@ -949,6 +949,7 @@ class Viewer3DWidget(QWidget):
         # Axes externes
         self._external_axes_links: list[gl.GLMeshItem] = []
         self._external_axes_link_keys: list[tuple[str, int]] = []  # (axis_id, joint_index ou -1 pour base)
+        self._external_axes_cad_offsets: list[np.ndarray] = []  # offset CAO par mesh (matrice 4×4)
         self._external_axes_frame_items: list[gl.GLLinePlotItem] = []
         self._external_robot_base_override: np.ndarray | None = None  # override quand robot monté sur axe
 
@@ -3349,9 +3350,11 @@ class Viewer3DWidget(QWidget):
         """Positionne la base robot dans le monde via un axe externe.
 
         Quand matrix est None, le positionnement revient à workspace_model.robot_base.
-        Appeler update_robot() après pour propager le changement visuel.
         """
         self._external_robot_base_override = matrix.copy() if matrix is not None else None
+        # Propager immédiatement aux poses robots déjà calculées
+        if hasattr(self, "last_corrected_matrices") and self.last_corrected_matrices:
+            self.update_robot_poses(self.last_corrected_matrices)
 
     def _transform_robot_matrix_to_world(self, transform: np.ndarray) -> np.ndarray:
         if self._external_robot_base_override is not None:
@@ -3375,13 +3378,12 @@ class Viewer3DWidget(QWidget):
             axes: list[ExternalAxis]
             world_transforms: dict retourné par ExternalAxesModel.compute_world_transforms()
         """
+        from utils.math_utils import pose_zyx_to_matrix
         self._clear_viewer_items(self._external_axes_links)
         self._external_axes_links.clear()
         self._external_axes_link_keys.clear()
+        self._external_axes_cad_offsets.clear()
         self._clear_viewer_items(self._external_axes_frame_items)
-
-        color_base = (0.3, 0.3, 0.35, 1.0)
-        color_link = (0.25, 0.45, 0.65, 1.0)
 
         for axis in axes:
             transforms = world_transforms.get(axis.id)
@@ -3390,21 +3392,32 @@ class Viewer3DWidget(QWidget):
 
             # ── CAO base fixe ──────────────────────────────────────────
             if axis.base_cad_model:
+                color_base = getattr(axis, "base_cad_color", (0.3, 0.3, 0.35, 1.0))
                 item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
                 if item:
                     self.viewer.addItem(item)
                     self._external_axes_links.append(item)
                     self._external_axes_link_keys.append((axis.id, -1))
+                    self._external_axes_cad_offsets.append(np.eye(4, dtype=float))
 
             # ── CAO liens mobiles ──────────────────────────────────────
             for ji, joint in enumerate(axis.joints):
                 T_joint = transforms["joint_links"][ji]
                 if joint.cad_model:
-                    item = self.load_robot_mesh(joint.cad_model, T_joint, color_link)
+                    color_link = getattr(joint, "cad_color", (0.25, 0.45, 0.65, 1.0))
+                    cad_offset_pose = getattr(joint, "cad_offset_in_joint", None)
+                    cad_offset = (
+                        pose_zyx_to_matrix(cad_offset_pose)
+                        if cad_offset_pose is not None
+                        else np.eye(4, dtype=float)
+                    )
+                    T_render = T_joint @ cad_offset
+                    item = self.load_robot_mesh(joint.cad_model, T_render, color_link)
                     if item:
                         self.viewer.addItem(item)
                         self._external_axes_links.append(item)
                         self._external_axes_link_keys.append((axis.id, ji))
+                        self._external_axes_cad_offsets.append(cad_offset)
 
             # ── Repères ────────────────────────────────────────────────
             self._draw_external_axis_frames(axis, transforms)
@@ -3438,7 +3451,10 @@ class Viewer3DWidget(QWidget):
         from PyQt6 import QtGui
 
         # ── Mise à jour des meshes ─────────────────────────────────────
-        for mesh_item, (axis_id, joint_index) in zip(self._external_axes_links, self._external_axes_link_keys):
+        offsets = self._external_axes_cad_offsets
+        for idx, (mesh_item, (axis_id, joint_index)) in enumerate(
+            zip(self._external_axes_links, self._external_axes_link_keys)
+        ):
             transforms = world_transforms.get(axis_id)
             if transforms is None:
                 continue
@@ -3450,13 +3466,17 @@ class Viewer3DWidget(QWidget):
                     continue
                 T = links[joint_index]
 
+            # Appliquer l'offset CAO stocké lors du chargement
+            cad_offset = offsets[idx] if idx < len(offsets) else np.eye(4, dtype=float)
+            T_render = T @ cad_offset
+
             if mesh_item:
                 mesh_item.resetTransform()
                 qmat = QtGui.QMatrix4x4(
-                    T[0,0], T[0,1], T[0,2], T[0,3],
-                    T[1,0], T[1,1], T[1,2], T[1,3],
-                    T[2,0], T[2,1], T[2,2], T[2,3],
-                    T[3,0], T[3,1], T[3,2], T[3,3],
+                    T_render[0,0], T_render[0,1], T_render[0,2], T_render[0,3],
+                    T_render[1,0], T_render[1,1], T_render[1,2], T_render[1,3],
+                    T_render[2,0], T_render[2,1], T_render[2,2], T_render[2,3],
+                    T_render[3,0], T_render[3,1], T_render[3,2], T_render[3,3],
                 )
                 mesh_item.setTransform(qmat)
 

@@ -23,10 +23,11 @@ class ExternalAxesPanelWidget(QWidget):
     - robot_mount_parent_changed(str | None)
     """
 
-    axis_added = pyqtSignal(object)       # ExternalAxis
-    axis_removed = pyqtSignal(str)        # axis_id
-    axis_updated = pyqtSignal(str, object) # axis_id, ExternalAxis
-    robot_mount_parent_changed = pyqtSignal(object)  # str | None
+    axis_added = pyqtSignal(object)          # ExternalAxis
+    axis_removed = pyqtSignal(str)           # axis_id
+    axis_updated = pyqtSignal(str, object)   # axis_id, ExternalAxis
+    robot_mount_parent_changed = pyqtSignal(object)   # str | None
+    axis_joint_value_changed = pyqtSignal(str, int, float)  # axis_id, joint_index, value
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -84,6 +85,7 @@ class ExternalAxesPanelWidget(QWidget):
         self._config_widget = ExternalAxisConfigWidget()
         self._config_widget.setEnabled(False)
         self._config_widget.axis_changed.connect(self._on_axis_config_changed)
+        self._config_widget.joint_value_changed.connect(self._on_joint_value_changed)
         right_layout.addWidget(self._config_widget)
 
         splitter.addWidget(left)
@@ -158,6 +160,10 @@ class ExternalAxesPanelWidget(QWidget):
             return
         parent_id = self._robot_mount_combo.currentData()
         self.robot_mount_parent_changed.emit(parent_id)
+
+    def _on_joint_value_changed(self, joint_index: int, value: float) -> None:
+        if self._current_id is not None and not self._updating_ui:
+            self.axis_joint_value_changed.emit(self._current_id, joint_index, value)
 
     # ------------------------------------------------------------------
     # Mise à jour depuis le modèle (appelée par le contrôleur)

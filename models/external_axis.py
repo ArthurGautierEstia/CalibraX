@@ -29,6 +29,7 @@ class ExternalAxis:
         mount_parent_id: str | None = None,
         mount_mode: ExternalAxisMountMode = ExternalAxisMountMode.POSITIONED,
         base_cad_model: str = "",
+        base_cad_color: tuple[float, float, float, float] = (0.3, 0.3, 0.35, 1.0),
         base_pose_in_parent: Pose6 | None = None,
         axis_frame_in_base: Pose6 | None = None,
         joints: list[ExternalAxisJoint] | None = None,
@@ -39,6 +40,7 @@ class ExternalAxis:
         self.mount_parent_id: str | None = mount_parent_id
         self.mount_mode: ExternalAxisMountMode = ExternalAxisMountMode(mount_mode)
         self.base_cad_model: str = str(base_cad_model)
+        self.base_cad_color: tuple[float, float, float, float] = tuple(float(c) for c in base_cad_color)
         self.base_pose_in_parent: Pose6 = (base_pose_in_parent or Pose6.zeros()).copy()
         self.axis_frame_in_base: Pose6 = (axis_frame_in_base or Pose6.zeros()).copy()
         self.joints: list[ExternalAxisJoint] = [j.copy() for j in (joints or [])]
@@ -128,6 +130,7 @@ class ExternalAxis:
             mount_parent_id=self.mount_parent_id,
             mount_mode=self.mount_mode,
             base_cad_model=self.base_cad_model,
+            base_cad_color=self.base_cad_color,
             base_pose_in_parent=self.base_pose_in_parent,
             axis_frame_in_base=self.axis_frame_in_base,
             joints=[j.copy() for j in self.joints],
@@ -141,6 +144,7 @@ class ExternalAxis:
             "mount_parent_id": self.mount_parent_id,
             "mount_mode": self.mount_mode.value,
             "base_cad_model": self.base_cad_model,
+            "base_cad_color": list(self.base_cad_color),
             "base_pose_in_parent": self.base_pose_in_parent.to_list(),
             "axis_frame_in_base": self.axis_frame_in_base.to_list(),
             "joints": [j.to_dict() for j in self.joints],
@@ -149,12 +153,14 @@ class ExternalAxis:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ExternalAxis":
+        color_raw = data.get("base_cad_color", [0.3, 0.3, 0.35, 1.0])
         return cls(
             name=str(data.get("name", "Axe externe")),
             axis_id=str(data.get("id", "")),
             mount_parent_id=data.get("mount_parent_id"),
             mount_mode=ExternalAxisMountMode(data.get("mount_mode", "positioned")),
             base_cad_model=str(data.get("base_cad_model", "")),
+            base_cad_color=tuple(float(c) for c in color_raw),
             base_pose_in_parent=Pose6(*[float(v) for v in data.get("base_pose_in_parent", [0]*6)]),
             axis_frame_in_base=Pose6(*[float(v) for v in data.get("axis_frame_in_base", [0]*6)]),
             joints=[ExternalAxisJoint.from_dict(j) for j in data.get("joints", [])],

@@ -31,6 +31,8 @@ class ExternalAxisJoint:
         axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
         link_pose_in_prev: Pose6 | None = None,
         cad_model: str = "",
+        cad_color: tuple[float, float, float, float] = (0.25, 0.45, 0.65, 1.0),
+        cad_offset_in_joint: Pose6 | None = None,
         q_min: float = -1000.0,
         q_max: float = 1000.0,
         offset: float = 0.0,
@@ -41,6 +43,8 @@ class ExternalAxisJoint:
         self.axis: tuple[float, float, float] = (ax[0], ax[1], ax[2])
         self.link_pose_in_prev: Pose6 = (link_pose_in_prev or Pose6.zeros()).copy()
         self.cad_model: str = str(cad_model)
+        self.cad_color: tuple[float, float, float, float] = tuple(float(c) for c in cad_color)
+        self.cad_offset_in_joint: Pose6 = (cad_offset_in_joint or Pose6.zeros()).copy()
         self.q_min: float = float(q_min)
         self.q_max: float = float(q_max)
         self.offset: float = float(offset)
@@ -90,6 +94,8 @@ class ExternalAxisJoint:
             axis=self.axis,
             link_pose_in_prev=self.link_pose_in_prev,
             cad_model=self.cad_model,
+            cad_color=self.cad_color,
+            cad_offset_in_joint=self.cad_offset_in_joint,
             q_min=self.q_min,
             q_max=self.q_max,
             offset=self.offset,
@@ -102,6 +108,8 @@ class ExternalAxisJoint:
             "axis": list(self.axis),
             "link_pose_in_prev": self.link_pose_in_prev.to_list(),
             "cad_model": self.cad_model,
+            "cad_color": list(self.cad_color),
+            "cad_offset_in_joint": self.cad_offset_in_joint.to_list(),
             "q_min": self.q_min,
             "q_max": self.q_max,
             "offset": self.offset,
@@ -111,11 +119,14 @@ class ExternalAxisJoint:
     @classmethod
     def from_dict(cls, data: dict) -> "ExternalAxisJoint":
         axis_raw = data.get("axis", [0.0, 0.0, 1.0])
+        color_raw = data.get("cad_color", [0.25, 0.45, 0.65, 1.0])
         return cls(
             joint_type=ExternalAxisJointType(data.get("joint_type", "linear")),
             axis=(float(axis_raw[0]), float(axis_raw[1]), float(axis_raw[2])),
             link_pose_in_prev=Pose6(*[float(v) for v in data.get("link_pose_in_prev", [0]*6)]),
             cad_model=str(data.get("cad_model", "")),
+            cad_color=tuple(float(c) for c in color_raw),
+            cad_offset_in_joint=Pose6(*[float(v) for v in data.get("cad_offset_in_joint", [0]*6)]),
             q_min=float(data.get("q_min", -1000.0)),
             q_max=float(data.get("q_max", 1000.0)),
             offset=float(data.get("offset", 0.0)),

@@ -1,8 +1,13 @@
-"""Widget réutilisable pour éditer une Pose6 (6 spinboxes X Y Z A B C)."""
+"""Widget réutilisable pour éditer une Pose6 – layout 2 colonnes (XYZ | ABC).
+
+Les spinboxes n'émettent qu'à la validation (Entrée ou perte de focus).
+"""
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QDoubleSpinBox, QFormLayout, QGroupBox, QWidget
+from PyQt6.QtWidgets import (
+    QDoubleSpinBox, QGridLayout, QGroupBox, QLabel, QWidget,
+)
 
 from models.types.pose6 import Pose6
 
@@ -19,15 +24,19 @@ class Pose6EditorWidget(QGroupBox):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        form = QFormLayout(self)
-        form.setSpacing(4)
-        for label in self.LABELS:
+        grid = QGridLayout(self)
+        grid.setSpacing(4)
+        grid.setContentsMargins(6, 6, 6, 6)
+        for i, label in enumerate(self.LABELS):
+            row = i % 3
+            col = (i // 3) * 2   # 0 pour XYZ, 2 pour ABC
             sb = QDoubleSpinBox()
             sb.setRange(-99999.0, 99999.0)
             sb.setDecimals(3)
             sb.setSingleStep(1.0)
-            sb.valueChanged.connect(self._on_changed)
-            form.addRow(label, sb)
+            sb.editingFinished.connect(self._on_changed)
+            grid.addWidget(QLabel(label), row, col)
+            grid.addWidget(sb, row, col + 1)
             self._spinboxes.append(sb)
 
     def _on_changed(self) -> None:
