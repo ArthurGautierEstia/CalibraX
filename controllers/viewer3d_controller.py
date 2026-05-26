@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PyQt6.QtCore import QObject, QTimer
 import numpy as np
 
@@ -12,6 +14,10 @@ from models.workspace_model import WorkspaceModel
 import utils.math_utils as math_utils
 from widgets.viewer_3d_widget import Viewer3DWidget
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from models.external_axes_model import ExternalAxesModel
+
 
 TangentSegment = tuple[XYZ3, XYZ3]
 
@@ -24,6 +30,7 @@ class Viewer3DController(QObject):
         workspace_model: WorkspaceModel,
         collision_scene_model: CollisionSceneModel,
         viewer_3d_widget: Viewer3DWidget,
+        external_axes_model: ExternalAxesModel | None = None,
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -32,11 +39,13 @@ class Viewer3DController(QObject):
         self.workspace_model = workspace_model
         self.collision_scene_model = collision_scene_model
         self.viewer_3d_widget = viewer_3d_widget
+        self.external_axes_model = external_axes_model
         self._ghost_visible = False
         self._ghost_joints: list[float] = [0.0] * 6
         self._overlay_jog_delta = 1.0
         self._overlay_active_joint: tuple[int, int] | None = None
         self._overlay_active_cartesian: tuple[int, int] | None = None
+        self._overlay_active_ext: tuple[str, int, int] | None = None  # (axis_id, joint_index, direction)
         self._overlay_jog_timer = QTimer(self)
         self._overlay_jog_timer.setInterval(20)
         self._overlay_jog_timer.timeout.connect(self._on_overlay_jog_tick)
@@ -82,6 +91,15 @@ class Viewer3DController(QObject):
         self.viewer_3d_widget.get_overlay_joints_widget().spinbox_jog_released.connect(self._on_overlay_joint_released)
         self.viewer_3d_widget.get_overlay_cartesian_widget().spinbox_jog_pressed.connect(self._on_overlay_cartesian_pressed)
         self.viewer_3d_widget.get_overlay_cartesian_widget().spinbox_jog_released.connect(self._on_overlay_cartesian_released)
+
+        joints_widget = self.viewer_3d_widget.get_overlay_joints_widget()
+        joints_widget.external_joint_value_changed.connect(self._on_overlay_ext_value_changed)
+        joints_widget.spinbox_ext_jog_pressed.connect(self._on_overlay_ext_jog_pressed)
+        joints_widget.spinbox_ext_jog_released.connect(self._on_overlay_ext_jog_released)
+
+        if self.external_axes_model is not None:
+            self.external_axes_model.axes_changed.connect(self._on_external_axes_changed)
+            self.external_axes_model.axes_values_changed.connect(self._on_external_axes_values_changed)
 
     def _update_tcp_pose(self) -> None:
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
@@ -180,6 +198,10 @@ class Viewer3DController(QObject):
                 axis_index,
                 direction * self._overlay_jog_delta * (1.0 if axis_index < 3 else 0.1),
             )
+            return
+        if self._overlay_active_ext is not None:
+            axis_id, joint_index, direction = self._overlay_active_ext
+            self._jog_overlay_ext(axis_id, joint_index, direction * self._overlay_jog_delta * 0.1)
 
     def _jog_overlay_joint(self, joint_index: int, delta: float) -> None:
         current_value = self.robot_model.get_joint(joint_index)
@@ -242,6 +264,63 @@ class Viewer3DController(QObject):
                 widget.spinboxes_cart[axis_index].setValue(new_value)
         except Exception as exc:
             print(f"Erreur lors du jog cartésien overlay: {exc}")
+
+    # ------------------------------------------------------------------
+    # Axes externes — overlay
+    # ------------------------------------------------------------------
+
+    def _on_external_axes_changed(self) -> None:
+        if self.external_axes_model is None:
+            return
+        axes = self.external_axes_model.get_axes()
+        axes_info = []
+        for axis in axes:
+            for ji, joint in enumerate(axis.joints):
+                axes_info.append((axis.id, ji, joint.q_min, joint.q_max, joint.value, joint.unit()))
+        self.viewer_3d_widget.get_overlay_joints_widget().set_external_axes(axes_info)
+
+    def _on_external_axes_values_changed(self) -> None:
+        if self.external_axes_model is None:
+            return
+        joints_widget = self.viewer_3d_widget.get_overlay_joints_widget()
+        for axis in self.external_axes_model.get_axes():
+            for ji, joint in enumerate(axis.joints):
+                joints_widget.set_external_joint_value(axis.id, ji, joint.value)
+
+    def _on_overlay_ext_value_changed(self, axis_id: str, joint_index: int, value: float) -> None:
+        if self.external_axes_model is not None:
+            self.external_axes_model.set_axis_joint_value(axis_id, joint_index, value)
+
+    def _on_overlay_ext_jog_pressed(self, axis_id: str, joint_index: int, direction: int) -> None:
+        self._overlay_jog_timer.stop()
+        self._overlay_active_ext = (axis_id, joint_index, direction)
+        self._overlay_active_joint = None
+        self._overlay_active_cartesian = None
+        self._jog_overlay_ext(axis_id, joint_index, direction * self._overlay_jog_delta * 0.1)
+        self._overlay_jog_timer.start()
+
+    def _on_overlay_ext_jog_released(self, axis_id: str, joint_index: int, _direction: int) -> None:
+        if (
+            self._overlay_active_ext is not None
+            and self._overlay_active_ext[0] == axis_id
+            and self._overlay_active_ext[1] == joint_index
+        ):
+            self._overlay_jog_timer.stop()
+            self._overlay_active_ext = None
+
+    def _jog_overlay_ext(self, axis_id: str, joint_index: int, delta: float) -> None:
+        if self.external_axes_model is None:
+            return
+        current = self.external_axes_model.get_axis_joint_value(axis_id, joint_index)
+        for axis in self.external_axes_model.get_axes():
+            if axis.id == axis_id and joint_index < len(axis.joints):
+                j = axis.joints[joint_index]
+                new_value = max(j.q_min, min(j.q_max, current + delta))
+                if new_value != current:
+                    self.external_axes_model.set_axis_joint_value(axis_id, joint_index, new_value)
+                break
+
+    # ------------------------------------------------------------------
 
     def show_robot_ghost(self) -> None:
         self._ghost_visible = True

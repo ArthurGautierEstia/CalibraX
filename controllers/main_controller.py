@@ -73,6 +73,7 @@ class MainController(QObject):
             workspace_model,
             self.collision_scene_model,
             main_window.get_viewer3d(),
+            external_axes_model=external_axes_model,
         )
         self.robot_controller = RobotController(
             robot_model,
