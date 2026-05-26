@@ -205,7 +205,11 @@ class MainController(QObject):
         # Restauration des axes externes
         external_axes_data = startup.get("external_axes_data") or {}
         if external_axes_data:
-            self.external_axes_controller.restore_state(external_axes_data)
+            self.viewer3d_controller.begin_loading_feedback("Chargement axes externes ...")
+            try:
+                self.external_axes_controller.restore_state(external_axes_data)
+            finally:
+                self.viewer3d_controller.end_loading_feedback()
 
         self._startup_completed = True
         self._schedule_session_save()

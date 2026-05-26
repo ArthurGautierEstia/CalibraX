@@ -1,0 +1,153 @@
+{
+    "axes": [
+        {
+            "id": "2153d242-5e10-49c6-9776-d5e00b4ca194",
+            "name": "Track Lucas",
+            "mount_parent_id": null,
+            "mount_mode": "positioned",
+            "base_cad_model": "C:/Users/arthur.gautier/OneDrive - ESTIA/Documents/Dev/Python/CalibraX/default_data/external_axes_stl/rail/rail_light.stl",
+            "base_cad_color": [
+                0.2980392277240753,
+                0.2980392277240753,
+                0.3490196168422699,
+                1.0
+            ],
+            "base_pose_in_parent": [
+                -1000.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "axis_frame_in_base": [
+                0.0,
+                0.0,
+                505.0,
+                -90.0,
+                0.0,
+                0.0
+            ],
+            "joints": [
+                {
+                    "joint_type": "linear",
+                    "axis": [
+                        1.0,
+                        0.0,
+                        0.0
+                    ],
+                    "link_pose_in_prev": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "cad_model": "C:/Users/arthur.gautier/OneDrive - ESTIA/Documents/Dev/Python/CalibraX/default_data/external_axes_stl/rail/chariot.stl",
+                    "cad_color": [
+                        0.7254902124404907,
+                        0.7254902124404907,
+                        0.7254902124404907,
+                        1.0
+                    ],
+                    "cad_offset_in_joint": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "q_min": -2000.0,
+                    "q_max": 2000.0,
+                    "offset": 0.0,
+                    "value": -888.0
+                }
+            ],
+            "mount_pose_in_end": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "id": "ce298b48-b48b-4537-a6c9-3b5e88e826a6",
+            "name": "KP1-500HW",
+            "mount_parent_id": null,
+            "mount_mode": "positioned",
+            "base_cad_model": "C:/Users/arthur.gautier/OneDrive - ESTIA/Documents/Dev/Python/CalibraX/default_data/external_axes_stl/posi/posi0.stl",
+            "base_cad_color": [
+                0.2980392277240753,
+                0.2980392277240753,
+                0.3490196168422699,
+                1.0
+            ],
+            "base_pose_in_parent": [
+                1000.0,
+                -2500.0,
+                0.0,
+                180.0,
+                0.0,
+                0.0
+            ],
+            "axis_frame_in_base": [
+                0.0,
+                -455.0,
+                1230.0,
+                180.0,
+                0.0,
+                -90.0
+            ],
+            "joints": [
+                {
+                    "joint_type": "rotary",
+                    "axis": [
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "link_pose_in_prev": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "cad_model": "C:/Users/arthur.gautier/OneDrive - ESTIA/Documents/Dev/Python/CalibraX/default_data/external_axes_stl/posi/posi1.stl",
+                    "cad_color": [
+                        0.7254902124404907,
+                        0.7254902124404907,
+                        0.7254902124404907,
+                        1.0
+                    ],
+                    "cad_offset_in_joint": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        180.0,
+                        0.0
+                    ],
+                    "q_min": -180.0,
+                    "q_max": 180.0,
+                    "offset": 0.0,
+                    "value": 92.16000000000003
+                }
+            ],
+            "mount_pose_in_end": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    ],
+    "robot_mount_parent_id": "2153d242-5e10-49c6-9776-d5e00b4ca194"
+}
