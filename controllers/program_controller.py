@@ -52,6 +52,10 @@ class _ProgramTargetRef:
 
 
 class ProgramController:
+    STATUS_NONE = "Aucun programme chargé"
+    STATUS_LOADED = "Programme chargé"
+    STATUS_SAVED = "Programme enregistré"
+    STATUS_MODIFIED = "Programme modifié"
 
     DEFAULT_PROGRAMS_DIR = Path(__file__).resolve().parents[1] / "user_data" / "programs"
 
@@ -116,6 +120,8 @@ class ProgramController:
         self._playback_sim_start_s = 0.0
         self._playback_speed_scale = 1.0
         self._simulation_dirty = False
+        self._program_dirty = False
+        self._clean_status_text = ProgramController.STATUS_NONE
         self._setup_connections()
         self._refresh_view()
 
@@ -123,6 +129,8 @@ class ProgramController:
 
     def _setup_connections(self) -> None:
         self.header_widget.load_program_requested.connect(self._on_load_program_requested)
+        self.header_widget.save_program_requested.connect(self._on_save_program_requested)
+        self.header_widget.save_program_as_requested.connect(self._on_save_program_as_requested)
         self.header_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.recompute_requested.connect(self._on_recompute_requested)
         self.actions_widget.export_requested.connect(self._on_export_requested)
@@ -135,7 +143,9 @@ class ProgramController:
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
         self.config_widget.keypointSelectionChanged.connect(self._on_keypoint_selection_changed)
+        self.config_widget.add_requested.connect(self._on_program_add_requested)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
+        self.config_widget.delete_requested.connect(self._on_program_delete_requested)
         self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
         self.config_widget.editToolOrientationRequested.connect(self._on_edit_tool_orientation_requested)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
@@ -163,6 +173,55 @@ class ProgramController:
         self.viewer3d_controller.begin_loading_feedback("Chargement programme KRL ...")
         QTimer.singleShot(0, lambda: self._load_program_from_path(file_path))
 
+    def _on_save_program_requested(self) -> None:
+        if self.current_program is None:
+            return
+        current_path = str(self.current_program.source_path).strip()
+        if not current_path:
+            self._on_save_program_as_requested()
+            return
+        self._save_program_to_path(current_path)
+
+    def _on_save_program_as_requested(self) -> None:
+        if self.current_program is None:
+            return
+
+        self.DEFAULT_PROGRAMS_DIR.mkdir(parents=True, exist_ok=True)
+        source_path = (
+            Path(self.current_program.source_path)
+            if str(self.current_program.source_path).strip()
+            else self.DEFAULT_PROGRAMS_DIR / "programme.src"
+        )
+        default_path = str(source_path if source_path.suffix.lower() == ".src" else source_path.with_suffix(".src"))
+        file_path, _selected_filter = QFileDialog.getSaveFileName(
+            self.program_view,
+            "Enregistrer le programme sous",
+            default_path,
+            "Programmes KUKA (*.src);;Tous les fichiers (*.*)",
+        )
+        if not file_path:
+            return
+        self._save_program_to_path(file_path)
+
+    def _save_program_to_path(self, file_path: str) -> None:
+        if self.current_program is None:
+            return
+        try:
+            export_kuka_src_program(
+                file_path,
+                self.current_program.source_text,
+                self.current_program.motions,
+                self.current_program.program_base_pose,
+            )
+        except OSError as exc:
+            QMessageBox.critical(self.program_view, "Programme robot", f"Impossible d'enregistrer le programme.\n{exc}")
+            return
+
+        self.current_program = replace(self.current_program, source_path=str(Path(file_path)))
+        self._program_dirty = False
+        self._clean_status_text = ProgramController.STATUS_SAVED
+        self._refresh_view()
+
 
 
     def _load_program_from_path(self, file_path: str) -> None:
@@ -176,6 +235,8 @@ class ProgramController:
                 return
             self.current_program = load_kuka_src_program(file_path)
             self._tool_source = "PROGRAM"
+            self._program_dirty = False
+            self._clean_status_text = ProgramController.STATUS_LOADED
             self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
             self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
             self._apply_program_tool()
@@ -200,6 +261,8 @@ class ProgramController:
     def _on_clear_requested(self) -> None:
 
         self.current_program = None
+        self._program_dirty = False
+        self._clean_status_text = ProgramController.STATUS_NONE
         self._restore_robot_tool()  # Restaurer le tool robot quand on efface le programme
         self._recompute_current_program()
 
@@ -230,6 +293,8 @@ class ProgramController:
             self._compensated_articular_program = None
             self._compensation_computed = False
             self._simulation_dirty = False
+            self._program_dirty = False
+            self._clean_status_text = ProgramController.STATUS_NONE
             self.actions_widget.set_compensated_checkbox_enabled(False)
             self.current_result = None
             self._display_keypoints = []
@@ -336,6 +401,9 @@ class ProgramController:
         if self.current_program is None:
             self.header_widget.set_program_info("", 0)
             self.header_widget.set_log_lines([])
+            self.header_widget.set_program_save_enabled(False)
+            self.header_widget.set_program_save_as_enabled(False)
+            self.header_widget.set_program_status(ProgramController.STATUS_NONE, "#808080")
             self.actions_widget.set_export_enabled(False)
             self.actions_widget.set_simulation_enabled(False)
             self.actions_widget.set_compensation_enabled(False)
@@ -352,12 +420,21 @@ class ProgramController:
             self.current_program.source_path,
             len(self.current_program.motions),
         )
+        self.header_widget.set_program_save_enabled(True)
+        self.header_widget.set_program_save_as_enabled(True)
+        self._refresh_program_save_status()
 
         self.header_widget.set_log_lines(log_lines)
-        self.actions_widget.set_export_enabled(self._selected_compensated_program() is not None)
+        measured_model_available = self._has_measured_model_available()
+        self.actions_widget.set_export_enabled(
+            measured_model_available and self._selected_compensated_program() is not None
+        )
         self.actions_widget.set_simulation_enabled(self._simulation_dirty)
         is_simulated = self.current_result is not None and not self._simulation_dirty
-        self.actions_widget.set_compensation_enabled(is_simulated)
+        self.actions_widget.set_compensation_enabled(is_simulated and measured_model_available)
+        self.actions_widget.set_compensated_checkbox_enabled(
+            measured_model_available and self._compensation_computed
+        )
         self.config_widget.set_program_base_edit_enabled(True)
         self.config_widget.set_tool_orientation_edit_enabled(
             self._count_linear_cartesian_targets(self.current_program) > 0
@@ -368,9 +445,11 @@ class ProgramController:
     def _refresh_keypoint_table(self) -> None:
 
         if self.current_program is None:
+            self.config_widget.set_program_loaded(False)
             self.config_widget.set_keypoints([])
             return
 
+        self.config_widget.set_program_loaded(True)
         self.config_widget.set_keypoints(self._display_keypoints)
 
 
@@ -708,7 +787,12 @@ class ProgramController:
 
         try:
 
-            export_kuka_src_program(file_path, self.current_program.source_text, program.motions)
+            export_kuka_src_program(
+                file_path,
+                self.current_program.source_text,
+                program.motions,
+                self.current_program.program_base_pose,
+            )
 
         except OSError as exc:
 
@@ -855,7 +939,52 @@ class ProgramController:
 
             return
 
-        self._edit_program_target_at_row(row)
+        self._open_program_target_dialog(row)
+
+    def _on_program_add_requested(self) -> None:
+
+        if self.current_program is None:
+
+            return
+
+        self._open_program_target_dialog(None)
+
+    def _on_program_delete_requested(self) -> None:
+
+        row = self._selected_keypoint_index
+        if self.current_program is None or row is None or row < 0 or row >= len(self._display_target_refs):
+
+            return
+
+        target_ref = self._display_target_refs[row]
+        motion = self.current_program.motions[target_ref.motion_index]
+        motion_label = "mouvement circulaire" if motion.mode == RobotProgramMotionMode.CIRCULAR else "mouvement"
+        answer = QMessageBox.question(
+            self.program_view,
+            "Supprimer une ligne du programme",
+            (
+                "Voulez-vous supprimer ce "
+                f"{motion_label} du programme importe ?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self.current_program = self._program_with_deleted_motion(target_ref.motion_index)
+        self._program_dirty = True
+        self._mark_simulation_dirty()
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+        self._refresh_keypoint_table()
+        self._refresh_viewer_keypoints()
+        self._refresh_status()
+        self._refresh_program_save_status()
+
+        if not self._display_target_refs:
+            return
+        next_row = min(row, len(self._display_target_refs) - 1)
+        self.config_widget.select_row(next_row)
 
     def _on_edit_program_base_requested(self) -> None:
 
@@ -880,7 +1009,9 @@ class ProgramController:
             return
 
         self._invalidate_simulation_results()
+        self._program_dirty = True
         self._refresh_status()
+        self._refresh_program_save_status()
 
     def _on_program_base_preview_changed(self, base_pose: Pose6) -> None:
 
@@ -918,15 +1049,44 @@ class ProgramController:
             return
 
         self.current_program = updated_program
+        self._program_dirty = True
         self._mark_simulation_dirty()
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
         self._refresh_status()
+        self._refresh_program_save_status()
 
 
 
-    def _edit_program_target_at_row(self, row: int) -> None:
+    def _open_program_target_dialog(self, row: int | None) -> None:
+        if self.current_program is None:
+            return
+
+        if row is None:
+            insertion_motion_index = self._insertion_motion_index_for_selected_row()
+            draft_motion = self._build_default_program_motion(insertion_motion_index)
+            dialog = ProgramTargetDialog(
+                self.robot_model,
+                draft_motion,
+                draft_motion.target,
+                False,
+                allow_motion_type_editing=True,
+                parent=self.program_view,
+            )
+
+            if dialog.exec() != dialog.DialogCode.Accepted:
+                return
+
+            updated_motion = self._motion_from_dialog(draft_motion, dialog, is_via_target=False)
+            self.current_program = self._program_with_inserted_motion(updated_motion, insertion_motion_index)
+            self._refresh_program_after_target_change()
+
+            inserted_motion_index = len(self.current_program.motions) - 1 if insertion_motion_index is None else insertion_motion_index + 1
+            new_selection_row = self._display_row_for_motion_target(inserted_motion_index)
+            if new_selection_row is not None:
+                self.config_widget.select_row(new_selection_row)
+            return
 
         if self.current_program is None or row < 0 or row >= len(self._display_target_refs):
 
@@ -942,29 +1102,278 @@ class ProgramController:
 
             return
 
-        dialog = ProgramTargetDialog(self.robot_model, motion, target, target_ref.is_via_target, self.program_view)
+        dialog = ProgramTargetDialog(
+            self.robot_model,
+            motion,
+            target,
+            target_ref.is_via_target,
+            allow_motion_type_editing=not target_ref.is_via_target,
+            parent=self.program_view,
+        )
 
         if dialog.exec() != dialog.DialogCode.Accepted:
 
             return
 
+        updated_motion = self._motion_from_dialog(motion, dialog, is_via_target=target_ref.is_via_target)
+        self.current_program = self._program_with_replaced_motion(target_ref.motion_index, updated_motion)
+        self._refresh_program_after_target_change()
+        self.config_widget.select_row(row)
+
+    def _motion_from_dialog(
+        self,
+        source_motion: RobotProgramMotion,
+        dialog: ProgramTargetDialog,
+        is_via_target: bool,
+    ) -> RobotProgramMotion:
         updated_target = dialog.get_target()
+        if is_via_target:
+            return replace(source_motion, via_target=updated_target)
 
-        updated_motion = replace(motion, via_target=updated_target) if target_ref.is_via_target else replace(motion, target=updated_target)
+        updated_mode = dialog.get_motion_mode()
+        return replace(
+            source_motion,
+            mode=updated_mode,
+            target=updated_target,
+            cp_speed_mps=(
+                None
+                if updated_mode == RobotProgramMotionMode.PTP
+                else source_motion.cp_speed_mps or ProgramSimulator.DEFAULT_LINEAR_SPEED_MPS
+            ),
+        )
 
-        updated_motions = list(self.current_program.motions)
-
-        updated_motions[target_ref.motion_index] = updated_motion
-
-        self.current_program = replace(self.current_program, motions=updated_motions)
-
+    def _refresh_program_after_target_change(self) -> None:
+        self._program_dirty = True
         self._mark_simulation_dirty()
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
         self._refresh_status()
+        self._refresh_program_save_status()
 
-        self.config_widget.select_row(row)
+    def _insertion_motion_index_for_selected_row(self) -> int | None:
+
+        row = self._selected_keypoint_index
+        if row is None or row < 0 or row >= len(self._display_target_refs):
+            if self.current_program is None or not self.current_program.motions:
+                return None
+            return len(self.current_program.motions) - 1
+
+        return self._display_target_refs[row].motion_index
+
+    def _build_default_program_motion(self, insertion_motion_index: int | None) -> RobotProgramMotion:
+
+        reference_motion = None
+        if self.current_program is not None and insertion_motion_index is not None and 0 <= insertion_motion_index < len(self.current_program.motions):
+            reference_motion = self.current_program.motions[insertion_motion_index]
+
+        if reference_motion is None and self.current_program is not None and self.current_program.motions:
+            reference_motion = self.current_program.motions[-1]
+
+        if reference_motion is not None:
+            target_type = reference_motion.target.target_type
+            motion_mode = (
+                RobotProgramMotionMode.PTP
+                if reference_motion.mode == RobotProgramMotionMode.PTP
+                else RobotProgramMotionMode.LINEAR
+            )
+            base_pose = reference_motion.base_pose.copy()
+            tool_pose = reference_motion.tool_pose.copy()
+            cp_speed_mps = reference_motion.cp_speed_mps
+            if target_type == RobotProgramTargetType.JOINT:
+                draft_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.JOINT,
+                    joint_angles=reference_motion.target.joint_angles.copy(),
+                )
+            else:
+                draft_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.CARTESIAN,
+                    cartesian_pose=reference_motion.target.cartesian_pose.copy(),
+                )
+        else:
+            target_type = (
+                RobotProgramTargetType.JOINT
+                if self.config_widget.get_motion_mode() == "ARTICULAR"
+                else RobotProgramTargetType.CARTESIAN
+            )
+            motion_mode = (
+                RobotProgramMotionMode.PTP
+                if target_type == RobotProgramTargetType.JOINT
+                else RobotProgramMotionMode.LINEAR
+            )
+            base_pose = self.current_program.program_base_pose.copy() if self.current_program is not None else Pose6.zeros()
+            tool_pose = self._program_tool_pose()
+            cp_speed_mps = ProgramSimulator.DEFAULT_LINEAR_SPEED_MPS
+            if target_type == RobotProgramTargetType.JOINT:
+                draft_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.JOINT,
+                    joint_angles=JointAngles6.from_values(self.robot_model.get_joints()),
+                )
+            else:
+                draft_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.CARTESIAN,
+                    cartesian_pose=self._current_tcp_pose_in_program_frame(base_pose),
+                )
+
+        return RobotProgramMotion(
+            mode=motion_mode,
+            target=draft_target,
+            line_number=0,
+            source="",
+            base_pose=base_pose,
+            tool_pose=tool_pose,
+            cp_speed_mps=cp_speed_mps,
+        )
+
+    def _current_tcp_pose_in_program_frame(self, base_pose: Pose6) -> Pose6:
+
+        current_pose_base = self.robot_model.get_tcp_pose()
+        return self.program_simulator._pose_from_robot_base_to_program_base(current_pose_base, base_pose)
+
+    def _program_tool_pose(self) -> Pose6:
+
+        if self.current_program is not None and self.current_program.motions:
+            return self.current_program.motions[-1].tool_pose.copy()
+        current_tool = self.tool_model.get_tool()
+        return Pose6.from_values([
+            current_tool.tx,
+            current_tool.ty,
+            current_tool.tz,
+            current_tool.rz,
+            current_tool.ry,
+            current_tool.rx,
+        ])
+
+    def _program_with_inserted_motion(self, new_motion: RobotProgramMotion, insertion_motion_index: int | None) -> RobotProgram:
+
+        assert self.current_program is not None
+
+        source_lines = self.current_program.source_text.splitlines()
+        motions = list(self.current_program.motions)
+        insert_at = len(motions) if insertion_motion_index is None else insertion_motion_index + 1
+
+        if insert_at <= 0:
+            insertion_line_number = 1
+            source_lines.insert(0, self._format_program_motion_source(new_motion))
+        else:
+            reference_motion = motions[insert_at - 1]
+            insertion_line_number = int(reference_motion.line_number) + 1
+            source_line_index = min(max(insertion_line_number - 1, 0), len(source_lines))
+            source_lines.insert(source_line_index, self._format_program_motion_source(new_motion))
+
+        updated_motions: list[RobotProgramMotion] = []
+        for motion_index, motion in enumerate(motions):
+            shifted_line_number = int(motion.line_number) + (1 if motion_index >= insert_at else 0)
+            updated_motions.append(replace(motion, line_number=shifted_line_number))
+
+        inserted_motion = replace(
+            new_motion,
+            line_number=insertion_line_number,
+            source=self._format_program_motion_source(new_motion),
+        )
+        updated_motions.insert(insert_at, inserted_motion)
+
+        return replace(
+            self.current_program,
+            source_text="\n".join(source_lines),
+            motions=updated_motions,
+        )
+
+    def _program_with_deleted_motion(self, motion_index: int) -> RobotProgram:
+
+        assert self.current_program is not None
+
+        motions = list(self.current_program.motions)
+        if motion_index < 0 or motion_index >= len(motions):
+            return self.current_program
+
+        removed_motion = motions[motion_index]
+        removed_line_number = int(removed_motion.line_number)
+        source_lines = self.current_program.source_text.splitlines()
+        source_line_index = removed_line_number - 1
+        if 0 <= source_line_index < len(source_lines):
+            del source_lines[source_line_index]
+
+        remaining_motions: list[RobotProgramMotion] = []
+        for index, motion in enumerate(motions):
+            if index == motion_index:
+                continue
+            shifted_line_number = int(motion.line_number) - (1 if int(motion.line_number) > removed_line_number else 0)
+            remaining_motions.append(replace(motion, line_number=shifted_line_number))
+
+        return replace(
+            self.current_program,
+            source_text="\n".join(source_lines),
+            motions=remaining_motions,
+        )
+
+    def _program_with_replaced_motion(self, motion_index: int, new_motion: RobotProgramMotion) -> RobotProgram:
+
+        assert self.current_program is not None
+
+        motions = list(self.current_program.motions)
+        if motion_index < 0 or motion_index >= len(motions):
+            return self.current_program
+
+        existing_motion = motions[motion_index]
+        updated_motion = replace(
+            new_motion,
+            line_number=existing_motion.line_number,
+            source=self._format_program_motion_source(new_motion),
+        )
+        motions[motion_index] = updated_motion
+
+        source_lines = self.current_program.source_text.splitlines()
+        source_line_index = int(existing_motion.line_number) - 1
+        if 0 <= source_line_index < len(source_lines):
+            source_lines[source_line_index] = updated_motion.source
+
+        return replace(
+            self.current_program,
+            source_text="\n".join(source_lines),
+            motions=motions,
+        )
+
+
+    def _display_row_for_motion_target(self, motion_index: int) -> int | None:
+
+        for row_index, target_ref in enumerate(self._display_target_refs):
+            if target_ref.motion_index == motion_index and not target_ref.is_via_target:
+                return row_index
+        return None
+
+    @staticmethod
+    def _format_program_motion_source(motion: RobotProgramMotion) -> str:
+
+        target_text = ProgramController._format_program_target_source(motion.target)
+        if motion.mode == RobotProgramMotionMode.PTP:
+            return f"PTP {target_text}"
+        if motion.mode == RobotProgramMotionMode.LINEAR:
+            return f"LIN {target_text}"
+        if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
+            via_text = ProgramController._format_program_target_source(motion.via_target)
+            return f"CIRC {via_text}, {target_text}"
+        return motion.source
+
+    @staticmethod
+    def _format_program_target_source(target: RobotProgramTarget) -> str:
+
+        if target.target_type == RobotProgramTargetType.JOINT:
+            joint_values = target.joint_angles.to_list()
+            return (
+                "{A1 "
+                f"{joint_values[0]:.3f},A2 {joint_values[1]:.3f},A3 {joint_values[2]:.3f},"
+                f"A4 {joint_values[3]:.3f},A5 {joint_values[4]:.3f},A6 {joint_values[5]:.3f}"
+                "}"
+            )
+
+        pose_values = target.cartesian_pose.to_list()
+        return (
+            "{X "
+            f"{pose_values[0]:.3f},Y {pose_values[1]:.3f},Z {pose_values[2]:.3f},"
+            f"A {pose_values[3]:.3f},B {pose_values[4]:.3f},C {pose_values[5]:.3f}"
+            "}"
+        )
 
 
 
@@ -1151,6 +1560,20 @@ class ProgramController:
         if self.current_program is None:
             return
         self._invalidate_simulation_results()
+
+    def _refresh_program_save_status(self) -> None:
+        if self.current_program is None:
+            self.header_widget.set_program_status(ProgramController.STATUS_NONE, "#808080")
+            return
+        if self._program_dirty:
+            self.header_widget.set_program_status(ProgramController.STATUS_MODIFIED, "#f2c94c")
+            return
+        status_text = self._clean_status_text or ProgramController.STATUS_LOADED
+        status_color = "#6fcf97" if status_text in {
+            ProgramController.STATUS_LOADED,
+            ProgramController.STATUS_SAVED,
+        } else "#808080"
+        self.header_widget.set_program_status(status_text, status_color)
 
     def _refresh_program_frame(self) -> None:
 
@@ -1357,7 +1780,7 @@ class ProgramController:
             )
             new_motions.append(new_motion)
 
-        return replace(self.current_program, motions=new_motions)
+        return replace(program, motions=new_motions)
 
     def _build_cartesian_program(self, source_program: RobotProgram | None = None) -> RobotProgram | None:
         program = source_program or self.current_program
@@ -1415,7 +1838,7 @@ class ProgramController:
             )
             new_motions.append(new_motion)
 
-        return replace(self.current_program, motions=new_motions)
+        return replace(program, motions=new_motions)
 
     def _compute_compensation(self) -> None:
         if self.current_program is None:
@@ -1448,6 +1871,9 @@ class ProgramController:
             )
 
         self._compensation_computed = True
+
+    def _has_measured_model_available(self) -> bool:
+        return self.program_simulator._normalized_measured_dh_table() is not None
 
     def _get_samples_for_modes(self, target_mode: str, motion_mode: str) -> list[ProgramSimulationSample]:
         if target_mode == "THEORETICAL":

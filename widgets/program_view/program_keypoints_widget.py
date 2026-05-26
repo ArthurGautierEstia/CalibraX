@@ -36,7 +36,9 @@ class ProgramKeypointsWidget(QWidget):
     keypointSelectionChanged = pyqtSignal(object)
     keypoints_changed = pyqtSignal(list)
     cartesianDisplayFrameChanged = pyqtSignal(str)
+    add_requested = pyqtSignal()
     edit_requested = pyqtSignal(int)
+    delete_requested = pyqtSignal()
     toolSourceChanged = pyqtSignal(str)
     targetModeChanged = pyqtSignal(str)
     motionModeChanged = pyqtSignal(str)
@@ -55,9 +57,11 @@ class ProgramKeypointsWidget(QWidget):
         self.tool_model = tool_model
         self.workspace_model = workspace_model
 
-        self.keypoints_table = QTableWidget(0, 10)
+        self.keypoints_table = QTableWidget(0, 9)
+        self.btn_add = QPushButton("Ajouter")
         self.btn_edit = QPushButton("Editer")
         self.btn_go_to = QPushButton("Aller a")
+        self.btn_delete = QPushButton("Supprimer")
         self.cartesian_display_frame_combo = QComboBox()
         self.tool_source_combo = QComboBox()
         self.target_mode_combo = QComboBox()
@@ -67,6 +71,7 @@ class ProgramKeypointsWidget(QWidget):
 
         self._keypoints: list[TrajectoryKeypoint] = []
         self._current_tool_source = "CURRENT"
+        self._has_program = False
 
         self._setup_ui()
         self._setup_connections()
@@ -115,7 +120,7 @@ class ProgramKeypointsWidget(QWidget):
         mode_layout.setSpacing(6)
         mode_layout.addWidget(QLabel("Mode : "))
         self.motion_mode_combo.addItem("Cartesien", "CARTESIAN")
-        self.motion_mode_combo.addItem("Articulaire", "ARTICULAR")
+        self.motion_mode_combo.addItem("Articulaire", "JOINT")
         mode_layout.addWidget(self.motion_mode_combo, 1)
 
         selectors_row.addLayout(base_layout, 0, 0)
@@ -144,7 +149,6 @@ class ProgramKeypointsWidget(QWidget):
                 "J4 / A",
                 "J5 / B",
                 "J6 / C",
-                "Configs",
             ]
         )
 
@@ -154,8 +158,6 @@ class ProgramKeypointsWidget(QWidget):
         for col in range(0, 9):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
-
         self.keypoints_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.keypoints_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.keypoints_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -163,14 +165,18 @@ class ProgramKeypointsWidget(QWidget):
         layout.addWidget(self.keypoints_table)
 
         btn_row = QHBoxLayout()
+        btn_row.addWidget(self.btn_add)
         btn_row.addWidget(self.btn_edit)
         btn_row.addWidget(self.btn_go_to)
+        btn_row.addWidget(self.btn_delete)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
     def _setup_connections(self) -> None:
+        self.btn_add.clicked.connect(self._on_add_clicked)
         self.btn_edit.clicked.connect(self._on_edit_clicked)
         self.btn_go_to.clicked.connect(self._on_go_to_clicked)
+        self.btn_delete.clicked.connect(self._on_delete_clicked)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
         self.tool_source_combo.currentIndexChanged.connect(self._on_tool_source_changed)
         self.target_mode_combo.currentIndexChanged.connect(self._on_target_mode_changed)
@@ -187,8 +193,10 @@ class ProgramKeypointsWidget(QWidget):
         row = self._selected_row()
         has_selection = row is not None
 
+        self.btn_add.setEnabled(self._has_program)
         self.btn_edit.setEnabled(has_selection)
         self.btn_go_to.setEnabled(has_selection)
+        self.btn_delete.setEnabled(has_selection)
 
     def _on_cartesian_display_frame_changed(self, _index: int) -> None:
         self.cartesianDisplayFrameChanged.emit(self.get_cartesian_display_frame())
@@ -257,6 +265,9 @@ class ProgramKeypointsWidget(QWidget):
         if emit_signal:
             self.motionModeChanged.emit(motion_mode)
 
+    def _on_add_clicked(self) -> None:
+        self.add_requested.emit()
+
     def _on_edit_clicked(self) -> None:
         row = self._selected_row()
         if row is not None:
@@ -266,6 +277,11 @@ class ProgramKeypointsWidget(QWidget):
         row = self._selected_row()
         if row is not None:
             self.goToRequested.emit(row)
+
+    def _on_delete_clicked(self) -> None:
+        row = self._selected_row()
+        if row is not None:
+            self.delete_requested.emit()
 
     def _on_table_selection_changed(self) -> None:
         self._update_buttons_state()
@@ -301,34 +317,21 @@ class ProgramKeypointsWidget(QWidget):
 
     @staticmethod
     def _mode_text(keypoint: TrajectoryKeypoint) -> str:
-        if keypoint.mode == KeypointMotionMode.CUBIC:
-            return "BEZIER"
+        if keypoint.mode == KeypointMotionMode.BEZIER:
+            return "Bézier"
+        if keypoint.mode == KeypointMotionMode.LINEAR:
+            return "LIN"
         return keypoint.mode.value
-
-    @staticmethod
-    def _configuration_text(keypoint: TrajectoryKeypoint) -> str:
-        if keypoint.target_type == KeypointTargetType.JOINT:
-            forced = keypoint.forced_config.name if keypoint.forced_config is not None else "?"
-            return f"JOINT({forced})"
-        if keypoint.configuration_policy.name == "AUTO":
-            return "AUTO"
-        if keypoint.configuration_policy.name == "CURRENT_BRANCH":
-            return "CURRENT_BRANCH"
-        if keypoint.configuration_policy.name == "FORCED":
-            forced = keypoint.forced_config.name if keypoint.forced_config is not None else "?"
-            return f"FORCED({forced})"
-        return "AUTO"
 
     def _refresh_table(self) -> None:
         self.keypoints_table.setRowCount(0)
         for idx, keypoint in enumerate(self._keypoints):
             self.keypoints_table.insertRow(idx)
             target_values = self._keypoint_target_values(keypoint)
-            configs_txt = self._configuration_text(keypoint)
 
             values = [
                 (
-                    f"CART({keypoint.cartesian_frame.value})"
+                    "CARTESIAN"
                     if keypoint.target_type == KeypointTargetType.CARTESIAN
                     else "JOINT"
                 ),
@@ -336,7 +339,6 @@ class ProgramKeypointsWidget(QWidget):
                 self._speed_text(keypoint),
             ]
             values.extend(f"{v:.3f}" for v in target_values[:6])
-            values.append(configs_txt)
 
             for col, text in enumerate(values):
                 self.keypoints_table.setItem(idx, col, QTableWidgetItem(text))
@@ -346,6 +348,10 @@ class ProgramKeypointsWidget(QWidget):
         self._keypoints = [keypoint.clone() for keypoint in keypoints]
         self._refresh_table()
         self._emit_selection_changed()
+
+    def set_program_loaded(self, loaded: bool) -> None:
+        self._has_program = bool(loaded)
+        self._update_buttons_state()
 
     def get_keypoints(self) -> list[TrajectoryKeypoint]:
         return [keypoint.clone() for keypoint in self._keypoints]

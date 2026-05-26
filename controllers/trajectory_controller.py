@@ -43,7 +43,7 @@ TangentSegment = tuple[XYZ3, XYZ3]
 
 
 class TrajectoryController(QObject):
-    _PATH_COLOR_LIN_CUBIC = (1.0, 0.84, 0.1, 0.85)
+    _PATH_COLOR_LIN_BEZIER = (1.0, 0.84, 0.1, 0.85)
     _PATH_COLOR_PTP = (0.25, 0.65, 1.0, 0.9)
     _PATH_COLOR_ERROR = (1.0, 0.2, 0.2, 0.95)
 
@@ -815,7 +815,7 @@ class TrajectoryController(QObject):
     def _base_path_color_for_mode(self, mode: KeypointMotionMode) -> tuple[float, float, float, float]:
         if mode == KeypointMotionMode.PTP:
             return self._PATH_COLOR_PTP
-        return self._PATH_COLOR_LIN_CUBIC
+        return self._PATH_COLOR_LIN_BEZIER
 
     def _edge_color_for_samples(
         self,
