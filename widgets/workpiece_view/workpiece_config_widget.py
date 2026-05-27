@@ -1,4 +1,4 @@
-"""Widget de configuration de la pièce."""
+"""Widget de configuration de la section Pièce (sans l'outillage)."""
 from __future__ import annotations
 
 import os
@@ -8,8 +8,8 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QColorDialog, QComboBox, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout,
-    QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 from models.types.pose6 import Pose6
@@ -45,31 +45,33 @@ def _color_to_style(rgba: tuple) -> str:
     return f"background-color: rgb({r},{g},{b}); border: 1px solid #666; border-radius: 3px;"
 
 
-class WorkpieceConfigWidget(QScrollArea):
-    """Panneau de configuration de la pièce (CAO, repère parent, pose, repère pièce)."""
+class WorkpieceConfigWidget(QWidget):
+    """Section configuration de la pièce (CAO, repère parent, pose, repère pièce)."""
 
     config_changed = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWidgetResizable(True)
         self._building = False
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._setup_ui(layout)
 
-        container = QWidget()
-        self._main_layout = QVBoxLayout(container)
-        self._main_layout.setSpacing(10)
-        self._setup_ui()
-        self.setWidget(container)
+    def _setup_ui(self, layout: QVBoxLayout) -> None:
+        # ── Positionnement ────────────────────────────────────────────
+        pos_form = QFormLayout()
+        pos_form.setSpacing(4)
+        self._parent_combo = QComboBox()
+        self._parent_combo.addItem("Monde", "")
+        self._parent_combo.currentIndexChanged.connect(self._emit)
+        pos_form.addRow("Repère parent :", self._parent_combo)
+        layout.addLayout(pos_form)
 
-    # ------------------------------------------------------------------
-    # Construction UI
-    # ------------------------------------------------------------------
-
-    def _setup_ui(self) -> None:
         # ── CAO ───────────────────────────────────────────────────────
         cao_box = QGroupBox("CAO Pièce")
         cao_layout = QVBoxLayout(cao_box)
-        cao_layout.setSpacing(6)
+        cao_layout.setSpacing(4)
 
         stl_row = QWidget()
         stl_layout = QHBoxLayout(stl_row)
@@ -90,44 +92,27 @@ class WorkpieceConfigWidget(QScrollArea):
         stl_layout.addWidget(btn_browse)
         stl_layout.addWidget(self._color_btn)
         cao_layout.addWidget(stl_row)
-        self._main_layout.addWidget(cao_box)
+        layout.addWidget(cao_box)
 
-        # ── Positionnement ────────────────────────────────────────────
-        pos_box = QGroupBox("Positionnement")
-        pos_layout = QVBoxLayout(pos_box)
-        pos_layout.setSpacing(6)
-
-        parent_form = QFormLayout()
-        parent_form.setSpacing(4)
-        self._parent_combo = QComboBox()
-        self._parent_combo.addItem("Monde", "")
-        self._parent_combo.currentIndexChanged.connect(self._emit)
-        parent_form.addRow("Repère parent :", self._parent_combo)
-        pos_layout.addLayout(parent_form)
-
+        # ── Pose ──────────────────────────────────────────────────────
         self._pose_editor = Pose6EditorWidget("Pose dans le repère parent")
         self._pose_editor.pose_changed.connect(self._emit)
-        pos_layout.addWidget(self._pose_editor)
-        self._main_layout.addWidget(pos_box)
+        layout.addWidget(self._pose_editor)
 
         # ── Repère pièce ──────────────────────────────────────────────
         frame_box = QGroupBox("Repère pièce")
         frame_layout = QVBoxLayout(frame_box)
-        frame_layout.setSpacing(6)
+        frame_layout.setSpacing(4)
 
-        info = QLabel("Origine et orientation du repère pièce\ndans le repère CAO.")
+        info = QLabel("Origine du repère pièce dans la CAO (pour l'import de programmes).")
         info.setStyleSheet("color: gray; font-size: 11px;")
         frame_layout.addWidget(info)
 
         self._frame_editor = Pose6EditorWidget("Repère pièce dans la CAO")
         self._frame_editor.pose_changed.connect(self._emit)
         frame_layout.addWidget(self._frame_editor)
-        self._main_layout.addWidget(frame_box)
+        layout.addWidget(frame_box)
 
-        self._main_layout.addStretch()
-
-    # ------------------------------------------------------------------
-    # Actions
     # ------------------------------------------------------------------
 
     def _browse_cad(self) -> None:
@@ -145,8 +130,7 @@ class WorkpieceConfigWidget(QScrollArea):
         new_qc = QColorDialog.getColor(qc, self, "Couleur pièce",
                                        options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if new_qc.isValid():
-            rgba = (new_qc.redF(), new_qc.greenF(), new_qc.blueF(), new_qc.alphaF())
-            self._set_color(rgba)
+            self._set_color((new_qc.redF(), new_qc.greenF(), new_qc.blueF(), new_qc.alphaF()))
             self._emit()
 
     def _set_color(self, rgba: tuple) -> None:
@@ -163,10 +147,10 @@ class WorkpieceConfigWidget(QScrollArea):
 
     def update_parent_frames(
         self,
-        ext_axes: list[tuple[str, str]],   # [(id, name), ...]
-        ws_elements: list[str],             # [element_name, ...]
+        ext_axes: list[tuple[str, str]],
+        ws_elements: list[str],
+        has_tooling: bool = False,
     ) -> None:
-        """Reconstruit la liste des repères parents disponibles."""
         current_id = self._parent_combo.currentData()
         self._parent_combo.blockSignals(True)
         self._parent_combo.clear()
@@ -176,8 +160,9 @@ class WorkpieceConfigWidget(QScrollArea):
             self._parent_combo.addItem(f"Axe ext. : {axis_name}", f"ext:{axis_id}")
         for elem_name in ws_elements:
             self._parent_combo.addItem(f"Workspace : {elem_name}", f"ws:{elem_name}")
+        if has_tooling:
+            self._parent_combo.addItem("Outillage (repère final)", WorkpieceModel.FRAME_TOOLING)
 
-        # Restaurer la sélection si possible
         restored = False
         for i in range(self._parent_combo.count()):
             if self._parent_combo.itemData(i) == current_id:
@@ -185,11 +170,17 @@ class WorkpieceConfigWidget(QScrollArea):
                 restored = True
                 break
         if not restored:
-            self._parent_combo.setCurrentIndex(0)
+            if has_tooling:
+                for i in range(self._parent_combo.count()):
+                    if self._parent_combo.itemData(i) == WorkpieceModel.FRAME_TOOLING:
+                        self._parent_combo.setCurrentIndex(i)
+                        break
+            else:
+                self._parent_combo.setCurrentIndex(0)
         self._parent_combo.blockSignals(False)
 
     # ------------------------------------------------------------------
-    # Lecture / écriture depuis le modèle
+    # Lecture / écriture
     # ------------------------------------------------------------------
 
     def get_data(self) -> dict:
@@ -214,5 +205,4 @@ class WorkpieceConfigWidget(QScrollArea):
             if self._parent_combo.itemData(i) == target_id:
                 self._parent_combo.setCurrentIndex(i)
                 break
-
         self._building = False

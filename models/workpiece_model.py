@@ -19,6 +19,7 @@ class WorkpieceModel(QObject):
     PREFIX_WS = "ws:"      # élément workspace : "ws:<element_name>"
     FRAME_WORLD = ""
     FRAME_ROBOT = "robot"
+    FRAME_TOOLING = "tooling"  # repère du dernier élément d'outillage
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)

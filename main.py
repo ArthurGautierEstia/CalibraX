@@ -10,6 +10,7 @@ from controllers.main_controller import MainController
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
+from models.tooling_model import ToolingModel
 from models.workspace_model import WorkspaceModel
 from models.workpiece_model import WorkpieceModel
 from utils.user_data_paths import ensure_user_data_directories
@@ -52,6 +53,7 @@ class CalibraxApplication:
         self.workspace_model = WorkspaceModel()
         self.external_axes_model = ExternalAxesModel()
         self.workpiece_model = WorkpieceModel()
+        self.tooling_model = ToolingModel()
         self.main_window = MainWindow(self.robot_model, self.tool_model, self.workspace_model)
         self.main_controller = MainController(
             self.robot_model,
@@ -59,6 +61,7 @@ class CalibraxApplication:
             self.workspace_model,
             self.external_axes_model,
             self.workpiece_model,
+            self.tooling_model,
             self.main_window,
             startup_options=startup_options,
             trajectory_benchmark_verbose=True,

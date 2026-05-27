@@ -22,6 +22,7 @@ from models.collision_scene_model import CollisionSceneModel
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
+from models.tooling_model import ToolingModel
 from models.workspace_model import WorkspaceModel
 from models.workpiece_model import WorkpieceModel
 from views.main_window import MainWindow
@@ -37,6 +38,7 @@ class MainController(QObject):
         workspace_model: WorkspaceModel,
         external_axes_model: ExternalAxesModel,
         workpiece_model: WorkpieceModel,
+        tooling_model: ToolingModel,
         main_window: MainWindow,
         startup_options: dict | None = None,
         trajectory_benchmark_verbose: bool = False,
@@ -50,6 +52,7 @@ class MainController(QObject):
         self.workspace_model = workspace_model
         self.external_axes_model = external_axes_model
         self.workpiece_model = workpiece_model
+        self.tooling_model = tooling_model
         self.main_window = main_window
         self.startup_options = dict(startup_options or {})
         self.project_root = os.getcwd()
@@ -124,6 +127,7 @@ class MainController(QObject):
         )
         self.workpiece_controller = WorkpieceController(
             workpiece_model,
+            tooling_model,
             workspace_model,
             external_axes_model,
             main_window.get_workpiece_view(),
@@ -222,10 +226,13 @@ class MainController(QObject):
             finally:
                 self.viewer3d_controller.end_loading_feedback()
 
-        # Restauration de la pièce
-        workpiece_data = startup.get("workpiece_data") or {}
-        if workpiece_data:
-            self.workpiece_controller.restore_state(workpiece_data)
+        # Restauration de l'outillage + pièce
+        combined_data = {
+            "tooling": startup.get("tooling_data") or {},
+            "workpiece": startup.get("workpiece_data") or {},
+        }
+        if any(combined_data.values()):
+            self.workpiece_controller.restore_state(combined_data)
 
         self._startup_completed = True
         self._schedule_session_save()
@@ -237,7 +244,8 @@ class MainController(QObject):
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
             viewer_state=self.main_window.get_viewer3d().get_display_state(),
             external_axes_data=self.external_axes_controller.get_serializable_state(),
-            workpiece_data=self.workpiece_controller.get_serializable_state(),
+            workpiece_data=self.workpiece_controller.get_serializable_state().get("workpiece", {}),
+            tooling_data=self.workpiece_controller.get_serializable_state().get("tooling", {}),
         )
 
         session_dir = os.path.dirname(self.session_path)
@@ -285,6 +293,7 @@ class MainController(QObject):
             "viewer_state": session.viewer_state if session is not None else None,
             "external_axes_data": session.external_axes_data if session is not None else {},
             "workpiece_data": session.workpiece_data if session is not None else {},
+            "tooling_data": session.tooling_data if session is not None else {},
         }
 
     def _session_tool_profile_path(self) -> str:

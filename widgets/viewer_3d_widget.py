@@ -955,7 +955,10 @@ class Viewer3DWidget(QWidget):
         self._ext_axis_frames_visible: dict[str, bool] = {}  # visibilité repères par axis_id
         self._last_external_axes_snapshot: list = []  # snapshot pour restauration après clear
         self._last_external_world_transforms: dict = {}  # transforms correspondants
-        # Pièce
+        # Outillage + Pièce
+        self._tooling_snapshot: list | None = None   # list of {cad_model, T_world, color, frame_T_world}
+        self._tooling_mesh_items: list[gl.GLMeshItem] = []
+        self._tooling_frame_items: list = []
         self._workpiece_snapshot: dict | None = None  # {cad_model, T_world, color, frame_T_world}
         self._workpiece_mesh_item: gl.GLMeshItem | None = None
         self._workpiece_frame_items: list = []
@@ -2746,6 +2749,8 @@ class Viewer3DWidget(QWidget):
         self._external_axes_link_keys = []
         self._external_axes_cad_offsets = []
         self._external_axes_frame_items = []
+        self._tooling_mesh_items = []
+        self._tooling_frame_items = []
         self._workpiece_mesh_item = None
         self._workpiece_frame_items = []
 
@@ -3640,6 +3645,54 @@ class Viewer3DWidget(QWidget):
         self._emit_display_state_changed()
 
     # ------------------------------------------------------------------
+    # Outillage
+    # ------------------------------------------------------------------
+
+    TOOLING_FRAME_LENGTH = 110
+
+    def reload_tooling(self, elements: list[dict]) -> None:
+        """Recharge les CAO et repères de tous les éléments d'outillage.
+
+        Chaque élément du paramètre est un dict :
+            {"cad_model": str, "T_world": np.ndarray, "color": tuple, "frame_T_world": np.ndarray}
+        """
+        self._tooling_snapshot = [dict(e) for e in elements]
+        self._render_tooling()
+
+    def _restore_tooling(self) -> None:
+        if self._tooling_snapshot is not None:
+            self._render_tooling()
+
+    def _render_tooling(self) -> None:
+        for item in self._tooling_mesh_items:
+            try:
+                self.viewer.removeItem(item)
+            except Exception:
+                pass
+        self._tooling_mesh_items = []
+        self._clear_viewer_items(self._tooling_frame_items)
+        self._tooling_frame_items = []
+
+        if not self._tooling_snapshot:
+            return
+
+        L = self.TOOLING_FRAME_LENGTH
+        for snap in self._tooling_snapshot:
+            cad_model = snap.get("cad_model", "")
+            T_world = snap["T_world"]
+            color = snap["color"]
+            frame_T_world = snap["frame_T_world"]
+
+            if cad_model:
+                item = self.load_robot_mesh(cad_model, T_world, color)
+                if item is not None:
+                    self.viewer.addItem(item)
+                    self._tooling_mesh_items.append(item)
+
+            # Repère de l'élément — toujours au premier plan (additive)
+            self._tooling_frame_items.extend(self.draw_frame(frame_T_world, longueur=L))
+
+    # ------------------------------------------------------------------
     # Pièce
     # ------------------------------------------------------------------
 
@@ -3830,6 +3883,7 @@ class Viewer3DWidget(QWidget):
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
         self._restore_external_axes()
+        self._restore_tooling()
         self._restore_workpiece()
 
         # 2. Repères après tous les meshes (additive → toujours visibles par dessus)
