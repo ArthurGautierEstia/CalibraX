@@ -8,6 +8,29 @@ from models.reference_frame import ReferenceFrame
 
 
 @dataclass
+class ProgramBaseConfigState:
+    base_source: str = "MANUAL"
+    base_offset: list[float] = field(default_factory=lambda: [0.0] * 6)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ProgramBaseConfigState":
+        payload = data if isinstance(data, dict) else {}
+        raw_offset = payload.get("base_offset", [0.0] * 6)
+        base_offset = (
+            [float(v) for v in raw_offset]
+            if isinstance(raw_offset, list) and len(raw_offset) == 6
+            else [0.0] * 6
+        )
+        return cls(
+            base_source=str(payload.get("base_source", "MANUAL")),
+            base_offset=base_offset,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"base_source": self.base_source, "base_offset": list(self.base_offset)}
+
+
+@dataclass
 class ViewerThemeState:
     background_mode: str = "solid"
     background_primary_color: str = "#2D2D30FF"
@@ -51,6 +74,8 @@ class ViewerDisplayState:
     tool_colliders_visible: bool = True
     ext_axes_transparency_enabled: bool = False
     workspace_transparency_enabled: bool = True
+    tooling_frames_visible: bool = True
+    workpiece_frame_visible: bool = True
     theme: ViewerThemeState = field(default_factory=ViewerThemeState)
     selected_theme_name: str = ""
 
@@ -73,6 +98,8 @@ class ViewerDisplayState:
             tool_colliders_visible=bool(payload.get("tool_colliders_visible", True)),
             ext_axes_transparency_enabled=bool(payload.get("ext_axes_transparency_enabled", False)),
             workspace_transparency_enabled=bool(payload.get("workspace_transparency_enabled", True)),
+            tooling_frames_visible=bool(payload.get("tooling_frames_visible", True)),
+            workpiece_frame_visible=bool(payload.get("workpiece_frame_visible", True)),
             theme=ViewerThemeState.from_dict(payload.get("theme")),
             selected_theme_name="" if payload.get("selected_theme_name") is None else str(payload.get("selected_theme_name")),
         )
@@ -92,6 +119,7 @@ class AppSessionFile:
     external_axes_data: dict = field(default_factory=dict)
     workpiece_data: dict = field(default_factory=dict)
     tooling_data: dict = field(default_factory=dict)
+    program_base_config: ProgramBaseConfigState = field(default_factory=ProgramBaseConfigState)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AppSessionFile":
@@ -105,11 +133,13 @@ class AppSessionFile:
             external_axes_data=data.get("external_axes_data") or {},
             workpiece_data=data.get("workpiece_data") or {},
             tooling_data=data.get("tooling_data") or {},
+            program_base_config=ProgramBaseConfigState.from_dict(data.get("program_base_config")),
         )
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["viewer_state"] = self.viewer_state.to_dict()
+        payload["program_base_config"] = self.program_base_config.to_dict()
         return payload
 
     def save(self, file_path: str) -> None:

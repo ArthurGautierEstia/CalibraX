@@ -222,6 +222,16 @@ class WorkpieceController(QObject):
 
         return self._get_parent_world_transform(parent_id) @ T_pose
 
+    def compute_workpiece_frame_in_robot(self) -> np.ndarray:
+        """Retourne T_workpiece_frame dans le repère base robot (matrice 4×4).
+
+        Chaîne : T_robot_inv × T_piece_world × T_workpiece_frame_local
+        """
+        T_piece_world = self._compute_piece_world_transform()
+        T_frame_world = T_piece_world @ pose_zyx_to_matrix(self.workpiece_model.get_workpiece_frame_pose())
+        T_robot_world_inv = self.workspace_model.get_robot_base_transform_world().inverse_matrix
+        return np.array(T_robot_world_inv, dtype=float) @ T_frame_world
+
     # ------------------------------------------------------------------
     # Viewer
     # ------------------------------------------------------------------

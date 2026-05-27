@@ -959,9 +959,11 @@ class Viewer3DWidget(QWidget):
         self._tooling_snapshot: list | None = None   # list of {cad_model, T_world, color, frame_T_world}
         self._tooling_mesh_items: list[gl.GLMeshItem] = []
         self._tooling_frame_items: list = []
+        self._tooling_frames_visible: bool = True
         self._workpiece_snapshot: dict | None = None  # {cad_model, T_world, color, frame_T_world}
         self._workpiece_mesh_item: gl.GLMeshItem | None = None
         self._workpiece_frame_items: list = []
+        self._workpiece_frame_visible: bool = True
 
         self._workspace_element_items: list[gl.GLMeshItem] = []
         self._workspace_tcp_zone_items: list[gl.GLMeshItem] = []
@@ -1100,9 +1102,27 @@ class Viewer3DWidget(QWidget):
         ext_axes_column_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         ext_axes_column_layout.addWidget(self.ext_axes_frame_list_label)
         ext_axes_column_layout.addWidget(self.ext_axes_frame_list)
+        self.piece_frame_list_label = QLabel("Pièce", self.frame_lists_overlay)
+        self.piece_frame_column = QWidget(self.frame_lists_overlay)
+        self.piece_frame_column.setObjectName("viewerFrameListZone")
+        self.piece_frame_column.setFixedWidth(frame_column_width)
+        piece_column_layout = QVBoxLayout(self.piece_frame_column)
+        piece_column_layout.setContentsMargins(6, 6, 6, 6)
+        piece_column_layout.setSpacing(4)
+        piece_column_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        piece_column_layout.addWidget(self.piece_frame_list_label)
+        self._cb_workpiece_frame = QCheckBox("Repère pièce", self.piece_frame_column)
+        self._cb_workpiece_frame.setChecked(True)
+        self._cb_workpiece_frame.toggled.connect(self._on_workpiece_frame_toggled)
+        piece_column_layout.addWidget(self._cb_workpiece_frame)
+        self._cb_tooling_frames = QCheckBox("Repère outillage", self.piece_frame_column)
+        self._cb_tooling_frames.setChecked(True)
+        self._cb_tooling_frames.toggled.connect(self._on_tooling_frames_toggled)
+        piece_column_layout.addWidget(self._cb_tooling_frames)
         frame_lists_layout.addWidget(self.robot_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.scene_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.ext_axes_frame_column, 0, Qt.AlignmentFlag.AlignTop)
+        frame_lists_layout.addWidget(self.piece_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         self.frame_lists_overlay.hide()
         self.viewer_style_overlay = QWidget(self.viewer)
         self.viewer_style_overlay.setObjectName("viewerStyleOverlay")
@@ -2137,6 +2157,8 @@ class Viewer3DWidget(QWidget):
             workspace_collision_zones_visible=bool(self._workspace_collision_zones_visible),
             robot_colliders_visible=bool(self._robot_colliders_visible),
             tool_colliders_visible=bool(self._tool_colliders_visible),
+            tooling_frames_visible=bool(self._tooling_frames_visible),
+            workpiece_frame_visible=bool(self._workpiece_frame_visible),
             theme=self._build_current_viewer_theme_state(),
             selected_theme_name=self._selected_viewer_theme_name,
         )
@@ -2153,6 +2175,8 @@ class Viewer3DWidget(QWidget):
         self._workspace_collision_zones_visible = bool(state.workspace_collision_zones_visible)
         self._robot_colliders_visible = bool(state.robot_colliders_visible)
         self._tool_colliders_visible = bool(state.tool_colliders_visible)
+        self._tooling_frames_visible = bool(state.tooling_frames_visible)
+        self._workpiece_frame_visible = bool(state.workpiece_frame_visible)
         selected_theme_name = str(state.selected_theme_name or "").strip()
         theme_to_apply = self._build_original_viewer_theme_state()
         applied_theme_name = ""
@@ -2554,8 +2578,20 @@ class Viewer3DWidget(QWidget):
             self.workspace_frames_visibility[i] = self.show_axes
         for axis_id in self._ext_axis_frames_visible:
             self._ext_axis_frames_visible[axis_id] = self.show_axes
+        self._tooling_frames_visible = self.show_axes
+        self._workpiece_frame_visible = self.show_axes
         self._clear_and_refresh()
         self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
+
+    def _on_tooling_frames_toggled(self, checked: bool) -> None:
+        self._tooling_frames_visible = bool(checked)
+        self._redraw_piece_frames()
+        self._emit_display_state_changed()
+
+    def _on_workpiece_frame_toggled(self, checked: bool) -> None:
+        self._workpiece_frame_visible = bool(checked)
+        self._redraw_piece_frames()
         self._emit_display_state_changed()
 
     def _on_frame_lists_button_clicked(self):
@@ -2601,6 +2637,14 @@ class Viewer3DWidget(QWidget):
             self._workspace_frame_labels,
         )
         self._sync_ext_axes_frame_list_widget()
+        if hasattr(self, "_cb_workpiece_frame"):
+            self._cb_workpiece_frame.blockSignals(True)
+            self._cb_workpiece_frame.setChecked(self._workpiece_frame_visible)
+            self._cb_workpiece_frame.blockSignals(False)
+        if hasattr(self, "_cb_tooling_frames"):
+            self._cb_tooling_frames.blockSignals(True)
+            self._cb_tooling_frames.setChecked(self._tooling_frames_visible)
+            self._cb_tooling_frames.blockSignals(False)
         self._refresh_frame_lists_overlay()
         return
         """Met à jour l'apparence de la liste (Gras = Visible)"""
@@ -2699,6 +2743,9 @@ class Viewer3DWidget(QWidget):
         has_robot_frames = self.frame_list.count() > 0
         has_scene_frames = self.workspace_frame_list.count() > 0
         has_ext_axes = self.ext_axes_frame_list.count() > 0
+        has_tooling = bool(self._tooling_snapshot)
+        has_workpiece = self._workpiece_snapshot is not None
+        has_piece_frames = has_tooling or has_workpiece
         self.robot_frame_column.setVisible(has_robot_frames)
         self.robot_frame_list_label.setVisible(has_robot_frames)
         self.frame_list.setVisible(has_robot_frames)
@@ -2708,8 +2755,14 @@ class Viewer3DWidget(QWidget):
         self.ext_axes_frame_column.setVisible(has_ext_axes)
         self.ext_axes_frame_list_label.setVisible(has_ext_axes)
         self.ext_axes_frame_list.setVisible(has_ext_axes)
+        if hasattr(self, "piece_frame_column"):
+            self.piece_frame_column.setVisible(has_piece_frames)
+            if hasattr(self, "_cb_workpiece_frame"):
+                self._cb_workpiece_frame.setVisible(has_workpiece)
+            if hasattr(self, "_cb_tooling_frames"):
+                self._cb_tooling_frames.setVisible(has_tooling)
         should_show_overlay = self.btn_toggle_frame_lists.isChecked() and (
-            has_robot_frames or has_scene_frames or has_ext_axes
+            has_robot_frames or has_scene_frames or has_ext_axes or has_piece_frames
         )
         self.frame_lists_overlay.setVisible(should_show_overlay)
         self.frame_lists_overlay.adjustSize()
@@ -3524,6 +3577,8 @@ class Viewer3DWidget(QWidget):
             # ── Repères ────────────────────────────────────────────────
             self._draw_external_axis_frames(axis, transforms)
 
+        self.update_frame_list_ui()
+
     def _draw_external_axis_frames(self, axis, transforms: dict) -> None:
         """Dessine les repères XYZ de la base, des joints et du point de montage."""
         if not self._ext_axis_frames_visible.get(axis.id, True):
@@ -3658,6 +3713,7 @@ class Viewer3DWidget(QWidget):
         """
         self._tooling_snapshot = [dict(e) for e in elements]
         self._render_tooling()
+        self._redraw_piece_frames()
 
     def _restore_tooling(self) -> None:
         if self._tooling_snapshot is not None:
@@ -3676,21 +3732,16 @@ class Viewer3DWidget(QWidget):
         if not self._tooling_snapshot:
             return
 
-        L = self.TOOLING_FRAME_LENGTH
         for snap in self._tooling_snapshot:
             cad_model = snap.get("cad_model", "")
             T_world = snap["T_world"]
             color = snap["color"]
-            frame_T_world = snap["frame_T_world"]
 
             if cad_model:
                 item = self.load_robot_mesh(cad_model, T_world, color)
                 if item is not None:
                     self.viewer.addItem(item)
                     self._tooling_mesh_items.append(item)
-
-            # Repère de l'élément — toujours au premier plan (additive)
-            self._tooling_frame_items.extend(self.draw_frame(frame_T_world, longueur=L))
 
     # ------------------------------------------------------------------
     # Pièce
@@ -3713,6 +3764,7 @@ class Viewer3DWidget(QWidget):
             "frame_T_world": frame_T_world.copy(),
         }
         self._render_workpiece()
+        self._redraw_piece_frames()
 
     def _restore_workpiece(self) -> None:
         """Restaure la pièce après un clear_viewer()."""
@@ -3720,7 +3772,6 @@ class Viewer3DWidget(QWidget):
             self._render_workpiece()
 
     def _render_workpiece(self) -> None:
-        from PyQt6 import QtGui
         if self._workpiece_mesh_item is not None:
             try:
                 self.viewer.removeItem(self._workpiece_mesh_item)
@@ -3736,7 +3787,6 @@ class Viewer3DWidget(QWidget):
         cad_model = snap["cad_model"]
         T_world = snap["T_world"]
         color = snap["color"]
-        frame_T_world = snap["frame_T_world"]
 
         if cad_model:
             item = self.load_robot_mesh(cad_model, T_world, color)
@@ -3744,8 +3794,28 @@ class Viewer3DWidget(QWidget):
                 self.viewer.addItem(item)
                 self._workpiece_mesh_item = item
 
-        L = self.WORKPIECE_FRAME_LENGTH
-        self._workpiece_frame_items.extend(self.draw_frame(frame_T_world, longueur=L))
+    def _redraw_piece_frames(self) -> None:
+        """Redessine les repères outillage et pièce après tous leurs meshes.
+
+        Doit être appelé après l'ajout de tous les meshes outillage/pièce pour
+        garantir que les repères (additive) sont rendus après les meshes (opaque)
+        dans la liste d'items du viewer.
+        """
+        self._clear_viewer_items(self._tooling_frame_items)
+        self._tooling_frame_items = []
+        self._clear_viewer_items(self._workpiece_frame_items)
+        self._workpiece_frame_items = []
+
+        if self._tooling_frames_visible and self._tooling_snapshot:
+            L = self.TOOLING_FRAME_LENGTH
+            for snap in self._tooling_snapshot:
+                frame_T_world = snap["frame_T_world"]
+                self._tooling_frame_items.extend(self.draw_frame(frame_T_world, longueur=L))
+
+        if self._workpiece_frame_visible and self._workpiece_snapshot is not None:
+            L = self.WORKPIECE_FRAME_LENGTH
+            frame_T_world = self._workpiece_snapshot["frame_T_world"]
+            self._workpiece_frame_items.extend(self.draw_frame(frame_T_world, longueur=L))
 
     # ------------------------------------------------------------------
 
@@ -3890,6 +3960,7 @@ class Viewer3DWidget(QWidget):
         self.draw_all_frames(self.last_dh_matrices)
         self.draw_workspace_frames()
         self.draw_external_axes_frames()
+        self._redraw_piece_frames()
 
         # 3. Trajectoire en dernier (additive → au premier plan absolu)
         self._render_trajectory_overlay()

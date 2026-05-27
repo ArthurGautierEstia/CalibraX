@@ -4,6 +4,8 @@ from bisect import bisect_left
 from dataclasses import dataclass, replace
 from pathlib import Path
 import time
+
+import numpy as np
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
@@ -21,10 +23,12 @@ from models.robot_program import (
 )
 
 from models.robot_model import RobotModel
+from models.robot_program import ProgramBaseSource
 from models.tool_model import ToolModel
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6
 from models.workspace_model import WorkspaceModel
+from utils.reference_frame_utils import matrix_to_pose, pose_to_matrix
 from utils.program_simulator import ProgramSimulator
 from utils.mgi import RobotTool
 from utils.robot_program_kuka import export_kuka_src_program, load_kuka_src_program
@@ -72,6 +76,7 @@ class ProgramController:
         robot_model: RobotModel,
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
+        workpiece_controller,
         program_view: ProgramView,
         viewer3d_controller: Viewer3DController,
     ) -> None:
@@ -79,6 +84,7 @@ class ProgramController:
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self.workpiece_controller = workpiece_controller
         self.program_view = program_view
         self.viewer3d_controller = viewer3d_controller
         self.header_widget = self.program_view.get_header_widget()
@@ -105,6 +111,9 @@ class ProgramController:
         self._display_keypoint_tools: list[RobotTool] = []
         self._display_target_refs: list[_ProgramTargetRef] = []
         self._selected_keypoint_index: int | None = None
+        self._base_source: ProgramBaseSource = ProgramBaseSource.MANUAL
+        self._base_offset: Pose6 = Pose6.zeros()
+        self._manual_base: Pose6 = Pose6.zeros()
         self._tool_source: str = "CURRENT"
         self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
@@ -154,6 +163,7 @@ class ProgramController:
         self.config_widget.targetModeChanged.connect(self._on_target_mode_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
         self.workspace_model.workspace_changed.connect(self._refresh_view)
+        self.workpiece_controller.workpiece_model.workpiece_changed.connect(self._on_workpiece_changed)
 
 
 
@@ -233,7 +243,10 @@ class ProgramController:
                     "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
                 )
                 return
-            self.current_program = load_kuka_src_program(file_path)
+            loaded = load_kuka_src_program(file_path)
+            self._manual_base = loaded.program_base_pose.copy()
+            effective = self._compute_effective_base()
+            self.current_program = self._program_with_updated_base_pose(loaded, effective)
             self._tool_source = "PROGRAM"
             self._program_dirty = False
             self._clean_status_text = ProgramController.STATUS_LOADED
@@ -988,23 +1001,34 @@ class ProgramController:
 
     def _on_edit_program_base_requested(self) -> None:
 
-        program_base_pose = self._program_base_pose()
-
-        if program_base_pose is None:
-
+        if self.current_program is None:
             return
 
-        dialog = ProgramBaseDialog(program_base_pose, self.program_view)
+        prev_effective = self._compute_effective_base()
+
+        T_wp_robot = self.workpiece_controller.compute_workpiece_frame_in_robot()
+        workpiece_in_robot = matrix_to_pose(np.array(T_wp_robot, dtype=float))
+        dialog = ProgramBaseDialog(
+            base_source=self._base_source,
+            manual_base=self._manual_base,
+            base_offset=self._base_offset,
+            workpiece_frame_in_robot=workpiece_in_robot,
+            parent=self.program_view,
+        )
         dialog.base_pose_preview_changed.connect(self._on_program_base_preview_changed)
 
         if dialog.exec() != dialog.DialogCode.Accepted:
-            self._update_program_base_preview(program_base_pose)
+            self._update_program_base_preview(prev_effective)
 
             return
 
-        updated_base_pose = dialog.get_base_pose()
+        new_source, new_manual_base, new_offset = dialog.get_base_config()
+        self._base_source = new_source
+        self._manual_base = new_manual_base
+        self._base_offset = new_offset
+        updated_base_pose = self._compute_effective_base()
 
-        if updated_base_pose == program_base_pose:
+        if updated_base_pose == prev_effective:
 
             return
 
@@ -1420,6 +1444,41 @@ class ProgramController:
             return None
 
         return self.current_program.program_base_pose.copy()
+
+    def _compute_effective_base(self) -> Pose6:
+        if self._base_source == ProgramBaseSource.WORKPIECE:
+            T_source = self.workpiece_controller.compute_workpiece_frame_in_robot()
+        else:
+            T_source = pose_to_matrix(self._manual_base)
+        offset = self._base_offset
+        if offset == Pose6.zeros():
+            return matrix_to_pose(T_source)
+        return matrix_to_pose(T_source @ pose_to_matrix(offset))
+
+    def _on_workpiece_changed(self) -> None:
+        if self._base_source != ProgramBaseSource.WORKPIECE or self.current_program is None:
+            return
+        effective = self._compute_effective_base()
+        self._update_program_base_preview(effective)
+
+    def get_base_config_state(self) -> dict:
+        return {
+            "base_source": self._base_source.value,
+            "base_offset": self._base_offset.to_list(),
+        }
+
+    def load_base_config_state(self, state: dict) -> None:
+        source_str = state.get("base_source", "MANUAL")
+        try:
+            self._base_source = ProgramBaseSource(source_str)
+        except ValueError:
+            self._base_source = ProgramBaseSource.MANUAL
+        raw_offset = state.get("base_offset", [0.0] * 6)
+        self._base_offset = (
+            Pose6.from_values(raw_offset)
+            if isinstance(raw_offset, list) and len(raw_offset) == 6
+            else Pose6.zeros()
+        )
 
     @staticmethod
     def _count_linear_cartesian_targets(program: RobotProgram | None) -> int:

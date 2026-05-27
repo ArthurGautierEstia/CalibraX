@@ -17,7 +17,7 @@ from controllers.trajectory_controller import TrajectoryController
 from controllers.viewer3d_controller import Viewer3DController
 from controllers.workspace_controller import WorkspaceController
 from controllers.workpiece_controller import WorkpieceController
-from models.app_session_file import AppSessionFile, ViewerDisplayState
+from models.app_session_file import AppSessionFile, ProgramBaseConfigState, ViewerDisplayState
 from models.collision_scene_model import CollisionSceneModel
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
@@ -111,13 +111,6 @@ class MainController(QObject):
             trajectory_benchmark_verbose=trajectory_benchmark_verbose,
             validity_pool_size=validity_pool_size,
         )
-        self.program_controller = ProgramController(
-            robot_model,
-            tool_model,
-            workspace_model,
-            main_window.get_program_view(),
-            self.viewer3d_controller,
-        )
         self.workspace_controller = WorkspaceController(workspace_model, main_window.get_workspace_view())
         self.external_axes_controller = ExternalAxesController(
             external_axes_model,
@@ -131,6 +124,14 @@ class MainController(QObject):
             workspace_model,
             external_axes_model,
             main_window.get_workpiece_view(),
+            self.viewer3d_controller,
+        )
+        self.program_controller = ProgramController(
+            robot_model,
+            tool_model,
+            workspace_model,
+            self.workpiece_controller,
+            main_window.get_program_view(),
             self.viewer3d_controller,
         )
         self.machining_controller = MachiningController(
@@ -234,10 +235,16 @@ class MainController(QObject):
         if any(combined_data.values()):
             self.workpiece_controller.restore_state(combined_data)
 
+        # Restauration de la config base programme
+        program_base_config = startup.get("program_base_config") or {}
+        if program_base_config:
+            self.program_controller.load_base_config_state(program_base_config)
+
         self._startup_completed = True
         self._schedule_session_save()
 
     def flush_session(self) -> None:
+        base_cfg = self.program_controller.get_base_config_state()
         session = AppSessionFile(
             robot_config_path=self._normalize_project_path(self.robot_model.get_current_config_file()),
             tool_profile_path=self._session_tool_profile_path(),
@@ -246,6 +253,7 @@ class MainController(QObject):
             external_axes_data=self.external_axes_controller.get_serializable_state(),
             workpiece_data=self.workpiece_controller.get_serializable_state().get("workpiece", {}),
             tooling_data=self.workpiece_controller.get_serializable_state().get("tooling", {}),
+            program_base_config=ProgramBaseConfigState.from_dict(base_cfg),
         )
 
         session_dir = os.path.dirname(self.session_path)
@@ -294,6 +302,7 @@ class MainController(QObject):
             "external_axes_data": session.external_axes_data if session is not None else {},
             "workpiece_data": session.workpiece_data if session is not None else {},
             "tooling_data": session.tooling_data if session is not None else {},
+            "program_base_config": session.program_base_config.to_dict() if session is not None else {},
         }
 
     def _session_tool_profile_path(self) -> str:

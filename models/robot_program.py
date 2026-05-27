@@ -21,6 +21,11 @@ class RobotProgramTargetType(Enum):
     JOINT = "JOINT"
 
 
+class ProgramBaseSource(str, Enum):
+    MANUAL = "MANUAL"
+    WORKPIECE = "WORKPIECE"
+
+
 class ProgramCompensationOutputMode(Enum):
     CARTESIAN = "CARTESIAN"
     ARTICULAR = "ARTICULAR"
