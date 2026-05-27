@@ -90,6 +90,7 @@ class AppSessionFile:
     workspace_path: str = ""
     viewer_state: ViewerDisplayState = field(default_factory=ViewerDisplayState)
     external_axes_data: dict = field(default_factory=dict)
+    workpiece_data: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AppSessionFile":
@@ -101,6 +102,7 @@ class AppSessionFile:
             workspace_path="" if data.get("workspace_path") is None else str(data.get("workspace_path")),
             viewer_state=ViewerDisplayState.from_dict(data.get("viewer_state")),
             external_axes_data=data.get("external_axes_data") or {},
+            workpiece_data=data.get("workpiece_data") or {},
         )
 
     def to_dict(self) -> dict[str, Any]:

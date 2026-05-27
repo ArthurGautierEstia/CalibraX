@@ -16,12 +16,14 @@ from controllers.robot_controller import RobotController
 from controllers.trajectory_controller import TrajectoryController
 from controllers.viewer3d_controller import Viewer3DController
 from controllers.workspace_controller import WorkspaceController
+from controllers.workpiece_controller import WorkpieceController
 from models.app_session_file import AppSessionFile, ViewerDisplayState
 from models.collision_scene_model import CollisionSceneModel
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
+from models.workpiece_model import WorkpieceModel
 from views.main_window import MainWindow
 
 
@@ -34,6 +36,7 @@ class MainController(QObject):
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
         external_axes_model: ExternalAxesModel,
+        workpiece_model: WorkpieceModel,
         main_window: MainWindow,
         startup_options: dict | None = None,
         trajectory_benchmark_verbose: bool = False,
@@ -46,6 +49,7 @@ class MainController(QObject):
         self.tool_model = tool_model
         self.workspace_model = workspace_model
         self.external_axes_model = external_axes_model
+        self.workpiece_model = workpiece_model
         self.main_window = main_window
         self.startup_options = dict(startup_options or {})
         self.project_root = os.getcwd()
@@ -116,6 +120,13 @@ class MainController(QObject):
             external_axes_model,
             workspace_model,
             main_window.get_external_axes_view(),
+            self.viewer3d_controller,
+        )
+        self.workpiece_controller = WorkpieceController(
+            workpiece_model,
+            workspace_model,
+            external_axes_model,
+            main_window.get_workpiece_view(),
             self.viewer3d_controller,
         )
         self.machining_controller = MachiningController(
@@ -211,6 +222,11 @@ class MainController(QObject):
             finally:
                 self.viewer3d_controller.end_loading_feedback()
 
+        # Restauration de la pièce
+        workpiece_data = startup.get("workpiece_data") or {}
+        if workpiece_data:
+            self.workpiece_controller.restore_state(workpiece_data)
+
         self._startup_completed = True
         self._schedule_session_save()
 
@@ -221,6 +237,7 @@ class MainController(QObject):
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
             viewer_state=self.main_window.get_viewer3d().get_display_state(),
             external_axes_data=self.external_axes_controller.get_serializable_state(),
+            workpiece_data=self.workpiece_controller.get_serializable_state(),
         )
 
         session_dir = os.path.dirname(self.session_path)
@@ -267,6 +284,7 @@ class MainController(QObject):
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),
             "viewer_state": session.viewer_state if session is not None else None,
             "external_axes_data": session.external_axes_data if session is not None else {},
+            "workpiece_data": session.workpiece_data if session is not None else {},
         }
 
     def _session_tool_profile_path(self) -> str:

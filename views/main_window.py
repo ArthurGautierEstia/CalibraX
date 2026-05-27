@@ -16,6 +16,7 @@ from views.robot_view import RobotView
 from views.tool_view import ToolView
 from views.trajectory_view import TrajectoryView
 from views.workspace_view import WorkspaceView
+from views.workpiece_view import WorkpieceView
 from widgets.viewer_3d_widget import Viewer3DWidget
 
 
@@ -33,6 +34,7 @@ class MainWindow(QMainWindow):
     ROBOT_TAB_INDEX = 0
     TOOL_TAB_INDEX = 1
     EXTERNAL_AXES_TAB_INDEX = 2
+    WORKPIECE_TAB_INDEX = 3
 
     def __init__(
         self,
@@ -55,6 +57,7 @@ class MainWindow(QMainWindow):
         self.robot_view = RobotView()
         self.tool_view = ToolView()
         self.external_axes_view = ExternalAxesView()
+        self.workpiece_view = WorkpieceView()
         self.workspace_view = WorkspaceView()
         self.calibration_view = CalibrationView()
         self.joint_control_view = JointControlView()
@@ -80,6 +83,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.robot_view, "Robot")
         self.tabs.addTab(self.tool_view, "Tool")
         self.tabs.addTab(self.external_axes_view, "Axes externes")
+        self.tabs.addTab(self.workpiece_view, "Pièce")
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.mgi_view, "MGI")
@@ -204,6 +208,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue des axes externes."""
         return self.external_axes_view
 
+    def get_workpiece_view(self) -> WorkpieceView:
+        """Retourne la vue pièce."""
+        return self.workpiece_view
+
     def get_workspace_view(self) -> WorkspaceView:
         """Retourne la vue workspace."""
         return self.workspace_view
@@ -245,6 +253,7 @@ class MainWindow(QMainWindow):
         always_enabled_views = (
             self.tool_view,
             self.external_axes_view,
+            self.workpiece_view,
             self.calibration_view,
         )
         configuration_required_views = (

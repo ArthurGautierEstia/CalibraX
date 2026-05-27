@@ -19,7 +19,6 @@ class ExternalAxis:
                     · base_pose_in_parent
                     · axis_frame_in_base
                     · ∏_{i=0..N-1} [ joint_i.link_pose_matrix · joint_i.joint_transform() ]
-                    · mount_pose_in_end
     """
 
     def __init__(
@@ -33,7 +32,6 @@ class ExternalAxis:
         base_pose_in_parent: Pose6 | None = None,
         axis_frame_in_base: Pose6 | None = None,
         joints: list[ExternalAxisJoint] | None = None,
-        mount_pose_in_end: Pose6 | None = None,
     ) -> None:
         self.id: str = str(axis_id) if axis_id else str(uuid.uuid4())
         self.name: str = str(name).strip() or "Axe externe"
@@ -44,7 +42,6 @@ class ExternalAxis:
         self.base_pose_in_parent: Pose6 = (base_pose_in_parent or Pose6.zeros()).copy()
         self.axis_frame_in_base: Pose6 = (axis_frame_in_base or Pose6.zeros()).copy()
         self.joints: list[ExternalAxisJoint] = [j.copy() for j in (joints or [])]
-        self.mount_pose_in_end: Pose6 = (mount_pose_in_end or Pose6.zeros()).copy()
 
     # ------------------------------------------------------------------
     # Kinematic computation
@@ -68,7 +65,7 @@ class ExternalAxis:
             T = T @ joint.link_pose_matrix() @ joint.joint_transform()
             joint_matrices.append(T.copy())
 
-        T_world_end = T @ pose_zyx_to_matrix(self.mount_pose_in_end)
+        T_world_end = T
         return {
             "base": T_world_base,
             "joint_links": joint_matrices,
@@ -134,7 +131,6 @@ class ExternalAxis:
             base_pose_in_parent=self.base_pose_in_parent,
             axis_frame_in_base=self.axis_frame_in_base,
             joints=[j.copy() for j in self.joints],
-            mount_pose_in_end=self.mount_pose_in_end,
         )
 
     def to_dict(self) -> dict:
@@ -148,7 +144,6 @@ class ExternalAxis:
             "base_pose_in_parent": self.base_pose_in_parent.to_list(),
             "axis_frame_in_base": self.axis_frame_in_base.to_list(),
             "joints": [j.to_dict() for j in self.joints],
-            "mount_pose_in_end": self.mount_pose_in_end.to_list(),
         }
 
     @classmethod
@@ -164,7 +159,6 @@ class ExternalAxis:
             base_pose_in_parent=Pose6(*[float(v) for v in data.get("base_pose_in_parent", [0]*6)]),
             axis_frame_in_base=Pose6(*[float(v) for v in data.get("axis_frame_in_base", [0]*6)]),
             joints=[ExternalAxisJoint.from_dict(j) for j in data.get("joints", [])],
-            mount_pose_in_end=Pose6(*[float(v) for v in data.get("mount_pose_in_end", [0]*6)]),
         )
 
     def __eq__(self, other: object) -> bool:

@@ -1,6 +1,7 @@
 """Widget de configuration d'un axe externe – interface simplifiée."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +38,25 @@ _AXIS_CHOICES = [
 ]
 
 _SLIDER_STEPS = 1000
+
+
+def _normalize_project_path(path: str) -> str:
+    absolute_path = os.path.abspath(path)
+    project_root = os.path.abspath(os.getcwd())
+    try:
+        common_path = os.path.commonpath([project_root, absolute_path])
+    except ValueError:
+        return absolute_path
+    if common_path != project_root:
+        return absolute_path
+    try:
+        relative_path = os.path.relpath(absolute_path, project_root)
+    except ValueError:
+        return absolute_path
+    relative_path = relative_path.replace("\\", "/")
+    if relative_path == ".":
+        return "./"
+    return f"./{relative_path}" if not relative_path.startswith(".") else relative_path
 
 
 def _axis_to_combo_index(axis: tuple[float, float, float]) -> int:
@@ -260,7 +280,7 @@ class _JointSectionWidget(QGroupBox):
             "STL files (*.stl);;All files (*)"
         )
         if path:
-            self._cad_line.setText(path)
+            self._cad_line.setText(_normalize_project_path(path))
             self._emit()
 
     def _pick_cad_color(self) -> None:
@@ -437,14 +457,6 @@ class ExternalAxisConfigWidget(QScrollArea):
         self._btn_add_joint.clicked.connect(self._add_second_joint)
         self._main_layout.addWidget(self._btn_add_joint)
 
-        # ── Point de montage robot ────────────────────────────────────
-        mount_box = QGroupBox("Point de montage (robot / pièce)")
-        mount_layout = QVBoxLayout(mount_box)
-        self._mount_pose_editor = Pose6EditorWidget("Pose dans le dernier joint")
-        self._mount_pose_editor.pose_changed.connect(self._emit)
-        mount_layout.addWidget(self._mount_pose_editor)
-        self._main_layout.addWidget(mount_box)
-
         self._main_layout.addStretch()
 
     # ------------------------------------------------------------------
@@ -538,7 +550,7 @@ class ExternalAxisConfigWidget(QScrollArea):
             "STL files (*.stl);;All files (*)"
         )
         if path:
-            self._base_cad_line.setText(path)
+            self._base_cad_line.setText(_normalize_project_path(path))
             self._emit()
 
     def _pick_base_color(self) -> None:
@@ -570,7 +582,6 @@ class ExternalAxisConfigWidget(QScrollArea):
             base_pose_in_parent=self._base_pose_editor.get_pose(),
             axis_frame_in_base=axis_frame,
             joints=joints,
-            mount_pose_in_end=self._mount_pose_editor.get_pose(),
         )
 
     def set_axis(self, axis: ExternalAxis, other_axes: list[ExternalAxis]) -> None:
@@ -600,8 +611,6 @@ class ExternalAxisConfigWidget(QScrollArea):
         self._base_pose_editor.set_pose(axis.base_pose_in_parent)
 
         self._rebuild_joint_sections(axis.joints, axis.axis_frame_in_base)
-
-        self._mount_pose_editor.set_pose(axis.mount_pose_in_end)
 
         self._building = False
 

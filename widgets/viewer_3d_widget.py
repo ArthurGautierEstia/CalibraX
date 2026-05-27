@@ -955,6 +955,10 @@ class Viewer3DWidget(QWidget):
         self._ext_axis_frames_visible: dict[str, bool] = {}  # visibilité repères par axis_id
         self._last_external_axes_snapshot: list = []  # snapshot pour restauration après clear
         self._last_external_world_transforms: dict = {}  # transforms correspondants
+        # Pièce
+        self._workpiece_snapshot: dict | None = None  # {cad_model, T_world, color, frame_T_world}
+        self._workpiece_mesh_item: gl.GLMeshItem | None = None
+        self._workpiece_frame_items: list = []
 
         self._workspace_element_items: list[gl.GLMeshItem] = []
         self._workspace_tcp_zone_items: list[gl.GLMeshItem] = []
@@ -2742,6 +2746,8 @@ class Viewer3DWidget(QWidget):
         self._external_axes_link_keys = []
         self._external_axes_cad_offsets = []
         self._external_axes_frame_items = []
+        self._workpiece_mesh_item = None
+        self._workpiece_frame_items = []
 
     def set_trajectory_path_segments(
         self,
@@ -3634,6 +3640,61 @@ class Viewer3DWidget(QWidget):
         self._emit_display_state_changed()
 
     # ------------------------------------------------------------------
+    # Pièce
+    # ------------------------------------------------------------------
+
+    WORKPIECE_FRAME_LENGTH = 100
+
+    def reload_workpiece(
+        self,
+        cad_model: str,
+        T_world: "np.ndarray",
+        color: tuple,
+        frame_T_world: "np.ndarray",
+    ) -> None:
+        """Recharge la CAO pièce et son repère dans le viewer."""
+        self._workpiece_snapshot = {
+            "cad_model": cad_model,
+            "T_world": T_world.copy(),
+            "color": color,
+            "frame_T_world": frame_T_world.copy(),
+        }
+        self._render_workpiece()
+
+    def _restore_workpiece(self) -> None:
+        """Restaure la pièce après un clear_viewer()."""
+        if self._workpiece_snapshot:
+            self._render_workpiece()
+
+    def _render_workpiece(self) -> None:
+        from PyQt6 import QtGui
+        if self._workpiece_mesh_item is not None:
+            try:
+                self.viewer.removeItem(self._workpiece_mesh_item)
+            except Exception:
+                pass
+            self._workpiece_mesh_item = None
+        self._clear_viewer_items(self._workpiece_frame_items)
+        self._workpiece_frame_items = []
+
+        if self._workpiece_snapshot is None:
+            return
+        snap = self._workpiece_snapshot
+        cad_model = snap["cad_model"]
+        T_world = snap["T_world"]
+        color = snap["color"]
+        frame_T_world = snap["frame_T_world"]
+
+        if cad_model:
+            item = self.load_robot_mesh(cad_model, T_world, color)
+            if item is not None:
+                self.viewer.addItem(item)
+                self._workpiece_mesh_item = item
+
+        L = self.WORKPIECE_FRAME_LENGTH
+        self._workpiece_frame_items.extend(self.draw_frame(frame_T_world, longueur=L))
+
+    # ------------------------------------------------------------------
 
     def _render_workspace_models(self) -> None:
         self._clear_viewer_items(self._workspace_element_items)
@@ -3769,6 +3830,7 @@ class Viewer3DWidget(QWidget):
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
         self._restore_external_axes()
+        self._restore_workpiece()
 
         # 2. Repères après tous les meshes (additive → toujours visibles par dessus)
         self.draw_all_frames(self.last_dh_matrices)
