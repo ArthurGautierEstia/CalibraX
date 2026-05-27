@@ -16,6 +16,7 @@ class WorkpieceView(QWidget):
 
     save_requested = pyqtSignal()
     load_requested = pyqtSignal()
+    clear_piece_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -58,6 +59,11 @@ class WorkpieceView(QWidget):
         piece_group = QGroupBox("Pièce")
         piece_group_layout = QVBoxLayout(piece_group)
         piece_group_layout.setContentsMargins(4, 4, 4, 4)
+
+        btn_clear = QPushButton("🗑 Effacer la pièce")
+        btn_clear.setToolTip("Supprime la CAO et remet la pose à zéro")
+        btn_clear.clicked.connect(self.clear_piece_requested)
+        piece_group_layout.addWidget(btn_clear)
 
         piece_scroll = QScrollArea()
         piece_scroll.setWidgetResizable(True)

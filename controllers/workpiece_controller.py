@@ -72,9 +72,10 @@ class WorkpieceController(QObject):
         self.external_axes_model.mount_topology_changed.connect(self._refresh_viewer)
         self.workspace_model.workspace_changed.connect(self._on_context_changed)
 
-        # Boutons save/load
+        # Boutons save/load/clear
         self.view.save_requested.connect(self._on_save)
         self.view.load_requested.connect(self._on_load)
+        self.view.clear_piece_requested.connect(self._on_clear_piece)
 
     # ------------------------------------------------------------------
     # Réactions widget → modèle
@@ -244,6 +245,11 @@ class WorkpieceController(QObject):
     # ------------------------------------------------------------------
     # Sauvegarde / chargement
     # ------------------------------------------------------------------
+
+    def _on_clear_piece(self) -> None:
+        self.workpiece_model.from_dict({})
+        self._piece_widget.set_data(self.workpiece_model)
+        self._refresh_viewer()
 
     def _on_save(self) -> None:
         os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
