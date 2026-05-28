@@ -165,7 +165,7 @@ class ProgramController:
         self.config_widget.motionModeChanged.connect(self._on_motion_mode_changed)
         self.config_widget.targetModeChanged.connect(self._on_target_mode_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
-        self.workspace_model.workspace_changed.connect(self._on_external_chain_changed)
+        self.workspace_model.workspace_changed.connect(self._refresh_view)
         self.external_axes_model.axes_values_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.mount_topology_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.axes_changed.connect(self._on_external_chain_changed)
@@ -1474,13 +1474,13 @@ class ProgramController:
 
     def _on_external_chain_changed(self, *_args) -> None:
         if self.current_program is None:
-            self._refresh_view()
             return
-        if self._base_source == ProgramBaseSource.WORKPIECE:
-            new_base = self._compute_effective_base()
-            self._update_program_base_pose(new_base)
+        if self._base_source != ProgramBaseSource.WORKPIECE:
+            return
+        new_base = self._compute_effective_base()
+        self._update_program_base_preview(new_base)
+        if not self._simulation_dirty:
             self._mark_simulation_dirty()
-        self._refresh_view()
 
     def get_base_config_state(self) -> dict:
         return {

@@ -9,19 +9,8 @@ import numpy as np
 
 from models.external_axes_model import ExternalAxesModel
 from models.types.pose6 import Pose6
+from models.workspace_model import WorkspaceModel
 from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
-
-
-def get_effective_robot_base_in_world(workspace_model, external_axes_model: ExternalAxesModel) -> np.ndarray:
-    """Retourne la matrice 4x4 de la base robot dans le repère monde.
-
-    Honore l'override d'axe externe (rail qui porte le robot) si présent ;
-    sinon retombe sur la pose nominale du workspace.
-    """
-    override = external_axes_model.get_robot_world_base_matrix()
-    if override is not None:
-        return np.array(override, dtype=float)
-    return np.array(workspace_model.get_robot_base_transform_world().matrix, dtype=float)
 
 
 def world_robot_base(
@@ -35,8 +24,21 @@ def world_robot_base(
     """
     override = external_axes_model.get_robot_world_base_matrix()
     if override is not None:
-        return override
-    return workspace_robot_base_matrix.copy()
+        return np.array(override, dtype=float)
+    return np.array(workspace_robot_base_matrix, dtype=float)
+
+
+def get_effective_robot_base_in_world(
+    workspace_model: WorkspaceModel,
+    external_axes_model: ExternalAxesModel,
+) -> np.ndarray:
+    """Retourne la matrice 4x4 de la base robot dans le repère monde.
+
+    Honore l'override d'axe externe (rail qui porte le robot) si présent ;
+    sinon retombe sur la pose nominale du workspace.
+    """
+    nominal = np.array(workspace_model.get_robot_base_transform_world().matrix, dtype=float)
+    return world_robot_base(external_axes_model, nominal)
 
 
 def world_workpiece(
