@@ -3502,7 +3502,12 @@ class Viewer3DWidget(QWidget):
         return transform_matrix_base_to_world(transform, self._robot_base_transform_world)
 
     def _transform_robot_points_to_world(self, points_xyz: np.ndarray) -> np.ndarray:
-        return transform_points_base_to_world(points_xyz, self._robot_base_transform_world)
+        pts = np.asarray(points_xyz, dtype=float)
+        if pts.size == 0:
+            return pts
+        if self._external_robot_base_override is not None:
+            return pts @ self._external_robot_base_override[:3, :3].T + self._external_robot_base_override[:3, 3]
+        return transform_points_base_to_world(pts, self._robot_base_transform_world)
 
     # ------------------------------------------------------------------
     # Axes externes
@@ -3840,12 +3845,12 @@ class Viewer3DWidget(QWidget):
             self._workspace_element_items.append(item)
 
         if self._program_frame_pose_base is not None:
-            self._workspace_frame_matrices.append(
-                transform_matrix_base_to_world(
-                    pose_to_matrix(self._program_frame_pose_base),
-                    self._robot_base_transform_world,
-                )
-            )
+            T_program_base = pose_to_matrix(self._program_frame_pose_base)
+            if self._external_robot_base_override is not None:
+                program_frame_world = self._external_robot_base_override @ T_program_base
+            else:
+                program_frame_world = transform_matrix_base_to_world(T_program_base, self._robot_base_transform_world)
+            self._workspace_frame_matrices.append(program_frame_world)
             self._workspace_frame_labels.append(self._program_frame_label)
 
     def _render_workspace_zones(self) -> None:

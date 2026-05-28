@@ -5,7 +5,7 @@
         "y": 327.69,
         "z": 227.4,
         "a": 0.0,
-        "b": 0.0,
+        "b": -90.0,
         "c": -90.0
     },
     "tool_cad_model": "./default_data/tools_stl/Broche_70kW.stl",

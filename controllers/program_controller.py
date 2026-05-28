@@ -22,6 +22,7 @@ from models.robot_program import (
     RobotProgramMotionMode,
 )
 
+from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.robot_program import ProgramBaseSource
 from models.tool_model import ToolModel
@@ -76,6 +77,7 @@ class ProgramController:
         robot_model: RobotModel,
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
+        external_axes_model: ExternalAxesModel,
         workpiece_controller,
         program_view: ProgramView,
         viewer3d_controller: Viewer3DController,
@@ -84,6 +86,7 @@ class ProgramController:
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self.external_axes_model = external_axes_model
         self.workpiece_controller = workpiece_controller
         self.program_view = program_view
         self.viewer3d_controller = viewer3d_controller
@@ -162,7 +165,10 @@ class ProgramController:
         self.config_widget.motionModeChanged.connect(self._on_motion_mode_changed)
         self.config_widget.targetModeChanged.connect(self._on_target_mode_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
-        self.workspace_model.workspace_changed.connect(self._refresh_view)
+        self.workspace_model.workspace_changed.connect(self._on_external_chain_changed)
+        self.external_axes_model.axes_values_changed.connect(self._on_external_chain_changed)
+        self.external_axes_model.mount_topology_changed.connect(self._on_external_chain_changed)
+        self.external_axes_model.axes_changed.connect(self._on_external_chain_changed)
         self.workpiece_controller.workpiece_model.workpiece_changed.connect(self._on_workpiece_changed)
 
 
@@ -318,6 +324,10 @@ class ProgramController:
             self._compensated_segments_cache = []
             self._refresh_view()
             return
+
+        if self._base_source == ProgramBaseSource.WORKPIECE:
+            effective = self._compute_effective_base()
+            self._update_program_base_pose(effective)
 
         simulation_program = self._get_simulation_program()
         if simulation_program is None:
@@ -1460,6 +1470,17 @@ class ProgramController:
             return
         effective = self._compute_effective_base()
         self._update_program_base_preview(effective)
+        self._mark_simulation_dirty()
+
+    def _on_external_chain_changed(self, *_args) -> None:
+        if self.current_program is None:
+            self._refresh_view()
+            return
+        if self._base_source == ProgramBaseSource.WORKPIECE:
+            new_base = self._compute_effective_base()
+            self._update_program_base_pose(new_base)
+            self._mark_simulation_dirty()
+        self._refresh_view()
 
     def get_base_config_state(self) -> dict:
         return {
@@ -1854,14 +1875,16 @@ class ProgramController:
             if motion.target.target_type == RobotProgramTargetType.CARTESIAN:
                 new_target = motion.target
             else:
-                # JOINT -> CARTESIAN via FK
+                # JOINT -> CARTESIAN via FK, résultat converti en repère programme
                 fk_result = self.robot_model.compute_fk_joints(
                     motion.target.joint_angles.to_list(), tool=motion_tool
                 )
                 if fk_result is None:
                     new_motions.append(motion)
                     continue
-                new_pose = fk_result.dh_pose
+                new_pose = self.program_simulator._pose_from_robot_base_to_program_base(
+                    fk_result.dh_pose, motion.base_pose
+                )
                 new_target = RobotProgramTarget(
                     target_type=RobotProgramTargetType.CARTESIAN,
                     cartesian_pose=new_pose
@@ -1877,9 +1900,12 @@ class ProgramController:
                         motion.via_target.joint_angles.to_list(), tool=motion_tool
                     )
                     if via_fk_result is not None:
+                        via_pose = self.program_simulator._pose_from_robot_base_to_program_base(
+                            via_fk_result.dh_pose, motion.base_pose
+                        )
                         new_via_target = RobotProgramTarget(
                             target_type=RobotProgramTargetType.CARTESIAN,
-                            cartesian_pose=via_fk_result.dh_pose
+                            cartesian_pose=via_pose
                         )
 
             # Conserver le mode original pour les cibles cartesiennes

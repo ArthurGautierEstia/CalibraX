@@ -130,6 +130,7 @@ class MainController(QObject):
             robot_model,
             tool_model,
             workspace_model,
+            external_axes_model,
             self.workpiece_controller,
             main_window.get_program_view(),
             self.viewer3d_controller,
