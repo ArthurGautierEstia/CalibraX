@@ -3614,6 +3614,9 @@ class Viewer3DWidget(QWidget):
         """Met à jour les positions des CAO ET redessine les repères axes externes."""
         from PyQt6 import QtGui
 
+        # Garder le snapshot à jour pour la restauration après clear_viewer()
+        self._last_external_world_transforms = dict(world_transforms)
+
         # ── Mise à jour des meshes ─────────────────────────────────────
         offsets = self._external_axes_cad_offsets
         for idx, (mesh_item, (axis_id, joint_index)) in enumerate(

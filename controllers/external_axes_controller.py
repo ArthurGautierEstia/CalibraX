@@ -1,6 +1,7 @@
 """Contrôleur pour l'onglet Axes externes."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,27 @@ from widgets.external_axes_view.external_axes_panel_widget import ExternalAxesPa
 _DEFAULT_CONFIG_DIR = str(
     Path(__file__).parent.parent / "default_data" / "external_axes_configs"
 )
+
+
+def _normalize_project_path(path: str) -> str:
+    if not path:
+        return path
+    absolute_path = os.path.abspath(path)
+    project_root = os.path.abspath(os.getcwd())
+    try:
+        common_path = os.path.commonpath([project_root, absolute_path])
+    except ValueError:
+        return path
+    if common_path != project_root:
+        return path
+    try:
+        relative_path = os.path.relpath(absolute_path, project_root)
+    except ValueError:
+        return path
+    relative_path = relative_path.replace("\\", "/")
+    if relative_path == ".":
+        return "./"
+    return f"./{relative_path}" if not relative_path.startswith(".") else relative_path
 
 
 class ExternalAxesController(QObject):
@@ -153,7 +175,12 @@ class ExternalAxesController(QObject):
     # ------------------------------------------------------------------
 
     def get_serializable_state(self) -> dict:
-        return self.model.to_dict()
+        data = self.model.to_dict()
+        for axis_data in data.get("axes", []):
+            axis_data["base_cad_model"] = _normalize_project_path(axis_data.get("base_cad_model", ""))
+            for joint_data in axis_data.get("joints", []):
+                joint_data["cad_model"] = _normalize_project_path(joint_data.get("cad_model", ""))
+        return data
 
     def restore_state(self, data: dict) -> None:
         if data:
