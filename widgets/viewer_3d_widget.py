@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint, QPointF
-from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QLinearGradient, QPolygonF, QRadialGradient, QPalette
+from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygonF, QPalette
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import shaders as gl_shaders
 from pyqtgraph.Qt import QtGui
@@ -236,31 +236,106 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self.paint(region=region, viewport=region)
             return
 
-        GL.glDepthMask(GL.GL_TRUE)
-        GL.glClearColor(0.0, 0.0, 0.0, 1.0)
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
-
-        painter = QPainter(self)
-        width = float(max(1, self.width()))
-        height = float(max(1, self.height()))
-        if self._background_gradient_direction == "horizontal":
-            gradient = QLinearGradient(0.0, 0.0, width, 0.0)
-        elif self._background_gradient_direction == "diagonal":
-            gradient = QLinearGradient(0.0, 0.0, width, height)
-        elif self._background_gradient_direction == "radial":
-            gradient = QRadialGradient(width * 0.5, height * 0.5, max(width, height) * 0.65)
-        else:
-            gradient = QLinearGradient(0.0, 0.0, 0.0, height)
-        gradient.setColorAt(0.0, self._background_primary_color)
-        gradient.setColorAt(1.0, self._background_secondary_color)
-        painter.fillRect(self.rect(), gradient)
-        painter.end()
-
+        # Le dégradé est dessiné en OpenGL brut (quad plein écran), PAS via QPainter.
+        # GLViewWidget est un QOpenGLWidget : mélanger QPainter et GL natif dans paintGL
+        # est fragile (le compositeur affiche un buffer périmé → le fond semble basculer
+        # entre uni et dégradé tant qu'un clic ne force pas un repaint complet). En passant
+        # par le même pipeline GL que la scène 3D, le fond est composé de façon fiable.
         GL.glDepthMask(GL.GL_TRUE)
         GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
+        self._paint_gradient_background_gl(GL)
+
+        GL.glDepthMask(GL.GL_TRUE)
         self.setProjection(region, region)
         self.setModelview()
         self.drawItemTree(useItemNames=False)
+
+    def _paint_gradient_background_gl(self, GL) -> None:
+        """Remplit le buffer couleur avec le dégradé de fond, en pipeline fixe (GL_QUADS /
+        TRIANGLE_FAN). N'écrit pas la profondeur : la scène 3D est dessinée par-dessus."""
+        import math
+
+        primary = self._background_primary_color.getRgbF()
+        secondary = self._background_secondary_color.getRgbF()
+        direction = self._background_gradient_direction
+
+        GL.glUseProgram(0)
+        GL.glDisable(GL.GL_DEPTH_TEST)
+        GL.glDepthMask(GL.GL_FALSE)
+        GL.glDisable(GL.GL_BLEND)
+        GL.glDisable(GL.GL_CULL_FACE)
+        GL.glDisable(GL.GL_TEXTURE_2D)
+        GL.glMatrixMode(GL.GL_PROJECTION)
+        GL.glPushMatrix()
+        GL.glLoadIdentity()
+        GL.glMatrixMode(GL.GL_MODELVIEW)
+        GL.glPushMatrix()
+        GL.glLoadIdentity()
+
+        def lerp(t: float) -> tuple[float, float, float]:
+            return (
+                primary[0] + (secondary[0] - primary[0]) * t,
+                primary[1] + (secondary[1] - primary[1]) * t,
+                primary[2] + (secondary[2] - primary[2]) * t,
+            )
+
+        if direction == "radial":
+            width = max(1.0, float(self.width()))
+            height = max(1.0, float(self.height()))
+            center_x, center_y = width * 0.5, height * 0.5
+            radius = max(width, height) * 0.65
+            samples_per_edge = 24
+            edges = (
+                ((0.0, 0.0), (width, 0.0)),
+                ((width, 0.0), (width, height)),
+                ((width, height), (0.0, height)),
+                ((0.0, height), (0.0, 0.0)),
+            )
+            perimeter: list[tuple[float, float]] = []
+            for (x0, y0), (x1, y1) in edges:
+                for i in range(samples_per_edge):
+                    f = i / samples_per_edge
+                    perimeter.append((x0 + (x1 - x0) * f, y0 + (y1 - y0) * f))
+            perimeter.append(perimeter[0])
+
+            GL.glBegin(GL.GL_TRIANGLE_FAN)
+            GL.glColor4f(primary[0], primary[1], primary[2], 1.0)
+            GL.glVertex2f(0.0, 0.0)  # centre en NDC
+            for px, py in perimeter:
+                t = min(1.0, math.hypot(px - center_x, py - center_y) / radius)
+                col = lerp(t)
+                GL.glColor4f(col[0], col[1], col[2], 1.0)
+                GL.glVertex2f(2.0 * px / width - 1.0, 1.0 - 2.0 * py / height)
+            GL.glEnd()
+        else:
+            # Couleurs des 4 coins en NDC : BL(-1,-1), BR(1,-1), TR(1,1), TL(-1,1)
+            if direction == "horizontal":
+                # gauche = primaire, droite = secondaire
+                bl, br, tr, tl = primary, secondary, secondary, primary
+            elif direction == "diagonal":
+                # haut-gauche = primaire, bas-droite = secondaire, autres coins = milieu
+                mid = lerp(0.5)
+                bl, br, tr, tl = mid, secondary, mid, primary
+            else:  # vertical
+                # haut = primaire, bas = secondaire
+                bl, br, tr, tl = secondary, secondary, primary, primary
+
+            GL.glBegin(GL.GL_QUADS)
+            GL.glColor4f(bl[0], bl[1], bl[2], 1.0)
+            GL.glVertex2f(-1.0, -1.0)
+            GL.glColor4f(br[0], br[1], br[2], 1.0)
+            GL.glVertex2f(1.0, -1.0)
+            GL.glColor4f(tr[0], tr[1], tr[2], 1.0)
+            GL.glVertex2f(1.0, 1.0)
+            GL.glColor4f(tl[0], tl[1], tl[2], 1.0)
+            GL.glVertex2f(-1.0, 1.0)
+            GL.glEnd()
+
+        GL.glMatrixMode(GL.GL_PROJECTION)
+        GL.glPopMatrix()
+        GL.glMatrixMode(GL.GL_MODELVIEW)
+        GL.glPopMatrix()
+        GL.glDepthMask(GL.GL_TRUE)
 
     def _project_world_to_screen(self, world_point: np.ndarray) -> tuple[float, float] | None:
         """Project a 3D world point to 2D screen logical-pixel coordinates."""
