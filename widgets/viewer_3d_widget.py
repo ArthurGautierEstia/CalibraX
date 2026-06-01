@@ -2831,6 +2831,10 @@ class Viewer3DWidget(QWidget):
         self._trajectory_path_segments = None
         self._render_trajectory_overlay()
 
+    def get_accent_color_rgba(self) -> tuple[float, float, float, float]:
+        c = self._viewer_accent_color
+        return (c.redF(), c.greenF(), c.blueF(), 1.0)
+
     def set_trajectory_keypoints(
         self,
         points_xyz: list[list[float]],

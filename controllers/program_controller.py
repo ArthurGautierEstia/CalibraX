@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from controllers.viewer3d_controller import Viewer3DController
@@ -66,7 +67,6 @@ class ProgramController:
 
 
 
-    NOMINAL_COLOR: tuple[float, float, float, float] = (1.0, 0.55, 0.0, 1.0)
     MEASURED_COLOR: tuple[float, float, float, float] = (0.0, 0.35, 1.0, 1.0)
     COMPENSATED_COLOR: tuple[float, float, float, float] = (0.0, 0.85, 0.35, 1.0)
 
@@ -123,6 +123,7 @@ class ProgramController:
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._compensated_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._current_time_s = 0.0
+        self._last_split_sample_index: int = -1
         self._playback_sample_times: list[float] = []
         self._playback_timer = QTimer()
         self._playback_timer.setSingleShot(False)
@@ -322,6 +323,7 @@ class ProgramController:
             self._nominal_segments_cache = []
             self._measured_segments_cache = []
             self._compensated_segments_cache = []
+            self._last_split_sample_index = -1
             self._refresh_view()
             return
 
@@ -390,7 +392,7 @@ class ProgramController:
 
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             self._get_samples_for_modes("THEORETICAL", active_motion_mode),
-            self.NOMINAL_COLOR,
+            self._get_nominal_color(),
             self.MEASURED_COLOR,
         )
         self._compensated_segments_cache = []
@@ -513,17 +515,37 @@ class ProgramController:
             return
 
         segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
-        if self.actions_widget.is_theoretical_visible():
-            segments.extend(self._nominal_segments_cache)
-        if self.actions_widget.is_measured_visible():
-            segments.extend(self._measured_segments_cache)
+
+        show_split = self._current_time_s > 1e-9
+        if show_split and (self.actions_widget.is_theoretical_visible() or self.actions_widget.is_measured_visible()):
+            nominal_color = self._get_nominal_color()
+            done_nominal = self._compute_done_color(nominal_color)
+            done_measured = self._compute_done_color(self.MEASURED_COLOR)
+            motion_mode = self.config_widget.get_motion_mode()
+            theoretical_samples = self._get_samples_for_modes("THEORETICAL", motion_mode)
+            split_nom, split_meas = self._build_nominal_and_measured_segments(
+                theoretical_samples,
+                nominal_color,
+                self.MEASURED_COLOR,
+                done_nominal_color=done_nominal,
+                done_measured_color=done_measured,
+                split_time_s=self._current_time_s,
+            )
+            if self.actions_widget.is_theoretical_visible():
+                segments.extend(split_nom)
+            if self.actions_widget.is_measured_visible():
+                segments.extend(split_meas)
+        else:
+            if self.actions_widget.is_theoretical_visible():
+                segments.extend(self._nominal_segments_cache)
+            if self.actions_widget.is_measured_visible():
+                segments.extend(self._measured_segments_cache)
 
         if self._compensation_computed and self.actions_widget.is_compensated_visible():
             segments.extend(self._compensated_segments_cache)
 
         if segments:
             self.viewer3d_controller.set_trajectory_path_segments(self._downsample_segments(segments))
-
         else:
             self.viewer3d_controller.clear_trajectory_path()
 
@@ -662,6 +684,11 @@ class ProgramController:
         sample_index = self._sample_index_at_time(self._current_time_s)
         sample = samples[sample_index]
         self.robot_model.set_joints(sample.joints_deg.to_list())
+        # Met à jour la portion "réalisée" si l'index de split a changé
+        new_split_index = sample_index if self._current_time_s > 1e-9 else -1
+        if new_split_index != self._last_split_sample_index:
+            self._last_split_sample_index = new_split_index
+            self._refresh_viewer_segments()
 
 
 
@@ -1631,6 +1658,7 @@ class ProgramController:
         self._nominal_segments_cache = []
         self._measured_segments_cache = []
         self._compensated_segments_cache = []
+        self._last_split_sample_index = -1
         self.actions_widget.set_compensated_checkbox_enabled(False)
         self.actions_widget.set_simulation_enabled(True)
         self.actions_widget.set_compensation_enabled(False)
@@ -2025,7 +2053,7 @@ class ProgramController:
 
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             self._get_samples_for_modes("THEORETICAL", motion_mode),
-            self.NOMINAL_COLOR,
+            self._get_nominal_color(),
             self.MEASURED_COLOR,
         )
         self._compensated_segments_cache = self._build_segments(
@@ -2122,11 +2150,25 @@ class ProgramController:
         return self._build_display_keypoints_for_mode(motion_mode)
 
 
+    def _get_nominal_color(self) -> tuple[float, float, float, float]:
+        return self.viewer3d_controller.get_accent_color_rgba()
+
+    @staticmethod
+    def _compute_done_color(accent: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        c = QColor.fromRgbF(accent[0], accent[1], accent[2])
+        h, s, v, _ = c.getHsvF()
+        # Même teinte, très désaturé et plus clair — effet "réalisé/passé"
+        done = QColor.fromHsvF(h, s * 0.25, min(1.0, v * 0.55 + 0.55))
+        return (done.redF(), done.greenF(), done.blueF(), 1.0)
+
     @staticmethod
     def _build_nominal_and_measured_segments(
         samples: list[ProgramSimulationSample],
         nominal_color: tuple[float, float, float, float],
         measured_color: tuple[float, float, float, float],
+        done_nominal_color: tuple[float, float, float, float] | None = None,
+        done_measured_color: tuple[float, float, float, float] | None = None,
+        split_time_s: float | None = None,
     ) -> tuple[
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
@@ -2134,9 +2176,25 @@ class ProgramController:
         nominal_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         measured_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
 
+        use_split = (split_time_s is not None
+                     and done_nominal_color is not None
+                     and done_measured_color is not None)
+
         nom_points: list[list[float]] = []
         meas_points: list[list[float]] = []
         current_key: tuple[str, int] | None = None
+        current_nom_is_done: bool = False
+        current_meas_is_done: bool = False
+
+        def _flush_nom(is_done: bool) -> None:
+            if len(nom_points) >= 2:
+                color = done_nominal_color if is_done else nominal_color
+                nominal_segments.append((nom_points[:], color))
+
+        def _flush_meas(is_done: bool) -> None:
+            if len(meas_points) >= 2:
+                color = done_measured_color if is_done else measured_color
+                measured_segments.append((meas_points[:], color))
 
         for sample in samples:
             nom_pose = sample.nominal_pose_base
@@ -2145,26 +2203,43 @@ class ProgramController:
                 continue
 
             motion_key = (sample.motion_mode.value, int(sample.source_line))
+            sample_is_done = use_split and float(sample.time_s) <= split_time_s
 
-            if current_key is not None and motion_key != current_key:
-                if len(nom_points) >= 2:
-                    nominal_segments.append((nom_points, nominal_color))
-                    nom_points = [nom_points[-1]]
-                if len(meas_points) >= 2:
-                    measured_segments.append((meas_points, measured_color))
-                    meas_points = [meas_points[-1]]
+            motion_break = current_key is not None and motion_key != current_key
+
+            if motion_break:
+                _flush_nom(current_nom_is_done)
+                nom_points = [nom_points[-1]] if nom_points else []
+                _flush_meas(current_meas_is_done)
+                meas_points = [meas_points[-1]] if meas_points else []
+                current_nom_is_done = sample_is_done
+                current_meas_is_done = sample_is_done
+            elif use_split and nom_points and sample_is_done != current_nom_is_done:
+                # Couleur change : on coupe le segment nominal au point de transition
+                _flush_nom(current_nom_is_done)
+                nom_points = [nom_points[-1]]
+                current_nom_is_done = sample_is_done
+            elif use_split and meas_points and sample_is_done != current_meas_is_done:
+                _flush_meas(current_meas_is_done)
+                meas_points = [meas_points[-1]]
+                current_meas_is_done = sample_is_done
 
             current_key = motion_key
+            if not use_split:
+                current_nom_is_done = False
+                current_meas_is_done = False
+            else:
+                current_nom_is_done = sample_is_done
+                current_meas_is_done = sample_is_done
+
             if nom_pose is not None:
                 nom_points.append([nom_pose.x, nom_pose.y, nom_pose.z])
             if meas_pose is not None:
                 meas_points.append([meas_pose.x, meas_pose.y, meas_pose.z])
 
         if current_key is not None:
-            if len(nom_points) >= 2:
-                nominal_segments.append((nom_points, nominal_color))
-            if len(meas_points) >= 2:
-                measured_segments.append((meas_points, measured_color))
+            _flush_nom(current_nom_is_done)
+            _flush_meas(current_meas_is_done)
 
         return nominal_segments, measured_segments
 
