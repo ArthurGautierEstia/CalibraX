@@ -3331,7 +3331,7 @@ class Viewer3DWidget(QWidget):
 
     @staticmethod
     def _resolve_tool_link_color() -> tuple[float, float, float, float]:
-        return (0.70, 0.70, 0.70, 0.5)
+        return (0.70, 0.70, 0.70, 1.0)
 
     @staticmethod
     def _apply_tool_visual_offset(transform_matrix: np.ndarray, offset_rz_deg: float) -> np.ndarray:
@@ -3344,8 +3344,8 @@ class Viewer3DWidget(QWidget):
     def _resolve_link_color(self, matrix_index: int) -> tuple[float, float, float, float]:
         robot_cad_colors = self._resolve_robot_cad_colors()
         if 0 <= matrix_index < len(robot_cad_colors):
-            return robot_cad_colors[matrix_index].to_rgb_float_tuple(alpha=0.5)
-        return CadColor("").to_rgb_float_tuple(alpha=0.5)
+            return robot_cad_colors[matrix_index].to_rgb_float_tuple(alpha=1.0)
+        return CadColor("").to_rgb_float_tuple(alpha=1.0)
 
     def _build_cad_specs(self, matrices) -> list[tuple[int, str, tuple[float, float, float, float], bool]]:
         specs: list[tuple[int, str, tuple[float, float, float, float], bool]] = []
@@ -3383,6 +3383,7 @@ class Viewer3DWidget(QWidget):
                 T = self._apply_tool_visual_offset(T, tool_offset_rz)
             mesh_item = self.load_robot_mesh(stl_path, self._transform_robot_matrix_to_world(T), link_color)
             if mesh_item:
+                self._apply_layer(mesh_item, self.LAYER_SCENE_OPAQUE)
                 self.robot_links.append(mesh_item)
                 self._robot_link_matrix_indices.append(matrix_index)
                 self._robot_link_roles.append("tool" if is_tool else "robot")
@@ -3392,7 +3393,7 @@ class Viewer3DWidget(QWidget):
 
             ghost_item = self.load_robot_mesh(stl_path, self._transform_robot_matrix_to_world(T), ghost_color)
             if ghost_item:
-                ghost_item.setGLOptions('translucent')
+                self._apply_layer(ghost_item, self.LAYER_SCENE_TRANSLUCENT)
                 self.robot_ghost_links.append(ghost_item)
                 self._robot_ghost_link_matrix_indices.append(matrix_index)
                 self._robot_ghost_link_roles.append("tool" if is_tool else "robot")
@@ -3428,10 +3429,10 @@ class Viewer3DWidget(QWidget):
         if mesh_item is None:
             return
 
-        if ghost:
-            mesh_item.setGLOptions('translucent')
-        elif self.transparency_enabled:
-            mesh_item.setGLOptions('translucent')
+        if ghost or self.transparency_enabled:
+            self._apply_layer(mesh_item, self.LAYER_SCENE_TRANSLUCENT)
+        else:
+            self._apply_layer(mesh_item, self.LAYER_SCENE_OPAQUE)
 
         links.append(mesh_item)
         indices.append(matrix_index)
@@ -3804,6 +3805,7 @@ class Viewer3DWidget(QWidget):
             if cad_model:
                 item = self.load_robot_mesh(cad_model, T_world, color)
                 if item is not None:
+                    self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
                     self.viewer.addItem(item)
                     self._tooling_mesh_items.append(item)
 
@@ -3855,6 +3857,7 @@ class Viewer3DWidget(QWidget):
         if cad_model:
             item = self.load_robot_mesh(cad_model, T_world, color)
             if item is not None:
+                self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
                 self.viewer.addItem(item)
                 self._workpiece_mesh_item = item
 
@@ -3899,7 +3902,8 @@ class Viewer3DWidget(QWidget):
             item = self.load_robot_mesh(element.cad_model, transform, (0.65, 0.70, 0.80, alpha))
             if item is None:
                 continue
-            item.setGLOptions('translucent' if self.workspace_transparency_enabled else 'opaque')
+            layer = self.LAYER_SCENE_TRANSLUCENT if self.workspace_transparency_enabled else self.LAYER_SCENE_OPAQUE
+            self._apply_layer(item, layer)
             self.viewer.addItem(item)
             self._workspace_element_items.append(item)
 
@@ -4095,7 +4099,7 @@ class Viewer3DWidget(QWidget):
                 transform[3, 0], transform[3, 1], transform[3, 2], transform[3, 3],
             )
         )
-        item.setGLOptions('translucent')
+        self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
         return item
 
     def _build_primitive_mesh_data(
@@ -4297,7 +4301,13 @@ class Viewer3DWidget(QWidget):
     def set_transparency(self, enabled: bool, emit_signal: bool = True):
         self.transparency_enabled = enabled
         for mesh_item in self.robot_links:
-            mesh_item.setGLOptions('translucent' if enabled else 'opaque')
+            c = mesh_item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
+            if enabled:
+                mesh_item.setColor((c[0], c[1], c[2], 0.35))
+                self._apply_layer(mesh_item, self.LAYER_SCENE_TRANSLUCENT)
+            else:
+                mesh_item.setColor((c[0], c[1], c[2], 1.0))
+                self._apply_layer(mesh_item, self.LAYER_SCENE_OPAQUE)
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
@@ -4306,7 +4316,9 @@ class Viewer3DWidget(QWidget):
         if self.ext_axes_transparency_enabled:
             c = item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
             item.setColor((c[0], c[1], c[2], 0.3))
-            item.setGLOptions('translucent')
+            self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+        else:
+            self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
 
     def set_ext_axes_transparency(self, enabled: bool, emit_signal: bool = True) -> None:
         self.ext_axes_transparency_enabled = enabled
@@ -4314,10 +4326,10 @@ class Viewer3DWidget(QWidget):
             c = item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
             if enabled:
                 item.setColor((c[0], c[1], c[2], 0.3))
-                item.setGLOptions('translucent')
+                self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
             else:
                 item.setColor((c[0], c[1], c[2], 1.0))
-                item.setGLOptions('opaque')
+                self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
@@ -4327,10 +4339,10 @@ class Viewer3DWidget(QWidget):
         for item in self._workspace_element_items:
             if enabled:
                 item.setColor((0.65, 0.70, 0.80, 0.45))
-                item.setGLOptions('translucent')
+                self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
             else:
                 item.setColor((0.65, 0.70, 0.80, 1.0))
-                item.setGLOptions('opaque')
+                self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
