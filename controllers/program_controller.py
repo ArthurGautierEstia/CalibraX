@@ -520,7 +520,7 @@ class ProgramController:
         show_split = self._current_time_s > 1e-9
         if show_split and (self.actions_widget.is_theoretical_visible() or self.actions_widget.is_measured_visible()):
             nominal_color = self._get_nominal_color()
-            done_nominal = self._compute_done_color(nominal_color)
+            done_nominal = self.viewer3d_controller.get_accent_color_rgba()  # accent : portion réalisée
             done_measured = self._compute_done_color(self.MEASURED_COLOR)
             motion_mode = self.config_widget.get_motion_mode()
             theoretical_samples = self._get_samples_for_modes("THEORETICAL", motion_mode)
@@ -2152,17 +2152,13 @@ class ProgramController:
 
 
     def _get_nominal_color(self) -> tuple[float, float, float, float]:
-        return self.viewer3d_controller.get_accent_color_rgba()
+        return (1.0, 1.0, 1.0, 1.0)  # blanc : trajectoire non encore réalisée
 
     def _on_accent_color_changed(self) -> None:
         if self.current_result is None:
             return
-        motion_mode = self.config_widget.get_motion_mode()
-        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
-            self._get_samples_for_modes("THEORETICAL", motion_mode),
-            self._get_nominal_color(),
-            self.MEASURED_COLOR,
-        )
+        # Le cache nominal est blanc (constante), pas besoin de le reconstruire.
+        # Le split "réalisé" lit l'accent dynamiquement dans _refresh_viewer_segments.
         self._refresh_viewer_segments()
 
     @staticmethod
