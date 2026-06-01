@@ -2921,13 +2921,15 @@ class Viewer3DWidget(QWidget):
         if self._trajectory_path_segments is not None and len(self._trajectory_path_segments) > 0:
             for points_xyz, color in self._trajectory_path_segments:
                 world_points = self._transform_robot_points_to_world(points_xyz)
+                # Forcer alpha=1.0 : trajectoire franche visuellement, occultée par les meshes devant
+                opaque_color = (color[0], color[1], color[2], 1.0)
                 path_item = gl.GLLinePlotItem(
                     pos=world_points,
-                    color=color,
+                    color=opaque_color,
                     width=2,
                     antialias=True,
                 )
-                path_item.setGLOptions('additive')
+                self._apply_layer(path_item, self.LAYER_SCENE_TRANSLUCENT)
                 self._trajectory_path_items.append(path_item)
                 self.viewer.addItem(path_item)
 
@@ -2946,11 +2948,11 @@ class Viewer3DWidget(QWidget):
                 world_base_points = self._transform_robot_points_to_world(base_points)
                 self._trajectory_keypoints_item = gl.GLScatterPlotItem(
                     pos=world_base_points,
-                    color=(0.95, 0.95, 0.95, 0.9),
+                    color=(0.95, 0.95, 0.95, 1.0),
                     size=9,
                     pxMode=True,
                 )
-                self._trajectory_keypoints_item.setGLOptions('additive')
+                self._apply_layer(self._trajectory_keypoints_item, self.LAYER_SCENE_TRANSLUCENT)
                 self.viewer.addItem(self._trajectory_keypoints_item)
 
             if selected_idx is not None and 0 <= selected_idx < len(points):
@@ -2961,7 +2963,7 @@ class Viewer3DWidget(QWidget):
                     size=13,
                     pxMode=True,
                 )
-                self._trajectory_keypoint_selected_item.setGLOptions('additive')
+                self._apply_layer(self._trajectory_keypoint_selected_item, self.LAYER_SCENE_TRANSLUCENT)
                 self.viewer.addItem(self._trajectory_keypoint_selected_item)
 
             if editing_idx is not None and 0 <= editing_idx < len(points):
@@ -2972,7 +2974,7 @@ class Viewer3DWidget(QWidget):
                     size=15,
                     pxMode=True,
                 )
-                self._trajectory_keypoint_editing_item.setGLOptions('additive')
+                self._apply_layer(self._trajectory_keypoint_editing_item, self.LAYER_SCENE_TRANSLUCENT)
                 self.viewer.addItem(self._trajectory_keypoint_editing_item)
 
         if self._trajectory_tangent_out_segments is not None:
@@ -2982,11 +2984,11 @@ class Viewer3DWidget(QWidget):
                 world_segment = self._transform_robot_points_to_world(segment)
                 item = gl.GLLinePlotItem(
                     pos=world_segment,
-                    color=(1.0, 0.5, 0.1, 0.95),
+                    color=(1.0, 0.5, 0.1, 1.0),
                     width=2,
                     antialias=True,
                 )
-                item.setGLOptions('additive')
+                self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
                 self._trajectory_tangent_out_items.append(item)
                 self.viewer.addItem(item)
 
@@ -2997,11 +2999,11 @@ class Viewer3DWidget(QWidget):
                 world_segment = self._transform_robot_points_to_world(segment)
                 item = gl.GLLinePlotItem(
                     pos=world_segment,
-                    color=(0.25, 1.0, 0.55, 0.95),
+                    color=(0.25, 1.0, 0.55, 1.0),
                     width=2,
                     antialias=True,
                 )
-                item.setGLOptions('additive')
+                self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
                 self._trajectory_tangent_in_items.append(item)
                 self.viewer.addItem(item)
 
@@ -3009,22 +3011,26 @@ class Viewer3DWidget(QWidget):
         """Dessine un repère unique"""
         origine = T[:3, 3]
         R = T[:3, :3]
-        
+
         axes = [
-            np.array([origine, origine + R[:, 0] * longueur]), # X
-            np.array([origine, origine + R[:, 1] * longueur]), # Y
-            np.array([origine, origine + R[:, 2] * longueur])  # Z
+            np.array([origine, origine + R[:, 0] * longueur]),  # X
+            np.array([origine, origine + R[:, 1] * longueur]),  # Y
+            np.array([origine, origine + R[:, 2] * longueur]),  # Z
         ]
 
         if color is None:
-            couleurs = [(255, 0, 0, 1), (0, 255, 0, 1), (0, 0, 255, 1)]
+            couleurs = [(1.0, 0.0, 0.0, 1.0), (0.0, 1.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0)]
         else:
-            couleurs = [color, color, color]
+            r, g, b = color[0], color[1], color[2]
+            # normalise si entiers 0-255
+            if any(v > 1.0 for v in (r, g, b)):
+                r, g, b = r / 255.0, g / 255.0, b / 255.0
+            couleurs = [(r, g, b, 1.0), (r, g, b, 1.0), (r, g, b, 1.0)]
 
         items = []
         for i, axis in enumerate(axes):
             plt = gl.GLLinePlotItem(pos=axis, color=couleurs[i], width=3, antialias=True)
-            plt.setGLOptions('additive')
+            self._apply_layer(plt, self.LAYER_OVERLAY)
             self.viewer.addItem(plt)
             items.append(plt)
         return items
