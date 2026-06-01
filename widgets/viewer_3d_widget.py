@@ -1013,8 +1013,6 @@ class Viewer3DWidget(QWidget):
 
         # Viewer 3D
         self.viewer = CalibraXGLViewWidget()
-        self.viewer.opts['glOptions'] = 'translucent'
-        self.viewer.opts['depth'] = True
         self.viewer.setCameraPosition(distance=2000, elevation=40, azimuth=45)
         self.viewer._trajectory_world_points_provider = self._get_trajectory_world_points
         #self.viewer.setMinimumSize(900, 400)
