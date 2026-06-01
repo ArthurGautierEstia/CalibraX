@@ -202,8 +202,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         x0, y0, w, h = viewport
         dist = max(1e-6, float(self.opts["distance"]))
         fov = float(self.opts["fov"])
-        near_clip = max(1e-3, dist * 0.001)
-        far_clip = max(near_clip + 1.0, dist * 1000.0)
+        near_clip = max(1.0, dist * 0.05)
+        far_clip = max(near_clip + 1.0, dist * 50.0)
 
         r = near_clip * np.tan(0.5 * np.radians(fov))
         t = r * h / w
@@ -229,13 +229,14 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return tr
 
     def paintGL(self) -> None:
+        from OpenGL import GL
         region = self.getViewport()
         if self._background_mode != "gradient":
+            GL.glDepthMask(GL.GL_TRUE)
             self.paint(region=region, viewport=region)
             return
 
-        from OpenGL import GL
-
+        GL.glDepthMask(GL.GL_TRUE)
         GL.glClearColor(0.0, 0.0, 0.0, 1.0)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
 
@@ -255,6 +256,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         painter.fillRect(self.rect(), gradient)
         painter.end()
 
+        GL.glDepthMask(GL.GL_TRUE)
         GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
         self.setProjection(region, region)
         self.setModelview()
@@ -401,6 +403,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         try:
             self.makeCurrent()
             try:
+                from OpenGL import GL as _GL
+                _GL.glDepthMask(_GL.GL_TRUE)
                 region = (0, 0, viewport_width, viewport_height)
                 self.paint(region=region, viewport=region)
                 depth_data = glReadPixels(pixel_x, pixel_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
@@ -886,6 +890,11 @@ class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
     display_state_changed = pyqtSignal(object)
     CAD_SHADER_NAME = "calibrax_bright_shaded"
+
+    # Couches de rendu — valeurs de depthValue (ordre croissant = dessiné plus tard)
+    LAYER_SCENE_OPAQUE = 0      # Géométrie pleine : test+écriture depth, pas de blend
+    LAYER_SCENE_TRANSLUCENT = 5 # Transparents+trajectoire : test depth, NO écriture, blend over
+    LAYER_OVERLAY = 10          # Repères X/Y/Z : NO depth test, NO écriture, blend over
     DEFAULT_BACKGROUND_MODE = "solid"
     DEFAULT_BACKGROUND_PRIMARY_COLOR = QColor(45, 45, 48, 255)
     DEFAULT_BACKGROUND_SECONDARY_COLOR = QColor(15, 15, 18, 255)
@@ -899,6 +908,7 @@ class Viewer3DWidget(QWidget):
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self._ensure_custom_shaders_registered()
+        self._ensure_custom_gl_presets_registered()
         self.robot_links: list[gl.GLMeshItem] = []
         self.robot_ghost_links: list[gl.GLMeshItem] = []
         self._trajectory_path_items: list[gl.GLLinePlotItem] = []
@@ -3235,6 +3245,52 @@ class Viewer3DWidget(QWidget):
                 ),
             ],
         )
+
+    @staticmethod
+    def _ensure_custom_gl_presets_registered() -> None:
+        from OpenGL.GL import (
+            GL_DEPTH_TEST, GL_BLEND, GL_CULL_FACE,
+            GL_TRUE, GL_FALSE, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+        )
+        from pyqtgraph.opengl.GLGraphicsItem import GLOptions
+        if 'calibrax_opaque' in GLOptions:
+            return
+        GLOptions['calibrax_opaque'] = {
+            GL_DEPTH_TEST: True,
+            'glDepthMask': (GL_TRUE,),
+            GL_BLEND: False,
+            GL_CULL_FACE: True,
+        }
+        GLOptions['calibrax_translucent'] = {
+            GL_DEPTH_TEST: True,
+            'glDepthMask': (GL_FALSE,),
+            GL_BLEND: True,
+            'glBlendFunc': (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA),
+            GL_CULL_FACE: False,
+        }
+        GLOptions['calibrax_overlay'] = {
+            GL_DEPTH_TEST: False,
+            'glDepthMask': (GL_FALSE,),
+            GL_BLEND: True,
+            'glBlendFunc': (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA),
+            GL_CULL_FACE: False,
+        }
+
+    @staticmethod
+    def _apply_layer(item, layer: int) -> None:
+        """Applique le preset GL et le depthValue correspondant à la couche donnée.
+
+        C'est le SEUL endroit qui appelle setGLOptions/setDepthValue dans le code de scène.
+        """
+        if layer == Viewer3DWidget.LAYER_SCENE_OPAQUE:
+            item.setGLOptions('calibrax_opaque')
+            item.setDepthValue(Viewer3DWidget.LAYER_SCENE_OPAQUE)
+        elif layer == Viewer3DWidget.LAYER_SCENE_TRANSLUCENT:
+            item.setGLOptions('calibrax_translucent')
+            item.setDepthValue(Viewer3DWidget.LAYER_SCENE_TRANSLUCENT)
+        elif layer == Viewer3DWidget.LAYER_OVERLAY:
+            item.setGLOptions('calibrax_overlay')
+            item.setDepthValue(Viewer3DWidget.LAYER_OVERLAY)
 
     @staticmethod
     def _brighten_mesh_color(color: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
