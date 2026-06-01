@@ -889,6 +889,7 @@ class PrimitiveColliderState:
 class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
     display_state_changed = pyqtSignal(object)
+    accent_color_changed = pyqtSignal()
     CAD_SHADER_NAME = "calibrax_bright_shaded"
 
     # Couches de rendu — valeurs de depthValue (ordre croissant = dessiné plus tard)
@@ -1718,6 +1719,7 @@ class Viewer3DWidget(QWidget):
         self._refresh_toolbar_buttons()
         self._refresh_position_buttons()
         self._refresh_viewer_style_controls()
+        self.accent_color_changed.emit()
 
     def _on_grid_size_changed(self, value: int) -> None:
         self._grid_size = int(value)
@@ -2131,6 +2133,7 @@ class Viewer3DWidget(QWidget):
         self._grid_color = self._color_from_hex_rgba(theme_state.grid_color, self.DEFAULT_GRID_COLOR)
         self._applied_viewer_theme_state = ViewerThemeState.from_dict(theme_state.to_dict())
         self._sync_viewer_style_controls()
+        self.accent_color_changed.emit()
 
     @staticmethod
     def _color_to_hex_rgba(color: QColor) -> str:

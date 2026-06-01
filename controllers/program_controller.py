@@ -165,6 +165,7 @@ class ProgramController:
         self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
         self.config_widget.motionModeChanged.connect(self._on_motion_mode_changed)
         self.config_widget.targetModeChanged.connect(self._on_target_mode_changed)
+        self.viewer3d_controller.accent_color_changed.connect(self._on_accent_color_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
         self.workspace_model.workspace_changed.connect(self._refresh_view)
         self.external_axes_model.axes_values_changed.connect(self._on_external_chain_changed)
@@ -2152,6 +2153,17 @@ class ProgramController:
 
     def _get_nominal_color(self) -> tuple[float, float, float, float]:
         return self.viewer3d_controller.get_accent_color_rgba()
+
+    def _on_accent_color_changed(self) -> None:
+        if self.current_result is None:
+            return
+        motion_mode = self.config_widget.get_motion_mode()
+        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
+            self._get_samples_for_modes("THEORETICAL", motion_mode),
+            self._get_nominal_color(),
+            self.MEASURED_COLOR,
+        )
+        self._refresh_viewer_segments()
 
     @staticmethod
     def _compute_done_color(accent: tuple[float, float, float, float]) -> tuple[float, float, float, float]:

@@ -369,6 +369,10 @@ class Viewer3DController(QObject):
     def get_accent_color_rgba(self) -> tuple[float, float, float, float]:
         return self.viewer_3d_widget.get_accent_color_rgba()
 
+    @property
+    def accent_color_changed(self):
+        return self.viewer_3d_widget.accent_color_changed
+
     def set_trajectory_keypoints(
         self,
         points_xyz: list[list[float]],
