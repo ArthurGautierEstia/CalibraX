@@ -78,7 +78,6 @@ class ViewerDisplayState:
     workpiece_frame_visible: bool = True
     theme: ViewerThemeState = field(default_factory=ViewerThemeState)
     selected_theme_name: str = ""
-    fxaa_enabled: bool = True
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ViewerDisplayState":
@@ -103,7 +102,6 @@ class ViewerDisplayState:
             workpiece_frame_visible=bool(payload.get("workpiece_frame_visible", True)),
             theme=ViewerThemeState.from_dict(payload.get("theme")),
             selected_theme_name="" if payload.get("selected_theme_name") is None else str(payload.get("selected_theme_name")),
-            fxaa_enabled=bool(payload.get("fxaa_enabled", True)),
         )
 
     def to_dict(self) -> dict[str, Any]:
