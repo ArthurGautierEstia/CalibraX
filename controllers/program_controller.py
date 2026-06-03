@@ -38,6 +38,7 @@ from widgets.program_view.program_base_dialog import ProgramBaseDialog
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
+from widgets.program_view.program_playback_widget import ProgramPlaybackWidget
 from widgets.program_view.program_tool_orientation_dialog import ProgramToolOrientationDialog
 from views.program_view import ProgramView
 
@@ -97,6 +98,7 @@ class ProgramController:
         self.actions_widget = self.program_view.get_actions_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
         self.playback_widget = self.program_view.get_playback_widget()
+        self.playback_widgets: list[ProgramPlaybackWidget] = [self.playback_widget]
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
@@ -138,6 +140,7 @@ class ProgramController:
         self._playback_wall_start_s: float | None = None
         self._playback_sim_start_s = 0.0
         self._playback_speed_scale = 1.0
+        self._playback_speed_offset_percent = 0
         self._simulation_dirty = False
         self._program_dirty = False
         self._clean_status_text = ProgramController.STATUS_NONE
@@ -153,11 +156,7 @@ class ProgramController:
         self.header_widget.clear_requested.connect(self._on_clear_requested)
         self.actions_widget.recompute_requested.connect(self._on_recompute_requested)
         self.actions_widget.export_requested.connect(self._on_export_requested)
-        self.playback_widget.play_requested.connect(self._on_play_requested)
-        self.playback_widget.pause_requested.connect(self._on_pause_requested)
-        self.playback_widget.stop_requested.connect(self._on_stop_requested)
-        self.playback_widget.time_value_changed.connect(self._on_time_value_changed)
-        self.playback_widget.speed_offset_changed.connect(self._on_speed_offset_changed)
+        self._connect_playback_widget(self.playback_widget)
         self.actions_widget.trajectory_visibility_changed.connect(self._on_trajectory_visibility_changed)
         self.actions_widget.compute_compensation_requested.connect(self._on_compute_compensation_requested)
         self.config_widget.goToRequested.connect(self._on_go_to_requested)
@@ -178,6 +177,37 @@ class ProgramController:
         self.external_axes_model.mount_topology_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.axes_changed.connect(self._on_external_chain_changed)
         self.workpiece_controller.workpiece_model.workpiece_changed.connect(self._on_workpiece_changed)
+
+    def register_playback_widget(self, playback_widget: ProgramPlaybackWidget) -> None:
+        if playback_widget in self.playback_widgets:
+            return
+        self.playback_widgets.append(playback_widget)
+        self._connect_playback_widget(playback_widget)
+        self._initialize_playback_widget(playback_widget)
+
+    def _connect_playback_widget(self, playback_widget: ProgramPlaybackWidget) -> None:
+        playback_widget.play_requested.connect(self._on_play_requested)
+        playback_widget.pause_requested.connect(self._on_pause_requested)
+        playback_widget.stop_requested.connect(self._on_stop_requested)
+        playback_widget.time_value_changed.connect(self._on_time_value_changed)
+        playback_widget.speed_offset_changed.connect(self._on_speed_offset_changed)
+
+    def _initialize_playback_widget(self, playback_widget: ProgramPlaybackWidget) -> None:
+        samples = self._playback_samples()
+        if samples:
+            playback_widget.set_time_range(0.0, float(samples[-1].time_s))
+            playback_widget.set_playback_enabled(True)
+            playback_widget.set_time_value(self._current_time_s)
+        else:
+            playback_widget.set_time_range(0.0, 0.0)
+            playback_widget.set_playback_enabled(False)
+        playback_widget.set_playing(self._playback_wall_start_s is not None)
+        self._set_playback_widget_speed(playback_widget, self._playback_speed_offset_percent)
+
+    def _set_playback_widget_speed(self, playback_widget: ProgramPlaybackWidget, offset_percent: int) -> None:
+        playback_widget.speed_spinbox.blockSignals(True)
+        playback_widget.speed_spinbox.setValue(int(offset_percent))
+        playback_widget.speed_spinbox.blockSignals(False)
 
 
 
@@ -650,15 +680,17 @@ class ProgramController:
         self._playback_sample_times = [float(sample.time_s) for sample in samples]
 
         if not samples:
-            self.playback_widget.set_time_range(0.0, 0.0)
-            self.playback_widget.set_playback_enabled(False)
+            for playback_widget in self.playback_widgets:
+                playback_widget.set_time_range(0.0, 0.0)
+                playback_widget.set_playback_enabled(False)
             self._apply_time_value(0.0, samples)
             return
 
         end_time = float(samples[-1].time_s)
 
-        self.playback_widget.set_time_range(0.0, end_time)
-        self.playback_widget.set_playback_enabled(True)
+        for playback_widget in self.playback_widgets:
+            playback_widget.set_time_range(0.0, end_time)
+            playback_widget.set_playback_enabled(True)
 
         self._apply_time_value(min(self._current_time_s, end_time), samples)
 
@@ -703,7 +735,8 @@ class ProgramController:
         if samples is None:
             samples = self._playback_samples()
         self._current_time_s = max(0.0, float(time_s))
-        self.playback_widget.set_time_value(self._current_time_s)
+        for playback_widget in self.playback_widgets:
+            playback_widget.set_time_value(self._current_time_s)
         if not samples:
             return
         sample_index = self._sample_index_at_time(self._current_time_s)
@@ -761,10 +794,13 @@ class ProgramController:
 
     def _on_speed_offset_changed(self, offset_percent: int) -> None:
         normalized_percent = max(-100, min(100, int(offset_percent)))
+        self._playback_speed_offset_percent = normalized_percent
         if normalized_percent >= 0:
             self._playback_speed_scale = 1.0 + (float(normalized_percent) / 100.0)
         else:
             self._playback_speed_scale = 1.0 / (1.0 + (abs(float(normalized_percent)) / 100.0))
+        for playback_widget in self.playback_widgets:
+            self._set_playback_widget_speed(playback_widget, normalized_percent)
         if self._playback_wall_start_s is None:
             return
         self._playback_sim_start_s = float(self._current_time_s)
@@ -782,7 +818,8 @@ class ProgramController:
         self.viewer3d_controller.set_playback_active(False)
         # Propager l'état final à tous les abonnés UI maintenant que le playback est terminé
         self.robot_model.compute_fk_tcp()
-        self.playback_widget.set_playing(False)
+        for playback_widget in self.playback_widgets:
+            playback_widget.set_playing(False)
 
 
 
@@ -797,7 +834,8 @@ class ProgramController:
         self._playback_wall_start_s = time.perf_counter()
         self.robot_model.inhibit_ik(True)
         self.viewer3d_controller.set_playback_active(True)
-        self.playback_widget.set_playing(True)
+        for playback_widget in self.playback_widgets:
+            playback_widget.set_playing(True)
         self._playback_timer.start(20)
         self._on_playback_tick()
 
@@ -829,7 +867,7 @@ class ProgramController:
         target_time_s = self._playback_sim_start_s + (elapsed_s * self._playback_speed_scale)
         end_time_s = float(samples[-1].time_s)
         if target_time_s >= end_time_s:
-            if self.playback_widget.is_loop_enabled():
+            if self._is_loop_enabled():
                 self._apply_time_value(0.0, samples)
                 self._playback_sim_start_s = 0.0
                 self._playback_wall_start_s = time.perf_counter()
@@ -838,6 +876,9 @@ class ProgramController:
             self._apply_time_value(end_time_s, samples)
             return
         self._apply_time_value(target_time_s, samples)
+
+    def _is_loop_enabled(self) -> bool:
+        return any(playback_widget.is_loop_enabled() for playback_widget in self.playback_widgets)
 
 
 

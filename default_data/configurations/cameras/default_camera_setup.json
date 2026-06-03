@@ -1,0 +1,229 @@
+{
+  "name": "Cellule - setup cameras truss",
+  "cameras": [
+    {
+      "id": "cam_01",
+      "name": "Camera 1",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [1200.0, -800.0, 2800.0, 0.0, -35.0, 35.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#00AEEF",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_02",
+      "name": "Camera 2",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [1200.0, 800.0, 2800.0, 0.0, -35.0, -35.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#20C997",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_03",
+      "name": "Camera 3",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [-1200.0, -800.0, 2800.0, 180.0, -35.0, -35.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#FFC107",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_04",
+      "name": "Camera 4",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [-1200.0, 800.0, 2800.0, 180.0, -35.0, 35.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#FF6F00",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_05",
+      "name": "Camera 5",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [0.0, -1300.0, 3000.0, 90.0, -40.0, 0.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#DC3545",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_06",
+      "name": "Camera 6",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [0.0, 1300.0, 3000.0, -90.0, -40.0, 0.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#6F42C1",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_07",
+      "name": "Camera 7",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [1500.0, 0.0, 3200.0, 0.0, -45.0, 0.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#17A2B8",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    },
+    {
+      "id": "cam_08",
+      "name": "Camera 8",
+      "enabled": true,
+      "stl": {
+        "path": "./default_data/cameras/Qualisys_A12.stl",
+        "color": "#2B8CBE"
+      },
+      "mount": {
+        "parent_frame": "truss",
+        "pose": [-1500.0, 0.0, 3200.0, 180.0, -45.0, 0.0]
+      },
+      "optical_frame": {
+        "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "fov": {
+        "horizontal_deg": 60.0,
+        "vertical_deg": 45.0,
+        "range_mm": 4500.0
+      },
+      "visual": {
+        "color": "#E83E8C",
+        "show_frustum": true,
+        "show_line_to_tcp": true,
+        "verify_tcp_in_fov": true,
+        "verify_line_of_sight": true
+      }
+    }
+  ]
+}

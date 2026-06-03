@@ -6,6 +6,7 @@ import numpy as np
 from controllers.cartesian_control_view.cartesian_widget_controller import CartesianWidgetController
 from controllers.joint_control_view.joints_controller import JointsController
 from models.collision_scene_model import CollisionSceneModel
+from models.camera_model import CameraModel
 from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -40,6 +41,7 @@ class Viewer3DController(QObject):
         self.collision_scene_model = collision_scene_model
         self.viewer_3d_widget = viewer_3d_widget
         self.external_axes_model = external_axes_model
+        self.camera_model: CameraModel | None = None
         self._ghost_visible = False
         self._ghost_joints: list[float] = [0.0] * 6
         self._overlay_jog_delta = 1.0
@@ -137,6 +139,7 @@ class Viewer3DController(QObject):
 
     def _on_collision_scene_changed(self) -> None:
         self.viewer_3d_widget.update_collision_scene(self.collision_scene_model)
+        self.viewer_3d_widget.refresh_camera_visibility()
 
     def _on_workspace_changed(self) -> None:
         self.viewer_3d_widget.update_workspace(self.workspace_model)
@@ -423,3 +426,13 @@ class Viewer3DController(QObject):
 
     def clear_program_frame(self) -> None:
         self.viewer_3d_widget.clear_program_frame()
+
+    def set_camera_model(self, camera_model: CameraModel) -> None:
+        self.camera_model = camera_model
+        self.viewer_3d_widget.set_camera_model(camera_model)
+
+    def refresh_cameras(self) -> None:
+        self.viewer_3d_widget.refresh_cameras()
+
+    def set_selected_camera_index(self, index: int) -> None:
+        self.viewer_3d_widget.set_selected_camera_index(index)

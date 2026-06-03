@@ -12,6 +12,7 @@ _fmt.setDepthBufferSize(24)
 QSurfaceFormat.setDefaultFormat(_fmt)
 
 from controllers.main_controller import MainController
+from models.camera_model import CameraModel
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -56,6 +57,7 @@ class CalibraxApplication:
         self.robot_model = RobotModel()
         self.tool_model = ToolModel()
         self.workspace_model = WorkspaceModel()
+        self.camera_model = CameraModel()
         self.external_axes_model = ExternalAxesModel()
         self.workpiece_model = WorkpieceModel()
         self.tooling_model = ToolingModel()
@@ -64,6 +66,7 @@ class CalibraxApplication:
             self.robot_model,
             self.tool_model,
             self.workspace_model,
+            self.camera_model,
             self.external_axes_model,
             self.workpiece_model,
             self.tooling_model,

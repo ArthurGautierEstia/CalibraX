@@ -29,6 +29,13 @@ from stl import mesh
 
 import utils.math_utils as math_utils
 from models.app_session_file import ViewerDisplayState, ViewerThemeState
+from models.camera_model import (
+    CameraConfiguration,
+    CameraModel,
+    CameraVisibilityResult,
+    CameraVisibilityState,
+    evaluate_camera_fov,
+)
 from models.collision_scene_model import CollisionSceneModel
 from models.primitive_collider_models import PrimitiveCollider, PrimitiveColliderData
 from models.robot_model import RobotModel
@@ -1132,6 +1139,13 @@ class Viewer3DWidget(QWidget):
         self._workspace_collision_zones: list[PrimitiveCollider] = []
         self._robot_colliders: list[PrimitiveCollider] = []
         self._tool_colliders: list[PrimitiveCollider] = []
+        self._camera_model: CameraModel | None = None
+        self._camera_mesh_items: list[gl.GLMeshItem] = []
+        self._camera_frustum_items: list[gl.GLLinePlotItem] = []
+        self._camera_line_items: list[gl.GLLinePlotItem] = []
+        self._camera_frame_items: list[gl.GLLinePlotItem] = []
+        self._camera_frames_visible: dict[str, bool] = {}
+        self._selected_camera_index: int = -1
         # Axes externes
         self._external_axes_links: list[gl.GLMeshItem] = []
         self._external_axes_link_keys: list[tuple[str, int]] = []  # (axis_id, joint_index ou -1 pour base)
@@ -1286,6 +1300,20 @@ class Viewer3DWidget(QWidget):
         ext_axes_column_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         ext_axes_column_layout.addWidget(self.ext_axes_frame_list_label)
         ext_axes_column_layout.addWidget(self.ext_axes_frame_list)
+        self.camera_frame_list_label = QLabel("Caméras", self.frame_lists_overlay)
+        self.camera_frame_list = QListWidget(self.frame_lists_overlay)
+        self.camera_frame_list.setFixedWidth(frame_column_width)
+        self.camera_frame_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.camera_frame_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.camera_frame_column = QWidget(self.frame_lists_overlay)
+        self.camera_frame_column.setObjectName("viewerFrameListZone")
+        self.camera_frame_column.setFixedWidth(frame_column_width)
+        camera_column_layout = QVBoxLayout(self.camera_frame_column)
+        camera_column_layout.setContentsMargins(6, 6, 6, 6)
+        camera_column_layout.setSpacing(4)
+        camera_column_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        camera_column_layout.addWidget(self.camera_frame_list_label)
+        camera_column_layout.addWidget(self.camera_frame_list)
         self.piece_frame_list_label = QLabel("Pièce", self.frame_lists_overlay)
         self.piece_frame_column = QWidget(self.frame_lists_overlay)
         self.piece_frame_column.setObjectName("viewerFrameListZone")
@@ -1306,6 +1334,7 @@ class Viewer3DWidget(QWidget):
         frame_lists_layout.addWidget(self.robot_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.scene_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.ext_axes_frame_column, 0, Qt.AlignmentFlag.AlignTop)
+        frame_lists_layout.addWidget(self.camera_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         frame_lists_layout.addWidget(self.piece_frame_column, 0, Qt.AlignmentFlag.AlignTop)
         self.frame_lists_overlay.hide()
         self.viewer_style_overlay = QWidget(self.viewer)
@@ -2764,6 +2793,8 @@ class Viewer3DWidget(QWidget):
             self.workspace_frames_visibility[i] = self.show_axes
         for axis_id in self._ext_axis_frames_visible:
             self._ext_axis_frames_visible[axis_id] = self.show_axes
+        for camera_id in self._camera_frames_visible:
+            self._camera_frames_visible[camera_id] = self.show_axes
         self._tooling_frames_visible = self.show_axes
         self._workpiece_frame_visible = self.show_axes
         self._clear_and_refresh()
@@ -2823,6 +2854,7 @@ class Viewer3DWidget(QWidget):
             self._workspace_frame_labels,
         )
         self._sync_ext_axes_frame_list_widget()
+        self._sync_camera_frame_list_widget()
         if hasattr(self, "_cb_workpiece_frame"):
             self._cb_workpiece_frame.blockSignals(True)
             self._cb_workpiece_frame.setChecked(self._workpiece_frame_visible)
@@ -2929,6 +2961,7 @@ class Viewer3DWidget(QWidget):
         has_robot_frames = self.frame_list.count() > 0
         has_scene_frames = self.workspace_frame_list.count() > 0
         has_ext_axes = self.ext_axes_frame_list.count() > 0
+        has_camera_frames = hasattr(self, "camera_frame_list") and self.camera_frame_list.count() > 0
         has_tooling = bool(self._tooling_snapshot)
         has_workpiece = self._workpiece_snapshot is not None
         has_piece_frames = has_tooling or has_workpiece
@@ -2941,6 +2974,10 @@ class Viewer3DWidget(QWidget):
         self.ext_axes_frame_column.setVisible(has_ext_axes)
         self.ext_axes_frame_list_label.setVisible(has_ext_axes)
         self.ext_axes_frame_list.setVisible(has_ext_axes)
+        if hasattr(self, "camera_frame_column"):
+            self.camera_frame_column.setVisible(has_camera_frames)
+            self.camera_frame_list_label.setVisible(has_camera_frames)
+            self.camera_frame_list.setVisible(has_camera_frames)
         if hasattr(self, "piece_frame_column"):
             self.piece_frame_column.setVisible(has_piece_frames)
             if hasattr(self, "_cb_workpiece_frame"):
@@ -2992,6 +3029,10 @@ class Viewer3DWidget(QWidget):
         self._tooling_frame_items = []
         self._workpiece_mesh_item = None
         self._workpiece_frame_items = []
+        self._camera_mesh_items = []
+        self._camera_frustum_items = []
+        self._camera_line_items = []
+        self._camera_frame_items = []
 
     def set_trajectory_path_segments(
         self,
@@ -3065,6 +3106,30 @@ class Viewer3DWidget(QWidget):
         self._trajectory_tangent_out_segments = None
         self._trajectory_tangent_in_segments = None
         self._render_trajectory_overlay()
+
+    def set_camera_model(self, camera_model: CameraModel | None) -> None:
+        self._camera_model = camera_model
+        self.refresh_cameras()
+
+    def refresh_cameras(self) -> None:
+        self._render_cameras()
+        self.update_frame_list_ui()
+        self.refresh_camera_visibility()
+
+    def set_selected_camera_index(self, index: int) -> None:
+        self._selected_camera_index = int(index)
+        self.refresh_cameras()
+
+    def refresh_camera_visibility(self) -> None:
+        if self._camera_model is None:
+            return
+        results = self._evaluate_camera_visibility()
+        self.camera_model_set_visibility_results(results)
+        self._render_camera_lines(results)
+
+    def camera_model_set_visibility_results(self, results: list[CameraVisibilityResult]) -> None:
+        if self._camera_model is not None:
+            self._camera_model.set_visibility_results(results)
 
     def _get_trajectory_world_points(self) -> tuple:
         """Fournit les positions world des éléments de trajectoire pour le picking du viewer."""
@@ -3217,6 +3282,502 @@ class Viewer3DWidget(QWidget):
                 self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
                 self._trajectory_tangent_in_items.append(item)
                 self.viewer.addItem(item)
+
+    def _render_cameras(self) -> None:
+        self._clear_viewer_items(self._camera_mesh_items)
+        self._clear_viewer_items(self._camera_frustum_items)
+        self._clear_viewer_items(self._camera_line_items)
+        self._clear_viewer_items(self._camera_frame_items)
+        if self._camera_model is None:
+            return
+
+        cameras = self._camera_model.get_cameras()
+        existing_ids = {camera.camera_id for camera in cameras}
+        self._camera_frames_visible = {
+            camera_id: visible
+            for camera_id, visible in self._camera_frames_visible.items()
+            if camera_id in existing_ids
+        }
+        for index, camera in enumerate(cameras):
+            self._camera_frames_visible.setdefault(camera.camera_id, True)
+            if not camera.enabled:
+                continue
+            camera_mount_world = self._camera_mount_world_matrix(camera)
+            if camera.stl.path:
+                mesh_item = self._load_camera_mesh(camera, camera_mount_world)
+                if mesh_item is not None:
+                    self._apply_layer(mesh_item, self.LAYER_SCENE_OPAQUE)
+                    self.viewer.addItem(mesh_item)
+                    self._camera_mesh_items.append(mesh_item)
+
+            if camera.visual.show_frustum:
+                frustum_item = self._build_camera_frustum_item(
+                    camera,
+                    self._camera_optical_world_matrix(camera),
+                    selected=index == self._selected_camera_index,
+                )
+                if frustum_item is not None:
+                    self.viewer.addItem(frustum_item)
+                    self._camera_frustum_items.append(frustum_item)
+
+            if self._camera_frames_visible.get(camera.camera_id, True):
+                frame_length = 180.0 if index == self._selected_camera_index else 120.0
+                self._camera_frame_items.extend(self.draw_frame(camera_mount_world, longueur=frame_length))
+
+    def _render_camera_lines(self, results: list[CameraVisibilityResult]) -> None:
+        self._clear_viewer_items(self._camera_line_items)
+        if self._camera_model is None:
+            return
+        tcp_world = self._current_tcp_world_xyz()
+        if tcp_world is None:
+            return
+        result_by_id = {result.camera_id: result for result in results}
+        for camera in self._camera_model.get_cameras():
+            if not camera.enabled or not camera.visual.show_line_to_tcp:
+                continue
+            origin = self._camera_optical_world_matrix(camera)[:3, 3]
+            result = result_by_id.get(camera.camera_id)
+            item = gl.GLLinePlotItem(
+                pos=np.array([origin, tcp_world], dtype=float),
+                color=self._camera_line_color(result),
+                width=3,
+                antialias=True,
+            )
+            self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+            self.viewer.addItem(item)
+            self._camera_line_items.append(item)
+
+    def _load_camera_mesh(
+        self,
+        camera: CameraConfiguration,
+        camera_mount_world: np.ndarray,
+    ) -> gl.GLMeshItem | None:
+        resolved_stl_path = self._resolve_filesystem_path(camera.stl.path)
+        if not resolved_stl_path or not os.path.exists(resolved_stl_path):
+            if resolved_stl_path:
+                self._missing_mesh_paths.add(resolved_stl_path)
+                print(f"STL camera introuvable {resolved_stl_path}")
+            return None
+
+        if resolved_stl_path in self._missing_mesh_paths:
+            self._missing_mesh_paths.remove(resolved_stl_path)
+
+        try:
+            mesh_data = self._mesh_data_cache.get(resolved_stl_path)
+            if mesh_data is None:
+                stl_mesh = mesh.Mesh.from_file(resolved_stl_path)
+                verts = np.array(stl_mesh.vectors.reshape(-1, 3), dtype=float)
+                faces = np.arange(len(verts)).reshape(-1, 3)
+                mesh_data = gl.MeshData(vertexes=verts, faces=faces)
+                self._mesh_data_cache[resolved_stl_path] = mesh_data
+
+            mesh_item = gl.GLMeshItem(
+                meshdata=mesh_data,
+                smooth=True,
+                color=self._brighten_mesh_color(self._hex_to_rgba_tuple(camera.stl.color, alpha=1.0)),
+                shader=Viewer3DWidget.CAD_SHADER_NAME,
+            )
+            mesh_item.setTransform(self._matrix_to_qmatrix4x4(camera_mount_world))
+            return mesh_item
+        except Exception as exc:
+            self._missing_mesh_paths.add(resolved_stl_path)
+            print(f"Erreur STL camera {resolved_stl_path}: {exc}")
+            return None
+
+    def _evaluate_camera_visibility(self) -> list[CameraVisibilityResult]:
+        if self._camera_model is None:
+            return []
+        tcp_world = self._current_tcp_world_xyz()
+        if tcp_world is None:
+            return [
+                CameraVisibilityResult(camera.camera_id, CameraVisibilityState.INVALID)
+                for camera in self._camera_model.get_cameras()
+            ]
+
+        results: list[CameraVisibilityResult] = []
+        for camera in self._camera_model.get_cameras():
+            optical_world = self._camera_optical_world_matrix(camera)
+            if not camera.enabled:
+                result = CameraVisibilityResult(camera.camera_id, CameraVisibilityState.DISABLED)
+            elif camera.visual.verify_tcp_in_fov:
+                result = evaluate_camera_fov(camera, tcp_world, optical_world)
+            else:
+                distance = float(np.linalg.norm(np.array(tcp_world, dtype=float) - optical_world[:3, 3]))
+                result = CameraVisibilityResult(camera.camera_id, CameraVisibilityState.VISIBLE, distance)
+
+            if result.state == CameraVisibilityState.VISIBLE and camera.visual.verify_line_of_sight:
+                occluder_name = self._find_line_of_sight_occluder(optical_world[:3, 3], tcp_world)
+                if occluder_name:
+                    result = CameraVisibilityResult(
+                        camera.camera_id,
+                        CameraVisibilityState.OCCLUDED,
+                        result.distance_mm,
+                        result.horizontal_angle_deg,
+                        result.vertical_angle_deg,
+                        occluder_name,
+                    )
+            results.append(result)
+        return results
+
+    def _current_tcp_world_xyz(self) -> np.ndarray | None:
+        if self._robot_model is None:
+            return None
+        pose = self._robot_model.get_corrected_tcp_pose()
+        point_base = np.array([[pose.x, pose.y, pose.z]], dtype=float)
+        world_points = self._transform_robot_points_to_world(point_base)
+        if world_points is None or len(world_points) == 0:
+            return None
+        return np.array(world_points[0], dtype=float)
+
+    def _camera_mount_world_matrix(self, camera: CameraConfiguration) -> np.ndarray:
+        return self._camera_parent_world_matrix(camera.parent_frame) @ camera.mount_matrix()
+
+    def _camera_optical_world_matrix(self, camera: CameraConfiguration) -> np.ndarray:
+        return self._camera_parent_world_matrix(camera.parent_frame) @ camera.optical_matrix()
+
+    def _camera_parent_world_matrix(self, parent_frame: str) -> np.ndarray:
+        normalized = str(parent_frame).strip().lower()
+        if normalized == "truss" and self._workspace_model is not None:
+            for element in self._workspace_model.get_workspace_cad_elements():
+                if element.name.strip().lower() == "truss":
+                    return math_utils.pose_zyx_to_matrix(element.pose)
+        return np.eye(4, dtype=float)
+
+    @staticmethod
+    def _matrix_to_qmatrix4x4(transform: np.ndarray) -> QtGui.QMatrix4x4:
+        T = np.array(transform, dtype=float)
+        return QtGui.QMatrix4x4(
+            T[0, 0], T[0, 1], T[0, 2], T[0, 3],
+            T[1, 0], T[1, 1], T[1, 2], T[1, 3],
+            T[2, 0], T[2, 1], T[2, 2], T[2, 3],
+            T[3, 0], T[3, 1], T[3, 2], T[3, 3],
+        )
+
+    def _build_camera_frustum_item(
+        self,
+        camera: CameraConfiguration,
+        camera_world_matrix: np.ndarray,
+        selected: bool = False,
+    ) -> gl.GLLinePlotItem | None:
+        range_mm = max(1.0, float(camera.fov.range_mm))
+        half_h = np.tan(np.radians(camera.fov.horizontal_deg * 0.5)) * range_mm
+        half_v = np.tan(np.radians(camera.fov.vertical_deg * 0.5)) * range_mm
+        local_points = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [-half_h, -half_v, range_mm],
+                [0.0, 0.0, 0.0],
+                [half_h, -half_v, range_mm],
+                [0.0, 0.0, 0.0],
+                [half_h, half_v, range_mm],
+                [0.0, 0.0, 0.0],
+                [-half_h, half_v, range_mm],
+                [-half_h, -half_v, range_mm],
+                [half_h, -half_v, range_mm],
+                [half_h, half_v, range_mm],
+                [-half_h, half_v, range_mm],
+                [-half_h, -half_v, range_mm],
+            ],
+            dtype=float,
+        )
+        local_h = np.column_stack([local_points, np.ones(len(local_points))])
+        world_points = (camera_world_matrix @ local_h.T).T[:, :3]
+        color = self._hex_to_rgba_tuple(camera.visual.color, alpha=1.0 if selected else 0.25)
+        item = gl.GLLinePlotItem(
+            pos=world_points,
+            color=color,
+            width=3 if selected else 2,
+            antialias=True,
+        )
+        self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+        return item
+
+    @staticmethod
+    def _camera_line_color(result: CameraVisibilityResult | None) -> tuple[float, float, float, float]:
+        if result is None:
+            return (0.55, 0.55, 0.55, 1.0)
+        if result.state == CameraVisibilityState.VISIBLE:
+            return (0.1, 0.75, 0.28, 1.0)
+        if result.state == CameraVisibilityState.OCCLUDED:
+            return (0.95, 0.05, 0.05, 1.0)
+        if result.state == CameraVisibilityState.OUT_OF_RANGE:
+            return (1.0, 0.5, 0.1, 1.0)
+        if result.state == CameraVisibilityState.DISABLED:
+            return (0.4, 0.4, 0.4, 0.7)
+        return (1.0, 0.62, 0.05, 1.0)
+
+    @staticmethod
+    def _hex_to_rgb_tuple(color_hex: str, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+        color = QColor(str(color_hex).strip())
+        if not color.isValid():
+            return fallback
+        return (color.red(), color.green(), color.blue())
+
+    @staticmethod
+    def _hex_to_rgba_tuple(color_hex: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
+        color = QColor(str(color_hex).strip())
+        if not color.isValid():
+            return (0.0, 0.68, 0.94, float(alpha))
+        return (color.redF(), color.greenF(), color.blueF(), float(alpha))
+
+    def _find_line_of_sight_occluder(self, origin_world: np.ndarray, target_world: np.ndarray) -> str:
+        direction = np.array(target_world, dtype=float) - np.array(origin_world, dtype=float)
+        segment_length = float(np.linalg.norm(direction))
+        if segment_length <= 1e-9:
+            return ""
+        direction = direction / segment_length
+        min_distance = 5.0
+        max_distance = max(min_distance, segment_length - 20.0)
+        colliders = (
+            list(self._workspace_collision_zones)
+            + list(self._workspace_tcp_zones)
+            + list(self._robot_colliders)
+            + list(self._tool_colliders)
+        )
+        closest: tuple[float, str] | None = None
+        for collider in colliders:
+            if not collider.enabled:
+                continue
+            hit_distance = self._intersect_ray_with_primitive_collider(
+                origin_world,
+                direction,
+                max_distance,
+                collider,
+            )
+            if hit_distance is None or hit_distance < min_distance or hit_distance > max_distance:
+                continue
+            if closest is None or hit_distance < closest[0]:
+                closest = (hit_distance, collider.name)
+
+        for mesh_item in self._iter_line_of_sight_occlusion_mesh_items():
+            hit_distance = self._intersect_ray_with_mesh_item(
+                origin_world,
+                direction,
+                max_distance,
+                mesh_item,
+            )
+            if hit_distance is None or hit_distance < min_distance or hit_distance > max_distance:
+                continue
+            mesh_name = str(getattr(mesh_item, "_calibrax_occlusion_name", "STL") or "STL")
+            if closest is None or hit_distance < closest[0]:
+                closest = (hit_distance, mesh_name)
+        return "" if closest is None else closest[1]
+
+    def _iter_line_of_sight_occlusion_mesh_items(self) -> list:
+        items: list = []
+        items.extend(self.robot_links)
+        items.extend(self._external_axes_links)
+        items.extend(self._workspace_element_items)
+        items.extend(self._tooling_mesh_items)
+        if self._workpiece_mesh_item is not None:
+            items.append(self._workpiece_mesh_item)
+        return [
+            item
+            for item in items
+            if item is not None
+            and hasattr(item, "_calibrax_mesh_data")
+            and hasattr(item, "_calibrax_world_transform")
+        ]
+
+    @staticmethod
+    def _intersect_ray_with_mesh_item(
+        origin_world: np.ndarray,
+        direction_world: np.ndarray,
+        max_distance: float,
+        mesh_item,
+    ) -> float | None:
+        mesh_data = getattr(mesh_item, "_calibrax_mesh_data", None)
+        transform = getattr(mesh_item, "_calibrax_world_transform", None)
+        if mesh_data is None or transform is None:
+            return None
+
+        try:
+            vertices = np.array(mesh_data.vertexes(), dtype=float)
+            faces = np.array(mesh_data.faces(), dtype=int)
+        except Exception:
+            return None
+        if vertices.size == 0 or faces.size == 0:
+            return None
+
+        try:
+            inv = math_utils.invert_homogeneous_transform(np.array(transform, dtype=float))
+        except ValueError:
+            return None
+
+        origin_local = (inv @ np.array([origin_world[0], origin_world[1], origin_world[2], 1.0], dtype=float))[:3]
+        direction_local = inv[:3, :3] @ np.array(direction_world, dtype=float)
+        if float(np.linalg.norm(direction_local)) <= 1e-12:
+            return None
+
+        valid_faces = faces[
+            (faces[:, 0] >= 0)
+            & (faces[:, 1] >= 0)
+            & (faces[:, 2] >= 0)
+            & (faces[:, 0] < len(vertices))
+            & (faces[:, 1] < len(vertices))
+            & (faces[:, 2] < len(vertices))
+        ]
+        if len(valid_faces) == 0:
+            return None
+
+        v0 = vertices[valid_faces[:, 0]]
+        v1 = vertices[valid_faces[:, 1]]
+        v2 = vertices[valid_faces[:, 2]]
+        edge1 = v1 - v0
+        edge2 = v2 - v0
+        h = np.cross(np.broadcast_to(direction_local, edge2.shape), edge2)
+        a = np.einsum("ij,ij->i", edge1, h)
+        mask = np.abs(a) > 1e-9
+        if not np.any(mask):
+            return None
+
+        edge1 = edge1[mask]
+        edge2 = edge2[mask]
+        v0 = v0[mask]
+        h = h[mask]
+        a = a[mask]
+        f = 1.0 / a
+        s = origin_local - v0
+        u = f * np.einsum("ij,ij->i", s, h)
+        mask = (u >= 0.0) & (u <= 1.0)
+        if not np.any(mask):
+            return None
+
+        edge1 = edge1[mask]
+        edge2 = edge2[mask]
+        s = s[mask]
+        u = u[mask]
+        f = f[mask]
+        q = np.cross(s, edge1)
+        direction_rows = np.broadcast_to(direction_local, q.shape)
+        v = f * np.einsum("ij,ij->i", direction_rows, q)
+        mask = (v >= 0.0) & ((u + v) <= 1.0)
+        if not np.any(mask):
+            return None
+
+        edge2 = edge2[mask]
+        q = q[mask]
+        f = f[mask]
+        t = f * np.einsum("ij,ij->i", edge2, q)
+        t = t[t > 1e-9]
+        if t.size == 0:
+            return None
+
+        closest_world_distance: float | None = None
+        transform = np.array(transform, dtype=float)
+        for local_t in np.sort(t)[:8]:
+            hit_local = origin_local + direction_local * float(local_t)
+            hit_world = transform @ np.array([hit_local[0], hit_local[1], hit_local[2], 1.0], dtype=float)
+            world_distance = float(np.linalg.norm(hit_world[:3] - origin_world))
+            if world_distance <= max_distance and (
+                closest_world_distance is None or world_distance < closest_world_distance
+            ):
+                closest_world_distance = world_distance
+        return closest_world_distance
+
+    @staticmethod
+    def _intersect_ray_with_primitive_collider(
+        origin_world: np.ndarray,
+        direction_world: np.ndarray,
+        max_distance: float,
+        collider: PrimitiveCollider,
+    ) -> float | None:
+        inv = math_utils.invert_homogeneous_transform(collider.world_transform)
+        origin_local = (inv @ np.array([origin_world[0], origin_world[1], origin_world[2], 1.0], dtype=float))[:3]
+        direction_local = (inv[:3, :3] @ np.array(direction_world, dtype=float))
+        norm = float(np.linalg.norm(direction_local))
+        if norm <= 1e-12:
+            return None
+        direction_local = direction_local / norm
+        local_hit = None
+        shape = collider.shape.value
+        if shape == "box":
+            half_x = max(1e-9, collider.size_x * 0.5)
+            half_y = max(1e-9, collider.size_y * 0.5)
+            bounds_min = np.array([-half_x, -half_y, 0.0], dtype=float)
+            bounds_max = np.array([half_x, half_y, max(1e-9, collider.size_z)], dtype=float)
+            local_hit = Viewer3DWidget._intersect_ray_aabb(origin_local, direction_local, bounds_min, bounds_max)
+        elif shape == "sphere":
+            local_hit = Viewer3DWidget._intersect_ray_sphere(origin_local, direction_local, max(1e-9, collider.radius))
+        elif shape == "cylinder":
+            local_hit = Viewer3DWidget._intersect_ray_z_cylinder(
+                origin_local,
+                direction_local,
+                max(1e-9, collider.radius),
+                max(1e-9, collider.height),
+            )
+        if local_hit is None:
+            return None
+        hit_local = origin_local + direction_local * local_hit
+        hit_world = collider.world_transform @ np.array([hit_local[0], hit_local[1], hit_local[2], 1.0], dtype=float)
+        world_distance = float(np.linalg.norm(hit_world[:3] - origin_world))
+        if world_distance > max_distance:
+            return None
+        return world_distance
+
+    @staticmethod
+    def _intersect_ray_aabb(
+        origin: np.ndarray,
+        direction: np.ndarray,
+        bounds_min: np.ndarray,
+        bounds_max: np.ndarray,
+    ) -> float | None:
+        t_min = -float("inf")
+        t_max = float("inf")
+        for axis in range(3):
+            if abs(direction[axis]) <= 1e-12:
+                if origin[axis] < bounds_min[axis] or origin[axis] > bounds_max[axis]:
+                    return None
+                continue
+            inv_d = 1.0 / direction[axis]
+            t1 = (bounds_min[axis] - origin[axis]) * inv_d
+            t2 = (bounds_max[axis] - origin[axis]) * inv_d
+            t_min = max(t_min, min(t1, t2))
+            t_max = min(t_max, max(t1, t2))
+            if t_max < t_min:
+                return None
+        if t_max < 0.0:
+            return None
+        return t_min if t_min >= 0.0 else t_max
+
+    @staticmethod
+    def _intersect_ray_sphere(origin: np.ndarray, direction: np.ndarray, radius: float) -> float | None:
+        b = 2.0 * float(np.dot(origin, direction))
+        c = float(np.dot(origin, origin) - radius * radius)
+        discriminant = b * b - 4.0 * c
+        if discriminant < 0.0:
+            return None
+        root = float(np.sqrt(discriminant))
+        t1 = (-b - root) * 0.5
+        t2 = (-b + root) * 0.5
+        if t1 >= 0.0:
+            return t1
+        if t2 >= 0.0:
+            return t2
+        return None
+
+    @staticmethod
+    def _intersect_ray_z_cylinder(origin: np.ndarray, direction: np.ndarray, radius: float, height: float) -> float | None:
+        candidates: list[float] = []
+        a = float(direction[0] * direction[0] + direction[1] * direction[1])
+        b = 2.0 * float(origin[0] * direction[0] + origin[1] * direction[1])
+        c = float(origin[0] * origin[0] + origin[1] * origin[1] - radius * radius)
+        if abs(a) > 1e-12:
+            discriminant = b * b - 4.0 * a * c
+            if discriminant >= 0.0:
+                root = float(np.sqrt(discriminant))
+                for t in ((-b - root) / (2.0 * a), (-b + root) / (2.0 * a)):
+                    z = origin[2] + direction[2] * t
+                    if t >= 0.0 and 0.0 <= z <= height:
+                        candidates.append(float(t))
+        if abs(direction[2]) > 1e-12:
+            for z_plane in (0.0, height):
+                t = (z_plane - origin[2]) / direction[2]
+                x = origin[0] + direction[0] * t
+                y = origin[1] + direction[1] * t
+                if t >= 0.0 and (x * x + y * y) <= radius * radius:
+                    candidates.append(float(t))
+        return min(candidates) if candidates else None
 
     def draw_frame(self, T, longueur=100, color: tuple[int, int, int]=None):
         """Dessine un repère unique"""
@@ -3399,6 +3960,7 @@ class Viewer3DWidget(QWidget):
                 T[3,0], T[3,1], T[3,2], T[3,3]
             )
             mesh_item.setTransform(qmat)
+            self._tag_occlusion_mesh_item(mesh_item, mesh_data, T, os.path.basename(resolved_stl_path))
             return mesh_item
         except Exception as e:
             resolved_stl_path = self._resolve_filesystem_path(stl_path)
@@ -3406,6 +3968,15 @@ class Viewer3DWidget(QWidget):
                 self._missing_mesh_paths.add(resolved_stl_path)
             print(f"Erreur STL {resolved_stl_path or stl_path}: {e}")
             return None
+
+    @staticmethod
+    def _tag_occlusion_mesh_item(mesh_item, mesh_data, transform: np.ndarray, name: str) -> None:
+        try:
+            mesh_item._calibrax_mesh_data = mesh_data
+            mesh_item._calibrax_world_transform = np.array(transform, dtype=float)
+            mesh_item._calibrax_occlusion_name = str(name or "STL")
+        except Exception:
+            pass
 
     @staticmethod
     def _resolve_filesystem_path(path: str) -> str:
@@ -3715,6 +4286,7 @@ class Viewer3DWidget(QWidget):
             self._render_workspace_models()
             self._normalize_workspace_frames_visibility()
             self.draw_workspace_frames()
+            self.refresh_cameras()
             self.update_frame_list_ui()
             return
         if same_workspace and not pose_changed and not structure_changed:
@@ -3749,6 +4321,7 @@ class Viewer3DWidget(QWidget):
         self._render_workspace_zones()
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
+        self.refresh_camera_visibility()
 
     @staticmethod
     def _pose_to_matrix(pose) -> np.ndarray:
@@ -3921,6 +4494,8 @@ class Viewer3DWidget(QWidget):
                     T_render[3,0], T_render[3,1], T_render[3,2], T_render[3,3],
                 )
                 mesh_item.setTransform(qmat)
+                if hasattr(mesh_item, "_calibrax_world_transform"):
+                    mesh_item._calibrax_world_transform = np.array(T_render, dtype=float)
 
         # ── Redessiner les repères (cheap : lignes seulement) ──────────
         # On reconstruit depuis les objets axis stockés dans les clés
@@ -3971,6 +4546,39 @@ class Viewer3DWidget(QWidget):
             )
             self.ext_axes_frame_list.setItemWidget(item, checkbox)
         self._set_frame_list_height(self.ext_axes_frame_list, len(axes))
+
+    def _sync_camera_frame_list_widget(self) -> None:
+        if not hasattr(self, "camera_frame_list"):
+            return
+        self.camera_frame_list.clear()
+        cameras = self._camera_model.get_cameras() if self._camera_model is not None else []
+        existing_ids = {camera.camera_id for camera in cameras}
+        self._camera_frames_visible = {
+            camera_id: visible
+            for camera_id, visible in self._camera_frames_visible.items()
+            if camera_id in existing_ids
+        }
+        for camera in cameras:
+            self._camera_frames_visible.setdefault(camera.camera_id, True)
+            is_visible = self._camera_frames_visible.get(camera.camera_id, True)
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 28))
+            self.camera_frame_list.addItem(item)
+            checkbox = QCheckBox(f"{camera.name} Frame", self.camera_frame_list)
+            checkbox.setChecked(bool(is_visible))
+            checkbox.toggled.connect(
+                lambda checked, camera_id=camera.camera_id: self._on_camera_frame_toggled(camera_id, checked)
+            )
+            self.camera_frame_list.setItemWidget(item, checkbox)
+        self._set_frame_list_height(self.camera_frame_list, len(cameras))
+
+    def _on_camera_frame_toggled(self, camera_id: str, checked: bool) -> None:
+        if self._camera_frames_visible.get(camera_id, True) == bool(checked):
+            return
+        self._camera_frames_visible[camera_id] = bool(checked)
+        self.refresh_cameras()
+        self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
 
     def _on_ext_axis_frame_toggled(self, axis_id: str, checked: bool) -> None:
         if self._ext_axis_frames_visible.get(axis_id) == bool(checked):
@@ -4202,6 +4810,7 @@ class Viewer3DWidget(QWidget):
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
         self.draw_all_frames(self.last_dh_matrices)
+        self.refresh_camera_visibility()
         self.update_frame_list_ui()
 
     def _clear_and_refresh(self):
@@ -4237,9 +4846,11 @@ class Viewer3DWidget(QWidget):
         self._render_workspace_zones()
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
+        self.refresh_camera_visibility()
         self._restore_external_axes()
         self._restore_tooling()
         self._restore_workpiece()
+        self._render_cameras()
 
         # 2. Repères après tous les meshes (additive → toujours visibles par dessus)
         self.draw_all_frames(self.last_dh_matrices)
@@ -4249,6 +4860,7 @@ class Viewer3DWidget(QWidget):
 
         # 3. Trajectoire en dernier (additive → au premier plan absolu)
         self._render_trajectory_overlay()
+        self.refresh_camera_visibility()
 
         self.update_frame_list_ui()
 
@@ -4270,6 +4882,8 @@ class Viewer3DWidget(QWidget):
                     T[3,0], T[3,1], T[3,2], T[3,3]
                 )
                 mesh_item.setTransform(qmat)
+                    if hasattr(mesh_item, "_calibrax_world_transform"):
+                        mesh_item._calibrax_world_transform = np.array(T, dtype=float)
                 self._ensure_viewer_item(mesh_item)
 
     def _build_primitive_item(

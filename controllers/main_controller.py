@@ -6,6 +6,7 @@ from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QMessageBox
 
 from controllers.calibration_controller import CalibrationController
+from controllers.camera_controller import CameraController
 from controllers.cartesian_control_controller import CartesianControlController
 from controllers.external_axes_controller import ExternalAxesController
 from controllers.joint_control_controller import JointControlController
@@ -18,6 +19,7 @@ from controllers.viewer3d_controller import Viewer3DController
 from controllers.workspace_controller import WorkspaceController
 from controllers.workpiece_controller import WorkpieceController
 from models.app_session_file import AppSessionFile, ProgramBaseConfigState, ViewerDisplayState
+from models.camera_model import CameraModel
 from models.collision_scene_model import CollisionSceneModel
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
@@ -36,6 +38,7 @@ class MainController(QObject):
         robot_model: RobotModel,
         tool_model: ToolModel,
         workspace_model: WorkspaceModel,
+        camera_model: CameraModel,
         external_axes_model: ExternalAxesModel,
         workpiece_model: WorkpieceModel,
         tooling_model: ToolingModel,
@@ -50,6 +53,7 @@ class MainController(QObject):
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.workspace_model = workspace_model
+        self.camera_model = camera_model
         self.external_axes_model = external_axes_model
         self.workpiece_model = workpiece_model
         self.tooling_model = tooling_model
@@ -81,6 +85,12 @@ class MainController(QObject):
             self.collision_scene_model,
             main_window.get_viewer3d(),
             external_axes_model=external_axes_model,
+        )
+        self.camera_controller = CameraController(
+            camera_model,
+            main_window.get_camera_view(),
+            self.viewer3d_controller,
+            parent=self,
         )
         self.robot_controller = RobotController(
             robot_model,
@@ -134,6 +144,9 @@ class MainController(QObject):
             self.workpiece_controller,
             main_window.get_program_view(),
             self.viewer3d_controller,
+        )
+        self.program_controller.register_playback_widget(
+            main_window.get_camera_view().get_playback_widget()
         )
         self.machining_controller = MachiningController(
             robot_model,

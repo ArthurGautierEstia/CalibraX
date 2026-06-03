@@ -6,6 +6,7 @@ from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from views.calibration_view import CalibrationView
+from views.camera_view import CameraView
 from views.cartesian_control_view import CartesianControlView
 from views.external_axes_view import ExternalAxesView
 from views.joint_control_view import JointControlView
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self.workpiece_view = WorkpieceView()
         self.workspace_view = WorkspaceView()
         self.calibration_view = CalibrationView()
+        self.camera_view = CameraView()
         self.joint_control_view = JointControlView()
         self.cartesian_control_view = CartesianControlView()
         self.mgi_view = MgiView()
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.external_axes_view, "Axes externes")
         self.tabs.addTab(self.workpiece_view, "Pièce")
         self.tabs.addTab(self.calibration_view, "Calibration")
+        self.tabs.addTab(self.camera_view, "Camera")
         self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.mgi_view, "MGI")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
@@ -216,6 +219,10 @@ class MainWindow(QMainWindow):
         """Retourne la vue workspace."""
         return self.workspace_view
 
+    def get_camera_view(self) -> CameraView:
+        """Retourne la vue camera."""
+        return self.camera_view
+
     def get_joint_control_view(self) -> JointControlView:
         """Retourne la vue de controle articulaire"""
         return self.joint_control_view
@@ -255,6 +262,7 @@ class MainWindow(QMainWindow):
             self.external_axes_view,
             self.workpiece_view,
             self.calibration_view,
+            self.camera_view,
         )
         configuration_required_views = (
             self.workspace_view,
