@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
+from utils.perf_probe import probe
 
 from models.primitive_collider_models import PrimitiveCollider, PrimitiveColliderData, RobotAxisColliderData
 from models.robot_model import RobotModel
@@ -64,7 +65,8 @@ class CollisionSceneModel(QObject):
         self.scene_changed.emit()
 
     def _on_robot_pose_changed(self) -> None:
-        self._refresh_attached_world_colliders()
+        with probe("collision._on_robot_pose_changed [hors-perimetre, doc]"):
+            self._refresh_attached_world_colliders()
         self.scene_changed.emit()
 
     def _on_tool_colliders_changed(self) -> None:

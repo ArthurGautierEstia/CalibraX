@@ -5,6 +5,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 import time
 
+from utils.perf_probe import probe, dump_and_reset
+
 import numpy as np
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QColor
@@ -70,6 +72,8 @@ class ProgramController:
     MEASURED_COLOR: tuple[float, float, float, float] = (0.0, 0.35, 1.0, 1.0)
     COMPENSATED_COLOR: tuple[float, float, float, float] = (0.0, 0.85, 0.35, 1.0)
 
+    _TRAJ_REFRESH_INTERVAL_S: float = 1.0 / 30.0
+
 
 
     def __init__(
@@ -122,8 +126,12 @@ class ProgramController:
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._compensated_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
+        # Géométrie nominale pré-construite une fois (étape 2 perf)
+        self._nom_seg_pts: list[np.ndarray] = []   # pts robot-frame par segment, (K,3)
+        self._nom_seg_times: list[np.ndarray] = [] # temps par vertex par segment, (K,)
         self._current_time_s = 0.0
         self._last_split_sample_index: int = -1
+        self._last_traj_refresh_wall_s: float = 0.0
         self._playback_sample_times: list[float] = []
         self._playback_timer = QTimer()
         self._playback_timer.setSingleShot(False)
@@ -324,6 +332,8 @@ class ProgramController:
             self._nominal_segments_cache = []
             self._measured_segments_cache = []
             self._compensated_segments_cache = []
+            self._nom_seg_pts = []
+            self._nom_seg_times = []
             self._last_split_sample_index = -1
             self._refresh_view()
             return
@@ -391,11 +401,13 @@ class ProgramController:
             self._build_display_keypoints_for_mode(active_motion_mode, active_target_mode)
         )
 
+        _theo_samples = self._get_samples_for_modes("THEORETICAL", active_motion_mode)
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
-            self._get_samples_for_modes("THEORETICAL", active_motion_mode),
+            _theo_samples,
             self._get_nominal_color(),
             self.MEASURED_COLOR,
         )
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples)
         self._compensated_segments_cache = []
         self._simulation_dirty = False
 
@@ -509,46 +521,62 @@ class ProgramController:
 
 
     def _refresh_viewer_segments(self) -> None:
+        with probe("_refresh_viewer_segments"):
+            result = self.current_result
+            if result is None:
+                self.viewer3d_controller.clear_trajectory_path()
+                return
 
-        result = self.current_result
-        if result is None:
-            self.viewer3d_controller.clear_trajectory_path()
-            return
+            segments: list[tuple[np.ndarray | list[list[float]], tuple[float, float, float, float] | np.ndarray]] = []
 
-        segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
+            show_split = self._current_time_s > 1e-9
+            theoretical_visible = self.actions_widget.is_theoretical_visible()
+            measured_visible = self.actions_widget.is_measured_visible()
 
-        show_split = self._current_time_s > 1e-9
-        if show_split and (self.actions_widget.is_theoretical_visible() or self.actions_widget.is_measured_visible()):
-            nominal_color = self._get_nominal_color()
-            done_nominal = self.viewer3d_controller.get_accent_color_rgba()  # accent : portion réalisée
-            done_measured = self._compute_done_color(self.MEASURED_COLOR)
-            motion_mode = self.config_widget.get_motion_mode()
-            theoretical_samples = self._get_samples_for_modes("THEORETICAL", motion_mode)
-            split_nom, split_meas = self._build_nominal_and_measured_segments(
-                theoretical_samples,
-                nominal_color,
-                self.MEASURED_COLOR,
-                done_nominal_color=done_nominal,
-                done_measured_color=done_measured,
-                split_time_s=self._current_time_s,
-            )
-            if self.actions_widget.is_theoretical_visible():
-                segments.extend(split_nom)
-            if self.actions_widget.is_measured_visible():
-                segments.extend(split_meas)
-        else:
-            if self.actions_widget.is_theoretical_visible():
-                segments.extend(self._nominal_segments_cache)
-            if self.actions_widget.is_measured_visible():
-                segments.extend(self._measured_segments_cache)
+            # Trajectoire nominale : geometry pré-construite, couleurs par-vertex vectorisées
+            if theoretical_visible and self._nom_seg_pts:
+                nominal_color_arr = np.array(self._get_nominal_color(), dtype=np.float64)
+                if show_split:
+                    done_color_arr = np.array(
+                        self.viewer3d_controller.get_accent_color_rgba(), dtype=np.float64
+                    )
+                    t_split = self._current_time_s
+                    for pts, times in zip(self._nom_seg_pts, self._nom_seg_times):
+                        n = len(pts)
+                        colors = np.empty((n, 4), dtype=np.float64)
+                        mask = times <= t_split
+                        colors[mask] = done_color_arr
+                        colors[~mask] = nominal_color_arr
+                        segments.append((pts, colors))
+                else:
+                    for pts in self._nom_seg_pts:
+                        segments.append((pts, tuple(nominal_color_arr)))
 
-        if self._compensation_computed and self.actions_widget.is_compensated_visible():
-            segments.extend(self._compensated_segments_cache)
+            # Trajectoire mesurée (chemin non critique, approche legacy)
+            if measured_visible:
+                if show_split:
+                    done_measured = self._compute_done_color(self.MEASURED_COLOR)
+                    motion_mode = self.config_widget.get_motion_mode()
+                    with probe("_build_nominal_and_measured_segments"):
+                        _, split_meas = self._build_nominal_and_measured_segments(
+                            self._get_samples_for_modes("THEORETICAL", motion_mode),
+                            self._get_nominal_color(),
+                            self.MEASURED_COLOR,
+                            done_nominal_color=self.viewer3d_controller.get_accent_color_rgba(),
+                            done_measured_color=done_measured,
+                            split_time_s=self._current_time_s,
+                        )
+                    segments.extend(split_meas)
+                else:
+                    segments.extend(self._measured_segments_cache)
 
-        if segments:
-            self.viewer3d_controller.set_trajectory_path_segments(self._downsample_segments(segments))
-        else:
-            self.viewer3d_controller.clear_trajectory_path()
+            if self._compensation_computed and self.actions_widget.is_compensated_visible():
+                segments.extend(self._compensated_segments_cache)
+
+            if segments:
+                self.viewer3d_controller.set_trajectory_path_segments(segments)
+            else:
+                self.viewer3d_controller.clear_trajectory_path()
 
 
 
@@ -684,12 +712,16 @@ class ProgramController:
             return
         sample_index = self._sample_index_at_time(self._current_time_s)
         sample = samples[sample_index]
-        self.robot_model.set_joints(sample.joints_deg.to_list())
-        # Met à jour la portion "réalisée" si l'index de split a changé
+        with probe("set_joints [hors-perimetre, doc]"):
+            self.robot_model.set_joints(sample.joints_deg.to_list())
+        # Met à jour la portion "réalisée" si l'index de split a changé (throttlé à ~30 Hz).
         new_split_index = sample_index if self._current_time_s > 1e-9 else -1
         if new_split_index != self._last_split_sample_index:
             self._last_split_sample_index = new_split_index
-            self._refresh_viewer_segments()
+            now = time.perf_counter()
+            if now - self._last_traj_refresh_wall_s >= self._TRAJ_REFRESH_INTERVAL_S:
+                self._last_traj_refresh_wall_s = now
+                self._refresh_viewer_segments()
 
 
 
@@ -745,6 +777,7 @@ class ProgramController:
     def _stop_playback(self) -> None:
 
         self._playback_wall_start_s = None
+        self._last_traj_refresh_wall_s = 0.0
 
         self._playback_timer.stop()
         self.playback_widget.set_playing(False)
@@ -799,6 +832,7 @@ class ProgramController:
                 return
             self._stop_playback()
             self._apply_time_value(end_time_s, samples)
+            dump_and_reset()
             return
         self._apply_time_value(target_time_s, samples)
 
@@ -1659,6 +1693,8 @@ class ProgramController:
         self._nominal_segments_cache = []
         self._measured_segments_cache = []
         self._compensated_segments_cache = []
+        self._nom_seg_pts = []
+        self._nom_seg_times = []
         self._last_split_sample_index = -1
         self.actions_widget.set_compensated_checkbox_enabled(False)
         self.actions_widget.set_simulation_enabled(True)
@@ -2052,11 +2088,13 @@ class ProgramController:
             self._build_display_keypoints_for_mode(motion_mode, target_mode)
         )
 
+        _theo_samples_2 = self._get_samples_for_modes("THEORETICAL", motion_mode)
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
-            self._get_samples_for_modes("THEORETICAL", motion_mode),
+            _theo_samples_2,
             self._get_nominal_color(),
             self.MEASURED_COLOR,
         )
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples_2)
         self._compensated_segments_cache = self._build_segments(
             self._get_samples_for_modes("COMPENSATED", motion_mode),
             self.COMPENSATED_COLOR,
@@ -2250,6 +2288,43 @@ class ProgramController:
             _flush_meas(current_meas_is_done)
 
         return nominal_segments, measured_segments
+
+    @staticmethod
+    def _build_nom_segs_np(
+        samples: list[ProgramSimulationSample],
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        """Pré-construit les segments nominaux comme numpy arrays (robot frame).
+
+        Retourne deux listes parallèles :
+        - pts_segs  : (K, 3) float64 par segment
+        - time_segs : (K,)   float64 par segment (temps en secondes par vertex)
+        """
+        pts_segs: list[np.ndarray] = []
+        time_segs: list[np.ndarray] = []
+        cur_pts: list[list[float]] = []
+        cur_times: list[float] = []
+        cur_key: tuple[str, int] | None = None
+
+        def _flush() -> None:
+            if len(cur_pts) >= 2:
+                pts_segs.append(np.array(cur_pts, dtype=np.float64))
+                time_segs.append(np.array(cur_times, dtype=np.float64))
+
+        for sample in samples:
+            nom = sample.nominal_pose_base
+            if nom is None:
+                continue
+            key = (sample.motion_mode.value, int(sample.source_line))
+            if cur_key is not None and key != cur_key:
+                _flush()
+                cur_pts = [cur_pts[-1]] if cur_pts else []
+                cur_times = [cur_times[-1]] if cur_times else []
+            cur_key = key
+            cur_pts.append([nom.x, nom.y, nom.z])
+            cur_times.append(float(sample.time_s))
+
+        _flush()
+        return pts_segs, time_segs
 
     def _build_segments(
         self,

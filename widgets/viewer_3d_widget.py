@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from utils.perf_probe import probe, FpsCounter
 from OpenGL.GL import GL_DEPTH_COMPONENT, GL_FLOAT, glReadPixels
 from PyQt6.QtWidgets import (
     QApplication,
@@ -64,6 +65,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._orthographic_zoom_factor = 1.0
         self._grid_reference = None
         self._trajectory_world_points_provider = None
+        self._fps_counter = FpsCounter("paintGL")
         self.setBackgroundColor(self._background_primary_color)
 
     def mousePressEvent(self, ev) -> None:
@@ -229,6 +231,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return tr
 
     def paintGL(self) -> None:
+        self._fps_counter.tick()
         from OpenGL import GL
         region = self.getViewport()
         if self._background_mode != "gradient":
@@ -993,7 +996,8 @@ class Viewer3DWidget(QWidget):
         self._trajectory_keypoint_editing_item: gl.GLScatterPlotItem | None = None
         self._trajectory_tangent_out_items: list[gl.GLLinePlotItem] = []
         self._trajectory_tangent_in_items: list[gl.GLLinePlotItem] = []
-        self._trajectory_path_segments: list[tuple[np.ndarray, tuple[float, float, float, float]]] | None = None
+        # Couleur par segment : tuple uniform ou np.ndarray (N,4) par-vertex
+        self._trajectory_path_segments: list[tuple[np.ndarray, tuple[float, float, float, float] | np.ndarray]] | None = None
         self._trajectory_keypoint_points: np.ndarray | None = None
         self._trajectory_keypoint_selected_index: int | None = None
         self._trajectory_keypoint_editing_index: int | None = None
@@ -2895,15 +2899,17 @@ class Viewer3DWidget(QWidget):
 
     def set_trajectory_path_segments(
         self,
-        segments: list[tuple[list[list[float]], tuple[float, float, float, float]]],
+        segments: list[tuple[list[list[float]] | np.ndarray, tuple[float, float, float, float] | np.ndarray]],
     ) -> None:
-        parsed_segments: list[tuple[np.ndarray, tuple[float, float, float, float]]] = []
-        for points_xyz, color in segments:
-            if len(points_xyz) < 2:
-                continue
-            parsed_segments.append((np.array(points_xyz, dtype=float), color))
-        self._trajectory_path_segments = parsed_segments if parsed_segments else None
-        self._render_trajectory_overlay()
+        with probe("set_trajectory_path_segments"):
+            parsed: list[tuple[np.ndarray, tuple[float, float, float, float] | np.ndarray]] = []
+            for points_xyz, color in segments:
+                pts = np.asarray(points_xyz, dtype=np.float64)
+                if len(pts) < 2:
+                    continue
+                parsed.append((pts, color))
+            self._trajectory_path_segments = parsed if parsed else None
+            self._render_trajectory_overlay()
 
     def clear_trajectory_path(self) -> None:
         self._trajectory_path_segments = None
@@ -2979,113 +2985,125 @@ class Viewer3DWidget(QWidget):
         return keypoints_world, path_segments_world
 
     def _render_trajectory_overlay(self) -> None:
-        for item in self._trajectory_path_items:
-            self.viewer.removeItem(item)
-        self._trajectory_path_items = []
-        if self._trajectory_keypoints_item is not None:
-            self.viewer.removeItem(self._trajectory_keypoints_item)
-            self._trajectory_keypoints_item = None
-        if self._trajectory_keypoint_selected_item is not None:
-            self.viewer.removeItem(self._trajectory_keypoint_selected_item)
-            self._trajectory_keypoint_selected_item = None
-        if self._trajectory_keypoint_editing_item is not None:
-            self.viewer.removeItem(self._trajectory_keypoint_editing_item)
-            self._trajectory_keypoint_editing_item = None
-        for item in self._trajectory_tangent_out_items:
-            self.viewer.removeItem(item)
-        self._trajectory_tangent_out_items = []
-        for item in self._trajectory_tangent_in_items:
-            self.viewer.removeItem(item)
-        self._trajectory_tangent_in_items = []
-
-        if self._trajectory_path_segments is not None and len(self._trajectory_path_segments) > 0:
-            for points_xyz, color in self._trajectory_path_segments:
-                world_points = self._transform_robot_points_to_world(points_xyz)
-                # Forcer alpha=1.0 : trajectoire franche visuellement, occultée par les meshes devant
-                opaque_color = (color[0], color[1], color[2], 1.0)
-                path_item = gl.GLLinePlotItem(
-                    pos=world_points,
-                    color=opaque_color,
-                    width=2,
-                    antialias=True,
-                )
-                self._apply_layer(path_item, self.LAYER_SCENE_TRANSLUCENT)
-                self._trajectory_path_items.append(path_item)
-                self.viewer.addItem(path_item)
-
-        if self._trajectory_keypoint_points is not None and len(self._trajectory_keypoint_points) > 0:
-            points = self._trajectory_keypoint_points
-            selected_idx = self._trajectory_keypoint_selected_index
-            editing_idx = self._trajectory_keypoint_editing_index
-            mask = np.ones(len(points), dtype=bool)
-            if selected_idx is not None and 0 <= selected_idx < len(points):
-                mask[selected_idx] = False
-            if editing_idx is not None and 0 <= editing_idx < len(points):
-                mask[editing_idx] = False
-
-            base_points = points[mask]
-            if len(base_points) > 0:
-                world_base_points = self._transform_robot_points_to_world(base_points)
-                self._trajectory_keypoints_item = gl.GLScatterPlotItem(
-                    pos=world_base_points,
-                    color=(0.95, 0.95, 0.95, 1.0),
-                    size=9,
-                    pxMode=True,
-                )
-                self._apply_layer(self._trajectory_keypoints_item, self.LAYER_SCENE_TRANSLUCENT)
-                self.viewer.addItem(self._trajectory_keypoints_item)
-
-            if selected_idx is not None and 0 <= selected_idx < len(points):
-                selected_points = self._transform_robot_points_to_world(np.array([points[selected_idx]], dtype=float))
-                self._trajectory_keypoint_selected_item = gl.GLScatterPlotItem(
-                    pos=selected_points,
-                    color=(0.1, 0.85, 1.0, 1.0),
-                    size=13,
-                    pxMode=True,
-                )
-                self._apply_layer(self._trajectory_keypoint_selected_item, self.LAYER_SCENE_TRANSLUCENT)
-                self.viewer.addItem(self._trajectory_keypoint_selected_item)
-
-            if editing_idx is not None and 0 <= editing_idx < len(points):
-                editing_points = self._transform_robot_points_to_world(np.array([points[editing_idx]], dtype=float))
-                self._trajectory_keypoint_editing_item = gl.GLScatterPlotItem(
-                    pos=editing_points,
-                    color=(1.0, 0.35, 0.1, 1.0),
-                    size=15,
-                    pxMode=True,
-                )
-                self._apply_layer(self._trajectory_keypoint_editing_item, self.LAYER_SCENE_TRANSLUCENT)
-                self.viewer.addItem(self._trajectory_keypoint_editing_item)
-
-        if self._trajectory_tangent_out_segments is not None:
-            for segment in self._trajectory_tangent_out_segments:
-                if len(segment) < 2:
-                    continue
-                world_segment = self._transform_robot_points_to_world(segment)
+        with probe("_render_trajectory_overlay"):
+            # --- Segments de trajectoire : setData() si items déjà présents (pas de VBO churn) ---
+            path_segs = self._trajectory_path_segments or []
+            n_new = len(path_segs)
+            n_old = len(self._trajectory_path_items)
+            if n_new < n_old:
+                for item in self._trajectory_path_items[n_new:]:
+                    self.viewer.removeItem(item)
+                self._trajectory_path_items = self._trajectory_path_items[:n_new]
+            while len(self._trajectory_path_items) < n_new:
                 item = gl.GLLinePlotItem(
-                    pos=world_segment,
-                    color=(1.0, 0.5, 0.1, 1.0),
+                    pos=np.zeros((2, 3), dtype=np.float64),
+                    color=(1.0, 1.0, 1.0, 1.0),
                     width=2,
                     antialias=True,
                 )
                 self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
-                self._trajectory_tangent_out_items.append(item)
+                self._trajectory_path_items.append(item)
                 self.viewer.addItem(item)
+            for item, (pts, color) in zip(self._trajectory_path_items, path_segs):
+                world_pts = self._transform_robot_points_to_world(pts)
+                if isinstance(color, np.ndarray):
+                    # Couleur par-vertex : forcer alpha=1.0
+                    render_color = np.empty_like(color)
+                    render_color[:, :3] = color[:, :3]
+                    render_color[:, 3] = 1.0
+                else:
+                    render_color = (color[0], color[1], color[2], 1.0)
+                item.setData(pos=world_pts, color=render_color)
 
-        if self._trajectory_tangent_in_segments is not None:
-            for segment in self._trajectory_tangent_in_segments:
-                if len(segment) < 2:
-                    continue
-                world_segment = self._transform_robot_points_to_world(segment)
-                item = gl.GLLinePlotItem(
-                    pos=world_segment,
-                    color=(0.25, 1.0, 0.55, 1.0),
-                    width=2,
-                    antialias=True,
-                )
-                self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
-                self._trajectory_tangent_in_items.append(item)
-                self.viewer.addItem(item)
+            if self._trajectory_keypoints_item is not None:
+                self.viewer.removeItem(self._trajectory_keypoints_item)
+                self._trajectory_keypoints_item = None
+            if self._trajectory_keypoint_selected_item is not None:
+                self.viewer.removeItem(self._trajectory_keypoint_selected_item)
+                self._trajectory_keypoint_selected_item = None
+            if self._trajectory_keypoint_editing_item is not None:
+                self.viewer.removeItem(self._trajectory_keypoint_editing_item)
+                self._trajectory_keypoint_editing_item = None
+            for item in self._trajectory_tangent_out_items:
+                self.viewer.removeItem(item)
+            self._trajectory_tangent_out_items = []
+            for item in self._trajectory_tangent_in_items:
+                self.viewer.removeItem(item)
+            self._trajectory_tangent_in_items = []
+
+            if self._trajectory_keypoint_points is not None and len(self._trajectory_keypoint_points) > 0:
+                points = self._trajectory_keypoint_points
+                selected_idx = self._trajectory_keypoint_selected_index
+                editing_idx = self._trajectory_keypoint_editing_index
+                mask = np.ones(len(points), dtype=bool)
+                if selected_idx is not None and 0 <= selected_idx < len(points):
+                    mask[selected_idx] = False
+                if editing_idx is not None and 0 <= editing_idx < len(points):
+                    mask[editing_idx] = False
+
+                base_points = points[mask]
+                if len(base_points) > 0:
+                    world_base_points = self._transform_robot_points_to_world(base_points)
+                    self._trajectory_keypoints_item = gl.GLScatterPlotItem(
+                        pos=world_base_points,
+                        color=(0.95, 0.95, 0.95, 1.0),
+                        size=9,
+                        pxMode=True,
+                    )
+                    self._apply_layer(self._trajectory_keypoints_item, self.LAYER_SCENE_TRANSLUCENT)
+                    self.viewer.addItem(self._trajectory_keypoints_item)
+
+                if selected_idx is not None and 0 <= selected_idx < len(points):
+                    selected_points = self._transform_robot_points_to_world(np.array([points[selected_idx]], dtype=float))
+                    self._trajectory_keypoint_selected_item = gl.GLScatterPlotItem(
+                        pos=selected_points,
+                        color=(0.1, 0.85, 1.0, 1.0),
+                        size=13,
+                        pxMode=True,
+                    )
+                    self._apply_layer(self._trajectory_keypoint_selected_item, self.LAYER_SCENE_TRANSLUCENT)
+                    self.viewer.addItem(self._trajectory_keypoint_selected_item)
+
+                if editing_idx is not None and 0 <= editing_idx < len(points):
+                    editing_points = self._transform_robot_points_to_world(np.array([points[editing_idx]], dtype=float))
+                    self._trajectory_keypoint_editing_item = gl.GLScatterPlotItem(
+                        pos=editing_points,
+                        color=(1.0, 0.35, 0.1, 1.0),
+                        size=15,
+                        pxMode=True,
+                    )
+                    self._apply_layer(self._trajectory_keypoint_editing_item, self.LAYER_SCENE_TRANSLUCENT)
+                    self.viewer.addItem(self._trajectory_keypoint_editing_item)
+
+            if self._trajectory_tangent_out_segments is not None:
+                for segment in self._trajectory_tangent_out_segments:
+                    if len(segment) < 2:
+                        continue
+                    world_segment = self._transform_robot_points_to_world(segment)
+                    item = gl.GLLinePlotItem(
+                        pos=world_segment,
+                        color=(1.0, 0.5, 0.1, 1.0),
+                        width=2,
+                        antialias=True,
+                    )
+                    self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+                    self._trajectory_tangent_out_items.append(item)
+                    self.viewer.addItem(item)
+
+            if self._trajectory_tangent_in_segments is not None:
+                for segment in self._trajectory_tangent_in_segments:
+                    if len(segment) < 2:
+                        continue
+                    world_segment = self._transform_robot_points_to_world(segment)
+                    item = gl.GLLinePlotItem(
+                        pos=world_segment,
+                        color=(0.25, 1.0, 0.55, 1.0),
+                        width=2,
+                        antialias=True,
+                    )
+                    self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+                    self._trajectory_tangent_in_items.append(item)
+                    self.viewer.addItem(item)
 
     def draw_frame(self, T, longueur=100, color: tuple[int, int, int]=None):
         """Dessine un repère unique"""
@@ -3580,6 +3598,7 @@ class Viewer3DWidget(QWidget):
         structure_changed = previous_structure_revision != self._workspace_structure_revision
         if same_workspace and pose_changed and not structure_changed:
             self._refresh_robot_state_items()
+            self._render_trajectory_overlay()
             self._render_workspace_models()
             self._normalize_workspace_frames_visibility()
             self.draw_workspace_frames()
@@ -3645,12 +3664,13 @@ class Viewer3DWidget(QWidget):
         return transform_matrix_base_to_world(transform, self._robot_base_transform_world)
 
     def _transform_robot_points_to_world(self, points_xyz: np.ndarray) -> np.ndarray:
-        pts = np.asarray(points_xyz, dtype=float)
-        if pts.size == 0:
-            return pts
-        if self._external_robot_base_override is not None:
-            return pts @ self._external_robot_base_override[:3, :3].T + self._external_robot_base_override[:3, 3]
-        return transform_points_base_to_world(pts, self._robot_base_transform_world)
+        with probe("_transform_robot_points_to_world"):
+            pts = np.asarray(points_xyz, dtype=float)
+            if pts.size == 0:
+                return pts
+            if self._external_robot_base_override is not None:
+                return pts @ self._external_robot_base_override[:3, :3].T + self._external_robot_base_override[:3, 3]
+            return transform_points_base_to_world(pts, self._robot_base_transform_world)
 
     # ------------------------------------------------------------------
     # Axes externes
@@ -4070,7 +4090,6 @@ class Viewer3DWidget(QWidget):
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
         self.draw_all_frames(self.last_dh_matrices)
-        self._render_trajectory_overlay()
         self.update_frame_list_ui()
 
     def _clear_and_refresh(self):
@@ -4122,24 +4141,25 @@ class Viewer3DWidget(QWidget):
         self.update_frame_list_ui()
 
     def update_robot_poses(self, matrices):
-        tool_offset_rz = self._resolve_tool_cad_offset_rz()
-        for mesh_item, matrix_index, role in zip(self.robot_links, self._robot_link_matrix_indices, self._robot_link_roles):
-            if matrix_index >= len(matrices):
-                continue
-            T = matrices[matrix_index]
-            if role == "tool":
-                T = self._apply_tool_visual_offset(T, tool_offset_rz)
-            T = self._transform_robot_matrix_to_world(T)
-            if mesh_item:
-                mesh_item.resetTransform()
-                qmat = QtGui.QMatrix4x4(
-                    T[0,0], T[0,1], T[0,2], T[0,3],
-                    T[1,0], T[1,1], T[1,2], T[1,3],
-                    T[2,0], T[2,1], T[2,2], T[2,3],
-                    T[3,0], T[3,1], T[3,2], T[3,3]
-                )
-                mesh_item.setTransform(qmat)
-                self._ensure_viewer_item(mesh_item)
+        with probe("update_robot_poses"):
+            tool_offset_rz = self._resolve_tool_cad_offset_rz()
+            for mesh_item, matrix_index, role in zip(self.robot_links, self._robot_link_matrix_indices, self._robot_link_roles):
+                if matrix_index >= len(matrices):
+                    continue
+                T = matrices[matrix_index]
+                if role == "tool":
+                    T = self._apply_tool_visual_offset(T, tool_offset_rz)
+                T = self._transform_robot_matrix_to_world(T)
+                if mesh_item:
+                    mesh_item.resetTransform()
+                    qmat = QtGui.QMatrix4x4(
+                        T[0,0], T[0,1], T[0,2], T[0,3],
+                        T[1,0], T[1,1], T[1,2], T[1,3],
+                        T[2,0], T[2,1], T[2,2], T[2,3],
+                        T[3,0], T[3,1], T[3,2], T[3,3]
+                    )
+                    mesh_item.setTransform(qmat)
+                    self._ensure_viewer_item(mesh_item)
 
     def _build_primitive_item(
         self,
