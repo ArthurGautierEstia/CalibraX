@@ -998,6 +998,11 @@ class Viewer3DWidget(QWidget):
         self._trajectory_tangent_in_items: list[gl.GLLinePlotItem] = []
         # Couleur par segment : tuple uniform ou np.ndarray (N,4) par-vertex
         self._trajectory_path_segments: list[tuple[np.ndarray, tuple[float, float, float, float] | np.ndarray]] | None = None
+        # Cache pts transformés en repère monde : évite O(n) re-transformations par frame pendant le playback
+        self._traj_world_pts_cache: list[np.ndarray] = []
+        self._traj_cache_base_rev: int = -1
+        self._traj_cache_override_id: int = -1
+        self._traj_cache_pts_ids: list[int] = []
         self._trajectory_keypoint_points: np.ndarray | None = None
         self._trajectory_keypoint_selected_index: int | None = None
         self._trajectory_keypoint_editing_index: int | None = None
@@ -2913,6 +2918,8 @@ class Viewer3DWidget(QWidget):
 
     def clear_trajectory_path(self) -> None:
         self._trajectory_path_segments = None
+        self._traj_world_pts_cache = []
+        self._traj_cache_pts_ids = []
         self._render_trajectory_overlay()
 
     def get_accent_color_rgba(self) -> tuple[float, float, float, float]:
@@ -2984,6 +2991,21 @@ class Viewer3DWidget(QWidget):
 
         return keypoints_world, path_segments_world
 
+    def _rebuild_traj_world_cache(self, path_segs: list) -> None:
+        base_rev = self._robot_base_transform_world.revision
+        override_id = id(self._external_robot_base_override)
+        pts_ids = [id(pts) for pts, _ in path_segs]
+        if (
+            self._traj_cache_base_rev == base_rev
+            and self._traj_cache_override_id == override_id
+            and self._traj_cache_pts_ids == pts_ids
+        ):
+            return
+        self._traj_world_pts_cache = [self._transform_robot_points_to_world(pts) for pts, _ in path_segs]
+        self._traj_cache_base_rev = base_rev
+        self._traj_cache_override_id = override_id
+        self._traj_cache_pts_ids = pts_ids
+
     def _render_trajectory_overlay(self) -> None:
         with probe("_render_trajectory_overlay"):
             # --- Segments de trajectoire : setData() si items déjà présents (pas de VBO churn) ---
@@ -3004,8 +3026,10 @@ class Viewer3DWidget(QWidget):
                 self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
                 self._trajectory_path_items.append(item)
                 self.viewer.addItem(item)
-            for item, (pts, color) in zip(self._trajectory_path_items, path_segs):
-                world_pts = self._transform_robot_points_to_world(pts)
+            if path_segs:
+                self._rebuild_traj_world_cache(path_segs)
+            for i, (item, (pts, color)) in enumerate(zip(self._trajectory_path_items, path_segs)):
+                world_pts = self._traj_world_pts_cache[i]
                 if isinstance(color, np.ndarray):
                     # Couleur par-vertex : forcer alpha=1.0
                     render_color = np.empty_like(color)
