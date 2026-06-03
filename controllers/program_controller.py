@@ -5,8 +5,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 import time
 
-from utils.perf_probe import probe, dump_and_reset
-
 import numpy as np
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QColor
@@ -521,62 +519,60 @@ class ProgramController:
 
 
     def _refresh_viewer_segments(self) -> None:
-        with probe("_refresh_viewer_segments"):
-            result = self.current_result
-            if result is None:
-                self.viewer3d_controller.clear_trajectory_path()
-                return
+        result = self.current_result
+        if result is None:
+            self.viewer3d_controller.clear_trajectory_path()
+            return
 
-            segments: list[tuple[np.ndarray | list[list[float]], tuple[float, float, float, float] | np.ndarray]] = []
+        segments: list[tuple[np.ndarray | list[list[float]], tuple[float, float, float, float] | np.ndarray]] = []
 
-            show_split = self._current_time_s > 1e-9
-            theoretical_visible = self.actions_widget.is_theoretical_visible()
-            measured_visible = self.actions_widget.is_measured_visible()
+        show_split = self._current_time_s > 1e-9
+        theoretical_visible = self.actions_widget.is_theoretical_visible()
+        measured_visible = self.actions_widget.is_measured_visible()
 
-            # Trajectoire nominale : geometry pré-construite, couleurs par-vertex vectorisées
-            if theoretical_visible and self._nom_seg_pts:
-                nominal_color_arr = np.array(self._get_nominal_color(), dtype=np.float64)
-                if show_split:
-                    done_color_arr = np.array(
-                        self.viewer3d_controller.get_accent_color_rgba(), dtype=np.float64
-                    )
-                    t_split = self._current_time_s
-                    for pts, times in zip(self._nom_seg_pts, self._nom_seg_times):
-                        n = len(pts)
-                        colors = np.empty((n, 4), dtype=np.float64)
-                        mask = times <= t_split
-                        colors[mask] = done_color_arr
-                        colors[~mask] = nominal_color_arr
-                        segments.append((pts, colors))
-                else:
-                    for pts in self._nom_seg_pts:
-                        segments.append((pts, tuple(nominal_color_arr)))
-
-            # Trajectoire mesurée (chemin non critique, approche legacy)
-            if measured_visible:
-                if show_split:
-                    done_measured = self._compute_done_color(self.MEASURED_COLOR)
-                    motion_mode = self.config_widget.get_motion_mode()
-                    with probe("_build_nominal_and_measured_segments"):
-                        _, split_meas = self._build_nominal_and_measured_segments(
-                            self._get_samples_for_modes("THEORETICAL", motion_mode),
-                            self._get_nominal_color(),
-                            self.MEASURED_COLOR,
-                            done_nominal_color=self.viewer3d_controller.get_accent_color_rgba(),
-                            done_measured_color=done_measured,
-                            split_time_s=self._current_time_s,
-                        )
-                    segments.extend(split_meas)
-                else:
-                    segments.extend(self._measured_segments_cache)
-
-            if self._compensation_computed and self.actions_widget.is_compensated_visible():
-                segments.extend(self._compensated_segments_cache)
-
-            if segments:
-                self.viewer3d_controller.set_trajectory_path_segments(segments)
+        # Trajectoire nominale : geometry pré-construite, couleurs par-vertex vectorisées
+        if theoretical_visible and self._nom_seg_pts:
+            nominal_color_arr = np.array(self._get_nominal_color(), dtype=np.float64)
+            if show_split:
+                done_color_arr = np.array(
+                    self.viewer3d_controller.get_accent_color_rgba(), dtype=np.float64
+                )
+                t_split = self._current_time_s
+                for pts, times in zip(self._nom_seg_pts, self._nom_seg_times):
+                    n = len(pts)
+                    colors = np.empty((n, 4), dtype=np.float64)
+                    mask = times <= t_split
+                    colors[mask] = done_color_arr
+                    colors[~mask] = nominal_color_arr
+                    segments.append((pts, colors))
             else:
-                self.viewer3d_controller.clear_trajectory_path()
+                for pts in self._nom_seg_pts:
+                    segments.append((pts, tuple(nominal_color_arr)))
+
+        # Trajectoire mesurée (chemin non critique, approche legacy)
+        if measured_visible:
+            if show_split:
+                done_measured = self._compute_done_color(self.MEASURED_COLOR)
+                motion_mode = self.config_widget.get_motion_mode()
+                _, split_meas = self._build_nominal_and_measured_segments(
+                    self._get_samples_for_modes("THEORETICAL", motion_mode),
+                    self._get_nominal_color(),
+                    self.MEASURED_COLOR,
+                    done_nominal_color=self.viewer3d_controller.get_accent_color_rgba(),
+                    done_measured_color=done_measured,
+                    split_time_s=self._current_time_s,
+                )
+                segments.extend(split_meas)
+            else:
+                segments.extend(self._measured_segments_cache)
+
+        if self._compensation_computed and self.actions_widget.is_compensated_visible():
+            segments.extend(self._compensated_segments_cache)
+
+        if segments:
+            self.viewer3d_controller.set_trajectory_path_segments(segments)
+        else:
+            self.viewer3d_controller.clear_trajectory_path()
 
 
 
@@ -712,8 +708,7 @@ class ProgramController:
             return
         sample_index = self._sample_index_at_time(self._current_time_s)
         sample = samples[sample_index]
-        with probe("set_joints [hors-perimetre, doc]"):
-            self.robot_model.set_joints(sample.joints_deg.to_list())
+        self.robot_model.set_joints(sample.joints_deg.to_list())
         # Mise à jour directe du viewer (chemin léger, bypasse _refresh_robot_state_items)
         if self.viewer3d_controller.is_playback_active():
             self.viewer3d_controller.update_robot_poses_for_playback()
@@ -841,7 +836,6 @@ class ProgramController:
                 return
             self._stop_playback()
             self._apply_time_value(end_time_s, samples)
-            dump_and_reset()
             return
         self._apply_time_value(target_time_s, samples)
 
