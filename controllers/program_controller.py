@@ -780,6 +780,7 @@ class ProgramController:
         self._last_traj_refresh_wall_s = 0.0
 
         self._playback_timer.stop()
+        self.robot_model.inhibit_ik(False)
         self.playback_widget.set_playing(False)
 
 
@@ -793,6 +794,7 @@ class ProgramController:
             self._apply_time_value(0.0, samples)
         self._playback_sim_start_s = float(self._current_time_s)
         self._playback_wall_start_s = time.perf_counter()
+        self.robot_model.inhibit_ik(True)
         self.playback_widget.set_playing(True)
         self._playback_timer.start(20)
         self._on_playback_tick()

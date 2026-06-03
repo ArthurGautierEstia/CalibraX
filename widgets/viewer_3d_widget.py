@@ -3021,7 +3021,7 @@ class Viewer3DWidget(QWidget):
                     pos=np.zeros((2, 3), dtype=np.float64),
                     color=(1.0, 1.0, 1.0, 1.0),
                     width=2,
-                    antialias=True,
+                    antialias=False,
                 )
                 self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
                 self._trajectory_path_items.append(item)

@@ -205,6 +205,7 @@ class RobotModel(QObject):
 
         self._user_inhibit_compute_fk = False
         self._inhibit_compute_fk = False
+        self._inhibit_ik = False
         self.current_tool = RobotTool()
         self.current_tool_transform = RobotModel.build_tool_transform(self.current_tool)
 
@@ -501,6 +502,9 @@ class RobotModel(QObject):
     def inhibit_auto_compute_fk_tcp(self, inhibit: bool):
         self._user_inhibit_compute_fk = inhibit
 
+    def inhibit_ik(self, inhibit: bool) -> None:
+        self._inhibit_ik = inhibit
+
     def compute_fk_tcp(self, tool: RobotTool | None = None):
         self._update_tcp_pose(tool=tool)
 
@@ -531,8 +535,9 @@ class RobotModel(QObject):
             self.tcp_pose.c,
         )
 
-        # update MGI for current TCP
-        self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose, tool=tool)
+        # update MGI for current TCP (skippé si inhibit_ik, ex. pendant le playback programme)
+        if not self._inhibit_ik:
+            self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose, tool=tool)
 
         # emit quand tout a été mis à jour
         self.tcp_pose_changed.emit()

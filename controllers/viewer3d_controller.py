@@ -73,7 +73,7 @@ class Viewer3DController(QObject):
         self.robot_model.dh_params_changed.connect(self._on_robot_kinematics_changed)
         self.robot_model.measured_dh_params_changed.connect(self._on_robot_kinematics_changed)
         self.robot_model.measured_dh_enabled_changed.connect(self._on_robot_kinematics_changed)
-        self.robot_model.joints_changed.connect(self._on_robot_kinematics_changed)
+        # joints_changed non connecté : tcp_pose_changed arrive après le FK et suffit pour le viewer
         self.robot_model.robot_cad_models_changed.connect(self._on_robot_cad_models_changed)
         self.robot_model.robot_cad_colors_changed.connect(self._on_robot_cad_models_changed)
 
