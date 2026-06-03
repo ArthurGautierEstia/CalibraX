@@ -1,7 +1,7 @@
 import os
+import time
 from dataclasses import dataclass
 from utils.perf_probe import probe, FpsCounter
-from OpenGL.GL import GL_DEPTH_COMPONENT, GL_FLOAT, glReadPixels
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -42,6 +42,17 @@ from models.viewer_theme_store import ViewerThemeStore
 
 
 TangentSegment = tuple[XYZ3, XYZ3]
+
+
+@dataclass
+class PickCacheEntry:
+    """Cache du dernier point pické (ray-cast mesh), pour throttler le zoom/pan."""
+    point_world: np.ndarray | None
+    screen_x: float
+    screen_y: float
+    time_s: float
+
+
 from widgets.viewer_control_overlay_widget import ViewerControlOverlayWidget
 from utils.reference_frame_utils import (
     FrameTransform,
@@ -55,6 +66,11 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
     _TRAJECTORY_KEYPOINT_PICK_RADIUS_PX = 25.0
     _TRAJECTORY_LINE_PICK_RADIUS_PX = 15.0
 
+    def initializeGL(self) -> None:
+        super().initializeGL()
+        from OpenGL import GL
+        GL.glEnable(GL.GL_MULTISAMPLE)
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._background_mode = "solid"
@@ -66,9 +82,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._grid_reference = None
         self._trajectory_world_points_provider = None
         self._fps_counter = FpsCounter("paintGL")
+        self._pick_cache: PickCacheEntry | None = None
+        self._pan_gesture_speed_factor: float | None = None
+        self._local_tris_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         self.setBackgroundColor(self._background_primary_color)
 
     def mousePressEvent(self, ev) -> None:
+        self._pick_cache = None
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_mode = "picked"
@@ -86,6 +106,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 if self.is_perspective_enabled()
                 else None
             )
+        elif ev.button() == Qt.MouseButton.MiddleButton:
+            self._pan_gesture_speed_factor = self._compute_middle_pan_speed_factor(local_position)
         super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev) -> None:
@@ -95,6 +117,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self._origin_orbit_anchor_world = None
             self._orbit_pivot_screen_position = None
             self._orbit_pivot_camera_distance = None
+        elif ev.button() == Qt.MouseButton.MiddleButton:
+            self._pan_gesture_speed_factor = None
         super().mouseReleaseEvent(ev)
 
     def mouseMoveEvent(self, ev) -> None:
@@ -104,11 +128,12 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self.mousePos = local_position
             diff = local_position - self.mousePos
             self.mousePos = local_position
-            pan_speed_factor = self._compute_middle_pan_speed_factor(local_position)
+            if self._pan_gesture_speed_factor is None:
+                self._pan_gesture_speed_factor = self._compute_middle_pan_speed_factor(local_position)
             self.pan(
-                diff.x() * pan_speed_factor,
+                diff.x() * self._pan_gesture_speed_factor,
                 0.0,
-                diff.y() * pan_speed_factor,
+                diff.y() * self._pan_gesture_speed_factor,
                 relative="view-upright",
             )
             return
@@ -158,7 +183,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         target_point_world = self._pick_trajectory_world_point(local_position)
         if target_point_world is None:
-            target_point_world = self._pick_world_point(local_position)
+            target_point_world = self._pick_world_point_cached(local_position)
         if target_point_world is None:
             target_point_world = self._project_cursor_to_center_depth(local_position)
 
@@ -419,10 +444,27 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return best_point
 
     def _pick_world_point(self, local_position) -> np.ndarray | None:
-        depth_value = self._read_depth_value(local_position)
-        if depth_value is None or depth_value >= 1.0:
-            return None
-        return self._unproject_view_point(local_position, depth_value)
+        return self._raycast_meshes_world(local_position)
+
+    def _pick_world_point_cached(self, local_position) -> np.ndarray | None:
+        """Variante throttlée de _pick_world_point : réutilise le résultat si le curseur
+        n'a pas bougé de plus de 3 px et si le cache a moins de 120 ms."""
+        cx = float(local_position.x())
+        cy = float(local_position.y())
+        now = time.monotonic()
+        cache = self._pick_cache
+        if cache is not None:
+            dist_px = ((cx - cache.screen_x) ** 2 + (cy - cache.screen_y) ** 2) ** 0.5
+            if dist_px <= 3.0 and (now - cache.time_s) <= 0.120:
+                return cache.point_world
+        point = self._pick_world_point(local_position)
+        self._pick_cache = PickCacheEntry(
+            point_world=point,
+            screen_x=cx,
+            screen_y=cy,
+            time_s=now,
+        )
+        return point
 
     def _pick_orbit_world_point(self, local_position) -> np.ndarray | None:
         traj_point = self._pick_trajectory_world_point(local_position)
@@ -464,39 +506,115 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         return abs(float(world_point[2])) <= 2.0
 
     def _pick_world_point_without_grid(self, local_position) -> np.ndarray | None:
-        grid_item = self._grid_reference
-        if grid_item is None:
-            return None
+        # La grille n'est pas un GLMeshItem : elle est naturellement exclue du ray-cast.
+        return self._raycast_meshes_world(local_position)
 
-        viewport_width, viewport_height = self._device_viewport_size()
-        screen_x = float(local_position.x()) * self.devicePixelRatioF()
-        screen_y = float(local_position.y()) * self.devicePixelRatioF()
-        pixel_x = int(round(screen_x))
-        pixel_y = int(round((viewport_height - 1) - screen_y))
-        if pixel_x < 0 or pixel_x >= viewport_width or pixel_y < 0 or pixel_y >= viewport_height:
-            return None
+    # ------------------------------------------------------------------
+    # Ray-cast CPU contre les mesh visibles (indépendant du framebuffer)
+    # ------------------------------------------------------------------
 
-        grid_item.hide()
-        depth_value: float | None = None
-        try:
-            self.makeCurrent()
-            try:
-                from OpenGL import GL as _GL
-                _GL.glDepthMask(_GL.GL_TRUE)
-                region = (0, 0, viewport_width, viewport_height)
-                self.paint(region=region, viewport=region)
-                depth_data = glReadPixels(pixel_x, pixel_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
-            finally:
-                self.doneCurrent()
-            depth_array = np.asarray(depth_data, dtype=float).reshape(-1)
-            if depth_array.size > 0:
-                depth_value = float(depth_array[0])
-        finally:
-            grid_item.show()
+    def _iter_pickable_mesh_items(self):
+        """Génère les GLMeshItem visibles de la scène (robot, outil, pièce…)."""
+        for item in self.items:
+            if isinstance(item, gl.GLMeshItem) and item.visible():
+                yield item
 
-        if depth_value is None or depth_value >= 1.0:
+    def _item_world_matrix_np(self, item) -> np.ndarray:
+        """Transform monde 4x4 (row-major) en composant la chaîne de parents.
+        QMatrix4x4.data() est column-major -> .reshape(4,4).T pour row-major."""
+        m = QtGui.QMatrix4x4()
+        chain: list = []
+        cur = item
+        while cur is not None:
+            chain.append(cur.transform())
+            parent_getter = getattr(cur, "parentItem", None)
+            cur = parent_getter() if callable(parent_getter) else None
+        for tr in reversed(chain):
+            m = m * tr
+        return np.array(m.data(), dtype=float).reshape(4, 4).T
+
+    def _mesh_world_triangles(self, item) -> np.ndarray | None:
+        """Triangles du mesh en coordonnées monde, shape (T, 3, 3).
+        Conservé pour usage externe éventuel — _raycast_meshes_world utilise _get_local_tris."""
+        md = item.opts.get("meshdata")
+        if md is None:
             return None
-        return self._unproject_view_point(local_position, depth_value)
+        verts = np.asarray(md.vertexes(), dtype=float)   # (V, 3)
+        faces = md.faces()
+        if verts.size == 0 or faces is None or len(faces) == 0:
+            return None
+        faces_np = np.asarray(faces)                      # (T, 3)
+        world = self._item_world_matrix_np(item)
+        homog = np.hstack([verts, np.ones((len(verts), 1))])  # (V, 4)
+        verts_world = (homog @ world.T)[:, :3]                # (V, 3)
+        return verts_world[faces_np]                          # (T, 3, 3)
+
+    def _get_local_tris(self, item) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """Triangles en espace LOCAL du mesh + AABB locale, mis en cache par id(meshdata).
+        Les données locales sont invariantes (le mesh ne bouge pas, seule la matrice change).
+        Retourne (tris_local (T,3,3), aabb_min (3,), aabb_max (3,)) ou None."""
+        md = item.opts.get("meshdata")
+        if md is None:
+            return None
+        key = id(md)
+        cached = self._local_tris_cache.get(key)
+        if cached is not None:
+            return cached
+        verts = np.asarray(md.vertexes(), dtype=float)
+        faces = md.faces()
+        if verts.size == 0 or faces is None or len(faces) == 0:
+            return None
+        tris = verts[np.asarray(faces)]          # (T, 3, 3)
+        flat = tris.reshape(-1, 3)
+        aabb_min = flat.min(axis=0)
+        aabb_max = flat.max(axis=0)
+        result = (tris, aabb_min, aabb_max)
+        self._local_tris_cache[key] = result
+        return result
+
+    def _raycast_meshes_world(self, local_position) -> np.ndarray | None:
+        """Point monde du mesh le plus proche sous le curseur, ou None.
+        Indépendant du framebuffer : compatible MSAA.
+
+        Le rayon est transformé dans l'espace local de chaque mesh (O(1) par item) et
+        intersecté contre des triangles locaux mis en cache — le travail de transformation
+        des sommets n'est fait qu'une seule fois par meshdata, même si le robot bouge.
+        Invariant mathématique : t_local == t_world car world[:3,:3] @ inv[:3,:3] == I."""
+        from utils.ray_intersect import ray_triangles_intersect, ray_aabb_hit
+        ray = self._view_ray(local_position)
+        if ray is None:
+            return None
+        origin_world, direction_world = ray
+        best_point: np.ndarray | None = None
+        best_t = float("inf")
+        with probe("pick_raycast"):
+            for item in self._iter_pickable_mesh_items():
+                local_tris = self._get_local_tris(item)
+                if local_tris is None:
+                    continue
+                tris_local, aabb_min, aabb_max = local_tris
+                world = self._item_world_matrix_np(item)
+                inv_world = np.linalg.inv(world)
+                # Transformer le rayon dans l'espace local (O(1), sans toucher les sommets)
+                origin_h = np.empty(4, dtype=float)
+                origin_h[:3] = origin_world
+                origin_h[3] = 1.0
+                origin_local: np.ndarray = (inv_world @ origin_h)[:3]
+                dir_local: np.ndarray = inv_world[:3, :3] @ direction_world
+                # Rejet AABB en espace local (t_local == t_world → t_max valide)
+                if not ray_aabb_hit(origin_local, dir_local, aabb_min, aabb_max, t_max=best_t):
+                    continue
+                hit = ray_triangles_intersect(origin_local, dir_local, tris_local)
+                if hit is not None and hit.distance < best_t:
+                    best_t = hit.distance
+                    # Point monde = rayon monde paramétré par t (t_local == t_world)
+                    best_point = origin_world + best_t * direction_world
+        if os.environ.get("CALIBRAX_PICK_DEBUG"):
+            if best_point is not None:
+                print(f"[PICK] hit t={best_t:.1f} pt={best_point}")
+            else:
+                print("[PICK] miss")
+        return best_point
 
     def _recenter_to_keep_point_under_cursor(
         self,
@@ -516,29 +634,6 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             camera_distance_to_target,
         )
         self._translate_center(translation_world)
-
-    def _read_depth_value(self, local_position) -> float | None:
-        viewport_width, viewport_height = self._device_viewport_size()
-        screen_x = float(local_position.x()) * self.devicePixelRatioF()
-        screen_y = float(local_position.y()) * self.devicePixelRatioF()
-        pixel_x = int(round(screen_x))
-        pixel_y = int(round((viewport_height - 1) - screen_y))
-
-        if pixel_x < 0 or pixel_x >= viewport_width or pixel_y < 0 or pixel_y >= viewport_height:
-            return None
-
-        self.makeCurrent()
-        try:
-            depth_data = glReadPixels(pixel_x, pixel_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
-        except Exception:
-            return None
-        finally:
-            self.doneCurrent()
-
-        depth_array = np.asarray(depth_data, dtype=float).reshape(-1)
-        if depth_array.size == 0:
-            return None
-        return float(depth_array[0])
 
     def _view_ray(self, local_position) -> tuple[np.ndarray, np.ndarray] | None:
         near_point_world = self._unproject_view_point(local_position, 0.0)
@@ -669,7 +764,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
 
     def _compute_middle_pan_speed_factor(self, local_position) -> float:
-        target_point_world = self._pick_world_point(local_position)
+        target_point_world = self._pick_world_point_cached(local_position)
         if target_point_world is None:
             target_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
         distance = max(1.0, float(self._camera_distance_to_point(target_point_world) or 1.0))

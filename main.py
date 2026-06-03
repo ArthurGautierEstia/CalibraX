@@ -3,8 +3,13 @@ import os
 import sys
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QColor, QIcon, QPalette
+from PyQt6.QtGui import QColor, QIcon, QPalette, QSurfaceFormat
 from PyQt6.QtWidgets import QApplication
+
+_fmt = QSurfaceFormat()
+_fmt.setSamples(4)
+_fmt.setDepthBufferSize(24)
+QSurfaceFormat.setDefaultFormat(_fmt)
 
 from controllers.main_controller import MainController
 from models.external_axes_model import ExternalAxesModel
