@@ -53,6 +53,8 @@ class CartesianWidgetController(QObject):
         self._on_model_tcp_changed()
 
     def _on_model_tcp_changed(self) -> None:
+        if not self.cartesian_control_widget.isVisible():
+            return
         tcp_pose_base = self.robot_model.get_tcp_pose()
         robot_base_transform = self.workspace_model.get_robot_base_transform_world()
         display_pose = convert_pose_from_base_frame(

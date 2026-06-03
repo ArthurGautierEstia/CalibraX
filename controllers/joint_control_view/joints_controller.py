@@ -31,9 +31,13 @@ class JointsController(QObject):
 
     def _on_model_joints_changed(self) -> None:
         """Callback quand le modele du robot signale un changement de valeur de joint"""
+        if not self.joint_control_widget.isVisible():
+            return
         self.joint_control_widget.set_all_joints(self.robot_model.get_joints())
 
     def _on_model_tcp_changed(self):
+        if not self.joint_control_widget.isVisible():
+            return
         self.joint_control_widget.set_configuration(self.robot_model.get_current_axis_config())
 
     def _on_model_axis_limits_change(self) -> None:

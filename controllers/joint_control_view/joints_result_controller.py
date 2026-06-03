@@ -17,6 +17,8 @@ class JointsResultController(QObject):
         self.robot_model.tcp_pose_changed.connect(self._model_tcp_changed)
         
     def _model_tcp_changed(self) -> None:
+        if not self.joint_result_widget.isVisible():
+            return
         self.joint_result_widget.update_results(
             self.robot_model.get_tcp_pose(),
             self.robot_model.get_corrected_tcp_pose(),

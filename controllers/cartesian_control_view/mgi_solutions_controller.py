@@ -30,6 +30,8 @@ class MgiSolutionsController(QObject):
         self.mgi_solutions_widget.solution_item_selected.connect(self._on_view_solution_item_selected)
 
     def _on_model_tcp_pose_changed(self) -> None:
+        if not self.mgi_solutions_widget.isVisible():
+            return
         self.mgi_solutions_widget.set_mgi_result(
             self.robot_model.get_current_tcp_mgi_result(),
             self.robot_model.get_current_axis_config(),

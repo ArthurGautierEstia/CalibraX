@@ -62,6 +62,7 @@ class Viewer3DController(QObject):
             orientation_limits_deg=(-360.0, 360.0),
         )
 
+        self._playback_active = False
         self._setup_connections()
         self._initialize_overlay_controls()
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
@@ -101,8 +102,25 @@ class Viewer3DController(QObject):
             self.external_axes_model.axes_changed.connect(self._on_external_axes_changed)
             self.external_axes_model.axes_values_changed.connect(self._on_external_axes_values_changed)
 
+    def set_playback_active(self, active: bool) -> None:
+        self._playback_active = active
+
+    def is_playback_active(self) -> bool:
+        return self._playback_active
+
     def _update_tcp_pose(self) -> None:
+        if self._playback_active:
+            return  # viewer mis à jour directement via update_robot_poses_for_playback
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)
+
+    def update_robot_poses_for_playback(self) -> None:
+        """Mise à jour légère pendant le playback : uniquement les poses CAO + repères si visibles."""
+        corrected = self.robot_model.get_current_tcp_corrected_dh_matrices()
+        if not corrected:
+            return
+        self.viewer_3d_widget.update_robot_poses(corrected)
+        if any(self.viewer_3d_widget.frames_visibility):
+            self.viewer_3d_widget.draw_all_frames(self.robot_model.get_current_tcp_dh_matrices())
 
     def _on_robot_kinematics_changed(self) -> None:
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)

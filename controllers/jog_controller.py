@@ -288,6 +288,8 @@ class JogController(QObject):
         """Met à jour l'affichage depuis les données du modèle"""
         if not self.robot_model.has_configuration:
             return
+        if not self.jog_angles_visualization_widget.isVisible():
+            return
         
         # Mettre à jour la visualisation des angles
         self.jog_angles_visualization_widget.set_joint_values(self.robot_model.joint_values)

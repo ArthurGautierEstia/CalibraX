@@ -206,6 +206,7 @@ class RobotModel(QObject):
         self._user_inhibit_compute_fk = False
         self._inhibit_compute_fk = False
         self._inhibit_ik = False
+        self._inhibit_ui_signals = False
         self.current_tool = RobotTool()
         self.current_tool_transform = RobotModel.build_tool_transform(self.current_tool)
 
@@ -505,6 +506,9 @@ class RobotModel(QObject):
     def inhibit_ik(self, inhibit: bool) -> None:
         self._inhibit_ik = inhibit
 
+    def inhibit_ui_signals(self, inhibit: bool) -> None:
+        self._inhibit_ui_signals = inhibit
+
     def compute_fk_tcp(self, tool: RobotTool | None = None):
         self._update_tcp_pose(tool=tool)
 
@@ -539,7 +543,6 @@ class RobotModel(QObject):
         if not self._inhibit_ik:
             self.current_tcp_mgi_result = self.compute_ik_target(self.tcp_pose, tool=tool)
 
-        # emit quand tout a été mis à jour
         self.tcp_pose_changed.emit()
     
     def get_current_tcp_dh_matrices(self):

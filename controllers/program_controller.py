@@ -714,6 +714,9 @@ class ProgramController:
         sample = samples[sample_index]
         with probe("set_joints [hors-perimetre, doc]"):
             self.robot_model.set_joints(sample.joints_deg.to_list())
+        # Mise à jour directe du viewer (chemin léger, bypasse _refresh_robot_state_items)
+        if self.viewer3d_controller.is_playback_active():
+            self.viewer3d_controller.update_robot_poses_for_playback()
         # Met à jour la portion "réalisée" si l'index de split a changé (throttlé à ~30 Hz).
         new_split_index = sample_index if self._current_time_s > 1e-9 else -1
         if new_split_index != self._last_split_sample_index:
@@ -781,6 +784,9 @@ class ProgramController:
 
         self._playback_timer.stop()
         self.robot_model.inhibit_ik(False)
+        self.viewer3d_controller.set_playback_active(False)
+        # Propager l'état final à tous les abonnés UI maintenant que le playback est terminé
+        self.robot_model.compute_fk_tcp()
         self.playback_widget.set_playing(False)
 
 
@@ -795,6 +801,7 @@ class ProgramController:
         self._playback_sim_start_s = float(self._current_time_s)
         self._playback_wall_start_s = time.perf_counter()
         self.robot_model.inhibit_ik(True)
+        self.viewer3d_controller.set_playback_active(True)
         self.playback_widget.set_playing(True)
         self._playback_timer.start(20)
         self._on_playback_tick()
