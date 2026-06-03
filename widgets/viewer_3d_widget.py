@@ -4882,8 +4882,8 @@ class Viewer3DWidget(QWidget):
                     T[3,0], T[3,1], T[3,2], T[3,3]
                 )
                 mesh_item.setTransform(qmat)
-                    if hasattr(mesh_item, "_calibrax_world_transform"):
-                        mesh_item._calibrax_world_transform = np.array(T, dtype=float)
+                if hasattr(mesh_item, "_calibrax_world_transform"):
+                    mesh_item._calibrax_world_transform = np.array(T, dtype=float)
                 self._ensure_viewer_item(mesh_item)
 
     def _build_primitive_item(
