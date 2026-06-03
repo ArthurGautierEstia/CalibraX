@@ -66,6 +66,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._grid_reference = None
         self._trajectory_world_points_provider = None
         self._fps_counter = FpsCounter("paintGL")
+        self._fxaa_enabled: bool = True
+        self._fxaa_fbo: int = 0
+        self._fxaa_color_tex: int = 0
+        self._fxaa_depth_tex: int = 0
+        self._fxaa_program: int = 0
+        self._fxaa_vao: int = 0
+        self._fxaa_res: tuple[int, int] = (0, 0)
         self.setBackgroundColor(self._background_primary_color)
 
     def mousePressEvent(self, ev) -> None:
@@ -234,24 +241,46 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._fps_counter.tick()
         from OpenGL import GL
         region = self.getViewport()
+        fxaa_active = False
+        fxaa_w = fxaa_h = 0
+        if self._fxaa_enabled:
+            fxaa_w, fxaa_h = self._device_viewport_size()
+            try:
+                self._ensure_fxaa_resources(GL, fxaa_w, fxaa_h)
+                GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self._fxaa_fbo)
+                GL.glViewport(0, 0, fxaa_w, fxaa_h)
+                fxaa_active = True
+            except Exception as _exc:
+                import sys
+                print(f"[FXAA] init error, désactivation : {_exc}", file=sys.stderr)
+                self._fxaa_enabled = False
+                GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.defaultFramebufferObject())
+
         if self._background_mode != "gradient":
             GL.glDepthMask(GL.GL_TRUE)
             self.paint(region=region, viewport=region)
-            return
+        else:
+            # Le dégradé est dessiné en OpenGL brut (quad plein écran), PAS via QPainter.
+            # GLViewWidget est un QOpenGLWidget : mélanger QPainter et GL natif dans paintGL
+            # est fragile (le compositeur affiche un buffer périmé → le fond semble basculer
+            # entre uni et dégradé tant qu'un clic ne force pas un repaint complet). En passant
+            # par le même pipeline GL que la scène 3D, le fond est composé de façon fiable.
+            GL.glDepthMask(GL.GL_TRUE)
+            GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
+            self._paint_gradient_background_gl(GL)
+            GL.glDepthMask(GL.GL_TRUE)
+            self.setProjection(region, region)
+            self.setModelview()
+            self.drawItemTree(useItemNames=False)
 
-        # Le dégradé est dessiné en OpenGL brut (quad plein écran), PAS via QPainter.
-        # GLViewWidget est un QOpenGLWidget : mélanger QPainter et GL natif dans paintGL
-        # est fragile (le compositeur affiche un buffer périmé → le fond semble basculer
-        # entre uni et dégradé tant qu'un clic ne force pas un repaint complet). En passant
-        # par le même pipeline GL que la scène 3D, le fond est composé de façon fiable.
-        GL.glDepthMask(GL.GL_TRUE)
-        GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
-        self._paint_gradient_background_gl(GL)
-
-        GL.glDepthMask(GL.GL_TRUE)
-        self.setProjection(region, region)
-        self.setModelview()
-        self.drawItemTree(useItemNames=False)
+        if fxaa_active:
+            qt_fbo = self.defaultFramebufferObject()
+            GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, qt_fbo)
+            try:
+                self._draw_fxaa_pass(GL, fxaa_w, fxaa_h)
+            except Exception as _exc:
+                import sys
+                print(f"[FXAA] pass error : {_exc}", file=sys.stderr)
 
     def _paint_gradient_background_gl(self, GL) -> None:
         """Remplit le buffer couleur avec le dégradé de fond, en pipeline fixe (GL_QUADS /
@@ -339,6 +368,193 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         GL.glMatrixMode(GL.GL_MODELVIEW)
         GL.glPopMatrix()
         GL.glDepthMask(GL.GL_TRUE)
+
+    # ------------------------------------------------------------------
+    # FXAA post-process
+    # ------------------------------------------------------------------
+
+    def set_fxaa_enabled(self, enabled: bool) -> None:
+        self._fxaa_enabled = bool(enabled)
+        self.update()
+
+    def is_fxaa_enabled(self) -> bool:
+        return bool(self._fxaa_enabled)
+
+    def _ensure_fxaa_resources(self, GL, w: int, h: int) -> None:
+        if not self._fxaa_program:
+            self._fxaa_program = self._compile_fxaa_shader(GL)
+        if not self._fxaa_vao:
+            vao = GL.glGenVertexArrays(1)
+            self._fxaa_vao = int(vao) if not hasattr(vao, "__len__") else int(vao[0])
+        if self._fxaa_res == (w, h):
+            return
+        # (Re)création des textures et du FBO à la nouvelle taille
+        if self._fxaa_fbo:
+            GL.glDeleteFramebuffers(1, [self._fxaa_fbo])
+        if self._fxaa_color_tex:
+            GL.glDeleteTextures(1, [self._fxaa_color_tex])
+        if self._fxaa_depth_tex:
+            GL.glDeleteTextures(1, [self._fxaa_depth_tex])
+
+        color_tex = int(GL.glGenTextures(1))
+        GL.glBindTexture(GL.GL_TEXTURE_2D, color_tex)
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, w, h, 0,
+                        GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+
+        depth_tex = int(GL.glGenTextures(1))
+        GL.glBindTexture(GL.GL_TEXTURE_2D, depth_tex)
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_DEPTH_COMPONENT32F, w, h, 0,
+                        GL.GL_DEPTH_COMPONENT, GL.GL_FLOAT, None)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_NEAREST)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_NEAREST)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+
+        fbo = int(GL.glGenFramebuffers(1))
+        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, fbo)
+        GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0,
+                                  GL.GL_TEXTURE_2D, color_tex, 0)
+        GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_DEPTH_ATTACHMENT,
+                                  GL.GL_TEXTURE_2D, depth_tex, 0)
+        status = GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER)
+        if status != GL.GL_FRAMEBUFFER_COMPLETE:
+            GL.glDeleteFramebuffers(1, [fbo])
+            GL.glDeleteTextures(1, [color_tex])
+            GL.glDeleteTextures(1, [depth_tex])
+            raise RuntimeError(f"FBO FXAA incomplet (status={status:#x})")
+
+        self._fxaa_fbo = fbo
+        self._fxaa_color_tex = color_tex
+        self._fxaa_depth_tex = depth_tex
+        self._fxaa_res = (w, h)
+
+    @staticmethod
+    def _compile_fxaa_shader(GL) -> int:
+        vert_src = """\
+#version 330
+out vec2 vTexCoord;
+void main() {
+    float x = float(gl_VertexID == 1 ? 3 : -1);
+    float y = float(gl_VertexID == 2 ? 3 : -1);
+    vTexCoord = vec2(x, y) * 0.5 + 0.5;
+    gl_Position = vec4(x, y, 0.0, 1.0);
+}
+"""
+        frag_src = """\
+#version 330
+uniform sampler2D uColor;
+uniform sampler2D uDepth;
+uniform vec2 uTexelSize;
+in vec2 vTexCoord;
+out vec4 outColor;
+
+#define FXAA_REDUCE_MIN (1.0 / 128.0)
+#define FXAA_REDUCE_MUL (1.0 / 8.0)
+#define FXAA_SPAN_MAX    8.0
+
+void main() {
+    vec2 tc = vTexCoord;
+    vec3 nw = texture(uColor, tc + vec2(-1.0, -1.0) * uTexelSize).rgb;
+    vec3 ne = texture(uColor, tc + vec2( 1.0, -1.0) * uTexelSize).rgb;
+    vec3 sw = texture(uColor, tc + vec2(-1.0,  1.0) * uTexelSize).rgb;
+    vec3 se = texture(uColor, tc + vec2( 1.0,  1.0) * uTexelSize).rgb;
+    vec3 m  = texture(uColor, tc).rgb;
+
+    vec3 luma = vec3(0.299, 0.587, 0.114);
+    float lumaNW = dot(nw, luma);
+    float lumaNE = dot(ne, luma);
+    float lumaSW = dot(sw, luma);
+    float lumaSE = dot(se, luma);
+    float lumaM  = dot(m,  luma);
+
+    float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+
+    vec2 dir;
+    dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+    dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+
+    float dirReduce = max(
+        (lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL),
+        FXAA_REDUCE_MIN);
+    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = clamp(dir * rcpDirMin, vec2(-FXAA_SPAN_MAX), vec2(FXAA_SPAN_MAX)) * uTexelSize;
+
+    vec3 rgbA = 0.5 * (
+        texture(uColor, tc + dir * (1.0/3.0 - 0.5)).rgb +
+        texture(uColor, tc + dir * (2.0/3.0 - 0.5)).rgb);
+    vec3 rgbB = rgbA * 0.5 + 0.25 * (
+        texture(uColor, tc + dir * (-0.5)).rgb +
+        texture(uColor, tc + dir *  ( 0.5)).rgb);
+
+    float lumaB = dot(rgbB, luma);
+    outColor = vec4(((lumaB < lumaMin) || (lumaB > lumaMax)) ? rgbA : rgbB, 1.0);
+    gl_FragDepth = texture(uDepth, tc).r;
+}
+"""
+        def _compile(src: str, kind: int) -> int:
+            shader = GL.glCreateShader(kind)
+            GL.glShaderSource(shader, src)
+            GL.glCompileShader(shader)
+            if not GL.glGetShaderiv(shader, GL.GL_COMPILE_STATUS):
+                log = GL.glGetShaderInfoLog(shader)
+                if isinstance(log, bytes):
+                    log = log.decode(errors="replace")
+                raise RuntimeError(f"FXAA shader compile : {log}")
+            return int(shader)
+
+        vs = _compile(vert_src, GL.GL_VERTEX_SHADER)
+        fs = _compile(frag_src, GL.GL_FRAGMENT_SHADER)
+        prog = GL.glCreateProgram()
+        GL.glAttachShader(prog, vs)
+        GL.glAttachShader(prog, fs)
+        GL.glLinkProgram(prog)
+        GL.glDeleteShader(vs)
+        GL.glDeleteShader(fs)
+        if not GL.glGetProgramiv(prog, GL.GL_LINK_STATUS):
+            log = GL.glGetProgramInfoLog(prog)
+            if isinstance(log, bytes):
+                log = log.decode(errors="replace")
+            raise RuntimeError(f"FXAA shader link : {log}")
+        return int(prog)
+
+    def _draw_fxaa_pass(self, GL, w: int, h: int) -> None:
+        GL.glDisable(GL.GL_DEPTH_TEST)
+        GL.glDepthMask(GL.GL_TRUE)
+        GL.glDisable(GL.GL_BLEND)
+        GL.glDisable(GL.GL_CULL_FACE)
+        GL.glViewport(0, 0, w, h)
+
+        GL.glUseProgram(self._fxaa_program)
+
+        GL.glActiveTexture(GL.GL_TEXTURE0)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, self._fxaa_color_tex)
+        GL.glUniform1i(GL.glGetUniformLocation(self._fxaa_program, "uColor"), 0)
+
+        GL.glActiveTexture(GL.GL_TEXTURE1)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, self._fxaa_depth_tex)
+        GL.glUniform1i(GL.glGetUniformLocation(self._fxaa_program, "uDepth"), 1)
+
+        GL.glUniform2f(
+            GL.glGetUniformLocation(self._fxaa_program, "uTexelSize"),
+            1.0 / float(w), 1.0 / float(h),
+        )
+
+        GL.glBindVertexArray(self._fxaa_vao)
+        GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
+        GL.glBindVertexArray(0)
+
+        GL.glActiveTexture(GL.GL_TEXTURE1)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+        GL.glActiveTexture(GL.GL_TEXTURE0)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+        GL.glUseProgram(0)
+        GL.glEnable(GL.GL_DEPTH_TEST)
 
     def _project_world_to_screen(self, world_point: np.ndarray) -> tuple[float, float] | None:
         """Project a 3D world point to 2D screen logical-pixel coordinates."""
@@ -1366,6 +1582,7 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_viewer_style = self._create_overlay_button("Style viewer", "appearance")
         self.btn_toggle_view_presets = self._create_overlay_button("Vues prédéfinies", "view_cube")
         self.btn_toggle_perspective = self._create_overlay_button("Perspective", "perspective")
+        self.btn_toggle_fxaa = self._create_overlay_button("Anti-crénelage FXAA", "fxaa")
         self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zone de travail", "tcp_zones")
         self.btn_toggle_workspace_collision_zones = self._create_overlay_button("Zone de collision", "collision_zones")
         self.btn_toggle_workspace_transparency = self._create_overlay_button("Transparence workspace", "workspace_transparency")
@@ -1387,7 +1604,7 @@ class Viewer3DWidget(QWidget):
             ),
             self._create_toolbar_zone(
                 "Vue",
-                (self.btn_toggle_viewer_style, self.btn_toggle_view_presets, self.btn_toggle_perspective),
+                (self.btn_toggle_viewer_style, self.btn_toggle_view_presets, self.btn_toggle_perspective, self.btn_toggle_fxaa),
             ),
             self._create_toolbar_zone(
                 "Zones",
@@ -1445,6 +1662,7 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_viewer_style.clicked.connect(self._on_viewer_style_button_clicked)
         self.btn_toggle_view_presets.clicked.connect(self._on_view_presets_button_clicked)
         self.btn_toggle_perspective.clicked.connect(self._on_perspective_button_clicked)
+        self.btn_toggle_fxaa.clicked.connect(self._on_fxaa_button_clicked)
         self.btn_toggle_workspace_tcp_zones.clicked.connect(self._on_workspace_tcp_zones_button_clicked)
         self.btn_toggle_workspace_collision_zones.clicked.connect(self._on_workspace_collision_zones_button_clicked)
         self.btn_toggle_robot_colliders.clicked.connect(self._on_robot_colliders_button_clicked)
@@ -1686,6 +1904,11 @@ class Viewer3DWidget(QWidget):
     def _on_perspective_button_clicked(self) -> None:
         self.viewer.set_perspective_enabled(not self.viewer.is_perspective_enabled())
         self._refresh_toolbar_buttons()
+
+    def _on_fxaa_button_clicked(self) -> None:
+        self.viewer.set_fxaa_enabled(not self.viewer.is_fxaa_enabled())
+        self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
 
     def _set_camera_preset(self, preset_kind: str) -> None:
         side_center_world, top_center_world, side_distance, top_distance, isometric_distance = self._get_view_preset_camera_parameters()
@@ -2256,6 +2479,7 @@ class Viewer3DWidget(QWidget):
             workpiece_frame_visible=bool(self._workpiece_frame_visible),
             theme=self._build_current_viewer_theme_state(),
             selected_theme_name=self._selected_viewer_theme_name,
+            fxaa_enabled=self.viewer.is_fxaa_enabled(),
         )
 
     def apply_display_state(self, state: ViewerDisplayState, emit_signal: bool = False) -> None:
@@ -2272,6 +2496,7 @@ class Viewer3DWidget(QWidget):
         self._tool_colliders_visible = bool(state.tool_colliders_visible)
         self._tooling_frames_visible = bool(state.tooling_frames_visible)
         self._workpiece_frame_visible = bool(state.workpiece_frame_visible)
+        self.viewer.set_fxaa_enabled(bool(state.fxaa_enabled))
         selected_theme_name = str(state.selected_theme_name or "").strip()
         theme_to_apply = self._build_original_viewer_theme_state()
         applied_theme_name = ""
@@ -2371,6 +2596,7 @@ class Viewer3DWidget(QWidget):
         self._set_overlay_button_state(self.btn_toggle_workspace_transparency, self.workspace_transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_robot_colliders, self._robot_colliders_visible)
         self._set_overlay_button_state(self.btn_toggle_tool_colliders, self._tool_colliders_visible)
+        self._set_overlay_button_state(self.btn_toggle_fxaa, self.viewer.is_fxaa_enabled())
 
     def _refresh_position_buttons(self) -> None:
         self._set_overlay_button_state(
@@ -2627,6 +2853,11 @@ class Viewer3DWidget(QWidget):
             painter.drawLine(9, 16, 9, 12)
             painter.drawLine(9, 12, 11, 12)
             painter.drawLine(11, 12, 11, 16)
+        elif icon_kind == "fxaa":
+            font = QFont("Arial", 8)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(0, 0, size, size, int(Qt.AlignmentFlag.AlignCenter), "AA")
         painter.end()
         return QIcon(pixmap)
 
