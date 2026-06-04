@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidget
 from widgets.robot_view.robot_mgi_configuration_widget import RobotMgiConfigurationWidget
@@ -28,3 +28,6 @@ class RobotView(QWidget):
 
     def get_mgi_configuration_widget(self) -> RobotMgiConfigurationWidget:
         return self.mgi_configuration_widget
+
+    def add_tab(self, widget: QWidget, title: str) -> None:
+        self.configuration_widget.add_tab(widget, title)

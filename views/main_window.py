@@ -11,13 +11,13 @@ from views.cartesian_control_view import CartesianControlView
 from views.external_axes_view import ExternalAxesView
 from views.joint_control_view import JointControlView
 from views.machining_view import MachiningView
-from views.mgi_view import MgiView
 from views.program_view import ProgramView
 from views.robot_view import RobotView
 from views.tool_view import ToolView
 from views.trajectory_view import TrajectoryView
 from views.workspace_view import WorkspaceView
 from views.workpiece_view import WorkpieceView
+from widgets.cartesian_control_view.mgi_solutions_widget import MgiSolutionsWidget
 from widgets.viewer_3d_widget import Viewer3DWidget
 
 
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         self.camera_view = CameraView()
         self.joint_control_view = JointControlView()
         self.cartesian_control_view = CartesianControlView()
-        self.mgi_view = MgiView()
+        self.mgi_solutions_widget = MgiSolutionsWidget()
         self.trajectory_view = TrajectoryView(robot_model, tool_model, workspace_model)
         self.program_view = ProgramView(robot_model, tool_model, workspace_model)
         self.machining_view = MachiningView()
@@ -89,10 +89,12 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.calibration_view, "Calibration")
         self.tabs.addTab(self.camera_view, "Camera")
         self.tabs.addTab(self.workspace_view, "Workspace")
-        self.tabs.addTab(self.mgi_view, "MGI")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
         self.tabs.addTab(self.program_view, "Programme")
         self.tabs.addTab(self.machining_view, "Usinage")
+
+        self.robot_view.add_tab(self.mgi_solutions_widget, "Solutions")
+        self.calibration_view.add_tab(self.mgi_solutions_widget.get_jacobien_widget(), "MGI optimisé")
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, central_widget)
         self.main_splitter.setHandleWidth(6)
@@ -231,9 +233,9 @@ class MainWindow(QMainWindow):
         """Retourne la vue de controle cartesien"""
         return self.cartesian_control_view
 
-    def get_mgi_view(self) -> MgiView:
-        """Retourne la vue MGI."""
-        return self.mgi_view
+    def get_mgi_solutions_widget(self) -> MgiSolutionsWidget:
+        """Retourne le widget des solutions MGI."""
+        return self.mgi_solutions_widget
 
     def get_trajectory_view(self) -> TrajectoryView:
         """Retourne la vue de trajectoire"""
@@ -266,7 +268,6 @@ class MainWindow(QMainWindow):
         )
         configuration_required_views = (
             self.workspace_view,
-            self.mgi_view,
             self.trajectory_view,
             self.program_view,
             self.machining_view,

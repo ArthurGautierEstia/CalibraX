@@ -4,7 +4,7 @@ from controllers.cartesian_control_view.mgi_solutions_controller import MgiSolut
 from models.robot_model import RobotModel
 from utils.mgi import MgiConfigKey, MgiResult
 from utils.mgi_jacobien import MgiJacobienParams, MgiJacobienResultat
-from views.mgi_view import MgiView
+from widgets.cartesian_control_view.mgi_solutions_widget import MgiSolutionsWidget
 
 
 class MgiController(QObject):
@@ -13,13 +13,12 @@ class MgiController(QObject):
     def __init__(
         self,
         robot_model: RobotModel,
-        mgi_view: MgiView,
+        mgi_solutions_widget: MgiSolutionsWidget,
         parent: QObject | None = None,
     ):
         super().__init__(parent)
         self.robot_model = robot_model
-        self.mgi_view = mgi_view
-        self.mgi_solutions_widget = self.mgi_view.get_mgi_solutions_widget()
+        self.mgi_solutions_widget = mgi_solutions_widget
         self.mgi_solutions_controller = MgiSolutionsController(self.robot_model, self.mgi_solutions_widget, self)
 
         self._setup_connections()

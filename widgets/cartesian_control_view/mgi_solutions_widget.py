@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QPushButton,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -47,18 +46,12 @@ class MgiSolutionsWidget(QWidget):
         self._joint_weights: list[float] = [1.0] * 6
         self._show_expanded_solutions = False
 
-        self._tabs = QTabWidget()
-        self._solutions_tab = QWidget()
-        self._jacobien_tab = QWidget()
-
-        self._init_solutions_tab()
-        self._init_jacobien_tab()
-
-        self._tabs.addTab(self._solutions_tab, "Solutions")
-        self._tabs.addTab(self._jacobien_tab, "MGI Optimisé")
+        self._jacobien_widget = MgiJacobienWidget()
+        self._jacobien_widget.enabled_changed.connect(self.jacobien_enabled_changed)
+        self._jacobien_widget.params_changed.connect(self.jacobien_params_changed)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self._tabs)
+        self._init_solutions_ui(layout)
 
     def set_axis_limits(self, limits: list[tuple[float, float]]) -> None:
         self._axis_limits = list(limits)
@@ -97,9 +90,10 @@ class MgiSolutionsWidget(QWidget):
     def set_jacobien_resultat(self, resultat: MgiJacobienResultat | None) -> None:
         self._jacobien_widget.set_resultat(resultat)
 
-    def _init_solutions_tab(self) -> None:
-        layout = QVBoxLayout(self._solutions_tab)
+    def get_jacobien_widget(self) -> MgiJacobienWidget:
+        return self._jacobien_widget
 
+    def _init_solutions_ui(self, layout: QVBoxLayout) -> None:
         self._cb_show_expanded = QCheckBox("Afficher solutions étendues")
         self._cb_show_expanded.setChecked(False)
         self._cb_show_expanded.setToolTip("Affiche les variantes equivalentes (tours +/-360) quand disponibles.")
@@ -113,13 +107,6 @@ class MgiSolutionsWidget(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         layout.addWidget(self._table)
-
-    def _init_jacobien_tab(self) -> None:
-        layout = QVBoxLayout(self._jacobien_tab)
-        self._jacobien_widget = MgiJacobienWidget()
-        self._jacobien_widget.enabled_changed.connect(self.jacobien_enabled_changed)
-        self._jacobien_widget.params_changed.connect(self.jacobien_params_changed)
-        layout.addWidget(self._jacobien_widget)
 
     def _populate_table(self) -> None:
         self._table.setRowCount(0)

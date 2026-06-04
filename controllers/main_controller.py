@@ -103,7 +103,7 @@ class MainController(QObject):
         self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view())
         self.mgi_controller = MgiController(
             robot_model,
-            main_window.get_mgi_view(),
+            main_window.get_mgi_solutions_widget(),
         )
         self.cartesian_control_controller = CartesianControlController(
             robot_model,

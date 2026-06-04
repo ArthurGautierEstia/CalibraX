@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QScrollArea
 from widgets.calibration_view.measurement_widget import MeasurementWidget
-from widgets.calibration_view.optimized_widget import OptimizedWidget
 from widgets.calibration_view.external_axis_widget import ExternalAxisWidget
 
 class CalibrationView(QWidget):
@@ -13,7 +12,6 @@ class CalibrationView(QWidget):
             # RÉGION: Initialisation des widgets
             # ====================================================================
             self.measurement_widget = MeasurementWidget()
-            self.optimized_widget = OptimizedWidget()
             self.external_axis_widget = ExternalAxisWidget()
             self.tab_widget = QTabWidget()
 
@@ -33,13 +31,6 @@ class CalibrationView(QWidget):
         geometrique_scroll_area.setWidget(self.measurement_widget)
         geometrique_layout.addWidget(geometrique_scroll_area)
         self.tab_widget.addTab(geometrique_tab, "Géométrique")
-        
-        # Onglet Optimisée
-        optimise_tab = QWidget()
-        optimise_layout = QVBoxLayout(optimise_tab)
-        optimise_layout.setSpacing(5)
-        optimise_layout.addWidget(self.optimized_widget)
-        self.tab_widget.addTab(optimise_tab, "Optimisée")
         
         # Onglet Axe externe
         external_axis_tab = QWidget()
@@ -63,6 +54,5 @@ class CalibrationView(QWidget):
         """Retourne le widget d'axe externe"""
         return self.external_axis_widget
 
-    def get_optimized_widget(self) -> OptimizedWidget:
-        """Retourne le widget d'optimisation DH"""
-        return self.optimized_widget
+    def add_tab(self, widget: QWidget, title: str) -> None:
+        self.tab_widget.addTab(widget, title)
