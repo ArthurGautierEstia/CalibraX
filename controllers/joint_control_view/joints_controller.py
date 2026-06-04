@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QEvent, QObject
 
 from models.robot_model import RobotModel
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
@@ -10,7 +10,17 @@ class JointsController(QObject):
 
         self.robot_model = robot_model
         self.joint_control_widget = joint_control_widget
+        self.joint_control_widget.installEventFilter(self)
         self._setup_connections()
+
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self.joint_control_widget and event.type() == QEvent.Type.Show:
+            self.force_refresh()
+        return super().eventFilter(obj, event)
+
+    def force_refresh(self) -> None:
+        self.joint_control_widget.set_all_joints(self.robot_model.get_joints())
+        self.joint_control_widget.set_configuration(self.robot_model.get_current_axis_config())
 
     def _setup_connections(self) -> None:
         """Configure les connexions de signaux entre la vue et le modele du robot"""

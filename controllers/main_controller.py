@@ -157,8 +157,10 @@ class MainController(QObject):
 
         self._on_robot_model_config_changed()
         self._setup_connections()
+        self._on_main_tab_changed(self.main_window.tabs.currentIndex())
 
     def _setup_connections(self) -> None:
+        self.main_window.tabs.currentChanged.connect(self._on_main_tab_changed)
         self.robot_model.configuration_changed.connect(self._on_robot_model_config_changed)
         self.robot_model.configuration_changed.connect(self._schedule_session_save)
         self.robot_model.axis_colliders_changed.connect(self._schedule_session_save)
@@ -278,6 +280,10 @@ class MainController(QObject):
             session.save(self.session_path)
         except (OSError, ValueError, TypeError) as exc:
             print(f"Impossible d'enregistrer la session dans {self.session_path}: {exc}")
+
+    def _on_main_tab_changed(self, index: int) -> None:
+        is_camera = (index == self.main_window.tabs.indexOf(self.main_window.camera_view))
+        self.main_window.get_viewer3d().set_camera_visibility_active(is_camera)
 
     def _on_robot_model_config_changed(self) -> None:
         self.main_window.update_enabled_tabs(self.robot_model.get_has_configuration())

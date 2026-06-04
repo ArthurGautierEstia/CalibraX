@@ -1140,6 +1140,7 @@ class Viewer3DWidget(QWidget):
         self._robot_colliders: list[PrimitiveCollider] = []
         self._tool_colliders: list[PrimitiveCollider] = []
         self._camera_model: CameraModel | None = None
+        self._camera_visibility_active: bool = False
         self._camera_mesh_items: list[gl.GLMeshItem] = []
         self._camera_frustum_items: list[gl.GLLinePlotItem] = []
         self._camera_line_items: list[gl.GLLinePlotItem] = []
@@ -3120,7 +3121,14 @@ class Viewer3DWidget(QWidget):
         self._selected_camera_index = int(index)
         self.refresh_cameras()
 
+    def set_camera_visibility_active(self, active: bool) -> None:
+        self._camera_visibility_active = active
+        if active:
+            self.refresh_camera_visibility()
+
     def refresh_camera_visibility(self) -> None:
+        if not self._camera_visibility_active:
+            return
         if self._camera_model is None:
             return
         results = self._evaluate_camera_visibility()

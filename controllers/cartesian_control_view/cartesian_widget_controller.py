@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, pyqtSignal
 
 from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
@@ -37,9 +37,27 @@ class CartesianWidgetController(QObject):
         self._last_reference_frame: str = self.cartesian_control_widget.get_reference_frame()
         self._tool_anchor_display_pose: Pose6 = Pose6.zeros()
         self._tool_anchor_tcp_pose: Pose6 = Pose6.zeros()
+        self.cartesian_control_widget.installEventFilter(self)
         self._setup_connections()
         self._apply_cartesian_slider_limits()
 
+
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self.cartesian_control_widget and event.type() == QEvent.Type.Show:
+            self.force_refresh()
+        return super().eventFilter(obj, event)
+
+    def force_refresh(self) -> None:
+        tcp_pose_base = self.robot_model.get_tcp_pose()
+        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
+        display_pose = convert_pose_from_base_frame(
+            tcp_pose_base,
+            ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
+            robot_base_transform,
+        )
+        self._last_display_pose = display_pose.copy()
+        self._last_reference_frame = self.cartesian_control_widget.get_reference_frame()
+        self.cartesian_control_widget.set_all_cartesian(display_pose)
 
     def _setup_connections(self):
         self.robot_model.tcp_pose_changed.connect(self._on_model_tcp_changed)
@@ -55,16 +73,7 @@ class CartesianWidgetController(QObject):
     def _on_model_tcp_changed(self) -> None:
         if not self.cartesian_control_widget.isVisible():
             return
-        tcp_pose_base = self.robot_model.get_tcp_pose()
-        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
-        display_pose = convert_pose_from_base_frame(
-            tcp_pose_base,
-            ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
-            robot_base_transform,
-        )
-        self._last_display_pose = display_pose.copy()
-        self._last_reference_frame = self.cartesian_control_widget.get_reference_frame()
-        self.cartesian_control_widget.set_all_cartesian(display_pose)
+        self.force_refresh()
 
     def _on_view_cartesian_value_changed(self, idx: int, value: float) -> None:
         if idx < 0 or idx >= 6:
