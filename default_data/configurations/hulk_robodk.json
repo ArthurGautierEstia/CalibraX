@@ -196,74 +196,74 @@
     "axis_colliders": [
         {
             "axis": 0,
-            "enabled": false,
-            "radius": 40.0,
-            "height": 100.0,
+            "enabled": true,
+            "radius": 680.0,
+            "height": 1300.0,
             "direction_axis": "z",
             "offset_xyz": [
+                150.0,
                 0.0,
-                0.0,
-                0.0
+                -1045.0
             ]
         },
         {
             "axis": 1,
-            "enabled": false,
-            "radius": 40.0,
-            "height": 100.0,
+            "enabled": true,
+            "radius": 300.0,
+            "height": 1800.0,
             "direction_axis": "x",
             "offset_xyz": [
+                -250.0,
                 0.0,
-                0.0,
-                0.0
+                -200.0
             ]
         },
         {
             "axis": 2,
-            "enabled": false,
-            "radius": 40.0,
-            "height": 100.0,
+            "enabled": true,
+            "radius": 300.0,
+            "height": 1150.0,
             "direction_axis": "y",
             "offset_xyz": [
                 0.0,
-                0.0,
+                -620.0,
                 0.0
             ]
         },
         {
             "axis": 3,
-            "enabled": false,
-            "radius": 40.0,
-            "height": 100.0,
+            "enabled": true,
+            "radius": 220.0,
+            "height": 500.0,
             "direction_axis": "z",
             "offset_xyz": [
                 0.0,
                 0.0,
-                0.0
+                -500.0
             ]
         },
         {
             "axis": 4,
-            "enabled": false,
-            "radius": 40.0,
-            "height": 100.0,
+            "enabled": true,
+            "radius": 220.0,
+            "height": 410.0,
             "direction_axis": "y",
             "offset_xyz": [
                 0.0,
-                0.0,
+                -180.0,
                 0.0
             ]
         },
         {
             "axis": 5,
-            "enabled": false,
-            "radius": 40.0,
-            "height": 100.0,
+            "enabled": true,
+            "radius": 140.0,
+            "height": 60.0,
             "direction_axis": "z",
             "offset_xyz": [
                 0.0,
                 0.0,
-                0.0
+                -60.0
             ]
         }
     ],

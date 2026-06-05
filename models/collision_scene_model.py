@@ -97,9 +97,8 @@ class CollisionSceneModel(QObject):
             self.tool_colliders = []
             return
 
-        robot_base_world = np.array(self.workspace_model.get_robot_base_transform_world().matrix, dtype=float)
         self.robot_colliders = self._build_robot_base_colliders(corrected_matrices)
-        self.tool_colliders = self._build_tool_world_colliders(corrected_matrices, robot_base_world)
+        self.tool_colliders = self._build_tool_base_colliders(corrected_matrices)
 
     def _resolve_robot_corrected_matrices(self) -> list[np.ndarray]:
         matrices = self.robot_model.get_current_tcp_corrected_dh_matrices()
@@ -125,10 +124,9 @@ class CollisionSceneModel(QObject):
             colliders.append(data.build_collider(base_transform=base_transform))
         return colliders
 
-    def _build_tool_world_colliders(
+    def _build_tool_base_colliders(
         self,
         corrected_matrices: list[np.ndarray],
-        robot_base_world: np.ndarray,
     ) -> list[PrimitiveCollider]:
         if not corrected_matrices:
             return []
@@ -141,7 +139,7 @@ class CollisionSceneModel(QObject):
         if tool_matrix_index < 0 or tool_matrix_index >= len(corrected_matrices):
             return []
 
-        base_transform = robot_base_world @ corrected_matrices[tool_matrix_index]
+        base_transform = corrected_matrices[tool_matrix_index]
         colliders: list[PrimitiveCollider] = []
         for data in self._tool_collider_data:
             colliders.append(

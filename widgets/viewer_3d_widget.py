@@ -3727,6 +3727,7 @@ class Viewer3DWidget(QWidget):
                 direction,
                 max_distance,
                 collider,
+                world_transform=self._collider_world_transform(collider),
             )
             if hit_distance is None or hit_distance < min_distance or hit_distance > max_distance:
                 continue
@@ -3865,8 +3866,10 @@ class Viewer3DWidget(QWidget):
         direction_world: np.ndarray,
         max_distance: float,
         collider: PrimitiveCollider,
+        world_transform: np.ndarray | None = None,
     ) -> float | None:
-        inv = math_utils.invert_homogeneous_transform(collider.world_transform)
+        transform = collider.world_transform if world_transform is None else world_transform
+        inv = math_utils.invert_homogeneous_transform(transform)
         origin_local = (inv @ np.array([origin_world[0], origin_world[1], origin_world[2], 1.0], dtype=float))[:3]
         direction_local = (inv[:3, :3] @ np.array(direction_world, dtype=float))
         norm = float(np.linalg.norm(direction_local))
@@ -3893,7 +3896,7 @@ class Viewer3DWidget(QWidget):
         if local_hit is None:
             return None
         hit_local = origin_local + direction_local * local_hit
-        hit_world = collider.world_transform @ np.array([hit_local[0], hit_local[1], hit_local[2], 1.0], dtype=float)
+        hit_world = transform @ np.array([hit_local[0], hit_local[1], hit_local[2], 1.0], dtype=float)
         world_distance = float(np.linalg.norm(hit_world[:3] - origin_world))
         if world_distance > max_distance:
             return None
@@ -4529,6 +4532,7 @@ class Viewer3DWidget(QWidget):
         if hasattr(self, "last_dh_matrices") and self.last_dh_matrices:
             self.draw_all_frames(self.last_dh_matrices)
         self._render_robot_axis_colliders()
+        self._render_tool_colliders()
 
     def _transform_robot_matrix_to_world(self, transform: np.ndarray) -> np.ndarray:
         if self._external_robot_base_override is not None:
@@ -4542,6 +4546,12 @@ class Viewer3DWidget(QWidget):
         if self._external_robot_base_override is not None:
             return pts @ self._external_robot_base_override[:3, :3].T + self._external_robot_base_override[:3, 3]
         return transform_points_base_to_world(pts, self._robot_base_transform_world)
+
+    def _collider_world_transform(self, collider: PrimitiveCollider) -> np.ndarray:
+        transform = np.array(collider.world_transform, dtype=float)
+        if collider.owner in {"robot", "tool"}:
+            return self._transform_robot_matrix_to_world(transform)
+        return transform
 
     # ------------------------------------------------------------------
     # Axes externes
@@ -4958,7 +4968,7 @@ class Viewer3DWidget(QWidget):
             item = self._build_primitive_item(
                 collider,
                 (0.2, 0.55, 1.0, 0.18),
-                world_transform=self._transform_robot_matrix_to_world(collider.world_transform),
+                world_transform=self._collider_world_transform(collider),
             )
             if item is None:
                 continue
@@ -4972,7 +4982,11 @@ class Viewer3DWidget(QWidget):
         for collider in self._tool_colliders:
             if not collider.enabled:
                 continue
-            item = self._build_primitive_item(collider, (0.85, 0.35, 1.0, 0.24))
+            item = self._build_primitive_item(
+                collider,
+                (0.85, 0.35, 1.0, 0.24),
+                world_transform=self._collider_world_transform(collider),
+            )
             if item is None:
                 continue
             self.viewer.addItem(item)

@@ -40,7 +40,7 @@ class CollisionSceneModelTest(unittest.TestCase):
         np.testing.assert_allclose(colliders[0].base_transform, corrected_matrices[1])
         np.testing.assert_allclose(colliders[0].world_transform[:3, 3], [11.0, 22.0, 33.0])
 
-    def test_tool_colliders_are_built_in_world_frame(self):
+    def test_tool_colliders_stay_attached_to_frame_6_in_robot_base_frame(self):
         robot_model = RobotModel()
         tool_model = ToolModel()
         workspace_model = WorkspaceModel()
@@ -53,14 +53,11 @@ class CollisionSceneModelTest(unittest.TestCase):
             PrimitiveColliderData("Tool", pose=Pose6(1.0, 2.0, 3.0, 0.0, 0.0, 0.0)),
         ]
 
-        colliders = scene_model._build_tool_world_colliders(
-            corrected_matrices,
-            workspace_model.get_robot_base_transform_world().matrix,
-        )
+        colliders = scene_model._build_tool_base_colliders(corrected_matrices)
 
         self.assertEqual(len(colliders), 1)
-        np.testing.assert_allclose(colliders[0].base_transform[:3, 3], [110.0, 220.0, 330.0])
-        np.testing.assert_allclose(colliders[0].world_transform[:3, 3], [111.0, 222.0, 333.0])
+        np.testing.assert_allclose(colliders[0].base_transform, corrected_matrices[6])
+        np.testing.assert_allclose(colliders[0].world_transform[:3, 3], [11.0, 22.0, 33.0])
 
 
 if __name__ == "__main__":
