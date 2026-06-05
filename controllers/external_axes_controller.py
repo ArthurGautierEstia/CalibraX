@@ -105,6 +105,7 @@ class ExternalAxesController(QObject):
 
     def _on_model_axes_changed(self) -> None:
         self._refresh_view()
+        self._apply_robot_base_override()
         self._refresh_viewer_cad()
 
     def _on_model_values_changed(self) -> None:

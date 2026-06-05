@@ -98,7 +98,7 @@ class CollisionSceneModel(QObject):
             return
 
         robot_base_world = np.array(self.workspace_model.get_robot_base_transform_world().matrix, dtype=float)
-        self.robot_colliders = self._build_robot_world_colliders(corrected_matrices, robot_base_world)
+        self.robot_colliders = self._build_robot_base_colliders(corrected_matrices)
         self.tool_colliders = self._build_tool_world_colliders(corrected_matrices, robot_base_world)
 
     def _resolve_robot_corrected_matrices(self) -> list[np.ndarray]:
@@ -112,17 +112,16 @@ class CollisionSceneModel(QObject):
 
         return [np.array(matrix, dtype=float) for matrix in fk_result.corrected_matrices]
 
-    def _build_robot_world_colliders(
+    def _build_robot_base_colliders(
         self,
         corrected_matrices: list[np.ndarray],
-        robot_base_world: np.ndarray,
     ) -> list[PrimitiveCollider]:
         colliders: list[PrimitiveCollider] = []
         for data in self._robot_axis_collider_data:
             matrix_index = data.axis_index + 1
             if matrix_index >= len(corrected_matrices):
                 continue
-            base_transform = robot_base_world @ corrected_matrices[matrix_index]
+            base_transform = corrected_matrices[matrix_index]
             colliders.append(data.build_collider(base_transform=base_transform))
         return colliders
 
