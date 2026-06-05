@@ -13,6 +13,7 @@ from models.tool_model import ToolModel
 from models.types import Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 import utils.math_utils as math_utils
+from utils.cartesian_jog import compute_cartesian_jog_target
 from widgets.viewer_3d_widget import Viewer3DWidget
 
 from typing import TYPE_CHECKING
@@ -236,46 +237,9 @@ class Viewer3DController(QObject):
             widget = self.viewer_3d_widget.get_overlay_cartesian_widget()
             reference_frame = ReferenceFrame.from_value(widget.get_reference_frame())
 
-            if reference_frame == ReferenceFrame.TOOL:
-                current_tcp_pose = self.robot_model.get_tcp_pose()
-                target = current_tcp_pose.copy()
-                if axis_index < 3:
-                    delta_pos = np.array([0.0, 0.0, 0.0], dtype=float)
-                    delta_pos[axis_index] = delta
-                    delta_in_base = self.robot_model.get_tcp_rotation_matrix() @ delta_pos
-                    target = Pose6(
-                        target.x + float(delta_in_base[0]),
-                        target.y + float(delta_in_base[1]),
-                        target.z + float(delta_in_base[2]),
-                        target.a,
-                        target.b,
-                        target.c,
-                    )
-                else:
-                    delta_rotation = (
-                        math_utils.rot_z(delta)
-                        if axis_index == 3
-                        else (math_utils.rot_y(delta) if axis_index == 4 else math_utils.rot_x(delta))
-                    )
-                    new_tcp_rotation = self.robot_model.get_tcp_rotation_matrix() @ delta_rotation
-                    new_abc = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
-                    target = Pose6(
-                        target.x,
-                        target.y,
-                        target.z,
-                        float(new_abc[0]),
-                        float(new_abc[1]),
-                        float(new_abc[2]),
-                    )
-                mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
-                if not mgi_result:
-                    return
-                best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
-                if best_solution is None:
-                    return
-                self.robot_model.set_joints(best_solution[1].joints)
-                widget.set_all_cartesian(self.robot_model.get_tcp_pose())
-            else:
+            # Translation en repère Robot/World : chemin "valeur absolue" (pas de
+            # singularité de représentation) — comportement inchangé.
+            if axis_index < 3 and reference_frame != ReferenceFrame.TOOL:
                 axis_limits = widget.get_axis_limits()
                 min_limit, max_limit = axis_limits[axis_index]
                 current_value = widget.get_cartesian_value(axis_index)
@@ -283,6 +247,26 @@ class Viewer3DController(QObject):
                 if new_value == current_value:
                     return
                 widget.spinboxes_cart[axis_index].setValue(new_value)
+                return
+
+            # Orientation (tous repères) + translation en repère Tool : on COMPOSE
+            # une rotation/translation autour de l'axe demandé (on pilote le sens de
+            # rotation). Reste continu à la traversée du gimbal lock B = ±90°.
+            target = compute_cartesian_jog_target(
+                self.robot_model.get_tcp_pose(),
+                reference_frame,
+                axis_index,
+                delta,
+                self.workspace_model.get_robot_base_transform_world(),
+            )
+            mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
+            if not mgi_result:
+                return
+            best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
+            if best_solution is None:
+                return
+            # set_joints() émet tcp_pose_changed -> l'overlay se rafraîchit tout seul.
+            self.robot_model.set_joints(best_solution[1].joints)
         except Exception as exc:
             print(f"Erreur lors du jog cartésien overlay: {exc}")
 

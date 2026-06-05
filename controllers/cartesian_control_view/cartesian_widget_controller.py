@@ -84,6 +84,11 @@ class CartesianWidgetController(QObject):
             ReferenceFrame.from_value(self.cartesian_control_widget.get_reference_frame()),
             robot_base_transform,
         )
+        # B (Ry, index 4) est borné à [-90, 90] : plage réelle de la décomposition
+        # ZYX. En saisie absolue, on s'arrête net au mur du gimbal lock plutôt que de
+        # commander |B|>90 (qui se replierait en inversant A/C -> oscillation).
+        if idx == 4:
+            value = max(-90.0, min(90.0, value))
         displayed_values = displayed_pose.to_list()
         displayed_values[idx] = value
         displayed_pose = Pose6(*displayed_values)
@@ -106,8 +111,16 @@ class CartesianWidgetController(QObject):
 
     def _apply_cartesian_slider_limits(self) -> None:
         xyz_limits = self._get_display_cartesian_slider_limits_xyz()
+        # A (Rz) et C (Rx) gardent la plage configurée ; B (Ry) est borné à [-90, 90]
+        # car la décomposition ZYX ne renvoie jamais |B|>90 (mur du gimbal lock).
+        a_limits = self._orientation_limits_deg
+        b_limits = (
+            max(self._orientation_limits_deg[0], -90.0),
+            min(self._orientation_limits_deg[1], 90.0),
+        )
+        c_limits = self._orientation_limits_deg
         self.cartesian_control_widget.update_axis_limits(
-            list(xyz_limits[:3]) + [self._orientation_limits_deg] * 3
+            list(xyz_limits[:3]) + [a_limits, b_limits, c_limits]
         )
 
     def _get_display_cartesian_slider_limits_xyz(self) -> list[tuple[float, float]]:

@@ -10,6 +10,7 @@ from models.reference_frame import ReferenceFrame
 from views.jog_view import JogView
 import utils.math_utils as math_utils
 from models.types import Pose6
+from utils.cartesian_jog import compute_cartesian_jog_target
 from utils.reference_frame_utils import convert_pose_from_base_frame
 
 class JogController(QObject):
@@ -181,67 +182,33 @@ class JogController(QObject):
             self.robot_model.set_joint(joint_index, new_value)
     
     def _jog_cartesian(self, axis_index: int, delta: float) -> None:
-        """Effectue un jog cartésien
-        
-        Crée un décalage global [dx, dy, dz, da, db, dc], le convertit au référentiel BASE 
-        si nécessaire (si en mode TOOL), puis appelle le MGI pour trouver la nouvelle pose.
-        
+        """Effectue un jog cartésien.
+
+        On COMPOSE une rotation/translation autour de l'axe demandé (on pilote le
+        sens de rotation), dans le référentiel BASE ou TOOL, puis on résout le MGI.
+        Reste continu à la traversée du gimbal lock B = ±90° (cf. utils.cartesian_jog).
+
         Args:
             axis_index: 0=X, 1=Y, 2=Z, 3=A, 4=B, 5=C
-            delta: Décalage à appliquer
+            delta: Décalage à appliquer (mm pour translation, deg pour rotation)
         """
         try:
-            # Obtenir la pose TCP actuelle [X, Y, Z, A, B, C]
-            current_tcp_pose = np.array(self.robot_model.get_tcp_pose().to_list(), dtype=float)
-            target = current_tcp_pose.copy()
+            reference_frame = (
+                ReferenceFrame.TOOL if self.base_tool_reference == "Tool" else ReferenceFrame.ROBOT
+            )
+            target = compute_cartesian_jog_target(
+                self.robot_model.get_tcp_pose(),
+                reference_frame,
+                axis_index,
+                delta,
+            )
 
-            # Si le référentiel est TOOL, convertir le décalage en référentiel BASE
-            if self.base_tool_reference == "Tool":
-                if axis_index < 3:
-                    # transform xyz
-                    delta_pos = np.array([0., 0., 0.])
-                    delta_pos[axis_index] = delta
-                    delta_in_base = self.robot_model.get_tcp_rotation_matrix() @ delta_pos
-
-                    target[0] += delta_in_base[0]
-                    target[1] += delta_in_base[1]
-                    target[2] += delta_in_base[2]
-
-                else:
-                    delta_rotation = math_utils.rot_z(delta) if axis_index == 3 else (math_utils.rot_y(delta) if axis_index == 4 else math_utils.rot_x(delta))
-                    new_tcp_rotation =  self.robot_model.get_tcp_rotation_matrix() @ delta_rotation
-                    newABC = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
-
-                    target[3] = newABC[0]
-                    target[4] = newABC[1]
-                    target[5] = newABC[2]
-
-            else:  # BASE
-                # Le décalage est déjà en BASE, on l'ajoute simplement
-                if axis_index < 3:
-                    # transform xyz
-                    target[axis_index] += delta
-                    
-                else:
-                    # transform abc
-                    delta_rotation = math_utils.rot_z(delta) if axis_index == 3 else (math_utils.rot_y(delta) if axis_index == 4 else math_utils.rot_x(delta))
-                    new_tcp_rotation = delta_rotation @ self.robot_model.get_tcp_rotation_matrix()
-                    newABC = math_utils.rotation_matrix_to_euler_zyx(new_tcp_rotation)
-
-                    target[3] = newABC[0]
-                    target[4] = newABC[1]
-                    target[5] = newABC[2]
-
-            # Appeler le MGI sur la nouvelle pose cible
-            mgi_result = self.robot_model.compute_ik_target(Pose6(*target.tolist()), tool=self.tool_model.get_tool())
-            
-            # Si des solutions existent, appliquer la meilleure
+            mgi_result = self.robot_model.compute_ik_target(target, tool=self.tool_model.get_tool())
             if mgi_result:
                 best_solution = self.robot_model.get_best_mgi_solution(mgi_result)
                 if best_solution is not None:
-                    # best_solution est en radians, convertir en degrés
                     self.robot_model.set_joints(best_solution[1].joints)
-                    
+
         except Exception as e:
             print(f"Erreur lors du jog cartésien: {e}")
 
