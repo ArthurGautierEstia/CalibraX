@@ -167,6 +167,12 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                         self._inertia_orbit_pivot_world = getattr(self, "_orbit_pivot_point_world", None)
                         self._inertia_orbit_pivot_screen = getattr(self, "_orbit_pivot_screen_position", None)
                         self._inertia_orbit_pivot_camera_dist = getattr(self, "_orbit_pivot_camera_distance", None)
+                    if last[2] in ("orbit_origin", "orbit_picked"):
+                        speed = (self._inertia_vel_x ** 2 + self._inertia_vel_y ** 2) ** 0.5
+                        if speed > self._INERTIA_ORBIT_MAX_SPEED:
+                            scale = self._INERTIA_ORBIT_MAX_SPEED / speed
+                            self._inertia_vel_x *= scale
+                            self._inertia_vel_y *= scale
                     self._inertia_timer.start()
             self._inertia_recent_diffs.clear()
             self._raw_recent_diffs.clear()
@@ -213,7 +219,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self.mousePos = local_position
             self._smooth_vel_x = self._SMOOTH_ALPHA * diff.x() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_x
             self._smooth_vel_y = self._SMOOTH_ALPHA * diff.y() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
-            rotation_factor = self._compute_origin_orbit_rotation_factor()
+            rotation_factor = self._compute_origin_orbit_rotation_factor() * self._ORBIT_SPEED_SCALE
             self._orbit_around_fixed_pivot(
                 np.array([0.0, 0.0, 0.0], dtype=float),
                 -self._smooth_vel_x * rotation_factor,
@@ -236,7 +242,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self._smooth_vel_y = self._SMOOTH_ALPHA * raw_dy + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
             _picked_speed = self._compute_picked_orbit_speed_factor(
                 getattr(self, "_orbit_pivot_camera_distance", None)
-            )
+            ) * self._ORBIT_SPEED_SCALE
             self.orbit(-self._smooth_vel_x * _picked_speed, self._smooth_vel_y * _picked_speed)
             self.mousePos = local_position
             _inertia_picked_dx = self._smooth_vel_x
@@ -310,6 +316,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
     _SMOOTH_ALPHA = 0.65        # EMA pendant le drag (0=figé, 1=brut)
     _PAN_SPEED_SCALE = 0.5      # 1.0 = suivi 1:1 exact, réduire si trop rapide
+    _ORBIT_SPEED_SCALE = 0.8    # réducteur global de vitesse de rotation (drag + inertie)
+    _INERTIA_ORBIT_MAX_SPEED = 8.0  # px/frame max au lancement de l'inertie rotation
     _INERTIA_DAMPING = 0.87
     _INERTIA_STOP_THRESHOLD = 0.3
 
@@ -325,7 +333,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 -vy * self._inertia_rotation_factor,
             )
         elif self._inertia_mode == "orbit_picked":
-            _picked_speed = self._compute_picked_orbit_speed_factor(self._inertia_orbit_pivot_camera_dist)
+            _picked_speed = self._compute_picked_orbit_speed_factor(self._inertia_orbit_pivot_camera_dist) * self._ORBIT_SPEED_SCALE
             self.orbit(-vx * _picked_speed, vy * _picked_speed)
             if self._inertia_orbit_pivot_world is not None and self._inertia_orbit_pivot_screen is not None:
                 self._recenter_to_keep_point_under_cursor(
