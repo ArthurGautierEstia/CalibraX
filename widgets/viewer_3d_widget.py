@@ -1,5 +1,6 @@
 import os
 import time
+from collections import deque
 from dataclasses import dataclass
 from PyQt6.QtWidgets import (
     QApplication,
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QMessageBox,
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPoint, QPointF
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QPoint, QPointF
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygonF, QPalette
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import shaders as gl_shaders
@@ -91,8 +92,20 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._pan_gesture_speed_factor: float | None = None
         self._local_tris_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         self.setBackgroundColor(self._background_primary_color)
+        # Inertie caméra
+        self._inertia_timer = QTimer(self)
+        self._inertia_timer.setInterval(16)  # ~60 fps
+        self._inertia_timer.timeout.connect(self._on_inertia_tick)
+        self._inertia_vel_x: float = 0.0
+        self._inertia_vel_y: float = 0.0
+        self._inertia_mode: str | None = None  # "pan" | "orbit_origin" | "orbit_picked"
+        self._inertia_rotation_factor: float = 0.45
+        self._inertia_pan_factor: float = 1.0
+        self._inertia_recent_diffs: deque = deque(maxlen=4)
 
     def mousePressEvent(self, ev) -> None:
+        self._inertia_timer.stop()
+        self._inertia_recent_diffs.clear()
         self._pick_cache = None
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         if ev.button() == Qt.MouseButton.LeftButton:
@@ -116,6 +129,22 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev) -> None:
+        if ev.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton):
+            if self._inertia_recent_diffs:
+                last = self._inertia_recent_diffs[-1]
+                n = len(self._inertia_recent_diffs)
+                avg_x = sum(d[0] for d in self._inertia_recent_diffs) / n
+                avg_y = sum(d[1] for d in self._inertia_recent_diffs) / n
+                if (avg_x ** 2 + avg_y ** 2) ** 0.5 > 0.5:
+                    self._inertia_vel_x = avg_x
+                    self._inertia_vel_y = avg_y
+                    self._inertia_mode = last[2]
+                    if last[2] == "pan":
+                        self._inertia_pan_factor = last[3]
+                    else:
+                        self._inertia_rotation_factor = last[3]
+                    self._inertia_timer.start()
+            self._inertia_recent_diffs.clear()
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_point_world = None
             self._orbit_pivot_mode = None
@@ -141,6 +170,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 diff.y() * self._pan_gesture_speed_factor,
                 relative="view-upright",
             )
+            self._inertia_recent_diffs.append((diff.x(), diff.y(), "pan", self._pan_gesture_speed_factor))
             return
 
         if (
@@ -158,8 +188,12 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 -diff.x() * rotation_factor,
                 -diff.y() * rotation_factor,
             )
+            self._inertia_recent_diffs.append((diff.x(), diff.y(), "orbit_origin", rotation_factor))
             return
 
+        # Capture du diff avant super() pour l'inertie du mode "picked"
+        _inertia_picked_dx = local_position.x() - self.mousePos.x() if hasattr(self, "mousePos") else 0.0
+        _inertia_picked_dy = local_position.y() - self.mousePos.y() if hasattr(self, "mousePos") else 0.0
         super().mouseMoveEvent(ev)
         if not (ev.buttons() & Qt.MouseButton.LeftButton):
             return
@@ -183,6 +217,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 orbit_pivot_point_world,
                 orbit_pivot_camera_distance,
             )
+            self._inertia_recent_diffs.append((_inertia_picked_dx, _inertia_picked_dy, "orbit_picked", 1.0))
 
     def wheelEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
@@ -204,6 +239,29 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             else:
                 self._zoom_orthographic_toward_cursor(local_position, target_point_world, delta)
 
+        self.update()
+
+    _INERTIA_DAMPING = 0.87
+    _INERTIA_STOP_THRESHOLD = 0.3
+
+    def _on_inertia_tick(self) -> None:
+        vx = self._inertia_vel_x
+        vy = self._inertia_vel_y
+        if self._inertia_mode == "pan":
+            self.pan(vx * self._inertia_pan_factor, 0.0, vy * self._inertia_pan_factor, relative="view-upright")
+        elif self._inertia_mode == "orbit_origin":
+            self._orbit_around_fixed_pivot(
+                np.array([0.0, 0.0, 0.0], dtype=float),
+                -vx * self._inertia_rotation_factor,
+                -vy * self._inertia_rotation_factor,
+            )
+        elif self._inertia_mode == "orbit_picked":
+            self.orbit(-vx, vy)
+        self._inertia_vel_x *= self._INERTIA_DAMPING
+        self._inertia_vel_y *= self._INERTIA_DAMPING
+        if (self._inertia_vel_x ** 2 + self._inertia_vel_y ** 2) ** 0.5 < self._INERTIA_STOP_THRESHOLD:
+            self._inertia_timer.stop()
+            self._inertia_mode = None
         self.update()
 
     def set_background_style(self, mode: str, primary_color: QColor, secondary_color: QColor, gradient_direction: str = "vertical") -> None:
