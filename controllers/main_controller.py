@@ -168,6 +168,7 @@ class MainController(QObject):
         self.robot_controller.configuration_loaded.connect(self._on_config_loaded)
         self.robot_controller.dh_controller.validation_state_changed.connect(self.main_window.set_robot_tab_validated)
         self.robot_controller.tool_controller.validation_state_changed.connect(self.main_window.set_tool_tab_validated)
+        self.external_axes_controller.validation_state_changed.connect(self.main_window.set_external_axes_tab_validated)
         self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
 
         self.tool_model.tool_changed.connect(self._on_tool_changed)
@@ -233,12 +234,19 @@ class MainController(QObject):
         if workspace_path:
             self.workspace_controller.load_workspace_from_path(workspace_path, show_errors=False)
 
-        # Restauration des axes externes
-        external_axes_data = startup.get("external_axes_data") or {}
-        if external_axes_data:
+        # Chargement de la configuration des axes externes
+        external_axes_path = self._resolve_existing_path(startup.get("external_axes_config", "")) or ""
+        if not external_axes_path:
+            external_axes_path = self._guess_external_axes_config_from_workspace(startup.get("workspace", ""))
+        if not external_axes_path:
+            external_axes_data = startup.get("external_axes_data") or {}
+            external_axes_path = self._resolve_existing_path(
+                self.external_axes_controller.infer_config_file_from_state_data(external_axes_data)
+            ) or ""
+        if external_axes_path:
             self.viewer3d_controller.begin_loading_feedback("Chargement axes externes ...")
             try:
-                self.external_axes_controller.restore_state(external_axes_data)
+                self.external_axes_controller.load_configuration_from_path(external_axes_path)
             finally:
                 self.viewer3d_controller.end_loading_feedback()
 
@@ -264,8 +272,11 @@ class MainController(QObject):
             robot_config_path=self._normalize_project_path(self.robot_model.get_current_config_file()),
             tool_profile_path=self._session_tool_profile_path(),
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
+            external_axes_config_path=self._normalize_project_path(
+                self.external_axes_controller.get_current_config_file()
+            ),
             viewer_state=self.main_window.get_viewer3d().get_display_state(),
-            external_axes_data=self.external_axes_controller.get_serializable_state(),
+            external_axes_data={},
             workpiece_data=self.workpiece_controller.get_serializable_state().get("workpiece", {}),
             tooling_data=self.workpiece_controller.get_serializable_state().get("tooling", {}),
             program_base_config=ProgramBaseConfigState.from_dict(base_cfg),
@@ -329,12 +340,23 @@ class MainController(QObject):
             "config": config_override or (session.robot_config_path if session is not None else ""),
             "tool": tool_override or (session.tool_profile_path if session is not None else ""),
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),
+            "external_axes_config": session.external_axes_config_path if session is not None else "",
             "viewer_state": session.viewer_state if session is not None else None,
             "external_axes_data": session.external_axes_data if session is not None else {},
             "workpiece_data": session.workpiece_data if session is not None else {},
             "tooling_data": session.tooling_data if session is not None else {},
             "program_base_config": session.program_base_config.to_dict() if session is not None else {},
         }
+
+    def _guess_external_axes_config_from_workspace(self, workspace_path: str) -> str:
+        resolved_workspace = self._resolve_existing_path(workspace_path)
+        if not resolved_workspace:
+            return ""
+        workspace_name = os.path.splitext(os.path.basename(resolved_workspace))[0]
+        if not workspace_name:
+            return ""
+        candidate = os.path.join("default_data", "external_axes_configs", f"{workspace_name}.json")
+        return self._resolve_existing_path(candidate)
 
     def _session_tool_profile_path(self) -> str:
         # The session only persists a standalone tool selection when no robot configuration is active.

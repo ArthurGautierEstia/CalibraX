@@ -134,6 +134,9 @@ class MainWindow(QMainWindow):
     def set_tool_tab_validated(self, is_validated: bool) -> None:
         self._set_tab_validated(MainWindow.TOOL_TAB_INDEX, is_validated)
 
+    def set_external_axes_tab_validated(self, is_validated: bool) -> None:
+        self._set_tab_validated(MainWindow.EXTERNAL_AXES_TAB_INDEX, is_validated)
+
     def _set_tab_validated(self, tab_index: int, is_validated: bool) -> None:
         self.cell_configuration_tabs.setTabIcon(
             tab_index,
@@ -186,7 +189,11 @@ class MainWindow(QMainWindow):
             self._refresh_validated_tab_icons()
 
     def _refresh_validated_tab_icons(self) -> None:
-        for tab_index in (MainWindow.ROBOT_TAB_INDEX, MainWindow.TOOL_TAB_INDEX):
+        for tab_index in (
+            MainWindow.ROBOT_TAB_INDEX,
+            MainWindow.TOOL_TAB_INDEX,
+            MainWindow.EXTERNAL_AXES_TAB_INDEX,
+        ):
             current_icon = self.cell_configuration_tabs.tabIcon(tab_index)
             if current_icon.isNull():
                 continue

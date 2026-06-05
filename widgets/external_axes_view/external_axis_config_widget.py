@@ -5,11 +5,11 @@ import os
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSlider,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
     QVBoxLayout, QWidget,
 )
 
@@ -36,9 +36,6 @@ _AXIS_CHOICES = [
     ("-Y", (0.0, -1.0,  0.0)),
     ("-Z", (0.0,  0.0, -1.0)),
 ]
-
-_SLIDER_STEPS = 1000
-
 
 def _normalize_project_path(path: str) -> str:
     absolute_path = os.path.abspath(path)
@@ -112,8 +109,7 @@ class _JointSectionWidget(QGroupBox):
         - « Repère d'axe N » = link_pose_in_prev du joint
     """
 
-    changed = pyqtSignal()          # changement structurel
-    value_changed = pyqtSignal(float)  # slider bougé
+    changed = pyqtSignal()
 
     def __init__(self, joint_index: int, parent: QWidget | None = None) -> None:
         label = f"Axe {joint_index + 1}"
@@ -183,27 +179,6 @@ class _JointSectionWidget(QGroupBox):
         limits_layout.addRow("Offset (zéro) :", self._offset_spin)
         layout.addWidget(limits_box)
 
-        # ── Slider de test ────────────────────────────────────────────
-        test_box = QGroupBox("Test (jog)")
-        test_layout = QVBoxLayout(test_box)
-        test_layout.setSpacing(4)
-
-        slider_row = QWidget()
-        slider_row_layout = QHBoxLayout(slider_row)
-        slider_row_layout.setContentsMargins(0, 0, 0, 0)
-        self._slider = QSlider(Qt.Orientation.Horizontal)
-        self._slider.setRange(0, _SLIDER_STEPS)
-        self._slider.setValue(0)
-        self._slider.valueChanged.connect(self._on_slider_moved)
-        self._value_label = QLabel("0.000")
-        self._value_label.setFixedWidth(70)
-        self._unit_label = QLabel("mm")
-        slider_row_layout.addWidget(self._slider)
-        slider_row_layout.addWidget(self._value_label)
-        slider_row_layout.addWidget(self._unit_label)
-        test_layout.addWidget(slider_row)
-        layout.addWidget(test_box)
-
         # ── CAO pièce mobile ──────────────────────────────────────────
         cad_box = QGroupBox("Pièce mobile (CAO)")
         cad_layout = QVBoxLayout(cad_box)
@@ -241,38 +216,12 @@ class _JointSectionWidget(QGroupBox):
         return sb
 
     def _on_type_changed(self) -> None:
-        jtype = self._type_combo.currentData()
-        unit = "mm" if jtype == ExternalAxisJointType.LINEAR else "°"
-        self._unit_label.setText(unit)
         self._emit()
 
     def _on_limits_changed(self) -> None:
         self._q_min = self._min_spin.value()
         self._q_max = self._max_spin.value()
-        self._refresh_slider_label()
         self._emit()
-
-    def _on_slider_moved(self, slider_val: int) -> None:
-        v = self._slider_to_value(slider_val)
-        self._value_label.setText(f"{v:.3f}")
-        if not self._building:
-            self.value_changed.emit(v)
-
-    def _slider_to_value(self, slider_val: int) -> float:
-        if self._q_max <= self._q_min:
-            return self._q_min
-        ratio = slider_val / _SLIDER_STEPS
-        return self._q_min + ratio * (self._q_max - self._q_min)
-
-    def _value_to_slider(self, value: float) -> int:
-        if self._q_max <= self._q_min:
-            return 0
-        ratio = (value - self._q_min) / (self._q_max - self._q_min)
-        return int(max(0, min(_SLIDER_STEPS, ratio * _SLIDER_STEPS)))
-
-    def _refresh_slider_label(self) -> None:
-        v = self._slider_to_value(self._slider.value())
-        self._value_label.setText(f"{v:.3f}")
 
     def _browse_cad(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -318,11 +267,8 @@ class _JointSectionWidget(QGroupBox):
             q_min=self._min_spin.value(),
             q_max=self._max_spin.value(),
             offset=self._offset_spin.value(),
-            value=self._slider_to_value(self._slider.value()),
+            value=0.0,
         )
-
-    def get_slider_value(self) -> float:
-        return self._slider_to_value(self._slider.value())
 
     def set_data(
         self,
@@ -342,8 +288,6 @@ class _JointSectionWidget(QGroupBox):
 
         idx = 0 if joint.joint_type == ExternalAxisJointType.LINEAR else 1
         self._type_combo.setCurrentIndex(idx)
-        unit = "mm" if joint.joint_type == ExternalAxisJointType.LINEAR else "°"
-        self._unit_label.setText(unit)
 
         self._dir_combo.setCurrentIndex(_axis_to_combo_index(joint.axis))
 
@@ -352,10 +296,6 @@ class _JointSectionWidget(QGroupBox):
         self._offset_spin.setValue(joint.offset)
         self._q_min = joint.q_min
         self._q_max = joint.q_max
-
-        slider_pos = self._value_to_slider(joint.value)
-        self._slider.setValue(slider_pos)
-        self._value_label.setText(f"{joint.value:.3f}")
 
         self._cad_line.setText(joint.cad_model)
         rgba = list(joint.cad_color)
@@ -374,7 +314,6 @@ class ExternalAxisConfigWidget(QScrollArea):
     """Panneau d'édition complet d'un ExternalAxis (interface simplifiée)."""
 
     axis_changed = pyqtSignal()
-    joint_value_changed = pyqtSignal(int, float)   # (joint_index, value)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -478,7 +417,6 @@ class ExternalAxisConfigWidget(QScrollArea):
     ) -> None:
         section = _JointSectionWidget(index)
         section.changed.connect(self._emit)
-        section.value_changed.connect(lambda v, i=index: self._on_joint_value_changed(i, v))
         section.set_data(joint, axis_frame)
 
         # Bouton supprimer uniquement pour joint 1 (index > 0)
@@ -531,10 +469,6 @@ class ExternalAxisConfigWidget(QScrollArea):
     # ------------------------------------------------------------------
     # Signaux
     # ------------------------------------------------------------------
-
-    def _on_joint_value_changed(self, joint_index: int, value: float) -> None:
-        if not self._building:
-            self.joint_value_changed.emit(joint_index, value)
 
     def _emit(self, *_) -> None:
         if not self._building:

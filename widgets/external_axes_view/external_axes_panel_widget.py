@@ -1,9 +1,10 @@
 """Panneau principal de l'onglet Axes externes (liste + config + montage robot)."""
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QSize
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMenu, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 from PyQt6.QtCore import Qt
@@ -27,22 +28,162 @@ class ExternalAxesPanelWidget(QWidget):
     axis_removed = pyqtSignal(str)           # axis_id
     axis_updated = pyqtSignal(str, object)   # axis_id, ExternalAxis
     robot_mount_parent_changed = pyqtSignal(object)   # str | None
-    axis_joint_value_changed = pyqtSignal(str, int, float)  # axis_id, joint_index, value
     save_config_requested = pyqtSignal()
+    save_as_config_requested = pyqtSignal()
     load_config_requested = pyqtSignal()
+    new_config_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._axes: list[ExternalAxis] = []
         self._current_id: str | None = None
         self._updating_ui = False
+        self.current_config_name_field: QLineEdit | None = None
+        self.status_label: QLabel | None = None
         self._setup_ui()
 
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
 
+    def _build_save_icon(self, include_pencil: bool = False) -> QIcon:
+        size = 22
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(self.palette().color(self.palette().ColorRole.ButtonText))
+        painter.setPen(color)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        body = QPainterPath()
+        body.addRoundedRect(2.0, 2.0, 14.5, 16.5, 1.8, 1.8)
+        notch = QPainterPath()
+        notch.addRect(4.5, 3.8, 7.2, 3.8)
+        label = QPainterPath()
+        label.addRect(4.5, 11.2, 8.8, 5.0)
+        painter.drawPath(body)
+        painter.fillPath(notch, color)
+        painter.drawPath(label)
+
+        if include_pencil:
+            pencil = QPainterPath()
+            pencil.moveTo(13.4, 13.6)
+            pencil.lineTo(18.4, 8.6)
+            pencil.lineTo(20.0, 10.2)
+            pencil.lineTo(15.0, 15.2)
+            pencil.closeSubpath()
+            tip = QPainterPath()
+            tip.moveTo(12.5, 16.1)
+            tip.lineTo(13.4, 13.6)
+            tip.lineTo(15.0, 15.2)
+            tip.closeSubpath()
+            painter.fillPath(pencil, color)
+            painter.fillPath(tip, color)
+
+        painter.end()
+        return QIcon(pixmap)
+
+    def _build_new_icon(self) -> QIcon:
+        size = 22
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(self.palette().color(self.palette().ColorRole.ButtonText))
+        painter.setPen(color)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        page = QPainterPath()
+        page.moveTo(5.0, 2.5)
+        page.lineTo(13.0, 2.5)
+        page.lineTo(17.5, 7.0)
+        page.lineTo(17.5, 19.0)
+        page.lineTo(5.0, 19.0)
+        page.closeSubpath()
+        fold = QPainterPath()
+        fold.moveTo(13.0, 2.5)
+        fold.lineTo(13.0, 7.0)
+        fold.lineTo(17.5, 7.0)
+        painter.drawPath(page)
+        painter.drawPath(fold)
+
+        painter.end()
+        return QIcon(pixmap)
+
     def _setup_ui(self) -> None:
+        main_layout = QVBoxLayout(self)
+        top_layout = QVBoxLayout()
+
+        title_row = QHBoxLayout()
+        title_label = QLabel("Configuration axe externe")
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+
+        self.status_label = QLabel("Configuration non enregistrée")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(self.status_label)
+        top_layout.addLayout(title_row)
+
+        header_layout = QVBoxLayout()
+
+        fields_layout = QGridLayout()
+        current_config_title_label = QLabel("Configuration courante :")
+        current_config_title_label.setMinimumWidth(150)
+        fields_layout.addWidget(current_config_title_label, 0, 0)
+
+        self.current_config_name_field = QLineEdit()
+        self.current_config_name_field.setReadOnly(True)
+        self.current_config_name_field.setText("Aucune configuration")
+        self.current_config_name_field.setMinimumWidth(220)
+        fields_layout.addWidget(self.current_config_name_field, 0, 1)
+
+        action_button_size = 36
+        action_icon_size = QSize(22, 22)
+
+        self.btn_load = QPushButton("...")
+        self.btn_load.setFixedSize(action_button_size, action_button_size)
+        self.btn_load.setToolTip("Charger une configuration des axes externes")
+        self.btn_load.clicked.connect(self.load_config_requested.emit)
+        fields_layout.addWidget(self.btn_load, 0, 2)
+
+        self.btn_new = QPushButton()
+        self.btn_new.setIcon(self._build_new_icon())
+        self.btn_new.setIconSize(action_icon_size)
+        self.btn_new.setFixedSize(action_button_size, action_button_size)
+        self.btn_new.setToolTip("Créer une nouvelle configuration des axes externes")
+        self.btn_new.clicked.connect(self.new_config_requested.emit)
+        fields_layout.addWidget(self.btn_new, 0, 3)
+
+        self.btn_save = QPushButton()
+        self.btn_save.setIcon(self._build_save_icon())
+        self.btn_save.setIconSize(action_icon_size)
+        self.btn_save.setFixedSize(action_button_size, action_button_size)
+        self.btn_save.setToolTip("Enregistrer la configuration des axes externes courante")
+        self.btn_save.clicked.connect(self.save_config_requested.emit)
+        fields_layout.addWidget(self.btn_save, 0, 4)
+
+        self.btn_save_as = QPushButton()
+        self.btn_save_as.setIcon(self._build_save_icon(include_pencil=True))
+        self.btn_save_as.setIconSize(action_icon_size)
+        self.btn_save_as.setFixedSize(action_button_size, action_button_size)
+        self.btn_save_as.setToolTip("Enregistrer la configuration des axes externes dans un nouveau fichier JSON")
+        self.btn_save_as.clicked.connect(self.save_as_config_requested.emit)
+        fields_layout.addWidget(self.btn_save_as, 0, 5)
+        fields_layout.setColumnStretch(0, 0)
+        fields_layout.setColumnStretch(1, 1)
+        fields_layout.setColumnStretch(2, 0)
+        fields_layout.setColumnStretch(3, 0)
+        fields_layout.setColumnStretch(4, 0)
+        fields_layout.setColumnStretch(5, 0)
+        header_layout.addLayout(fields_layout)
+        top_layout.addLayout(header_layout)
+        main_layout.addLayout(top_layout)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # ── Panneau gauche : liste + contrôles ────────────────────────
@@ -60,27 +201,15 @@ class ExternalAxesPanelWidget(QWidget):
         btn_row_layout = QHBoxLayout(btn_row)
         btn_row_layout.setContentsMargins(0, 0, 0, 0)
 
-        btn_add = QPushButton("+ Ajouter")
+        btn_add = QPushButton("Ajouter")
+        btn_add.setToolTip("Ajouter un axe externe")
         btn_add.clicked.connect(self._show_add_menu)
-        btn_remove = QPushButton("- Supprimer")
+        btn_remove = QPushButton("Supprimer")
+        btn_remove.setToolTip("Supprimer l'axe externe sélectionné")
         btn_remove.clicked.connect(self._remove_selected)
-        btn_row_layout.addWidget(btn_add)
-        btn_row_layout.addWidget(btn_remove)
+        btn_row_layout.addWidget(btn_add, 1)
+        btn_row_layout.addWidget(btn_remove, 1)
         left_layout.addWidget(btn_row)
-
-        # Boutons sauvegarde / chargement
-        io_row = QWidget()
-        io_layout = QHBoxLayout(io_row)
-        io_layout.setContentsMargins(0, 0, 0, 0)
-        btn_save = QPushButton("💾 Sauvegarder config")
-        btn_save.setToolTip("Exporter la configuration des axes externes vers un fichier JSON")
-        btn_save.clicked.connect(self.save_config_requested)
-        btn_load = QPushButton("📂 Charger config")
-        btn_load.setToolTip("Importer une configuration des axes externes depuis un fichier JSON")
-        btn_load.clicked.connect(self.load_config_requested)
-        io_layout.addWidget(btn_save)
-        io_layout.addWidget(btn_load)
-        left_layout.addWidget(io_row)
 
         # Section montage robot
         robot_box = QGroupBox("Montage robot")
@@ -101,16 +230,25 @@ class ExternalAxesPanelWidget(QWidget):
         self._config_widget = ExternalAxisConfigWidget()
         self._config_widget.setEnabled(False)
         self._config_widget.axis_changed.connect(self._on_axis_config_changed)
-        self._config_widget.joint_value_changed.connect(self._on_joint_value_changed)
         right_layout.addWidget(self._config_widget)
 
         splitter.addWidget(left)
         splitter.addWidget(right)
-        splitter.setSizes([250, 500])
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([333, 667])
+        main_layout.addWidget(splitter, 1)
 
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.addWidget(splitter)
+    def set_current_configuration_name(self, file_name: str) -> None:
+        if self.current_config_name_field is None:
+            return
+        self.current_config_name_field.setText(file_name or "Aucune configuration")
+
+    def set_configuration_status(self, text: str, color: str) -> None:
+        if self.status_label is None:
+            return
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
 
     # ------------------------------------------------------------------
     # Ajout rapide via menu
@@ -158,8 +296,7 @@ class ExternalAxesPanelWidget(QWidget):
         if self._current_id is None or self._updating_ui:
             return
         axis = self._config_widget.get_axis(self._current_id)
-        # Préserver les valeurs articulaires actuelles (modifiées par le jog)
-        # pour ne pas réinitialiser la position en cours d'édition de la config.
+        # Préserver les valeurs articulaires actuelles pendant l'édition de la config.
         for existing in self._axes:
             if existing.id == self._current_id:
                 for new_j, old_j in zip(axis.joints, existing.joints):
@@ -176,10 +313,6 @@ class ExternalAxesPanelWidget(QWidget):
             return
         parent_id = self._robot_mount_combo.currentData()
         self.robot_mount_parent_changed.emit(parent_id)
-
-    def _on_joint_value_changed(self, joint_index: int, value: float) -> None:
-        if self._current_id is not None and not self._updating_ui:
-            self.axis_joint_value_changed.emit(self._current_id, joint_index, value)
 
     # ------------------------------------------------------------------
     # Mise à jour depuis le modèle (appelée par le contrôleur)
