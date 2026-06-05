@@ -76,7 +76,7 @@ class TrajectoryPreviewBuilder(TrajectoryBuilderCommon):
         config_key = MgiConfigKey.identify_configuration_deg(current_joints.to_list(), self.robot_model.get_config_identifier())
         synthetic_from = TrajectoryKeypoint(
             target_type=KeypointTargetType.JOINT,
-            joint_target=current_joints.to_list(),
+            joint_target=current_joints,
             mode=to_keypoint.mode,
             bezier_vectors=[XYZ3.zeros(), XYZ3.zeros()],
             configuration_policy=ConfigurationPolicy.FORCED,

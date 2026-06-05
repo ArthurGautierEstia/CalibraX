@@ -5,7 +5,7 @@ from enum import Enum
 import math
 
 from models.reference_frame import ReferenceFrame
-from models.types import Pose6, XYZ3
+from models.types import JointAngles6, Pose6, XYZ3
 from trajectory_engine.models.trajectory_primitives import TrajectoryPassMode
 from utils.mgi import ConfigurationIdentifier, MgiConfigKey
 
@@ -36,7 +36,7 @@ class TrajectoryKeypoint:
         target_type: KeypointTargetType = KeypointTargetType.CARTESIAN,
         cartesian_target: Pose6 | None = None,
         cartesian_frame: ReferenceFrame | str = ReferenceFrame.ROBOT,
-        joint_target: list[float] | None = None,
+        joint_target: JointAngles6 | Sequence[float] | None = None,
         mode: KeypointMotionMode = KeypointMotionMode.PTP,
         bezier_vectors: Sequence[XYZ3] | None = None,
         bezier_amplitudes_mm: list[float] | None = None,
@@ -53,10 +53,9 @@ class TrajectoryKeypoint:
 
         self.cartesian_target = self._normalize_pose6(cartesian_target)
         self.cartesian_frame = ReferenceFrame.from_value(cartesian_frame)
-        self.joint_target = self._normalize_float_list(
-            [0.0] * 6 if joint_target is None else list(joint_target),
-            6,
-            0.0,
+        self.joint_target: JointAngles6 = (
+            JointAngles6.zeros() if joint_target is None
+            else JointAngles6.from_values(joint_target)
         )
 
         # Segment-in semantics (for the segment that ends at this keypoint):
@@ -202,7 +201,7 @@ class TrajectoryKeypoint:
             target_type=self.target_type,
             cartesian_target=self.cartesian_target.copy(),
             cartesian_frame=self.cartesian_frame,
-            joint_target=list(self.joint_target),
+            joint_target=self.joint_target.copy(),
             mode=self.mode,
             bezier_vectors=[self.bezier_vectors[0].copy(), self.bezier_vectors[1].copy()],
             bezier_amplitudes_mm=list(self.bezier_amplitudes_mm),
@@ -220,7 +219,7 @@ class TrajectoryKeypoint:
             "target_type": self.target_type.value,
             "cartesian_target": self.cartesian_target.to_list(),
             "cartesian_frame": self.cartesian_frame.value,
-            "joint_target": [float(v) for v in self.joint_target[:6]],
+            "joint_target": self.joint_target.to_list(),
             "mode": self.mode.value,
             "bezier_vectors": [
                 self.bezier_vectors[0].to_list(),
@@ -315,10 +314,8 @@ class TrajectoryKeypoint:
 
     @staticmethod
     def identify_config_from_joint_target(
-        joint_target_deg: list[float],
+        joint_target_deg: JointAngles6,
         config_identifier: ConfigurationIdentifier,
     ) -> MgiConfigKey:
-        joints_rad = [math.radians(v) for v in joint_target_deg[:6]]
-        while len(joints_rad) < 6:
-            joints_rad.append(0.0)
+        joints_rad = [math.radians(v) for v in joint_target_deg.to_list()]
         return MgiConfigKey.identify_configuration(joints_rad, config_identifier)

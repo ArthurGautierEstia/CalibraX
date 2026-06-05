@@ -120,7 +120,7 @@ class TrajectoryBuilderCommon:
                 ReferenceFrame.from_value(keypoint.cartesian_frame),
                 self.workspace_model.get_robot_base_transform_world(),
             )
-        fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target[:6], tool=self.tool_model.get_tool())
+        fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target.to_list(), tool=self.tool_model.get_tool())
         if fk_result is None:
             return None
         return fk_result.dh_pose.copy()
@@ -152,7 +152,7 @@ class TrajectoryBuilderCommon:
         robot_allowed = self._get_robot_allowed_configs()
         if keypoint.target_type == KeypointTargetType.JOINT:
             config_key = MgiConfigKey.identify_configuration_deg(
-                self._copy_joints_6(keypoint.joint_target),
+                keypoint.joint_target.to_list(),
                 self.robot_model.get_config_identifier(),
             )
             return {config_key} & robot_allowed
@@ -179,7 +179,7 @@ class TrajectoryBuilderCommon:
         previous_joints_deg: JointAngles6 | None,
     ) -> JointAngles6 | None:
         if keypoint.target_type == KeypointTargetType.JOINT:
-            joints = JointAngles6.from_values(keypoint.joint_target)
+            joints = keypoint.joint_target.copy()
             allowed = self._resolve_allowed_configs_for_keypoint(keypoint, previous_joints_deg)
             config_key = MgiConfigKey.identify_configuration_deg(joints.to_list(), self.robot_model.get_config_identifier())
             return joints if config_key in allowed else None

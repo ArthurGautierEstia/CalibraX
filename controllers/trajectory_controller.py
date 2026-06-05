@@ -249,7 +249,7 @@ class TrajectoryController(QObject):
         keypoint = keypoints[row]
 
         if keypoint.target_type == KeypointTargetType.JOINT:
-            self.robot_model.set_joints(keypoint.joint_target[:6])
+            self.robot_model.set_joints(keypoint.joint_target.to_list())
             return
 
         target_pose = convert_pose_to_base_frame(

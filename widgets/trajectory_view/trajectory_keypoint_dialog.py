@@ -45,7 +45,7 @@ from models.trajectory_keypoint import (
 )
 from trajectory_engine.models.trajectory_primitives import TrajectoryPassMode
 from models.reference_frame import ReferenceFrame
-from models.types import Pose6, XYZ3
+from models.types import JointAngles6, Pose6, XYZ3
 from models.trajectory_result import TrajectoryResult
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -161,7 +161,7 @@ class TrajectoryKeypointDialog(QDialog):
         self.load_keypoint(
             TrajectoryKeypoint(
                 cartesian_target=self.robot_model.get_tcp_pose(),
-                joint_target=list(self.robot_model.get_joints()),
+                joint_target=self.robot_model.get_joints(),
             )
         )
 
@@ -549,7 +549,7 @@ class TrajectoryKeypointDialog(QDialog):
             self._emit_ghost_update()
             return
 
-        self.joint_target_widget.set_all_joints(list(self._initial_keypoint.joint_target))
+        self.joint_target_widget.set_all_joints(self._initial_keypoint.joint_target.to_list())
         self._emit_ghost_update()
 
     def _compute_joint_values_from_cartesian_target(self) -> list[float]:
@@ -670,7 +670,7 @@ class TrajectoryKeypointDialog(QDialog):
             return set()
 
         if self._current_target_type() == KeypointTargetType.JOINT:
-            joint_target = self.joint_target_widget.get_all_joints()
+            joint_target = JointAngles6.from_values(self.joint_target_widget.get_all_joints())
             deduced = TrajectoryKeypoint.identify_config_from_joint_target(
                 joint_target,
                 self.robot_model.get_config_identifier(),
@@ -1323,7 +1323,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._emit_live_preview()
 
     def _sync_joint_mode_policy(self) -> None:
-        joint_target = self.joint_target_widget.get_all_joints()
+        joint_target = JointAngles6.from_values(self.joint_target_widget.get_all_joints())
         deduced = TrajectoryKeypoint.identify_config_from_joint_target(
             joint_target,
             self.robot_model.get_config_identifier(),
@@ -1414,7 +1414,7 @@ class TrajectoryKeypointDialog(QDialog):
         self._last_cartesian_reference_frame = ReferenceFrame.from_value(keypoint.cartesian_frame).value
         self._apply_cartesian_target_limits()
         self.cartesian_target_widget.set_all_cartesian(keypoint.cartesian_target.copy())
-        self.joint_target_widget.set_all_joints(keypoint.joint_target)
+        self.joint_target_widget.set_all_joints(keypoint.joint_target.to_list())
 
         self._ptp_speed_percent = keypoint.ptp_speed_percent
         self._linear_speed_mps = keypoint.linear_speed_mps
@@ -1484,7 +1484,7 @@ class TrajectoryKeypointDialog(QDialog):
 
         if target_type == KeypointTargetType.JOINT:
             deduced = TrajectoryKeypoint.identify_config_from_joint_target(
-                self.joint_target_widget.get_all_joints(),
+                JointAngles6.from_values(self.joint_target_widget.get_all_joints()),
                 self.robot_model.get_config_identifier(),
             )
             configuration_policy = ConfigurationPolicy.FORCED

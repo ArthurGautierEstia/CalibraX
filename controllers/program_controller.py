@@ -945,7 +945,7 @@ class ProgramController:
 
         if keypoint.target_type == KeypointTargetType.JOINT:
 
-            self.robot_model.set_joints(keypoint.joint_target[:6])
+            self.robot_model.set_joints(keypoint.joint_target.to_list())
 
             return
 
@@ -1860,7 +1860,7 @@ class ProgramController:
 
                 target_type=KeypointTargetType.JOINT,
 
-                joint_target=target.joint_angles.to_list(),
+                joint_target=target.joint_angles,
 
                 mode=mode,
 

@@ -307,7 +307,7 @@ class ProgramKeypointsWidget(QWidget):
     def _keypoint_target_values(keypoint: TrajectoryKeypoint) -> list[float]:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
             return keypoint.cartesian_target.to_list()
-        return keypoint.joint_target
+        return keypoint.joint_target.to_list()
 
     @staticmethod
     def _speed_text(keypoint: TrajectoryKeypoint) -> str:

@@ -477,7 +477,7 @@ class TrajectoryConfigWidget(QWidget):
                 target_type=last_keypoint.target_type,
                 cartesian_target=last_keypoint.cartesian_target.copy(),
                 cartesian_frame=last_keypoint.cartesian_frame,
-                joint_target=list(last_keypoint.joint_target),
+                joint_target=last_keypoint.joint_target.copy(),
                 mode=last_keypoint.mode,
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),
             )
@@ -489,7 +489,7 @@ class TrajectoryConfigWidget(QWidget):
                     self.workspace_model.get_robot_base_transform_world(),
                 ),
                 cartesian_frame=ReferenceFrame.from_value(self.get_cartesian_display_frame()),
-                joint_target=list(self.robot_model.get_joints()),
+                joint_target=self.robot_model.get_joints(),
                 linear_tangent_ratios=self._default_linear_tangent_ratios(),
             )
 
@@ -686,7 +686,7 @@ class TrajectoryConfigWidget(QWidget):
     def _keypoint_target_values(keypoint: TrajectoryKeypoint) -> list[float]:
         if keypoint.target_type == KeypointTargetType.CARTESIAN:
             return keypoint.cartesian_target.to_list()
-        return keypoint.joint_target
+        return keypoint.joint_target.to_list()
 
     @staticmethod
     def _speed_text(keypoint: TrajectoryKeypoint) -> str:
