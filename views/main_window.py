@@ -23,7 +23,7 @@ from widgets.viewer_3d_widget import Viewer3DWidget
 
 
 class MainTabsBar(QTabBar):
-    PRIMARY_TAB_COUNT = 7
+    PRIMARY_TAB_COUNT = 5
 
     def tabSizeHint(self, index: int) -> QSize:
         default_size = super().tabSizeHint(index)
@@ -36,7 +36,9 @@ class MainWindow(QMainWindow):
     ROBOT_TAB_INDEX = 0
     TOOL_TAB_INDEX = 1
     EXTERNAL_AXES_TAB_INDEX = 2
-    WORKPIECE_TAB_INDEX = 3
+    WORKSPACE_TAB_INDEX = 3
+    WORKPIECE_TAB_INDEX = 4
+    CAMERA_TAB_INDEX = 5
 
     def __init__(
         self,
@@ -50,6 +52,7 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setTabBar(MainTabsBar())
+        self.cell_configuration_tabs = QTabWidget()
         self._empty_tab_icon = QIcon()
         self._validated_tab_icon: QIcon | None = None
         self.main_splitter: QSplitter | None = None
@@ -84,13 +87,15 @@ class MainWindow(QMainWindow):
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
 
-        self.tabs.addTab(self.robot_view, "Robot")
-        self.tabs.addTab(self.tool_view, "Tool")
-        self.tabs.addTab(self.external_axes_view, "Axes externes")
-        self.tabs.addTab(self.workpiece_view, "Pièce")
+        self.cell_configuration_tabs.addTab(self.robot_view, "Robot")
+        self.cell_configuration_tabs.addTab(self.tool_view, "Tool")
+        self.cell_configuration_tabs.addTab(self.external_axes_view, "Axe externe")
+        self.cell_configuration_tabs.addTab(self.workspace_view, "Workspace")
+        self.cell_configuration_tabs.addTab(self.workpiece_view, "Pièce")
+        self.cell_configuration_tabs.addTab(self.camera_view, "Camera")
+
+        self.tabs.addTab(self.cell_configuration_tabs, "Configuration cellule")
         self.tabs.addTab(self.calibration_view, "Calibration")
-        self.tabs.addTab(self.camera_view, "Camera")
-        self.tabs.addTab(self.workspace_view, "Workspace")
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
         self.tabs.addTab(self.program_view, "Programme")
         self.tabs.addTab(self.machining_view, "Usinage")
@@ -130,7 +135,7 @@ class MainWindow(QMainWindow):
         self._set_tab_validated(MainWindow.TOOL_TAB_INDEX, is_validated)
 
     def _set_tab_validated(self, tab_index: int, is_validated: bool) -> None:
-        self.tabs.setTabIcon(
+        self.cell_configuration_tabs.setTabIcon(
             tab_index,
             self._get_validated_tab_icon() if is_validated else self._empty_tab_icon,
         )
@@ -182,10 +187,10 @@ class MainWindow(QMainWindow):
 
     def _refresh_validated_tab_icons(self) -> None:
         for tab_index in (MainWindow.ROBOT_TAB_INDEX, MainWindow.TOOL_TAB_INDEX):
-            current_icon = self.tabs.tabIcon(tab_index)
+            current_icon = self.cell_configuration_tabs.tabIcon(tab_index)
             if current_icon.isNull():
                 continue
-            self.tabs.setTabIcon(tab_index, self._get_validated_tab_icon())
+            self.cell_configuration_tabs.setTabIcon(tab_index, self._get_validated_tab_icon())
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -273,26 +278,30 @@ class MainWindow(QMainWindow):
 
     def update_enabled_tabs(self, robot_has_configuration: bool) -> None:
         """Active ou desactive les onglets de controle en fonction de la configuration du robot"""
-        always_enabled_views = (
+        self.tabs.setTabEnabled(self.tabs.indexOf(self.cell_configuration_tabs), True)
+
+        always_enabled_cell_views = (
+            self.robot_view,
             self.tool_view,
             self.external_axes_view,
             self.workpiece_view,
-            self.calibration_view,
             self.camera_view,
         )
-        configuration_required_views = (
-            self.workspace_view,
-            self.trajectory_view,
-            self.program_view,
-            self.machining_view,
-        )
+        for control_view in always_enabled_cell_views:
+            tab_index = self.cell_configuration_tabs.indexOf(control_view)
+            if tab_index >= 0:
+                self.cell_configuration_tabs.setTabEnabled(tab_index, True)
 
-        for control_view in always_enabled_views:
+        workspace_tab_index = self.cell_configuration_tabs.indexOf(self.workspace_view)
+        if workspace_tab_index >= 0:
+            self.cell_configuration_tabs.setTabEnabled(workspace_tab_index, robot_has_configuration)
+
+        for control_view in (self.calibration_view,):
             tab_index = self.tabs.indexOf(control_view)
             if tab_index >= 0:
                 self.tabs.setTabEnabled(tab_index, True)
 
-        for control_view in configuration_required_views:
+        for control_view in (self.trajectory_view, self.program_view, self.machining_view):
             tab_index = self.tabs.indexOf(control_view)
             if tab_index >= 0:
                 self.tabs.setTabEnabled(tab_index, robot_has_configuration)

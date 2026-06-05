@@ -1,16 +1,15 @@
 {
     "name": "HSD 4597-NT",
     "tool": {
-        "x": 10.0,
-        "y": 0.0,
-        "z": 360.0,
-        "a": 0.0,
-        "b": 45.0,
-        "c": 0.0
+        "x": 71.379,
+        "y": -0.132,
+        "z": 411.977,
+        "a": -0.355,
+        "b": 44.906,
+        "c": -0.156
     },
     "tool_cad_model": "./default_data/tools_stl/Broche_7kW.stl",
     "tool_cad_offset_rz": 0.0,
-    "auto_load_on_startup": true,
     "tool_colliders": [
         {
             "name": "Tool collider 1",
