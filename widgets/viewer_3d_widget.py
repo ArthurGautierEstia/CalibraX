@@ -102,10 +102,21 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._inertia_rotation_factor: float = 0.45
         self._inertia_pan_factor: float = 1.0
         self._inertia_recent_diffs: deque = deque(maxlen=4)
+        self._raw_recent_diffs: deque = deque(maxlen=3)   # diffs bruts pour le seuil release
+        self._last_move_time: float = 0.0
+        self._inertia_orbit_pivot_world: np.ndarray | None = None
+        self._inertia_orbit_pivot_screen = None
+        self._inertia_orbit_pivot_camera_dist: float | None = None
+        self._smooth_vel_x: float = 0.0
+        self._smooth_vel_y: float = 0.0
 
     def mousePressEvent(self, ev) -> None:
         self._inertia_timer.stop()
         self._inertia_recent_diffs.clear()
+        self._raw_recent_diffs.clear()
+        self._last_move_time = 0.0
+        self._smooth_vel_x = 0.0
+        self._smooth_vel_y = 0.0
         self._pick_cache = None
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
         if ev.button() == Qt.MouseButton.LeftButton:
@@ -130,21 +141,27 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
     def mouseReleaseEvent(self, ev) -> None:
         if ev.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton):
-            if self._inertia_recent_diffs:
-                last = self._inertia_recent_diffs[-1]
-                n = len(self._inertia_recent_diffs)
-                avg_x = sum(d[0] for d in self._inertia_recent_diffs) / n
-                avg_y = sum(d[1] for d in self._inertia_recent_diffs) / n
-                if (avg_x ** 2 + avg_y ** 2) ** 0.5 > 0.5:
-                    self._inertia_vel_x = avg_x
-                    self._inertia_vel_y = avg_y
+            stopped = (time.monotonic() - self._last_move_time) > 0.10
+            if not stopped and self._raw_recent_diffs and self._inertia_recent_diffs:
+                n_raw = len(self._raw_recent_diffs)
+                avg_raw_x = sum(d[0] for d in self._raw_recent_diffs) / n_raw
+                avg_raw_y = sum(d[1] for d in self._raw_recent_diffs) / n_raw
+                if (avg_raw_x ** 2 + avg_raw_y ** 2) ** 0.5 > 0.5:
+                    last = self._inertia_recent_diffs[-1]
+                    self._inertia_vel_x = avg_raw_x
+                    self._inertia_vel_y = avg_raw_y
                     self._inertia_mode = last[2]
                     if last[2] == "pan":
                         self._inertia_pan_factor = last[3]
                     else:
                         self._inertia_rotation_factor = last[3]
+                    if last[2] == "orbit_picked":
+                        self._inertia_orbit_pivot_world = getattr(self, "_orbit_pivot_point_world", None)
+                        self._inertia_orbit_pivot_screen = getattr(self, "_orbit_pivot_screen_position", None)
+                        self._inertia_orbit_pivot_camera_dist = getattr(self, "_orbit_pivot_camera_distance", None)
                     self._inertia_timer.start()
             self._inertia_recent_diffs.clear()
+            self._raw_recent_diffs.clear()
         if ev.button() == Qt.MouseButton.LeftButton:
             self._orbit_pivot_point_world = None
             self._orbit_pivot_mode = None
@@ -164,13 +181,17 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self.mousePos = local_position
             if self._pan_gesture_speed_factor is None:
                 self._pan_gesture_speed_factor = self._compute_middle_pan_speed_factor(local_position)
+            self._smooth_vel_x = self._SMOOTH_ALPHA * diff.x() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_x
+            self._smooth_vel_y = self._SMOOTH_ALPHA * diff.y() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
             self.pan(
-                diff.x() * self._pan_gesture_speed_factor,
+                self._smooth_vel_x * self._pan_gesture_speed_factor,
                 0.0,
-                diff.y() * self._pan_gesture_speed_factor,
+                self._smooth_vel_y * self._pan_gesture_speed_factor,
                 relative="view-upright",
             )
-            self._inertia_recent_diffs.append((diff.x(), diff.y(), "pan", self._pan_gesture_speed_factor))
+            self._inertia_recent_diffs.append((self._smooth_vel_x, self._smooth_vel_y, "pan", self._pan_gesture_speed_factor))
+            self._raw_recent_diffs.append((diff.x(), diff.y()))
+            self._last_move_time = time.monotonic()
             return
 
         if (
@@ -182,19 +203,37 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self.mousePos = local_position
             diff = local_position - self.mousePos
             self.mousePos = local_position
+            self._smooth_vel_x = self._SMOOTH_ALPHA * diff.x() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_x
+            self._smooth_vel_y = self._SMOOTH_ALPHA * diff.y() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
             rotation_factor = self._compute_origin_orbit_rotation_factor()
             self._orbit_around_fixed_pivot(
                 np.array([0.0, 0.0, 0.0], dtype=float),
-                -diff.x() * rotation_factor,
-                -diff.y() * rotation_factor,
+                -self._smooth_vel_x * rotation_factor,
+                -self._smooth_vel_y * rotation_factor,
             )
-            self._inertia_recent_diffs.append((diff.x(), diff.y(), "orbit_origin", rotation_factor))
+            self._inertia_recent_diffs.append((self._smooth_vel_x, self._smooth_vel_y, "orbit_origin", rotation_factor))
+            self._raw_recent_diffs.append((diff.x(), diff.y()))
+            self._last_move_time = time.monotonic()
             return
 
-        # Capture du diff avant super() pour l'inertie du mode "picked"
-        _inertia_picked_dx = local_position.x() - self.mousePos.x() if hasattr(self, "mousePos") else 0.0
-        _inertia_picked_dy = local_position.y() - self.mousePos.y() if hasattr(self, "mousePos") else 0.0
-        super().mouseMoveEvent(ev)
+        if (
+            ev.buttons() & Qt.MouseButton.LeftButton
+            and not (ev.modifiers() & Qt.KeyboardModifier.ControlModifier)
+            and getattr(self, "_orbit_pivot_mode", None) == "picked"
+            and hasattr(self, "mousePos")
+        ):
+            raw_dx = local_position.x() - self.mousePos.x()
+            raw_dy = local_position.y() - self.mousePos.y()
+            self._smooth_vel_x = self._SMOOTH_ALPHA * raw_dx + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_x
+            self._smooth_vel_y = self._SMOOTH_ALPHA * raw_dy + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
+            self.orbit(-self._smooth_vel_x, self._smooth_vel_y)
+            self.mousePos = local_position
+            _inertia_picked_dx = self._smooth_vel_x
+            _inertia_picked_dy = self._smooth_vel_y
+        else:
+            _inertia_picked_dx = local_position.x() - self.mousePos.x() if hasattr(self, "mousePos") else 0.0
+            _inertia_picked_dy = local_position.y() - self.mousePos.y() if hasattr(self, "mousePos") else 0.0
+            super().mouseMoveEvent(ev)
         if not (ev.buttons() & Qt.MouseButton.LeftButton):
             return
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -218,6 +257,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 orbit_pivot_camera_distance,
             )
             self._inertia_recent_diffs.append((_inertia_picked_dx, _inertia_picked_dy, "orbit_picked", 1.0))
+            self._raw_recent_diffs.append((_inertia_picked_dx, _inertia_picked_dy))
+            self._last_move_time = time.monotonic()
 
     def wheelEvent(self, ev) -> None:
         local_position = ev.position() if hasattr(ev, "position") else ev.localPos()
@@ -241,6 +282,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
         self.update()
 
+    _SMOOTH_ALPHA = 0.65        # EMA pendant le drag (0=figé, 1=brut)
     _INERTIA_DAMPING = 0.87
     _INERTIA_STOP_THRESHOLD = 0.3
 
@@ -257,6 +299,12 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             )
         elif self._inertia_mode == "orbit_picked":
             self.orbit(-vx, vy)
+            if self._inertia_orbit_pivot_world is not None and self._inertia_orbit_pivot_screen is not None:
+                self._recenter_to_keep_point_under_cursor(
+                    self._inertia_orbit_pivot_screen,
+                    self._inertia_orbit_pivot_world,
+                    self._inertia_orbit_pivot_camera_dist,
+                )
         self._inertia_vel_x *= self._INERTIA_DAMPING
         self._inertia_vel_y *= self._INERTIA_DAMPING
         if (self._inertia_vel_x ** 2 + self._inertia_vel_y ** 2) ** 0.5 < self._INERTIA_STOP_THRESHOLD:
