@@ -83,6 +83,7 @@ class ProgramController:
         external_axes_model: ExternalAxesModel,
         workpiece_controller,
         program_view: ProgramView,
+        playback_widget: ProgramPlaybackWidget,
         viewer3d_controller: Viewer3DController,
     ) -> None:
 
@@ -92,12 +93,12 @@ class ProgramController:
         self.external_axes_model = external_axes_model
         self.workpiece_controller = workpiece_controller
         self.program_view = program_view
+        self.playback_widget = playback_widget
         self.viewer3d_controller = viewer3d_controller
         self.header_widget = self.program_view.get_header_widget()
         self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
-        self.playback_widget = self.program_view.get_playback_widget()
         self.playback_widgets: list[ProgramPlaybackWidget] = [self.playback_widget]
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
         self.current_program: RobotProgram | None = None
@@ -205,9 +206,7 @@ class ProgramController:
         self._set_playback_widget_speed(playback_widget, self._playback_speed_offset_percent)
 
     def _set_playback_widget_speed(self, playback_widget: ProgramPlaybackWidget, offset_percent: int) -> None:
-        playback_widget.speed_spinbox.blockSignals(True)
-        playback_widget.speed_spinbox.setValue(int(offset_percent))
-        playback_widget.speed_spinbox.blockSignals(False)
+        playback_widget.set_speed_offset_percent(int(offset_percent))
 
 
 

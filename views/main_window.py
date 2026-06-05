@@ -18,6 +18,7 @@ from views.trajectory_view import TrajectoryView
 from views.workspace_view import WorkspaceView
 from views.workpiece_view import WorkpieceView
 from widgets.cartesian_control_view.mgi_solutions_widget import MgiSolutionsWidget
+from widgets.program_view.program_playback_widget import ProgramPlaybackWidget
 from widgets.viewer_3d_widget import Viewer3DWidget
 
 
@@ -70,6 +71,7 @@ class MainWindow(QMainWindow):
         self.machining_view = MachiningView()
 
         self.viewer3d = Viewer3DWidget()
+        self.viewer_playback_widget = ProgramPlaybackWidget()
 
         self._setup_ui()
 
@@ -103,9 +105,17 @@ class MainWindow(QMainWindow):
         self.tabs.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.viewer3d.setMinimumWidth(0)
         self.viewer3d.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.viewer_playback_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        viewer_column = QWidget(central_widget)
+        viewer_column_layout = QVBoxLayout(viewer_column)
+        viewer_column_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_column_layout.setSpacing(6)
+        viewer_column_layout.addWidget(self.viewer3d, 1)
+        viewer_column_layout.addWidget(self.viewer_playback_widget, 0)
 
         self.main_splitter.addWidget(self.tabs)
-        self.main_splitter.addWidget(self.viewer3d)
+        self.main_splitter.addWidget(viewer_column)
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setChildrenCollapsible(False)
@@ -244,6 +254,10 @@ class MainWindow(QMainWindow):
     def get_viewer3d(self) -> Viewer3DWidget:
         """Retourne la vue du viewer 3D"""
         return self.viewer3d
+
+    def get_viewer_playback_widget(self) -> ProgramPlaybackWidget:
+        """Retourne le widget playback positionne sous le viewer 3D."""
+        return self.viewer_playback_widget
 
     def get_program_view(self) -> ProgramView:
         """Retourne la vue programme."""

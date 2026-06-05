@@ -143,10 +143,8 @@ class MainController(QObject):
             external_axes_model,
             self.workpiece_controller,
             main_window.get_program_view(),
+            main_window.get_viewer_playback_widget(),
             self.viewer3d_controller,
-        )
-        self.program_controller.register_playback_widget(
-            main_window.get_camera_view().get_playback_widget()
         )
         self.machining_controller = MachiningController(
             robot_model,
