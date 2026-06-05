@@ -4498,6 +4498,7 @@ class Viewer3DWidget(QWidget):
             self._render_tool_colliders()
             return
 
+        self._robot_base_transform_world = collision_scene_model.workspace_model.get_robot_base_transform_world()
         self._workspace_tcp_zones = collision_scene_model.get_workspace_tcp_colliders()
         self._workspace_collision_zones = collision_scene_model.get_workspace_collision_colliders()
         self._robot_colliders = collision_scene_model.get_robot_colliders()
@@ -4527,6 +4528,7 @@ class Viewer3DWidget(QWidget):
             self.update_robot_poses(self.last_corrected_matrices)
         if hasattr(self, "last_dh_matrices") and self.last_dh_matrices:
             self.draw_all_frames(self.last_dh_matrices)
+        self._render_robot_axis_colliders()
 
     def _transform_robot_matrix_to_world(self, transform: np.ndarray) -> np.ndarray:
         if self._external_robot_base_override is not None:
@@ -4953,7 +4955,11 @@ class Viewer3DWidget(QWidget):
         for collider in self._robot_colliders:
             if not collider.enabled:
                 continue
-            item = self._build_primitive_item(collider, (0.2, 0.55, 1.0, 0.18))
+            item = self._build_primitive_item(
+                collider,
+                (0.2, 0.55, 1.0, 0.18),
+                world_transform=self._transform_robot_matrix_to_world(collider.world_transform),
+            )
             if item is None:
                 continue
             self.viewer.addItem(item)
@@ -5075,6 +5081,7 @@ class Viewer3DWidget(QWidget):
         primitive: PrimitiveCollider | PrimitiveColliderState,
         color: tuple[float, float, float, float],
         base_transform: np.ndarray | None = None,
+        world_transform: np.ndarray | None = None,
         skip_pose: bool = False,
     ) -> gl.GLMeshItem | None:
         if isinstance(primitive, PrimitiveCollider):
@@ -5084,7 +5091,8 @@ class Viewer3DWidget(QWidget):
             size_z = primitive.size_z
             radius = primitive.radius
             height = primitive.height
-            transform = np.array(primitive.world_transform, dtype=float)
+            transform_source = primitive.world_transform if world_transform is None else world_transform
+            transform = np.array(transform_source, dtype=float)
         elif isinstance(primitive, PrimitiveColliderState):
             shape = primitive.shape
             size_x = primitive.size_x
