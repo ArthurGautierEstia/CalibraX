@@ -3524,7 +3524,7 @@ class Viewer3DWidget(QWidget):
             item = gl.GLLinePlotItem(
                 pos=np.array([origin, tcp_world], dtype=float),
                 color=self._camera_line_color(result),
-                width=3,
+                width=2,
                 antialias=True,
             )
             self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
@@ -3713,8 +3713,8 @@ class Viewer3DWidget(QWidget):
         min_distance = 5.0
         max_distance = max(min_distance, segment_length - 20.0)
         colliders = (
-            list(self._workspace_collision_zones)
-            + list(self._workspace_tcp_zones)
+            list(self._workspace_tcp_zones)
+            + list(self._workspace_collision_zones)
             + list(self._robot_colliders)
             + list(self._tool_colliders)
         )
@@ -3734,18 +3734,6 @@ class Viewer3DWidget(QWidget):
             if closest is None or hit_distance < closest[0]:
                 closest = (hit_distance, collider.name)
 
-        for mesh_item in self._iter_line_of_sight_occlusion_mesh_items():
-            hit_distance = self._intersect_ray_with_mesh_item(
-                origin_world,
-                direction,
-                max_distance,
-                mesh_item,
-            )
-            if hit_distance is None or hit_distance < min_distance or hit_distance > max_distance:
-                continue
-            mesh_name = str(getattr(mesh_item, "_calibrax_occlusion_name", "STL") or "STL")
-            if closest is None or hit_distance < closest[0]:
-                closest = (hit_distance, mesh_name)
         return "" if closest is None else closest[1]
 
     def _iter_line_of_sight_occlusion_mesh_items(self) -> list:
