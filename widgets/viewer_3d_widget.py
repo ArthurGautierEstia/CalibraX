@@ -107,6 +107,14 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         self._inertia_orbit_pivot_world: np.ndarray | None = None
         self._inertia_orbit_pivot_screen = None
         self._inertia_orbit_pivot_camera_dist: float | None = None
+        # Zoom smooth
+        self._zoom_timer = QTimer(self)
+        self._zoom_timer.setInterval(16)
+        self._zoom_timer.timeout.connect(self._on_zoom_tick)
+        self._zoom_persp_remaining: np.ndarray = np.zeros(3, dtype=float)
+        self._ortho_log_remaining: float = 0.0
+        self._ortho_zoom_cursor_pos_for_tick = None
+        self._ortho_zoom_target_world_for_tick: np.ndarray | None = None
         self._smooth_vel_x: float = 0.0
         self._smooth_vel_y: float = 0.0
 
@@ -226,7 +234,10 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             raw_dy = local_position.y() - self.mousePos.y()
             self._smooth_vel_x = self._SMOOTH_ALPHA * raw_dx + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_x
             self._smooth_vel_y = self._SMOOTH_ALPHA * raw_dy + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
-            self.orbit(-self._smooth_vel_x, self._smooth_vel_y)
+            _picked_speed = self._compute_picked_orbit_speed_factor(
+                getattr(self, "_orbit_pivot_camera_distance", None)
+            )
+            self.orbit(-self._smooth_vel_x * _picked_speed, self._smooth_vel_y * _picked_speed)
             self.mousePos = local_position
             _inertia_picked_dx = self._smooth_vel_x
             _inertia_picked_dy = self._smooth_vel_y
@@ -274,13 +285,28 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
 
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.opts["fov"] *= 0.999 ** delta
+            self.update()
+        elif self.is_perspective_enabled():
+            ray = self._view_ray(local_position)
+            if ray is not None:
+                camera_origin_world, ray_dir = ray
+                if target_point_world is not None:
+                    to_t = np.array(target_point_world, dtype=float) - camera_origin_world
+                    ln = float(np.linalg.norm(to_t))
+                    if ln > 1e-9:
+                        ray_dir = to_t / ln
+                dist = self._camera_distance_to_point(target_point_world)
+                step = self._compute_dolly_translation_distance(dist, delta)
+                if abs(step) > 1e-9:
+                    self._zoom_persp_remaining += ray_dir * step
+                    if not self._zoom_timer.isActive():
+                        self._zoom_timer.start()
         else:
-            if self.is_perspective_enabled():
-                self._dolly_along_cursor_ray(local_position, target_point_world, delta)
-            else:
-                self._zoom_orthographic_toward_cursor(local_position, target_point_world, delta)
-
-        self.update()
+            self._ortho_log_remaining += float(delta) * float(np.log(0.999))
+            self._ortho_zoom_cursor_pos_for_tick = local_position
+            self._ortho_zoom_target_world_for_tick = target_point_world
+            if not self._zoom_timer.isActive():
+                self._zoom_timer.start()
 
     _SMOOTH_ALPHA = 0.65        # EMA pendant le drag (0=figé, 1=brut)
     _INERTIA_DAMPING = 0.87
@@ -298,7 +324,8 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 -vy * self._inertia_rotation_factor,
             )
         elif self._inertia_mode == "orbit_picked":
-            self.orbit(-vx, vy)
+            _picked_speed = self._compute_picked_orbit_speed_factor(self._inertia_orbit_pivot_camera_dist)
+            self.orbit(-vx * _picked_speed, vy * _picked_speed)
             if self._inertia_orbit_pivot_world is not None and self._inertia_orbit_pivot_screen is not None:
                 self._recenter_to_keep_point_under_cursor(
                     self._inertia_orbit_pivot_screen,
@@ -311,6 +338,36 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self._inertia_timer.stop()
             self._inertia_mode = None
         self.update()
+
+    _ZOOM_SMOOTH_FRACTION = 0.22   # fraction appliquée par tick (ease-out exponentiel ~60 fps)
+    _ZOOM_STOP_THRESHOLD_MM = 0.5
+
+    def _on_zoom_tick(self) -> None:
+        any_active = False
+        mag = float(np.linalg.norm(self._zoom_persp_remaining))
+        if mag > self._ZOOM_STOP_THRESHOLD_MM:
+            step = self._zoom_persp_remaining * self._ZOOM_SMOOTH_FRACTION
+            self._translate_center(step)
+            self._zoom_persp_remaining = self._zoom_persp_remaining - step
+            any_active = True
+        else:
+            self._zoom_persp_remaining[:] = 0.0
+        if abs(self._ortho_log_remaining) > 1e-5:
+            frac = self._ortho_log_remaining * self._ZOOM_SMOOTH_FRACTION
+            self._orthographic_zoom_factor = max(1e-3, float(self._orthographic_zoom_factor) * float(np.exp(frac)))
+            self._ortho_log_remaining -= frac
+            if self._ortho_zoom_cursor_pos_for_tick is not None and self._ortho_zoom_target_world_for_tick is not None:
+                self._recenter_to_keep_point_under_cursor(
+                    self._ortho_zoom_cursor_pos_for_tick,
+                    self._ortho_zoom_target_world_for_tick,
+                )
+            any_active = True
+        else:
+            self._ortho_log_remaining = 0.0
+        if any_active:
+            self.update()
+        else:
+            self._zoom_timer.stop()
 
     def set_background_style(self, mode: str, primary_color: QColor, secondary_color: QColor, gradient_direction: str = "vertical") -> None:
         self._background_mode = "gradient" if mode == "gradient" else "solid"
@@ -833,6 +890,13 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         reference_distance = max(150.0, float(self.opts["distance"]) * 0.5)
         distance_ratio = reference_distance / lever_arm_distance
         return float(np.clip(0.45 * distance_ratio, 0.05, 0.42))
+
+    @staticmethod
+    def _compute_picked_orbit_speed_factor(camera_distance_to_pivot: float | None) -> float:
+        """Réduit la vitesse de rotation quand on est proche du pivot (racine carrée de la distance normalisée)."""
+        if camera_distance_to_pivot is None:
+            return 1.0
+        return float(np.clip((camera_distance_to_pivot / 2000.0) ** 0.5, 0.2, 1.0))
 
     def _dolly_along_cursor_ray(self, local_position, target_point_world: np.ndarray | None, wheel_delta: int) -> None:
         if wheel_delta == 0:
