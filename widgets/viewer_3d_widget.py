@@ -309,6 +309,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self._zoom_timer.start()
 
     _SMOOTH_ALPHA = 0.65        # EMA pendant le drag (0=figé, 1=brut)
+    _PAN_SPEED_SCALE = 0.5      # 1.0 = suivi 1:1 exact, réduire si trop rapide
     _INERTIA_DAMPING = 0.87
     _INERTIA_STOP_THRESHOLD = 0.3
 
@@ -937,13 +938,18 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             self._recenter_to_keep_point_under_cursor(local_position, target_point_world)
 
     def _compute_middle_pan_speed_factor(self, local_position) -> float:
+        """Facteur mm-monde/pixel pour que l'objet suive la souris 1:1.
+        Formule exacte de projection perspective inversée : 2·d·tan(fov/2) / W."""
         target_point_world = self._pick_world_point_cached(local_position)
         if target_point_world is None:
             target_point_world = np.array([0.0, 0.0, 0.0], dtype=float)
         distance = max(1.0, float(self._camera_distance_to_point(target_point_world) or 1.0))
+        W = max(1, self.width())
+        half_tan = float(np.tan(np.radians(max(1.0, float(self.opts.get("fov", 60.0))) / 2.0)))
         if not self.is_perspective_enabled():
-            return float(np.clip((distance / 2000.0) ** -0.15, 0.18, 1.15))
-        return float(np.clip((distance / 2000.0) ** 0.85, 0.2, 6.0))
+            ortho_d = max(1.0, float(self.opts.get("distance", 2000.0))) * max(1e-3, float(self._orthographic_zoom_factor))
+            return 2.0 * ortho_d * half_tan / W * self._PAN_SPEED_SCALE
+        return 2.0 * distance * half_tan / W * self._PAN_SPEED_SCALE
 
     def _orbit_around_fixed_pivot(
         self,
