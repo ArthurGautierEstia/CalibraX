@@ -14,6 +14,7 @@ from models.types import Pose6, XYZ3
 from models.workspace_model import WorkspaceModel
 import utils.math_utils as math_utils
 from utils.cartesian_jog import compute_cartesian_jog_target
+from utils.external_axes_kinematics import compute_target_in_robot_base, get_effective_robot_base_in_world
 from widgets.viewer_3d_widget import Viewer3DWidget
 
 from typing import TYPE_CHECKING
@@ -49,6 +50,7 @@ class Viewer3DController(QObject):
         self._overlay_active_joint: tuple[int, int] | None = None
         self._overlay_active_cartesian: tuple[int, int] | None = None
         self._overlay_active_ext: tuple[str, int, int] | None = None  # (axis_id, joint_index, direction)
+        self._overlay_active_cartesian_ext: tuple[str, int, int] | None = None
         self._overlay_jog_timer = QTimer(self)
         self._overlay_jog_timer.setInterval(20)
         self._overlay_jog_timer.timeout.connect(self._on_overlay_jog_tick)
@@ -95,6 +97,11 @@ class Viewer3DController(QObject):
         self.viewer_3d_widget.get_overlay_joints_widget().spinbox_jog_released.connect(self._on_overlay_joint_released)
         self.viewer_3d_widget.get_overlay_cartesian_widget().spinbox_jog_pressed.connect(self._on_overlay_cartesian_pressed)
         self.viewer_3d_widget.get_overlay_cartesian_widget().spinbox_jog_released.connect(self._on_overlay_cartesian_released)
+
+        cartesian_widget = self.viewer_3d_widget.get_overlay_cartesian_widget()
+        cartesian_widget.external_value_changed.connect(self._on_overlay_cartesian_ext_value_changed)
+        cartesian_widget.spinbox_ext_jog_pressed.connect(self._on_overlay_cartesian_ext_jog_pressed)
+        cartesian_widget.spinbox_ext_jog_released.connect(self._on_overlay_cartesian_ext_jog_released)
 
         joints_widget = self.viewer_3d_widget.get_overlay_joints_widget()
         joints_widget.external_joint_value_changed.connect(self._on_overlay_ext_value_changed)
@@ -184,6 +191,8 @@ class Viewer3DController(QObject):
         self._overlay_jog_timer.stop()
         self._overlay_active_joint = (joint_index, direction)
         self._overlay_active_cartesian = None
+        self._overlay_active_ext = None
+        self._overlay_active_cartesian_ext = None
         self._jog_overlay_joint(joint_index, direction * self._overlay_jog_delta * 0.1)
         self._overlay_jog_timer.start()
 
@@ -198,6 +207,8 @@ class Viewer3DController(QObject):
         self._overlay_jog_timer.stop()
         self._overlay_active_cartesian = (axis_index, direction)
         self._overlay_active_joint = None
+        self._overlay_active_ext = None
+        self._overlay_active_cartesian_ext = None
         self._jog_overlay_cartesian(
             axis_index,
             direction * self._overlay_jog_delta * (1.0 if axis_index < 3 else 0.1),
@@ -224,6 +235,10 @@ class Viewer3DController(QObject):
         if self._overlay_active_ext is not None:
             axis_id, joint_index, direction = self._overlay_active_ext
             self._jog_overlay_ext(axis_id, joint_index, direction * self._overlay_jog_delta * 0.1)
+            return
+        if self._overlay_active_cartesian_ext is not None:
+            axis_id, joint_index, direction = self._overlay_active_cartesian_ext
+            self._jog_overlay_cartesian_ext(axis_id, joint_index, direction * self._overlay_jog_delta)
 
     def _jog_overlay_joint(self, joint_index: int, delta: float) -> None:
         current_value = self.robot_model.get_joint(joint_index)
@@ -287,15 +302,18 @@ class Viewer3DController(QObject):
             for ji, joint in enumerate(axis.joints):
                 axes_info.append((axis.id, ji, joint.q_min, joint.q_max, joint.value, joint.unit()))
         self.viewer_3d_widget.get_overlay_joints_widget().set_external_axes(axes_info)
+        self.viewer_3d_widget.get_overlay_cartesian_widget().set_external_axes(axes_info[:2])
         QTimer.singleShot(0, self.viewer_3d_widget._position_overlays)
 
     def _on_external_axes_values_changed(self) -> None:
         if self.external_axes_model is None:
             return
         joints_widget = self.viewer_3d_widget.get_overlay_joints_widget()
+        cartesian_widget = self.viewer_3d_widget.get_overlay_cartesian_widget()
         for axis in self.external_axes_model.get_axes():
             for ji, joint in enumerate(axis.joints):
                 joints_widget.set_external_joint_value(axis.id, ji, joint.value)
+                cartesian_widget.set_external_axis_value(axis.id, ji, joint.value)
 
     def _on_overlay_ext_value_changed(self, axis_id: str, joint_index: int, value: float) -> None:
         if self.external_axes_model is not None:
@@ -306,6 +324,7 @@ class Viewer3DController(QObject):
         self._overlay_active_ext = (axis_id, joint_index, direction)
         self._overlay_active_joint = None
         self._overlay_active_cartesian = None
+        self._overlay_active_cartesian_ext = None
         self._jog_overlay_ext(axis_id, joint_index, direction * self._overlay_jog_delta * 0.1)
         self._overlay_jog_timer.start()
 
@@ -329,6 +348,70 @@ class Viewer3DController(QObject):
                 if new_value != current:
                     self.external_axes_model.set_axis_joint_value(axis_id, joint_index, new_value)
                 break
+
+    def _on_overlay_cartesian_ext_value_changed(self, axis_id: str, joint_index: int, value: float) -> None:
+        if self.external_axes_model is None:
+            return
+        self._move_external_axis_keep_tcp_world(axis_id, joint_index, float(value))
+
+    def _on_overlay_cartesian_ext_jog_pressed(self, axis_id: str, joint_index: int, direction: int) -> None:
+        if self.external_axes_model is None or not self.robot_model.has_configuration:
+            return
+        self._overlay_jog_timer.stop()
+        self._overlay_active_cartesian_ext = (axis_id, joint_index, direction)
+        self._overlay_active_joint = None
+        self._overlay_active_cartesian = None
+        self._overlay_active_ext = None
+        self._jog_overlay_cartesian_ext(axis_id, joint_index, direction * self._overlay_jog_delta)
+        self._overlay_jog_timer.start()
+
+    def _on_overlay_cartesian_ext_jog_released(self, axis_id: str, joint_index: int, _direction: int) -> None:
+        if (
+            self._overlay_active_cartesian_ext is not None
+            and self._overlay_active_cartesian_ext[0] == axis_id
+            and self._overlay_active_cartesian_ext[1] == joint_index
+        ):
+            self._overlay_jog_timer.stop()
+            self._overlay_active_cartesian_ext = None
+
+    def _jog_overlay_cartesian_ext(self, axis_id: str, joint_index: int, delta: float) -> None:
+        if self.external_axes_model is None:
+            return
+        current = self.external_axes_model.get_axis_joint_value(axis_id, joint_index)
+        self._move_external_axis_keep_tcp_world(axis_id, joint_index, current + delta)
+
+    def _move_external_axis_keep_tcp_world(self, axis_id: str, joint_index: int, target_value: float) -> None:
+        if self.external_axes_model is None or not self.robot_model.has_configuration:
+            return
+        previous_value = self.external_axes_model.get_axis_joint_value(axis_id, joint_index)
+        target_world_pose = self._current_tcp_world_pose()
+        if target_world_pose is None:
+            return
+
+        self.external_axes_model.set_axis_joint_value(axis_id, joint_index, target_value)
+        new_value = self.external_axes_model.get_axis_joint_value(axis_id, joint_index)
+        if new_value == previous_value:
+            return
+
+        workspace_robot_base = np.array(self.workspace_model.get_robot_base_transform_world().matrix, dtype=float)
+        target_in_new_base = compute_target_in_robot_base(
+            target_world_pose,
+            self.external_axes_model,
+            workspace_robot_base,
+        )
+        mgi_result = self.robot_model.compute_ik_target(target_in_new_base, tool=self.tool_model.get_tool())
+        best_solution = self.robot_model.get_best_mgi_solution(mgi_result) if mgi_result else None
+        if best_solution is None:
+            self.external_axes_model.set_axis_joint_value(axis_id, joint_index, previous_value)
+            return
+        self.robot_model.set_joints(best_solution[1].joints)
+
+    def _current_tcp_world_pose(self) -> Pose6 | None:
+        if self.external_axes_model is None:
+            return None
+        robot_base_world = get_effective_robot_base_in_world(self.workspace_model, self.external_axes_model)
+        tcp_base = math_utils.pose_zyx_to_matrix(self.robot_model.get_tcp_pose())
+        return math_utils.matrix_to_pose_zyx(robot_base_world @ tcp_base)
 
     # ------------------------------------------------------------------
 

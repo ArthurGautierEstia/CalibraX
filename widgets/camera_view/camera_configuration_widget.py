@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -330,32 +330,64 @@ class CameraListItemWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         outer_layout = QVBoxLayout(self)
-        outer_layout.setContentsMargins(4, 4, 4, 4)
+        outer_layout.setContentsMargins(3, 3, 3, 3)
         outer_layout.setSpacing(0)
 
         self.card = QWidget(self)
         self.card.setObjectName("cameraStatusCard")
-        card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(8, 6, 8, 6)
-        card_layout.setSpacing(2)
+        card_layout = QHBoxLayout(self.card)
+        card_layout.setContentsMargins(8, 5, 8, 5)
+        card_layout.setSpacing(8)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(1)
 
         self.name_label = QLabel(self.card)
-        self.name_label.setStyleSheet("color: white; font-weight: 600;")
+        self.name_label.setStyleSheet("font-weight: 600;")
         self.status_label = QLabel(self.card)
-        self.status_label.setStyleSheet("color: rgba(255, 255, 255, 210); font-size: 11px;")
-        card_layout.addWidget(self.name_label)
-        card_layout.addWidget(self.status_label)
-        outer_layout.addWidget(self.card)
+        self.status_label.setStyleSheet("font-size: 11px;")
+        text_layout.addWidget(self.name_label)
+        text_layout.addWidget(self.status_label)
+        card_layout.addLayout(text_layout, 1)
 
-    def set_data(self, camera: CameraConfiguration, status: str, color: QColor) -> None:
+        self.status_dot = QWidget(self.card)
+        self.status_dot.setObjectName("cameraStatusDot")
+        self.status_dot.setFixedSize(18, 18)
+        card_layout.addWidget(self.status_dot, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        outer_layout.addWidget(self.card)
+        self.card.setAutoFillBackground(True)
+        self._set_selected(False)
+
+    def set_data(self, camera: CameraConfiguration, status: str, color: QColor, selected: bool = False) -> None:
         self.name_label.setText(camera.name)
         self.status_label.setText(f"{camera.camera_id} - {status}")
-        self.card.setStyleSheet(
-            "QWidget#cameraStatusCard {"
+        self._set_selected(selected)
+        self.status_dot.setStyleSheet(
+            "QWidget#cameraStatusDot {"
             f"background-color: {color.name()};"
-            "border-radius: 7px;"
+            "border: 1px solid #707070;"
+            "border-radius: 9px;"
             "}"
         )
+
+    def set_selected(self, selected: bool) -> None:
+        self._set_selected(selected)
+
+    def _set_selected(self, selected: bool) -> None:
+        palette = self.palette()
+        if selected:
+            background_role = QPalette.ColorRole.Highlight
+            foreground_role = QPalette.ColorRole.HighlightedText
+        else:
+            background_role = QPalette.ColorRole.Base
+            foreground_role = QPalette.ColorRole.Text
+        palette.setColor(QPalette.ColorRole.Window, palette.color(background_role))
+        self.card.setPalette(palette)
+        self.name_label.setPalette(palette)
+        self.status_label.setPalette(palette)
+        self.name_label.setForegroundRole(foreground_role)
+        self.status_label.setForegroundRole(foreground_role)
 
 
 class CameraConfigurationWidget(QWidget):
@@ -436,16 +468,13 @@ class CameraConfigurationWidget(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         left = QWidget()
+        left.setMinimumWidth(190)
+        left.setMaximumWidth(240)
         left_layout = QVBoxLayout(left)
         left_layout.setSpacing(6)
         left_layout.addWidget(QLabel("<b>Cameras</b>"))
         self.list_widget = QListWidget()
         self.list_widget.setSpacing(2)
-        self.list_widget.setStyleSheet(
-            "QListWidget { border: none; background: transparent; outline: 0; }"
-            "QListWidget::item { border: none; background: transparent; }"
-            "QListWidget::item:selected { background: transparent; }"
-        )
         self.list_widget.currentRowChanged.connect(self._on_selection_changed)
         left_layout.addWidget(self.list_widget, 1)
 
@@ -467,7 +496,7 @@ class CameraConfigurationWidget(QWidget):
 
         splitter.addWidget(left)
         splitter.addWidget(self.detail_widget)
-        splitter.setSizes([260, 620])
+        splitter.setSizes([220, 660])
         main_layout.addWidget(splitter, 1)
 
     def set_configuration_status(self, text: str, color: str = "#808080") -> None:
@@ -490,7 +519,7 @@ class CameraConfigurationWidget(QWidget):
         new_row = -1
         for row, camera in enumerate(self._cameras):
             item = QListWidgetItem()
-            item.setSizeHint(QSize(0, 62))
+            item.setSizeHint(QSize(0, 54))
             self._apply_item_status(item, camera)
             self.list_widget.addItem(item)
             self.list_widget.setItemWidget(item, self._build_camera_item_widget(camera))
@@ -505,6 +534,7 @@ class CameraConfigurationWidget(QWidget):
         else:
             self._current_id = None
             self.detail_widget.set_camera(None)
+        self._refresh_selection_indicators()
 
     def set_visibility_results(self, results: dict[str, CameraVisibilityResult]) -> None:
         self._visibility_results = dict(results)
@@ -516,7 +546,7 @@ class CameraConfigurationWidget(QWidget):
             widget = self.list_widget.itemWidget(item)
             if isinstance(widget, CameraListItemWidget):
                 status, color = self._status_text_and_color(self._visibility_results.get(camera.camera_id))
-                widget.set_data(camera, status, color)
+                widget.set_data(camera, status, color, row == self.list_widget.currentRow())
 
     def selected_camera_index(self) -> int:
         row = self.list_widget.currentRow()
@@ -530,7 +560,7 @@ class CameraConfigurationWidget(QWidget):
     def _build_camera_item_widget(self, camera: CameraConfiguration) -> CameraListItemWidget:
         status, color = self._status_text_and_color(self._visibility_results.get(camera.camera_id))
         widget = CameraListItemWidget(self.list_widget)
-        widget.set_data(camera, status, color)
+        widget.set_data(camera, status, color, False)
         widget.setToolTip(
             f"FOV {camera.fov.horizontal_deg:.1f} x {camera.fov.vertical_deg:.1f} deg / {camera.fov.range_mm:.0f} mm\n"
             f"STL: {camera.stl.path or '-'}"
@@ -567,12 +597,22 @@ class CameraConfigurationWidget(QWidget):
         if row < 0 or row >= len(self._cameras):
             self._current_id = None
             self.detail_widget.set_camera(None)
+            self._refresh_selection_indicators()
             self.selection_changed.emit(-1)
             return
         camera = self._cameras[row]
         self._current_id = camera.camera_id
         self.detail_widget.set_camera(camera)
+        self._refresh_selection_indicators()
         self.selection_changed.emit(row)
+
+    def _refresh_selection_indicators(self) -> None:
+        current_row = self.list_widget.currentRow()
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            widget = self.list_widget.itemWidget(item)
+            if isinstance(widget, CameraListItemWidget):
+                widget.set_selected(row == current_row)
 
     def _on_detail_camera_changed(self, camera: CameraConfiguration) -> None:
         index = self.selected_camera_index()

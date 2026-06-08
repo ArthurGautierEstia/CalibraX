@@ -116,6 +116,7 @@ class AppSessionFile:
     tool_profile_path: str = ""
     workspace_path: str = ""
     external_axes_config_path: str = ""
+    camera_config_path: str = ""
     viewer_state: ViewerDisplayState = field(default_factory=ViewerDisplayState)
     external_axes_data: dict = field(default_factory=dict)
     workpiece_data: dict = field(default_factory=dict)
@@ -133,6 +134,7 @@ class AppSessionFile:
             external_axes_config_path=""
             if data.get("external_axes_config_path") is None
             else str(data.get("external_axes_config_path")),
+            camera_config_path="" if data.get("camera_config_path") is None else str(data.get("camera_config_path")),
             viewer_state=ViewerDisplayState.from_dict(data.get("viewer_state")),
             external_axes_data=data.get("external_axes_data") or {},
             workpiece_data=data.get("workpiece_data") or {},

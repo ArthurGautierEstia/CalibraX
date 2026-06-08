@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from controllers.viewer3d_controller import Viewer3DController
@@ -21,6 +21,9 @@ STATUS_UP_TO_DATE = "Configuration caméra à jour"
 
 
 class CameraController(QObject):
+    validation_state_changed = pyqtSignal(bool)
+    session_state_changed = pyqtSignal()
+
     def __init__(
         self,
         camera_model: CameraModel,
@@ -38,6 +41,7 @@ class CameraController(QObject):
         self._has_reference = False
         self._was_dirty_since_reference = False
         self._clean_status_text = STATUS_NONE
+        self._validation_icon_visible = False
 
         self._setup_connections()
         self._update_camera_view()
@@ -62,6 +66,7 @@ class CameraController(QObject):
         self._update_camera_view()
         self._update_configuration_status()
         self.viewer3d_controller.refresh_cameras()
+        self.session_state_changed.emit()
 
     def _update_camera_view(self) -> None:
         self.camera_widget.set_current_file_path(self.camera_model.get_current_file_path())
@@ -81,6 +86,7 @@ class CameraController(QObject):
         self._clean_status_text = STATUS_NONE
         self._update_camera_view()
         self._update_configuration_status()
+        self.session_state_changed.emit()
 
     def _on_load_requested(self) -> None:
         selected_path, _ = QFileDialog.getOpenFileName(
@@ -91,7 +97,11 @@ class CameraController(QObject):
         )
         if not selected_path:
             return
-        self.load_configuration_from_path(selected_path, show_errors=True)
+        self.viewer3d_controller.begin_loading_feedback("Chargement cameras ...")
+        try:
+            self.load_configuration_from_path(selected_path, show_errors=True)
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _on_save_requested(self) -> None:
         current_path = self.camera_model.get_current_file_path()
@@ -131,6 +141,7 @@ class CameraController(QObject):
         self.camera_model.set_current_file_path(CameraConfigurationWidgetPath.normalize_project_path(selected_path))
         self._mark_current_configuration_as_reference(STATUS_SAVED)
         self._update_camera_view()
+        self.session_state_changed.emit()
         return True
 
     def load_configuration_from_path(self, selected_path: str, show_errors: bool = False) -> bool:
@@ -150,6 +161,7 @@ class CameraController(QObject):
             file_path=CameraConfigurationWidgetPath.normalize_project_path(selected_path),
         )
         self._mark_current_configuration_as_reference(STATUS_LOADED)
+        self.session_state_changed.emit()
         return True
 
     def _on_add_camera_requested(self) -> None:
@@ -219,6 +231,11 @@ class CameraController(QObject):
 
     def _update_configuration_status(self) -> None:
         current_data = self._current_configuration_data()
+        show_validation_icon = self._should_show_validation_icon(current_data)
+        if show_validation_icon != self._validation_icon_visible:
+            self._validation_icon_visible = show_validation_icon
+            self.validation_state_changed.emit(show_validation_icon)
+
         if not self._has_reference:
             if current_data.get("cameras"):
                 self.camera_widget.set_configuration_status(STATUS_UNSAVED, "#808080")
@@ -235,6 +252,19 @@ class CameraController(QObject):
             self._clean_status_text = STATUS_UP_TO_DATE
             self._was_dirty_since_reference = False
         self.camera_widget.set_configuration_status(self._clean_status_text, STATUS_OK_COLOR)
+
+    def _should_show_validation_icon(self, current_data: dict | None = None) -> bool:
+        if not self._has_reference:
+            return False
+        if current_data is None:
+            current_data = self._current_configuration_data()
+        if current_data != self._reference_data:
+            return False
+        return self._clean_status_text in {
+            STATUS_SAVED,
+            STATUS_LOADED,
+            STATUS_UP_TO_DATE,
+        }
 
 
 class CameraConfigurationWidgetPath:

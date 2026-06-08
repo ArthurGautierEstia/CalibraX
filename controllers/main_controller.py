@@ -169,6 +169,8 @@ class MainController(QObject):
         self.robot_controller.dh_controller.validation_state_changed.connect(self.main_window.set_robot_tab_validated)
         self.robot_controller.tool_controller.validation_state_changed.connect(self.main_window.set_tool_tab_validated)
         self.external_axes_controller.validation_state_changed.connect(self.main_window.set_external_axes_tab_validated)
+        self.camera_controller.validation_state_changed.connect(self.main_window.set_camera_tab_validated)
+        self.camera_controller.session_state_changed.connect(self._schedule_session_save)
         self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
 
         self.tool_model.tool_changed.connect(self._on_tool_changed)
@@ -250,6 +252,14 @@ class MainController(QObject):
             finally:
                 self.viewer3d_controller.end_loading_feedback()
 
+        camera_path = self._resolve_existing_path(startup.get("camera_config", ""))
+        if camera_path:
+            self.viewer3d_controller.begin_loading_feedback("Chargement cameras ...")
+            try:
+                self.camera_controller.load_configuration_from_path(camera_path, show_errors=False)
+            finally:
+                self.viewer3d_controller.end_loading_feedback()
+
         # Restauration de l'outillage + pièce
         combined_data = {
             "tooling": startup.get("tooling_data") or {},
@@ -275,6 +285,7 @@ class MainController(QObject):
             external_axes_config_path=self._normalize_project_path(
                 self.external_axes_controller.get_current_config_file()
             ),
+            camera_config_path=self._normalize_project_path(self.camera_model.get_current_file_path()),
             viewer_state=self.main_window.get_viewer3d().get_display_state(),
             external_axes_data={},
             workpiece_data=self.workpiece_controller.get_serializable_state().get("workpiece", {}),
@@ -341,6 +352,7 @@ class MainController(QObject):
             "tool": tool_override or (session.tool_profile_path if session is not None else ""),
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),
             "external_axes_config": session.external_axes_config_path if session is not None else "",
+            "camera_config": session.camera_config_path if session is not None else "",
             "viewer_state": session.viewer_state if session is not None else None,
             "external_axes_data": session.external_axes_data if session is not None else {},
             "workpiece_data": session.workpiece_data if session is not None else {},

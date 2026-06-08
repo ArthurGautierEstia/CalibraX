@@ -275,6 +275,7 @@ class ExternalAxesController(QObject):
         if hasattr(self.viewer3d_controller, 'viewer_3d_widget'):
             world_transforms = self.model.compute_world_transforms()
             self.viewer3d_controller.viewer_3d_widget.update_external_axes_poses(world_transforms)
+            self.viewer3d_controller.viewer_3d_widget.refresh_camera_visibility()
 
     # ------------------------------------------------------------------
     # Sauvegarde / chargement manuel (boutons du panneau)

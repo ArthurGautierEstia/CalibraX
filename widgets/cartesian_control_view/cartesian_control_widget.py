@@ -25,6 +25,9 @@ class CartesianControlWidget(QWidget):
     reference_frame_changed = pyqtSignal(str)
     spinbox_jog_pressed = pyqtSignal(int, int)
     spinbox_jog_released = pyqtSignal(int, int)
+    external_value_changed = pyqtSignal(str, int, float)
+    spinbox_ext_jog_pressed = pyqtSignal(str, int, int)
+    spinbox_ext_jog_released = pyqtSignal(str, int, int)
     
     # ============================================================================
     # RÉ‰GION: Conventions constructeurs
@@ -80,6 +83,9 @@ class CartesianControlWidget(QWidget):
         self.sliders_cart: List[QSlider] = []
         self.spinboxes_cart: List[QDoubleSpinBox] = []
         self.labels_cart: List[QLabel] = []
+        self._external_rows: list[tuple[str, int, QSlider, QDoubleSpinBox, tuple[float, float]]] = []
+        self._external_row_layouts: list[QHBoxLayout] = []
+        self._main_layout: QVBoxLayout | None = None
         self.reference_label: QLabel | None = None
         self.reference_frame_combo: QComboBox | None = None
         self.current_convention = "Kuka"
@@ -97,6 +103,7 @@ class CartesianControlWidget(QWidget):
     def setup_ui(self) -> None:
         """Initialise l'interface du widget"""
         layout = QVBoxLayout(self)
+        self._main_layout = layout
         if self._compact:
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(4)
@@ -380,6 +387,8 @@ class CartesianControlWidget(QWidget):
         normalized_value = max(0.001, float(value))
         for index, spinbox in enumerate(self.spinboxes_cart):
             spinbox.setSingleStep(normalized_value if index < 3 else normalized_value * 0.1)
+        for _axis_id, _joint_index, _slider, spinbox, _limits in self._external_rows:
+            spinbox.setSingleStep(normalized_value)
 
     def apply_text_color(self, text_color: QColor) -> None:
         text_hex = text_color.name(QColor.NameFormat.HexRgb)
@@ -396,5 +405,124 @@ class CartesianControlWidget(QWidget):
             spinbox.setReadOnly(jog_only_mode)
             if isinstance(spinbox, JogSpinBox):
                 spinbox.set_allow_jog_while_read_only(jog_only_mode)
+
+    def set_external_axes(self, axes_info: list[tuple[str, int, float, float, float, str]]) -> None:
+        """Affiche E1/E2 dans le contrôle cartésien compact du viewer."""
+        if self._main_layout is None:
+            return
+        self._clear_external_rows()
+
+        spinbox_width = self.spinboxes_cart[0].width() if self.spinboxes_cart else 92
+        for row_index, (axis_id, joint_index, min_val, max_val, value, unit) in enumerate(axes_info[:2]):
+            row_layout = QHBoxLayout()
+            if self._compact:
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
+
+            label = QLabel(f"E{row_index + 1}")
+            label.setMinimumWidth(62 if self._compact else 80)
+            if self._compact:
+                label.setFixedHeight(self._COMPACT_ROW_HEIGHT)
+
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(0, self._SLIDER_MAX)
+            if self._compact:
+                slider.setFixedHeight(self._COMPACT_ROW_HEIGHT)
+
+            spinbox = JogSpinBox() if self._enable_jog_spin_buttons else QDoubleSpinBox()
+            spinbox.setRange(float(min_val), float(max_val))
+            spinbox.setDecimals(3)
+            spinbox.setSingleStep(0.1)
+            spinbox.setSuffix(f" {unit}")
+            spinbox.setKeyboardTracking(False)
+            spinbox.setFixedWidth(spinbox_width)
+            if self._compact:
+                spinbox.setFixedHeight(self._COMPACT_ROW_HEIGHT)
+            if isinstance(spinbox, JogSpinBox):
+                spinbox.jog_button_pressed.connect(
+                    lambda direction, aid=axis_id, ji=joint_index: self.spinbox_ext_jog_pressed.emit(aid, ji, direction)
+                )
+                spinbox.jog_button_released.connect(
+                    lambda direction, aid=axis_id, ji=joint_index: self.spinbox_ext_jog_released.emit(aid, ji, direction)
+                )
+
+            limits = (float(min_val), float(max_val))
+            self._external_rows.append((axis_id, joint_index, slider, spinbox, limits))
+            slider.valueChanged.connect(
+                lambda slider_pos, aid=axis_id, ji=joint_index: self._on_external_slider_changed(aid, ji, slider_pos)
+            )
+            spinbox.valueChanged.connect(
+                lambda spin_value, aid=axis_id, ji=joint_index: self._on_external_spinbox_changed(aid, ji, spin_value)
+            )
+
+            row_layout.addWidget(label)
+            row_layout.addWidget(slider)
+            row_layout.addWidget(spinbox)
+            self._main_layout.addLayout(row_layout)
+            self._external_row_layouts.append(row_layout)
+            self.set_external_axis_value(axis_id, joint_index, value)
+
+    def set_external_axis_value(self, axis_id: str, joint_index: int, value: float) -> None:
+        row = self._find_external_row(axis_id, joint_index)
+        if row is None:
+            return
+        _axis_id, _joint_index, slider, spinbox, limits = row
+        min_val, max_val = limits
+        clamped = max(min_val, min(max_val, float(value)))
+        slider.blockSignals(True)
+        spinbox.blockSignals(True)
+        spinbox.setValue(clamped)
+        slider.setValue(self._external_value_to_slider(clamped, limits))
+        spinbox.blockSignals(False)
+        slider.blockSignals(False)
+
+    def _clear_external_rows(self) -> None:
+        while self._external_row_layouts:
+            layout = self._external_row_layouts.pop()
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+            if self._main_layout is not None:
+                self._main_layout.removeItem(layout)
+        self._external_rows.clear()
+
+    def _find_external_row(self, axis_id: str, joint_index: int):
+        for row in self._external_rows:
+            if row[0] == axis_id and row[1] == joint_index:
+                return row
+        return None
+
+    def _external_slider_to_value(self, slider_pos: int, limits: tuple[float, float]) -> float:
+        min_val, max_val = limits
+        return min_val + (float(slider_pos) / self._SLIDER_MAX) * (max_val - min_val)
+
+    def _external_value_to_slider(self, value: float, limits: tuple[float, float]) -> int:
+        min_val, max_val = limits
+        if max_val == min_val:
+            return int(self._SLIDER_MAX / 2)
+        return int(round(((float(value) - min_val) / (max_val - min_val)) * self._SLIDER_MAX))
+
+    def _on_external_slider_changed(self, axis_id: str, joint_index: int, slider_pos: int) -> None:
+        row = self._find_external_row(axis_id, joint_index)
+        if row is None:
+            return
+        _axis_id, _joint_index, _slider, spinbox, limits = row
+        value = self._external_slider_to_value(slider_pos, limits)
+        spinbox.blockSignals(True)
+        spinbox.setValue(value)
+        spinbox.blockSignals(False)
+        self.external_value_changed.emit(axis_id, joint_index, value)
+
+    def _on_external_spinbox_changed(self, axis_id: str, joint_index: int, value: float) -> None:
+        row = self._find_external_row(axis_id, joint_index)
+        if row is None:
+            return
+        _axis_id, _joint_index, slider, _spinbox, limits = row
+        slider.blockSignals(True)
+        slider.setValue(self._external_value_to_slider(value, limits))
+        slider.blockSignals(False)
+        self.external_value_changed.emit(axis_id, joint_index, float(value))
 
 

@@ -137,6 +137,9 @@ class MainWindow(QMainWindow):
     def set_external_axes_tab_validated(self, is_validated: bool) -> None:
         self._set_tab_validated(MainWindow.EXTERNAL_AXES_TAB_INDEX, is_validated)
 
+    def set_camera_tab_validated(self, is_validated: bool) -> None:
+        self._set_tab_validated(MainWindow.CAMERA_TAB_INDEX, is_validated)
+
     def _set_tab_validated(self, tab_index: int, is_validated: bool) -> None:
         self.cell_configuration_tabs.setTabIcon(
             tab_index,
@@ -193,6 +196,7 @@ class MainWindow(QMainWindow):
             MainWindow.ROBOT_TAB_INDEX,
             MainWindow.TOOL_TAB_INDEX,
             MainWindow.EXTERNAL_AXES_TAB_INDEX,
+            MainWindow.CAMERA_TAB_INDEX,
         ):
             current_icon = self.cell_configuration_tabs.tabIcon(tab_index)
             if current_icon.isNull():
