@@ -67,6 +67,22 @@ class _PlaybackIconButton(QPushButton):
                 self._point(4, height // 2),
                 self._point(8, height - 3),
             ]))
+        elif self._icon_kind == "triple_chevron_left":
+            painter.drawPolyline(QPolygon([
+                self._point(14, 3),
+                self._point(11, height // 2),
+                self._point(14, height - 3),
+            ]))
+            painter.drawPolyline(QPolygon([
+                self._point(10, 3),
+                self._point(7, height // 2),
+                self._point(10, height - 3),
+            ]))
+            painter.drawPolyline(QPolygon([
+                self._point(6, 3),
+                self._point(3, height // 2),
+                self._point(6, height - 3),
+            ]))
         elif self._icon_kind == "chevron_right":
             painter.drawPolyline(QPolygon([
                 self._point(7, 3),
@@ -83,6 +99,22 @@ class _PlaybackIconButton(QPushButton):
                 self._point(10, 3),
                 self._point(14, height // 2),
                 self._point(10, height - 3),
+            ]))
+        elif self._icon_kind == "triple_chevron_right":
+            painter.drawPolyline(QPolygon([
+                self._point(4, 3),
+                self._point(7, height // 2),
+                self._point(4, height - 3),
+            ]))
+            painter.drawPolyline(QPolygon([
+                self._point(8, 3),
+                self._point(11, height // 2),
+                self._point(8, height - 3),
+            ]))
+            painter.drawPolyline(QPolygon([
+                self._point(12, 3),
+                self._point(15, height // 2),
+                self._point(12, height - 3),
             ]))
         else:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -290,15 +322,23 @@ class ProgramPlaybackWidget(QWidget):
     def _update_speed_buttons(self, playback_enabled: bool | None = None) -> None:
         can_interact = self.btn_play_pause.isEnabled() if playback_enabled is None else bool(playback_enabled)
         self.btn_slower._icon_kind = (
-            "double_chevron_left" if self._speed_offset_percent <= -50 else "chevron_left"
+            "triple_chevron_left"
+            if self._speed_offset_percent <= self._SPEED_MIN_PERCENT
+            else "double_chevron_left"
+            if self._speed_offset_percent <= -50
+            else "chevron_left"
         )
         self.btn_faster._icon_kind = (
-            "double_chevron_right" if self._speed_offset_percent >= 50 else "chevron_right"
+            "triple_chevron_right"
+            if self._speed_offset_percent >= self._SPEED_MAX_PERCENT
+            else "double_chevron_right"
+            if self._speed_offset_percent >= 50
+            else "chevron_right"
         )
         self.btn_slower._refresh_icon()
         self.btn_faster._refresh_icon()
-        self.btn_slower.setEnabled(can_interact and self._speed_offset_percent > self._SPEED_MIN_PERCENT)
-        self.btn_faster.setEnabled(can_interact and self._speed_offset_percent < self._SPEED_MAX_PERCENT)
+        self.btn_slower.setEnabled(can_interact)
+        self.btn_faster.setEnabled(can_interact)
 
     def _update_stop_button(self) -> None:
         self.btn_stop.setEnabled(self._playback_enabled and (self._is_playing or self.time_slider.value() > 0))

@@ -235,11 +235,26 @@ class ExternalAxesController(QObject):
     @staticmethod
     def _normalized_serialized_state(data: dict) -> str:
         normalized = json.loads(json.dumps(data))
+        ExternalAxesController._strip_runtime_axis_values(normalized)
         for axis_data in normalized.get("axes", []):
             axis_data["base_cad_model"] = _normalize_project_path(axis_data.get("base_cad_model", ""))
             for joint_data in axis_data.get("joints", []):
                 joint_data["cad_model"] = _normalize_project_path(joint_data.get("cad_model", ""))
         return json.dumps(normalized, sort_keys=True, ensure_ascii=True)
+
+    @staticmethod
+    def _strip_runtime_axis_values(data: dict) -> None:
+        for axis_data in data.get("axes", []):
+            for joint_data in axis_data.get("joints", []):
+                joint_data.pop("value", None)
+
+    @staticmethod
+    def _reset_runtime_axis_values(data: dict) -> dict:
+        normalized = json.loads(json.dumps(data))
+        for axis_data in normalized.get("axes", []):
+            for joint_data in axis_data.get("joints", []):
+                joint_data["value"] = 0.0
+        return normalized
 
     def _infer_config_file_from_data(self, data: dict) -> str:
         config_dir = Path(_DEFAULT_CONFIG_DIR)
@@ -342,6 +357,7 @@ class ExternalAxesController(QObject):
 
     def get_serializable_state(self) -> dict:
         data = self.model.to_dict()
+        ExternalAxesController._strip_runtime_axis_values(data)
         for axis_data in data.get("axes", []):
             axis_data["base_cad_model"] = _normalize_project_path(axis_data.get("base_cad_model", ""))
             for joint_data in axis_data.get("joints", []):
@@ -351,6 +367,7 @@ class ExternalAxesController(QObject):
     def restore_state(self, data: dict, file_path: str = "") -> None:
         if not data:
             return
+        data = ExternalAxesController._reset_runtime_axis_values(data)
         self._is_loading_configuration = True
         try:
             self.model.from_dict(data)

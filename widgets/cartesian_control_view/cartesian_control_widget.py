@@ -407,13 +407,13 @@ class CartesianControlWidget(QWidget):
                 spinbox.set_allow_jog_while_read_only(jog_only_mode)
 
     def set_external_axes(self, axes_info: list[tuple[str, int, float, float, float, str]]) -> None:
-        """Affiche E1/E2 dans le contrôle cartésien compact du viewer."""
+        """Affiche E1 dans le contrôle cartésien compact du viewer."""
         if self._main_layout is None:
             return
         self._clear_external_rows()
 
         spinbox_width = self.spinboxes_cart[0].width() if self.spinboxes_cart else 92
-        for row_index, (axis_id, joint_index, min_val, max_val, value, unit) in enumerate(axes_info[:2]):
+        for row_index, (axis_id, joint_index, min_val, max_val, value, unit) in enumerate(axes_info[:1]):
             row_layout = QHBoxLayout()
             if self._compact:
                 row_layout.setContentsMargins(0, 0, 0, 0)
