@@ -26,6 +26,12 @@ from PyQt6.QtWidgets import (
 from models.primitive_collider_models import PrimitiveColliderData, PrimitiveColliderShape
 from models.tool_config_file import ToolConfigFile
 from models.types import Pose6
+from utils.config_action_icons import (
+    CONFIG_ACTION_BUTTON_SIZE,
+    CONFIG_ACTION_ICON_SIZE,
+    build_new_icon,
+    build_save_icon,
+)
 from utils.math_utils import safe_float
 from utils.mgi import RobotTool
 
@@ -120,23 +126,33 @@ class ToolConfigurationWidget(QWidget):
         actions_layout = QHBoxLayout()
         actions_layout.addStretch()
 
-        self.btn_load = QPushButton("Charger")
-        self.btn_load.setFixedWidth(120)
+        self.btn_load = QPushButton("...")
+        self.btn_load.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.btn_load.setToolTip("Charger une configuration tool")
         self.btn_load.clicked.connect(self._on_pick_tool_profile_file)
         actions_layout.addWidget(self.btn_load)
 
-        self.btn_new = QPushButton("Nouveau")
-        self.btn_new.setFixedWidth(120)
+        self.btn_new = QPushButton()
+        self.btn_new.setIcon(build_new_icon(self.palette()))
+        self.btn_new.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        self.btn_new.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.btn_new.setToolTip("Creer une nouvelle configuration tool")
         self.btn_new.clicked.connect(self.new_tool_requested.emit)
         actions_layout.addWidget(self.btn_new)
 
-        self.btn_save = QPushButton("Enregistrer")
-        self.btn_save.setFixedWidth(120)
+        self.btn_save = QPushButton()
+        self.btn_save.setIcon(build_save_icon(self.palette()))
+        self.btn_save.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        self.btn_save.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.btn_save.setToolTip("Enregistrer la configuration tool courante")
         self.btn_save.clicked.connect(self._on_save_tool_profile)
         actions_layout.addWidget(self.btn_save)
 
-        self.btn_save_as = QPushButton("Enregistrer sous")
-        self.btn_save_as.setFixedWidth(120)
+        self.btn_save_as = QPushButton()
+        self.btn_save_as.setIcon(build_save_icon(self.palette(), include_pencil=True))
+        self.btn_save_as.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        self.btn_save_as.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.btn_save_as.setToolTip("Enregistrer la configuration tool dans un nouveau fichier JSON")
         self.btn_save_as.clicked.connect(self._on_save_tool_profile_as)
         actions_layout.addWidget(self.btn_save_as)
 

@@ -34,6 +34,12 @@ from models.camera_model import (
 )
 from models.types import Pose6
 from utils import math_utils
+from utils.config_action_icons import (
+    CONFIG_ACTION_BUTTON_SIZE,
+    CONFIG_ACTION_ICON_SIZE,
+    build_new_icon,
+    build_save_icon,
+)
 
 
 class CameraDetailWidget(QScrollArea):
@@ -396,27 +402,36 @@ class CameraConfigurationWidget(QWidget):
             "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #ff8c00;"
         )
         file_row.addWidget(self.current_config_label, 1)
-        main_layout.addLayout(file_row)
 
         action_row = QHBoxLayout()
-        action_row.addStretch()
-        self.load_button = QPushButton("Charger")
-        self.load_button.setFixedWidth(120)
+        self.load_button = QPushButton("...")
+        self.load_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.load_button.setToolTip("Charger une configuration camera")
         self.load_button.clicked.connect(self.load_config_requested.emit)
         action_row.addWidget(self.load_button)
-        self.new_button = QPushButton("Nouveau")
-        self.new_button.setFixedWidth(120)
+        self.new_button = QPushButton()
+        self.new_button.setIcon(build_new_icon(self.palette()))
+        self.new_button.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        self.new_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.new_button.setToolTip("Creer une nouvelle configuration camera")
         self.new_button.clicked.connect(self.new_config_requested.emit)
         action_row.addWidget(self.new_button)
-        self.save_button = QPushButton("Enregistrer")
-        self.save_button.setFixedWidth(120)
+        self.save_button = QPushButton()
+        self.save_button.setIcon(build_save_icon(self.palette()))
+        self.save_button.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        self.save_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.save_button.setToolTip("Enregistrer la configuration camera courante")
         self.save_button.clicked.connect(self.save_config_requested.emit)
         action_row.addWidget(self.save_button)
-        self.save_as_button = QPushButton("Enregistrer sous")
-        self.save_as_button.setFixedWidth(120)
+        self.save_as_button = QPushButton()
+        self.save_as_button.setIcon(build_save_icon(self.palette(), include_pencil=True))
+        self.save_as_button.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        self.save_as_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        self.save_as_button.setToolTip("Enregistrer la configuration camera dans un nouveau fichier JSON")
         self.save_as_button.clicked.connect(self.save_as_config_requested.emit)
         action_row.addWidget(self.save_as_button)
-        main_layout.addLayout(action_row)
+        file_row.addLayout(action_row)
+        main_layout.addLayout(file_row)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 

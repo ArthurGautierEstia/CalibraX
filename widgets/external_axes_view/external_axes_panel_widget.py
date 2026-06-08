@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal, QSize
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMenu, QPushButton, QSplitter, QVBoxLayout, QWidget,
@@ -11,6 +10,7 @@ from PyQt6.QtCore import Qt
 
 from models.external_axis import ExternalAxis
 from models.external_axes_model import ExternalAxesModel
+from utils.config_action_icons import build_new_icon, build_save_icon
 from widgets.external_axes_view.external_axis_config_widget import ExternalAxisConfigWidget
 
 
@@ -45,73 +45,6 @@ class ExternalAxesPanelWidget(QWidget):
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
-
-    def _build_save_icon(self, include_pencil: bool = False) -> QIcon:
-        size = 22
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(self.palette().color(self.palette().ColorRole.ButtonText))
-        painter.setPen(color)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-
-        body = QPainterPath()
-        body.addRoundedRect(2.0, 2.0, 14.5, 16.5, 1.8, 1.8)
-        notch = QPainterPath()
-        notch.addRect(4.5, 3.8, 7.2, 3.8)
-        label = QPainterPath()
-        label.addRect(4.5, 11.2, 8.8, 5.0)
-        painter.drawPath(body)
-        painter.fillPath(notch, color)
-        painter.drawPath(label)
-
-        if include_pencil:
-            pencil = QPainterPath()
-            pencil.moveTo(13.4, 13.6)
-            pencil.lineTo(18.4, 8.6)
-            pencil.lineTo(20.0, 10.2)
-            pencil.lineTo(15.0, 15.2)
-            pencil.closeSubpath()
-            tip = QPainterPath()
-            tip.moveTo(12.5, 16.1)
-            tip.lineTo(13.4, 13.6)
-            tip.lineTo(15.0, 15.2)
-            tip.closeSubpath()
-            painter.fillPath(pencil, color)
-            painter.fillPath(tip, color)
-
-        painter.end()
-        return QIcon(pixmap)
-
-    def _build_new_icon(self) -> QIcon:
-        size = 22
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(self.palette().color(self.palette().ColorRole.ButtonText))
-        painter.setPen(color)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-
-        page = QPainterPath()
-        page.moveTo(5.0, 2.5)
-        page.lineTo(13.0, 2.5)
-        page.lineTo(17.5, 7.0)
-        page.lineTo(17.5, 19.0)
-        page.lineTo(5.0, 19.0)
-        page.closeSubpath()
-        fold = QPainterPath()
-        fold.moveTo(13.0, 2.5)
-        fold.lineTo(13.0, 7.0)
-        fold.lineTo(17.5, 7.0)
-        painter.drawPath(page)
-        painter.drawPath(fold)
-
-        painter.end()
-        return QIcon(pixmap)
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -152,7 +85,7 @@ class ExternalAxesPanelWidget(QWidget):
         fields_layout.addWidget(self.btn_load, 0, 2)
 
         self.btn_new = QPushButton()
-        self.btn_new.setIcon(self._build_new_icon())
+        self.btn_new.setIcon(build_new_icon(self.palette()))
         self.btn_new.setIconSize(action_icon_size)
         self.btn_new.setFixedSize(action_button_size, action_button_size)
         self.btn_new.setToolTip("Créer une nouvelle configuration des axes externes")
@@ -160,7 +93,7 @@ class ExternalAxesPanelWidget(QWidget):
         fields_layout.addWidget(self.btn_new, 0, 3)
 
         self.btn_save = QPushButton()
-        self.btn_save.setIcon(self._build_save_icon())
+        self.btn_save.setIcon(build_save_icon(self.palette()))
         self.btn_save.setIconSize(action_icon_size)
         self.btn_save.setFixedSize(action_button_size, action_button_size)
         self.btn_save.setToolTip("Enregistrer la configuration des axes externes courante")
@@ -168,7 +101,7 @@ class ExternalAxesPanelWidget(QWidget):
         fields_layout.addWidget(self.btn_save, 0, 4)
 
         self.btn_save_as = QPushButton()
-        self.btn_save_as.setIcon(self._build_save_icon(include_pencil=True))
+        self.btn_save_as.setIcon(build_save_icon(self.palette(), include_pencil=True))
         self.btn_save_as.setIconSize(action_icon_size)
         self.btn_save_as.setFixedSize(action_button_size, action_button_size)
         self.btn_save_as.setToolTip("Enregistrer la configuration des axes externes dans un nouveau fichier JSON")
