@@ -1231,6 +1231,7 @@ class ProgramController:
                 draft_motion.target,
                 False,
                 allow_motion_type_editing=True,
+                external_axes_model=self.external_axes_model,
                 parent=self.program_view,
             )
 
@@ -1239,9 +1240,9 @@ class ProgramController:
 
             updated_motion = self._motion_from_dialog(draft_motion, dialog, is_via_target=False)
             self.current_program = self._program_with_inserted_motion(updated_motion, insertion_motion_index)
-            self._refresh_program_after_target_change()
-
             inserted_motion_index = len(self.current_program.motions) - 1 if insertion_motion_index is None else insertion_motion_index + 1
+            self._refresh_program_after_target_change(dirty_indices=[inserted_motion_index])
+
             new_selection_row = self._display_row_for_motion_target(inserted_motion_index)
             if new_selection_row is not None:
                 self.config_widget.select_row(new_selection_row)
@@ -1267,6 +1268,7 @@ class ProgramController:
             target,
             target_ref.is_via_target,
             allow_motion_type_editing=not target_ref.is_via_target,
+            external_axes_model=self.external_axes_model,
             parent=self.program_view,
         )
 
@@ -1276,7 +1278,7 @@ class ProgramController:
 
         updated_motion = self._motion_from_dialog(motion, dialog, is_via_target=target_ref.is_via_target)
         self.current_program = self._program_with_replaced_motion(target_ref.motion_index, updated_motion)
-        self._refresh_program_after_target_change()
+        self._refresh_program_after_target_change(dirty_indices=[target_ref.motion_index])
         self.config_widget.select_row(row)
 
     def _motion_from_dialog(
@@ -1290,6 +1292,17 @@ class ProgramController:
             return replace(source_motion, via_target=updated_target)
 
         updated_mode = dialog.get_motion_mode()
+
+        if updated_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+            ext_target = dialog.get_external_axis_target()
+            return replace(
+                source_motion,
+                mode=RobotProgramMotionMode.EXTERNAL_AXIS,
+                target=updated_target,
+                external_axis_target=ext_target,
+                cp_speed_mps=None,
+            )
+
         return replace(
             source_motion,
             mode=updated_mode,
@@ -1301,14 +1314,46 @@ class ProgramController:
             ),
         )
 
-    def _refresh_program_after_target_change(self) -> None:
+    def _refresh_program_after_target_change(self, dirty_indices: list[int] | None = None) -> None:
         self._program_dirty = True
-        self._mark_simulation_dirty()
+        if dirty_indices is not None and self.current_program is not None:
+            self._run_incremental_recompute(dirty_indices)
+        else:
+            self._mark_simulation_dirty()
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
         self._refresh_status()
         self._refresh_program_save_status()
+
+    def _run_incremental_recompute(self, dirty_indices: list[int]) -> None:
+        if self.current_program is None:
+            return
+        self._stop_playback()
+        self._current_time_s = 0.0
+        simulation_program = self._get_simulation_program()
+        if simulation_program is None:
+            return
+        incremental_result = self.program_simulator.simulate_program_incremental(
+            simulation_program, dirty_indices
+        )
+        self._nominal_cartesian_result = incremental_result
+        self._nominal_articular_result = None
+        self._compensated_cartesian_result = None
+        self._compensated_articular_result = None
+        self._compensation_computed = False
+        self.actions_widget.set_compensated_checkbox_enabled(False)
+        self.current_result = incremental_result
+        active_motion_mode = self.config_widget.get_motion_mode()
+        _theo_samples = incremental_result.nominal_samples
+        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
+            _theo_samples, self._get_nominal_color(), self.MEASURED_COLOR,
+        )
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples)
+        self._compensated_segments_cache = []
+        self._simulation_dirty = False
+        self.actions_widget.set_compensation_enabled(self.current_program is not None)
+        self._refresh_viewer_segments()
 
     def _insertion_motion_index_for_selected_row(self) -> int | None:
 

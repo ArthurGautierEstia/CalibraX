@@ -3,6 +3,7 @@ from __future__ import annotations
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, replace
+import hashlib
 import math
 from typing import TYPE_CHECKING
 
@@ -42,6 +43,34 @@ class _ProgramStartState:
     initial_sample_motion: RobotProgramMotion | None
 
 
+@dataclass(frozen=True)
+class _MotionSimCacheEntry:
+    """Cache d'un motion simulé (indépendant du temps absolu)."""
+    signature: str              # hash des champs métier (hors approximation)
+    start_joints: tuple         # joints au début du motion
+    start_pose: Pose6           # pose TCP au début du motion
+    relative_samples: list[ProgramSimulationSample]  # temps relatifs à partir de 0
+    end_joints: tuple           # joints après le motion
+    end_pose: Pose6             # pose TCP après le motion
+    duration_s: float           # durée totale du motion
+
+
+def _motion_signature(motion: RobotProgramMotion) -> str:
+    """Hash stable des champs influençant la simulation (hors approximation)."""
+    key = (
+        motion.mode.value,
+        motion.target.target_type.value,
+        motion.target.cartesian_pose.to_list() if motion.target.cartesian_pose else None,
+        motion.target.joint_angles.to_list() if motion.target.joint_angles else None,
+        motion.cp_speed_mps,
+        motion.tool_pose.to_list() if motion.tool_pose else None,
+        motion.base_pose.to_list() if motion.base_pose else None,
+        motion.via_target.target_type.value if motion.via_target else None,
+        motion.via_target.cartesian_pose.to_list() if (motion.via_target and motion.via_target.cartesian_pose) else None,
+    )
+    return hashlib.md5(str(key).encode(), usedforsecurity=False).hexdigest()
+
+
 class ProgramSimulator:
     DEFAULT_DT_S = 0.02
     DEFAULT_LINEAR_SPEED_MPS = 0.2
@@ -57,6 +86,8 @@ class ProgramSimulator:
         # Lot F : arrays numpy pré-extraits pour FK mesuré vectorisé
         self._cached_measured_dh_arrays: tuple | None = None
         self._cached_axis_reversed: np.ndarray | None = None
+        # Cache incrémental par motion (parallèle à program.motions)
+        self._motion_cache: list[_MotionSimCacheEntry] = []
         # Lot B : pas d'interpolation actif pour la simulation courante
         self._active_cartesian_step_mm: float = self.MIN_CARTESIAN_SAMPLE_STEP_MM
 
@@ -103,9 +134,198 @@ class ProgramSimulator:
                 compensation_computed=include_compensation or measured_dh is None,
             )
         finally:
+            # Reconstruire le cache après une simulation complète
+            self._motion_cache = self._build_motion_cache(program.motions, nominal_samples)
             self._cached_measured_dh = None
             self._cached_measured_dh_arrays = None
             self._cached_axis_reversed = None
+
+    def simulate_program_incremental(
+        self,
+        program: RobotProgram,
+        dirty_indices: list[int],
+    ) -> ProgramSimulationResult:
+        """Simulation incrémentale : re-simule uniquement les motions dirty et cascade si nécessaire.
+
+        Ne recalcule pas la compensation (appeler compute_compensation séparément si besoin).
+        """
+        if program.brand != RobotProgramBrand.KUKA:
+            return ProgramSimulationResult(warnings=["Format de programme non supporte."])
+        if not self.robot_model.get_has_configuration():
+            return ProgramSimulationResult(warnings=["Charger une configuration robot avant de simuler un programme."])
+
+        self._cached_measured_dh = self._compute_normalized_measured_dh_table()
+        self._rebuild_measured_dh_arrays()
+        total_length_mm = self._estimate_total_path_length_mm(program.motions)
+        self._active_cartesian_step_mm = max(
+            self.MIN_CARTESIAN_SAMPLE_STEP_MM,
+            total_length_mm / max(1, self.MAX_TRAJECTORY_SAMPLES),
+        )
+
+        try:
+            nominal_samples = self._simulate_incremental(program.motions, set(dirty_indices))
+        finally:
+            self._cached_measured_dh = None
+            self._cached_measured_dh_arrays = None
+            self._cached_axis_reversed = None
+
+        return ProgramSimulationResult(
+            nominal_samples=nominal_samples,
+            warnings=list(program.warnings),
+        )
+
+    def _build_motion_cache(
+        self,
+        motions: list[RobotProgramMotion],
+        all_samples: list[ProgramSimulationSample],
+    ) -> list[_MotionSimCacheEntry]:
+        """Construit le cache à partir des samples d'une simulation complète."""
+        if not motions:
+            return []
+
+        # Grouper les samples par source_line (correspondance approximative)
+        samples_by_line: dict[int, list[ProgramSimulationSample]] = defaultdict(list)
+        for s in all_samples:
+            samples_by_line[int(s.source_line)].append(s)
+
+        cache: list[_MotionSimCacheEntry] = []
+        prev_joints: tuple = tuple(self.robot_model.get_joints())
+        prev_pose: Pose6 = Pose6.zeros()
+
+        for motion in motions:
+            sig = _motion_signature(motion)
+            motion_samples = samples_by_line.get(int(motion.line_number), [])
+
+            if not motion_samples:
+                cache.append(_MotionSimCacheEntry(
+                    signature=sig,
+                    start_joints=prev_joints,
+                    start_pose=prev_pose,
+                    relative_samples=[],
+                    end_joints=prev_joints,
+                    end_pose=prev_pose,
+                    duration_s=0.0,
+                ))
+                continue
+
+            t0 = float(motion_samples[0].time_s)
+            relative = [
+                replace(s, time_s=float(s.time_s) - t0) for s in motion_samples
+            ]
+            end_joints = tuple(motion_samples[-1].joints_deg.to_list())
+            end_pose = motion_samples[-1].nominal_pose_base
+            duration_s = float(motion_samples[-1].time_s) - float(motion_samples[0].time_s)
+
+            cache.append(_MotionSimCacheEntry(
+                signature=sig,
+                start_joints=prev_joints,
+                start_pose=prev_pose,
+                relative_samples=relative,
+                end_joints=end_joints,
+                end_pose=end_pose,
+                duration_s=duration_s,
+            ))
+            prev_joints = end_joints
+            prev_pose = end_pose
+
+        return cache
+
+    def _simulate_incremental(
+        self,
+        motions: list[RobotProgramMotion],
+        dirty: set[int],
+    ) -> list[ProgramSimulationSample]:
+        """Simule la liste de motions en réutilisant le cache pour les motions inchangés."""
+        start_state = self._resolve_program_start_state(motions)
+        current_joints = start_state.initial_joints_deg.to_list()
+        current_pose = start_state.initial_pose_base.copy()
+        current_time_s = 0.0
+        all_samples: list[ProgramSimulationSample] = []
+
+        # Redimensionner le cache si le nombre de motions a changé
+        while len(self._motion_cache) < len(motions):
+            self._motion_cache.append(_MotionSimCacheEntry(
+                signature="", start_joints=(), start_pose=Pose6.zeros(),
+                relative_samples=[], end_joints=(), end_pose=Pose6.zeros(), duration_s=0.0,
+            ))
+
+        if start_state.initial_sample_motion is not None:
+            initial_tool = self._tool_from_pose(start_state.initial_sample_motion.tool_pose)
+            all_samples.append(self._build_sample(0.0, start_state.initial_sample_motion, current_joints, initial_tool))
+
+        new_cache: list[_MotionSimCacheEntry] = []
+
+        for idx, motion in enumerate(start_state.remaining_motions):
+            actual_idx = idx + (1 if start_state.initial_sample_motion is not None else 0)
+            sig = _motion_signature(motion)
+            cached = self._motion_cache[actual_idx] if actual_idx < len(self._motion_cache) else None
+
+            start_joints_tuple = tuple(current_joints)
+            cache_valid = (
+                cached is not None
+                and actual_idx not in dirty
+                and cached.signature == sig
+                and cached.start_joints == start_joints_tuple
+                and cached.start_pose == current_pose
+            )
+
+            if cache_valid and cached is not None:
+                # Réutiliser les samples du cache en décalant les temps
+                restitched = [
+                    replace(s, time_s=float(s.time_s) + current_time_s)
+                    for s in cached.relative_samples
+                ]
+                all_samples.extend(restitched)
+                current_joints = list(cached.end_joints)
+                current_pose = cached.end_pose
+                current_time_s += cached.duration_s
+                new_cache.append(cached)
+                continue
+
+            # Resimulation nécessaire
+            motion_tool = self._tool_from_pose(motion.tool_pose)
+            generated = self._simulate_motion(motion, current_pose, current_joints, current_time_s, motion_tool)
+
+            if generated:
+                t0 = float(generated[0].time_s)
+                relative = [replace(s, time_s=float(s.time_s) - t0) for s in generated]
+                end_joints = tuple(generated[-1].joints_deg.to_list())
+                end_pose = generated[-1].nominal_pose_base
+                duration_s = float(generated[-1].time_s) - t0
+
+                # Cascade si end_state diffère
+                if cached is not None and (cached.end_joints != end_joints or cached.end_pose != end_pose):
+                    if actual_idx + 1 < len(motions):
+                        dirty.add(actual_idx + 1)
+
+                new_entry = _MotionSimCacheEntry(
+                    signature=sig,
+                    start_joints=start_joints_tuple,
+                    start_pose=current_pose,
+                    relative_samples=relative,
+                    end_joints=end_joints,
+                    end_pose=end_pose,
+                    duration_s=duration_s,
+                )
+                all_samples.extend(generated)
+                current_joints = list(end_joints)
+                current_pose = end_pose
+                current_time_s = float(generated[-1].time_s)
+            else:
+                new_entry = _MotionSimCacheEntry(
+                    signature=sig,
+                    start_joints=start_joints_tuple,
+                    start_pose=current_pose,
+                    relative_samples=[],
+                    end_joints=start_joints_tuple,
+                    end_pose=current_pose,
+                    duration_s=0.0,
+                )
+
+            new_cache.append(new_entry)
+
+        self._motion_cache = new_cache
+        return all_samples
 
     def build_error_curves(
         self,
@@ -326,6 +546,13 @@ class ProgramSimulator:
             step_time_s = duration_s / max(1, intervals)
             path = self._circle_pose_points(current_pose_base, via_pose_base, target_pose_base, intervals)
             return self._simulate_cartesian_path(motion, path, current_joints_deg, current_time_s, motion_tool, step_time_s)
+        if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+            # Le TCP ne se déplace pas ; on émet un unique sample au temps courant + durée estimée
+            _EXTERNAL_AXIS_DEFAULT_DURATION_S = 1.0
+            end_time_s = current_time_s + _EXTERNAL_AXIS_DEFAULT_DURATION_S
+            return [
+                self._build_sample(end_time_s, motion, current_joints_deg, motion_tool)
+            ]
         return []
 
     # =========================================================================
