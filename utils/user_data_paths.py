@@ -44,6 +44,7 @@ def _user_data_directories(root: Path) -> list[Path]:
         _resolve_project_directory("user_data/tools", root),
         _resolve_project_directory(WorkspaceModel.DEFAULT_WORKSPACE_DIRECTORY, root),
         _resolve_project_directory(MeasurementController.DEFAULT_MEASUREMENTS_DIRECTORY, root),
+        _resolve_project_directory("user_data/programs", root),
         get_trajectories_directory(create=True, root_dir=root),
     ]
 

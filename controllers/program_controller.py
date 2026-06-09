@@ -24,16 +24,20 @@ from models.robot_program import (
 )
 
 from models.external_axes_model import ExternalAxesModel
+from models.program_generation_settings import ProgramGenerationSettings
 from models.robot_model import RobotModel
-from models.robot_program import ProgramBaseSource
+from models.robot_program import MotionRole, ProgramBaseSource, ProgramOrigin
 from models.tool_model import ToolModel
+from models.types.approach_retract import ApproachAxisRef
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6
 from models.workspace_model import WorkspaceModel
 from utils.reference_frame_utils import matrix_to_pose, pose_to_matrix
 from utils.program_simulator import ProgramSimulator
 from utils.mgi import RobotTool
-from utils.robot_program_kuka import export_kuka_src_program, load_kuka_src_program
+from utils.aptsource_parser import load_aptsource_program
+from utils.catnc_parser import load_catnc_program
+from utils.robot_program_kuka import export_kuka_src_program, generate_program_to_path, load_kuka_src_program
 from widgets.program_view.program_base_dialog import ProgramBaseDialog
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
@@ -145,6 +149,7 @@ class ProgramController:
         self._simulation_dirty = False
         self._program_dirty = False
         self._clean_status_text = ProgramController.STATUS_NONE
+        self._generation_settings: ProgramGenerationSettings = ProgramGenerationSettings()
         self._setup_connections()
         self._refresh_view()
 
@@ -217,7 +222,7 @@ class ProgramController:
             self.program_view,
             "Importer programme robot",
             str(self.DEFAULT_PROGRAMS_DIR),
-            "Programmes KUKA (*.src);;Tous les fichiers (*.*)",
+            "KUKA (*.src);;APT Source (*.apt *.aptsource *.cls *.cl);;CATNC (*.nc *.cnc *.mpf *.gcode);;Tous (*.*)",
         )
 
         if not file_path:
@@ -260,11 +265,11 @@ class ProgramController:
         if self.current_program is None:
             return
         try:
-            export_kuka_src_program(
+            generation_settings = getattr(self, "_generation_settings", None)
+            generate_program_to_path(
                 file_path,
-                self.current_program.source_text,
-                self.current_program.motions,
-                self.current_program.program_base_pose,
+                self.current_program,
+                generation_settings,
             )
         except OSError as exc:
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible d'enregistrer le programme.\n{exc}")
@@ -278,23 +283,38 @@ class ProgramController:
 
 
     def _load_program_from_path(self, file_path: str) -> None:
+        from models.robot_program import ProgramOrigin
         try:
-            if Path(file_path).suffix.lower() != ".src":
-                QMessageBox.warning(
-                    self.program_view,
-                    "Programme robot",
-                    "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
-                )
-                return
-            loaded = load_kuka_src_program(file_path)
-            self._manual_base = loaded.program_base_pose.copy()
+            suffix = Path(file_path).suffix.lower()
+            if suffix in {".apt", ".aptsource", ".cls", ".cl"}:
+                loaded = load_aptsource_program(file_path)
+            elif suffix in {".nc", ".cnc", ".mpf", ".gcode"}:
+                loaded = load_catnc_program(file_path)
+            else:
+                loaded = load_kuka_src_program(file_path)
+
+            is_imported = loaded.origin in {ProgramOrigin.IMPORTED_APT, ProgramOrigin.IMPORTED_CATNC}
+
+            if is_imported:
+                # Programmes FAO : base pièce, outil courant
+                self._base_source = ProgramBaseSource.WORKPIECE
+                self._tool_source = "CURRENT"
+                self.config_widget.set_tool_source("CURRENT", emit_signal=False)
+                self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
+            else:
+                self._manual_base = loaded.program_base_pose.copy()
+                self._tool_source = "PROGRAM"
+                self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
+                self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
+
             effective = self._compute_effective_base()
-            self.current_program = self._program_with_updated_base_pose(loaded, effective)
-            self._tool_source = "PROGRAM"
+            program_with_base = self._program_with_updated_base_pose(loaded, effective)
+            if is_imported:
+                self.current_program = self._rebuild_derived_motions(program_with_base, self._generation_settings)
+            else:
+                self.current_program = program_with_base
             self._program_dirty = False
             self._clean_status_text = ProgramController.STATUS_LOADED
-            self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
-            self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
             self._apply_program_tool()
             self._recompute_current_program()
         except (OSError, ValueError) as exc:
@@ -2393,4 +2413,163 @@ class ProgramController:
             segments.append((current_points, color))
 
         return segments
+
+    # ---------------------------------------------------------------------------
+    # Réglages de génération (HOME / approche / retrait / header / approximation)
+    # ---------------------------------------------------------------------------
+
+    def get_generation_settings(self) -> ProgramGenerationSettings:
+        return self._generation_settings
+
+    def set_generation_settings(self, settings: ProgramGenerationSettings) -> None:
+        self._generation_settings = settings
+        if self.current_program is not None:
+            self.current_program = self._rebuild_derived_motions(self.current_program, settings)
+            self._program_dirty = True
+            self._recompute_current_program(reset_modes=False)
+
+    def get_generation_settings_dict(self) -> dict:
+        return self._generation_settings.to_dict()
+
+    def load_generation_settings_dict(self, data: dict) -> None:
+        self._generation_settings = ProgramGenerationSettings.from_dict(data)
+
+    def _rebuild_derived_motions(
+        self,
+        program: RobotProgram,
+        settings: ProgramGenerationSettings,
+    ) -> RobotProgram:
+        """Retire les motions dérivées (rôle ≠ NORMAL) et reconstruit HOME/APPROACH/RETRACT."""
+        # Garder uniquement les NORMAL
+        normal_motions = [m for m in program.motions if m.role == MotionRole.NORMAL]
+
+        derived_prefix: list[RobotProgramMotion] = []
+        derived_suffix: list[RobotProgramMotion] = []
+
+        effective_base = self._compute_effective_base()
+
+        if settings.home_enabled:
+            home_joints = self.robot_model.get_home_position()
+            home_target = RobotProgramTarget(
+                target_type=RobotProgramTargetType.JOINT,
+                joint_angles=home_joints,
+            )
+            home_start = RobotProgramMotion(
+                mode=RobotProgramMotionMode.PTP,
+                target=home_target,
+                line_number=0,
+                source="; HOME",
+                base_pose=effective_base,
+                role=MotionRole.HOME_START,
+            )
+            home_end = replace(home_start, role=MotionRole.HOME_END)
+            derived_prefix.append(home_start)
+            derived_suffix.append(home_end)
+
+        first_cartesian = next(
+            (m for m in normal_motions if m.target.target_type == RobotProgramTargetType.CARTESIAN),
+            None,
+        )
+        last_cartesian = next(
+            (m for m in reversed(normal_motions) if m.target.target_type == RobotProgramTargetType.CARTESIAN),
+            None,
+        )
+
+        if settings.approach.enabled and first_cartesian is not None:
+            approach_pose = self._compute_offset_pose(
+                first_cartesian.target.cartesian_pose,
+                first_cartesian.tool_pose,
+                first_cartesian.base_pose,
+                settings.approach.axis_ref,
+                settings.approach.distance_mm,
+            )
+            approach_target = RobotProgramTarget(
+                target_type=RobotProgramTargetType.CARTESIAN,
+                cartesian_pose=approach_pose,
+            )
+            approach_motion = replace(
+                first_cartesian,
+                mode=RobotProgramMotionMode.LINEAR,
+                target=approach_target,
+                cp_speed_mps=settings.approach.speed_mps,
+                role=MotionRole.APPROACH,
+                line_number=0,
+                source="; APPROACH",
+            )
+            derived_prefix.append(approach_motion)
+
+        if settings.retract.enabled and last_cartesian is not None:
+            retract_pose = self._compute_offset_pose(
+                last_cartesian.target.cartesian_pose,
+                last_cartesian.tool_pose,
+                last_cartesian.base_pose,
+                settings.retract.axis_ref,
+                settings.retract.distance_mm,
+            )
+            retract_target = RobotProgramTarget(
+                target_type=RobotProgramTargetType.CARTESIAN,
+                cartesian_pose=retract_pose,
+            )
+            retract_motion = replace(
+                last_cartesian,
+                mode=RobotProgramMotionMode.LINEAR,
+                target=retract_target,
+                cp_speed_mps=settings.retract.speed_mps,
+                role=MotionRole.RETRACT,
+                line_number=0,
+                source="; RETRACT",
+            )
+            derived_suffix.insert(0, retract_motion)
+
+        all_motions = derived_prefix + normal_motions + derived_suffix
+        return replace(program, motions=all_motions)
+
+    def _compute_offset_pose(
+        self,
+        target_pose: Pose6,
+        tool_pose: Pose6,
+        base_pose: Pose6,
+        axis_ref: ApproachAxisRef,
+        distance_mm: float,
+    ) -> Pose6:
+        """Calcule une pose décalée de distance_mm dans la direction axis_ref."""
+        import utils.math_utils as math_utils
+
+        # Axe de décalage en repère robot
+        if axis_ref == ApproachAxisRef.TOOL_Z:
+            # Z outil au point cible
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            T_target_in_prog = math_utils.pose_zyx_to_matrix(target_pose)
+            T_target_in_robot = T_base @ T_target_in_prog
+            direction = T_target_in_robot[:3, 2]
+        elif axis_ref == ApproachAxisRef.PIECE_X:
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            direction = T_base[:3, 0]
+        elif axis_ref == ApproachAxisRef.PIECE_Y:
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            direction = T_base[:3, 1]
+        else:  # PIECE_Z
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            direction = T_base[:3, 2]
+
+        norm = float(np.linalg.norm(direction))
+        if norm < 1e-9:
+            return target_pose
+
+        direction = direction / norm
+
+        # Décalage en repère programme
+        T_base = math_utils.pose_zyx_to_matrix(base_pose)
+        T_base_inv = math_utils.invert_homogeneous_transform(T_base)
+        offset_robot = direction * distance_mm
+        offset_prog = T_base_inv[:3, :3] @ offset_robot
+
+        return Pose6(
+            target_pose.x + offset_prog[0],
+            target_pose.y + offset_prog[1],
+            target_pose.z + offset_prog[2],
+            target_pose.a,
+            target_pose.b,
+            target_pose.c,
+        )
 

@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import numpy as np
-from models.types import Pose6
+from models.types import Pose6, XYZ3
 
 # ============================================================================
 # RÉGION: Parsing et utilitaires
@@ -445,3 +447,53 @@ def pair_cubic_quintic_transition(t: float) -> tuple[float, float]:
     t3 = t2 * t
 
     return -2 * t2 * t + 3 * t2, 6 * t3*t2 - 15 * t2*t2 + 10 * t3
+
+
+# ============================================================================
+# RÉGION: Orientation depuis vecteur axe-outil
+# ============================================================================
+
+def orientation_from_tool_axis(tool_axis: XYZ3, reference: XYZ3 | None = None) -> Pose6:
+    """Calcule une Pose6 (position nulle, orientation A/B/C) dont l'axe Z outil = tool_axis normalisé.
+
+    Le degré de liberté en rotation autour de Z (indéterminé par le seul vecteur axe) est fixé par
+    la convention de référence : l'axe X résulte du rejet de `reference` dans le plan perpendiculaire
+    à Z (Gram-Schmidt), puis Y = Z × X. `reference` vaut par défaut X pièce (1, 0, 0).
+
+    On ne compose jamais les angles d'Euler à la main : on construit la matrice R puis on extrait
+    A/B/C via rotation_matrix_to_euler_zyx — conforme à la mémoire KUKA orientation-jog.
+    """
+    if reference is None:
+        reference = XYZ3(1.0, 0.0, 0.0)
+
+    z = np.array([tool_axis.x, tool_axis.y, tool_axis.z], dtype=float)
+    z_norm = float(np.linalg.norm(z))
+    if z_norm < 1e-9:
+        return Pose6(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    z = z / z_norm
+
+    ref = np.array([reference.x, reference.y, reference.z], dtype=float)
+    ref_norm = float(np.linalg.norm(ref))
+    if ref_norm < 1e-9:
+        ref = np.array([1.0, 0.0, 0.0], dtype=float)
+    else:
+        ref = ref / ref_norm
+
+    # Gram-Schmidt : rejeter ref dans le plan ⊥ Z
+    x = ref - np.dot(ref, z) * z
+    x_norm = float(np.linalg.norm(x))
+    if x_norm < 1e-9:
+        # ref est colinéaire à Z : choisir un vecteur orthogonal arbitraire
+        perp = np.array([0.0, 1.0, 0.0], dtype=float)
+        if abs(np.dot(perp, z)) > 0.9:
+            perp = np.array([1.0, 0.0, 0.0], dtype=float)
+        x = perp - np.dot(perp, z) * z
+        x = x / float(np.linalg.norm(x))
+    else:
+        x = x / x_norm
+
+    y = np.cross(z, x)
+
+    R = np.column_stack([x, y, z])  # colonnes = axes X, Y, Z de l'outil
+    A, B, C = rotation_matrix_to_euler_zyx(R)
+    return Pose6(0.0, 0.0, 0.0, float(A), float(B), float(C))
