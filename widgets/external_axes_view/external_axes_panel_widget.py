@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal, QSize
+from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import (
     QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMenu, QPushButton, QSplitter, QVBoxLayout, QWidget,
@@ -73,6 +74,7 @@ class ExternalAxesPanelWidget(QWidget):
         self.current_config_name_field.setReadOnly(True)
         self.current_config_name_field.setText("Aucune configuration")
         self.current_config_name_field.setMinimumWidth(220)
+        self._apply_current_config_field_style()
         fields_layout.addWidget(self.current_config_name_field, 0, 1)
 
         action_button_size = 36
@@ -176,6 +178,17 @@ class ExternalAxesPanelWidget(QWidget):
         if self.current_config_name_field is None:
             return
         self.current_config_name_field.setText(file_name or "Aucune configuration")
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        super().changeEvent(event)
+        if event.type() == event.Type.PaletteChange:
+            self._apply_current_config_field_style()
+
+    def _apply_current_config_field_style(self) -> None:
+        if self.current_config_name_field is None:
+            return
+        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.current_config_name_field.setStyleSheet(f"color: {accent};")
 
     def set_configuration_status(self, text: str, color: str) -> None:
         if self.status_label is None:

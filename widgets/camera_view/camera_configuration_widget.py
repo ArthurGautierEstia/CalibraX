@@ -430,10 +430,9 @@ class CameraConfigurationWidget(QWidget):
         self.current_config_label = QLabel("Aucune configuration")
         self.current_config_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.current_config_label.setMinimumWidth(220)
-        self.current_config_label.setStyleSheet(
-            "border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: #ff8c00;"
-        )
-        file_row.addWidget(self.current_config_label, 1)
+        self._apply_current_config_label_style()
+        self.current_config_label.setFixedHeight(self.current_config_label.sizeHint().height())
+        file_row.addWidget(self.current_config_label, 1, Qt.AlignmentFlag.AlignVCenter)
 
         action_row = QHBoxLayout()
         self.load_button = QPushButton("...")
@@ -502,6 +501,17 @@ class CameraConfigurationWidget(QWidget):
     def set_configuration_status(self, text: str, color: str = "#808080") -> None:
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        super().changeEvent(event)
+        if event.type() == event.Type.PaletteChange:
+            self._apply_current_config_label_style()
+
+    def _apply_current_config_label_style(self) -> None:
+        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.current_config_label.setStyleSheet(
+            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent};"
+        )
 
     def set_current_file_path(self, file_path: str) -> None:
         normalized = str(file_path or "").strip()
