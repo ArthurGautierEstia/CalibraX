@@ -277,6 +277,13 @@ class MainController(QObject):
         generation_settings_data = startup.get("program_generation_settings") or {}
         if generation_settings_data:
             self.program_controller.load_generation_settings_dict(generation_settings_data)
+        from models.krl_header_file import load_header_template
+        loaded_header = load_header_template()
+        self.program_controller._generation_settings.header_text = loaded_header
+        self.program_controller.generation_widget.set_settings(
+            self.program_controller._generation_settings
+        )
+        self.program_controller.generation_widget.set_header_text(loaded_header)
 
         self._startup_completed = True
         self._schedule_session_save()

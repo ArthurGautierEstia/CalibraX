@@ -5,6 +5,7 @@ from models.tool_model import ToolModel
 from models.workspace_model import WorkspaceModel
 from widgets.program_view.program_actions_widget import ProgramActionsWidget
 from widgets.program_view.program_config_widget import ProgramConfigWidget
+from widgets.program_view.program_generation_widget import ProgramGenerationWidget
 from widgets.program_view.program_graphs_widget import ProgramGraphsWidget
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
 
@@ -21,6 +22,7 @@ class ProgramView(QWidget):
         self.header_widget = ProgramConfigWidget()
         self.config_widget = ProgramKeypointsWidget(robot_model, tool_model, workspace_model)
         self.actions_widget = ProgramActionsWidget()
+        self.generation_widget = ProgramGenerationWidget()
         self.graphs_widget = ProgramGraphsWidget()
         self._setup_ui()
 
@@ -34,6 +36,7 @@ class ProgramView(QWidget):
         content_layout.addWidget(self.header_widget)
         content_layout.addWidget(self.config_widget)
         content_layout.addWidget(self.actions_widget)
+        content_layout.addWidget(self.generation_widget)
         content_layout.addWidget(self.graphs_widget)
         content_layout.addStretch()
 
@@ -48,6 +51,9 @@ class ProgramView(QWidget):
 
     def get_actions_widget(self) -> ProgramActionsWidget:
         return self.actions_widget
+
+    def get_generation_widget(self) -> ProgramGenerationWidget:
+        return self.generation_widget
 
     def get_graphs_widget(self) -> ProgramGraphsWidget:
         return self.graphs_widget

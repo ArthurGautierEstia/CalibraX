@@ -102,6 +102,7 @@ class ProgramController:
         self.header_widget = self.program_view.get_header_widget()
         self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
+        self.generation_widget = self.program_view.get_generation_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
         self.playback_widgets: list[ProgramPlaybackWidget] = [self.playback_widget]
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
@@ -150,6 +151,10 @@ class ProgramController:
         self._program_dirty = False
         self._clean_status_text = ProgramController.STATUS_NONE
         self._generation_settings: ProgramGenerationSettings = ProgramGenerationSettings()
+        self._krl_preview_timer = QTimer()
+        self._krl_preview_timer.setSingleShot(True)
+        self._krl_preview_timer.setInterval(400)
+        self._krl_preview_timer.timeout.connect(self._refresh_krl_preview)
         self._setup_connections()
         self._refresh_view()
 
@@ -183,6 +188,9 @@ class ProgramController:
         self.external_axes_model.mount_topology_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.axes_changed.connect(self._on_external_chain_changed)
         self.workpiece_controller.workpiece_model.workpiece_changed.connect(self._on_workpiece_changed)
+        self.generation_widget.generationSettingsChanged.connect(self._on_generation_settings_changed)
+        self.generation_widget.saveHeaderRequested.connect(self._on_save_header_requested)
+        self.generation_widget.resetHeaderRequested.connect(self._on_reset_header_requested)
 
     def register_playback_widget(self, playback_widget: ProgramPlaybackWidget) -> None:
         if playback_widget in self.playback_widgets:
@@ -461,6 +469,7 @@ class ProgramController:
         self.actions_widget.set_compensation_enabled(self.current_program is not None and not self._simulation_dirty)
 
         self._refresh_view()
+        self._krl_preview_timer.start()
 
 
     def _refresh_view(self) -> None:
@@ -535,7 +544,52 @@ class ProgramController:
             return
 
         self.config_widget.set_program_loaded(True)
+        roles, approx_texts, cible_overrides = self._build_row_metadata()
+        self.config_widget.set_row_metadata(roles, approx_texts, cible_overrides)
         self.config_widget.set_keypoints(self._display_keypoints)
+
+    def _build_row_metadata(self) -> tuple[list[str], list[str], list[str | None]]:
+        from models.robot_program import MotionRole, RobotProgramMotionMode
+        from models.types.motion_approximation import ApproximationMode
+        roles: list[str] = []
+        approx_texts: list[str] = []
+        cible_overrides: list[str | None] = []
+        if self.current_program is None:
+            return roles, approx_texts, cible_overrides
+
+        for ref in self._display_target_refs:
+            motion = self.current_program.motions[ref.motion_index]
+            roles.append(motion.role.value)
+
+            approx = motion.approximation
+            if approx.mode == ApproximationMode.C_DIS:
+                approx_texts.append(f"C_DIS={approx.value:.3f}")
+            elif approx.mode == ApproximationMode.C_VEL:
+                approx_texts.append(f"C_VEL={approx.value:.1f}")
+            else:
+                approx_texts.append("")
+
+            cible: str | None = None
+            if motion.role == MotionRole.HOME_START or motion.role == MotionRole.HOME_END:
+                cible = "HOME"
+            elif motion.role == MotionRole.APPROACH:
+                cible = "Approche"
+            elif motion.role == MotionRole.RETRACT:
+                cible = "Retrait"
+            elif motion.role == MotionRole.EXTERNAL_SETUP:
+                cible = "Axe ext."
+            elif motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                if motion.external_axis_target is not None and motion.external_axis_target.values:
+                    e_parts = " ".join(
+                        f"E{v.joint_index + 1}={v.value:.1f}"
+                        for v in motion.external_axis_target.values
+                    )
+                    cible = f"Axe ext. {e_parts}"
+                else:
+                    cible = "Axe ext."
+            cible_overrides.append(cible)
+
+        return roles, approx_texts, cible_overrides
 
 
 
@@ -2478,6 +2532,41 @@ class ProgramController:
 
     def load_generation_settings_dict(self, data: dict) -> None:
         self._generation_settings = ProgramGenerationSettings.from_dict(data)
+
+    def _on_generation_settings_changed(self, settings_dict: dict) -> None:
+        settings = ProgramGenerationSettings.from_dict(settings_dict)
+        # header_text vient du widget generation, on le préserve
+        settings.header_text = self.generation_widget.get_header_text()
+        self.set_generation_settings(settings)
+        self._krl_preview_timer.start()
+
+    def _on_save_header_requested(self, text: str) -> None:
+        from models.krl_header_file import save_header_template
+        save_header_template(text)
+        self._generation_settings.header_text = text
+
+    def _on_reset_header_requested(self) -> None:
+        from models.krl_header_file import load_header_template, reset_header_template
+        reset_header_template()
+        loaded = load_header_template()
+        self._generation_settings.header_text = loaded
+        self.generation_widget.set_header_text(loaded)
+
+    def _refresh_krl_preview(self) -> None:
+        if self.current_program is None:
+            self.generation_widget.set_krl_preview_text("")
+            return
+        from utils.robot_program_kuka import generate_kuka_src_text
+        settings = self._generation_settings
+        settings.header_text = self.generation_widget.get_header_text()
+        external_axes_order = [axis.axis_id for axis in self.external_axes_model.get_axes()]
+        try:
+            text = generate_kuka_src_text(
+                self.current_program, settings.header_text, settings, external_axes_order
+            )
+        except Exception:
+            text = "Erreur lors de la génération KRL."
+        self.generation_widget.set_krl_preview_text(text)
 
     def _rebuild_derived_motions(
         self,
