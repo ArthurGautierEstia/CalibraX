@@ -51,7 +51,7 @@ class ExternalAxesController(QObject):
     STATUS_SAVED = "Configuration axe externe enregistrée"
     STATUS_LOADED = "Configuration axe externe chargée"
     STATUS_UP_TO_DATE = "Configuration axe externe à jour"
-    STATUS_OK_COLOR = "#2e7d32"
+    STATUS_OK_COLOR = "#6fcf97"
     validation_state_changed = pyqtSignal(bool)
 
     def __init__(
@@ -149,6 +149,9 @@ class ExternalAxesController(QObject):
 
     def get_current_config_file(self) -> str:
         return self._current_config_file
+
+    def is_dirty(self) -> bool:
+        return self._is_dirty()
 
     def _has_axes_configuration(self) -> bool:
         return bool(self.model.get_axes())
@@ -341,6 +344,9 @@ class ExternalAxesController(QObject):
             }
         )
         self._mark_as_none_reference()
+
+    def new_configuration(self) -> None:
+        self._on_new_config()
 
     def load_configuration_from_path(self, file_path: str) -> bool:
         if not file_path:

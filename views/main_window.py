@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
-from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPainterPath, QPixmap
+from PyQt6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -33,6 +34,18 @@ class MainTabsBar(QTabBar):
 
 
 class MainWindow(QMainWindow):
+    new_project_requested = pyqtSignal()
+    open_project_requested = pyqtSignal()
+    open_recent_project_requested = pyqtSignal(str)
+    save_project_requested = pyqtSignal()
+    save_project_as_requested = pyqtSignal()
+    verify_configurations_requested = pyqtSignal()
+    fit_scene_view_requested = pyqtSignal()
+    manage_viewer_themes_requested = pyqtSignal()
+    application_theme_changed = pyqtSignal(str)
+    show_keyboard_shortcuts_requested = pyqtSignal()
+    show_about_requested = pyqtSignal()
+
     ROBOT_TAB_INDEX = 0
     TOOL_TAB_INDEX = 1
     EXTERNAL_AXES_TAB_INDEX = 2
@@ -58,6 +71,9 @@ class MainWindow(QMainWindow):
         self.main_splitter: QSplitter | None = None
         self._initial_splitter_sizes_applied = False
         self._maximize_on_first_show = False
+        self._was_maximized_before_fullscreen = False
+        self._geometry_before_fullscreen = None
+        self._recent_project_actions: list[QAction] = []
 
         self.robot_view = RobotView()
         self.tool_view = ToolView()
@@ -84,13 +100,15 @@ class MainWindow(QMainWindow):
         self.show()
 
     def _setup_ui(self) -> None:
+        self._setup_menu_bar()
+
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
 
         self.cell_configuration_tabs.addTab(self.robot_view, "Robot")
         self.cell_configuration_tabs.addTab(self.tool_view, "Tool")
         self.cell_configuration_tabs.addTab(self.external_axes_view, "Axe externe")
-        self.cell_configuration_tabs.addTab(self.workspace_view, "Workspace")
+        self.cell_configuration_tabs.addTab(self.workspace_view, "Scene")
         self.cell_configuration_tabs.addTab(self.workpiece_view, "Pièce")
         self.cell_configuration_tabs.addTab(self.camera_view, "Camera")
 
@@ -128,6 +146,130 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
         layout.addWidget(self.main_splitter)
 
+    def _setup_menu_bar(self) -> None:
+        app = QApplication.instance()
+        menu_font = app.font() if app is not None else self.font()
+        menu_font.setPointSize(max(8, menu_font.pointSize() - 1))
+        self.menuBar().setFont(menu_font)
+
+        project_menu = self.menuBar().addMenu("Projet")
+        project_menu.setFont(menu_font)
+
+        self.action_new_project = QAction("Nouveau projet", self)
+        self.action_new_project.setShortcut("Ctrl+N")
+        self.action_new_project.triggered.connect(self.new_project_requested.emit)
+        project_menu.addAction(self.action_new_project)
+
+        self.action_open_project = QAction("Charger projet...", self)
+        self.action_open_project.setShortcut("Ctrl+O")
+        self.action_open_project.triggered.connect(self.open_project_requested.emit)
+        project_menu.addAction(self.action_open_project)
+
+        self.action_save_project = QAction("Enregistrer projet", self)
+        self.action_save_project.setShortcut("Ctrl+S")
+        self.action_save_project.triggered.connect(self.save_project_requested.emit)
+        project_menu.addAction(self.action_save_project)
+
+        self.action_save_project_as = QAction("Enregistrer projet sous...", self)
+        self.action_save_project_as.setShortcut("Ctrl+Shift+S")
+        self.action_save_project_as.triggered.connect(self.save_project_as_requested.emit)
+        project_menu.addAction(self.action_save_project_as)
+
+        project_menu.addSeparator()
+        self.recent_projects_menu = project_menu.addMenu("Derniers projets")
+        self.recent_projects_menu.setFont(menu_font)
+        self.recent_projects_menu.setEnabled(False)
+        project_menu.addSeparator()
+
+        self.action_quit = QAction("Quitter", self)
+        self.action_quit.setShortcut("Ctrl+Q")
+        self.action_quit.triggered.connect(self.close)
+        project_menu.addAction(self.action_quit)
+
+        configuration_menu = self.menuBar().addMenu("Configuration")
+        configuration_menu.setFont(menu_font)
+        self.action_verify_configurations = QAction("Vérifier les configurations", self)
+        self.action_verify_configurations.triggered.connect(self.verify_configurations_requested.emit)
+        configuration_menu.addAction(self.action_verify_configurations)
+
+        display_menu = self.menuBar().addMenu("Affichage")
+        display_menu.setFont(menu_font)
+        self.action_toggle_fullscreen = QAction("Plein écran", self)
+        self.action_toggle_fullscreen.setShortcut("F11")
+        self.action_toggle_fullscreen.triggered.connect(self._toggle_fullscreen)
+        display_menu.addAction(self.action_toggle_fullscreen)
+
+        self.action_fit_scene = QAction("Adapter la vue à la scène", self)
+        self.action_fit_scene.setShortcut("Ctrl+0")
+        self.action_fit_scene.triggered.connect(self.fit_scene_view_requested.emit)
+        display_menu.addAction(self.action_fit_scene)
+
+        display_menu.addSeparator()
+        app_theme_menu = display_menu.addMenu("Thème de l'application")
+        app_theme_menu.setFont(menu_font)
+        self.application_theme_action_group = QActionGroup(self)
+        self.application_theme_action_group.setExclusive(True)
+        self.application_theme_actions: dict[str, QAction] = {}
+        for theme_key, theme_label in (
+            ("system", "Système"),
+            ("light", "Clair"),
+            ("dark", "Sombre"),
+        ):
+            action = QAction(theme_label, self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, key=theme_key: self.application_theme_changed.emit(key))
+            self.application_theme_action_group.addAction(action)
+            app_theme_menu.addAction(action)
+            self.application_theme_actions[theme_key] = action
+        self.set_application_theme_selection("system")
+
+        self.action_manage_viewer_themes = QAction("Thème du viewer", self)
+        self.action_manage_viewer_themes.triggered.connect(self.manage_viewer_themes_requested.emit)
+        display_menu.addAction(self.action_manage_viewer_themes)
+
+        help_menu = self.menuBar().addMenu("Aide")
+        help_menu.setFont(menu_font)
+        self.action_keyboard_shortcuts = QAction("Raccourcis clavier", self)
+        self.action_keyboard_shortcuts.triggered.connect(self.show_keyboard_shortcuts_requested.emit)
+        help_menu.addAction(self.action_keyboard_shortcuts)
+
+        self.action_about = QAction("À propos de CalibraX", self)
+        self.action_about.triggered.connect(self.show_about_requested.emit)
+        help_menu.addAction(self.action_about)
+
+    def set_recent_projects(self, project_paths: list[str]) -> None:
+        self.recent_projects_menu.clear()
+        self._recent_project_actions.clear()
+        for path in project_paths[:10]:
+            action = QAction(path, self)
+            action.triggered.connect(lambda _checked=False, p=path: self.open_recent_project_requested.emit(p))
+            self.recent_projects_menu.addAction(action)
+            self._recent_project_actions.append(action)
+        self.recent_projects_menu.setEnabled(bool(self._recent_project_actions))
+
+    def select_cell_configuration_tab(self, tab_index: int) -> None:
+        self.tabs.setCurrentWidget(self.cell_configuration_tabs)
+        self.cell_configuration_tabs.setCurrentIndex(tab_index)
+
+    def set_application_theme_selection(self, theme_key: str) -> None:
+        normalized = str(theme_key or "").strip().lower()
+        if normalized not in self.application_theme_actions:
+            normalized = "system"
+        self.application_theme_actions[normalized].setChecked(True)
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            if self._was_maximized_before_fullscreen:
+                self.showMaximized()
+            else:
+                self.showNormal()
+                if self._geometry_before_fullscreen is not None:
+                    self.setGeometry(self._geometry_before_fullscreen)
+        else:
+            self._was_maximized_before_fullscreen = self.isMaximized()
+            self._geometry_before_fullscreen = self.geometry()
+            self.showFullScreen()
+
     def set_robot_tab_validated(self, is_validated: bool) -> None:
         self._set_tab_validated(MainWindow.ROBOT_TAB_INDEX, is_validated)
 
@@ -136,6 +278,12 @@ class MainWindow(QMainWindow):
 
     def set_external_axes_tab_validated(self, is_validated: bool) -> None:
         self._set_tab_validated(MainWindow.EXTERNAL_AXES_TAB_INDEX, is_validated)
+
+    def set_workspace_tab_validated(self, is_validated: bool) -> None:
+        self._set_tab_validated(MainWindow.WORKSPACE_TAB_INDEX, is_validated)
+
+    def set_workpiece_tab_validated(self, is_validated: bool) -> None:
+        self._set_tab_validated(MainWindow.WORKPIECE_TAB_INDEX, is_validated)
 
     def set_camera_tab_validated(self, is_validated: bool) -> None:
         self._set_tab_validated(MainWindow.CAMERA_TAB_INDEX, is_validated)

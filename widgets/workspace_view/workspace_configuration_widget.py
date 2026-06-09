@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
@@ -22,6 +22,12 @@ from utils.math_utils import safe_float
 from models.types import Pose6
 from models.workspace_cad_element import WorkspaceCadElement
 from models.workspace_primitive_zone_models import WorkspacePrimitiveZoneData
+from utils.config_action_icons import (
+    CONFIG_ACTION_BUTTON_SIZE,
+    CONFIG_ACTION_ICON_SIZE,
+    build_new_icon,
+    build_save_icon,
+)
 from widgets.workspace_view.workspace_primitive_zones_editor_widget import WorkspacePrimitiveZonesEditorWidget
 
 
@@ -29,6 +35,7 @@ class WorkspaceConfigurationWidget(QWidget):
     scene_name_changed = pyqtSignal(str)
     robot_base_pose_world_changed = pyqtSignal(object)
     workspace_save_requested = pyqtSignal()
+    workspace_save_as_requested = pyqtSignal()
     workspace_load_requested = pyqtSignal()
     workspace_clear_requested = pyqtSignal()
     workspace_cad_elements_changed = pyqtSignal(list)
@@ -54,6 +61,8 @@ class WorkspaceConfigurationWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.scene_name_line_edit: QLineEdit | None = None
+        self.current_config_label: QLabel | None = None
+        self.status_label: QLabel | None = None
         self._workspace_directory: str = ""
         self._workspace_file_path: str = ""
         self.robot_base_pose_spinboxes: list[QDoubleSpinBox] = []
@@ -64,7 +73,9 @@ class WorkspaceConfigurationWidget(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(self._build_scene_group())
+        layout.setSpacing(6)
+        layout.addLayout(self._build_header())
+        layout.addWidget(self._build_base_offset_group())
         layout.addWidget(self._build_elements_group())
 
         self.tcp_zones_editor = WorkspacePrimitiveZonesEditorWidget(
@@ -98,29 +109,91 @@ class WorkspaceConfigurationWidget(QWidget):
         layout.addWidget(self.collision_zones_editor)
         layout.addStretch()
 
-    def _build_scene_group(self) -> QGroupBox:
-        group = QGroupBox("Scène")
-        layout = QGridLayout(group)
+    def _build_header(self) -> QVBoxLayout:
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(6)
 
-        layout.addWidget(QLabel("Nom scène"), 0, 0)
+        title_row = QHBoxLayout()
+        title_label = QLabel("Configuration scene")
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+
+        self.status_label = QLabel("Configuration non chargée")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(self.status_label)
+        header_layout.addLayout(title_row)
+
+        fields_layout = QGridLayout()
+        fields_layout.setHorizontalSpacing(8)
+        fields_layout.setVerticalSpacing(6)
+
+        current_config_title_label = QLabel("Configuration courante :")
+        current_config_title_label.setMinimumWidth(150)
+        fields_layout.addWidget(current_config_title_label, 0, 0)
+
+        self.current_config_label = QLabel("Aucune configuration")
+        self.current_config_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.current_config_label.setMinimumWidth(220)
+        self._apply_current_config_label_style()
+        self.current_config_label.setFixedHeight(self.current_config_label.sizeHint().height())
+        fields_layout.addWidget(self.current_config_label, 0, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        scene_name_title_label = QLabel("Nom scène :")
+        scene_name_title_label.setMinimumWidth(150)
+        fields_layout.addWidget(scene_name_title_label, 1, 0)
+
         self.scene_name_line_edit = QLineEdit()
         self.scene_name_line_edit.setPlaceholderText("Nom de scène workspace")
         self.scene_name_line_edit.textChanged.connect(self.scene_name_changed.emit)
-        layout.addWidget(self.scene_name_line_edit, 0, 1)
+        self.scene_name_line_edit.setMinimumWidth(220)
+        fields_layout.addWidget(self.scene_name_line_edit, 1, 1)
 
-        load_btn = QPushButton("Charger")
-        load_btn.clicked.connect(self.workspace_load_requested.emit)
-        layout.addWidget(load_btn, 0, 2)
+        fields_layout.setColumnStretch(0, 0)
+        fields_layout.setColumnStretch(1, 1)
 
-        save_btn = QPushButton("Enregistrer")
-        save_btn.clicked.connect(self.workspace_save_requested.emit)
-        layout.addWidget(save_btn, 0, 3)
+        action_row = QHBoxLayout()
+        action_row.addStretch()
+        load_button = QPushButton("...")
+        load_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        load_button.setToolTip("Charger une configuration scene")
+        load_button.clicked.connect(self.workspace_load_requested.emit)
+        action_row.addWidget(load_button)
 
-        clear_btn = QPushButton("Vider")
-        clear_btn.clicked.connect(self.workspace_clear_requested.emit)
-        layout.addWidget(clear_btn, 0, 4)
+        new_button = QPushButton()
+        new_button.setIcon(build_new_icon(self.palette()))
+        new_button.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        new_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        new_button.setToolTip("Créer une nouvelle configuration scene")
+        new_button.clicked.connect(self.workspace_clear_requested.emit)
+        action_row.addWidget(new_button)
 
-        layout.addWidget(QLabel("Base robot dans world"), 1, 0)
+        save_button = QPushButton()
+        save_button.setIcon(build_save_icon(self.palette()))
+        save_button.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        save_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        save_button.setToolTip("Enregistrer la configuration scene courante")
+        save_button.clicked.connect(self.workspace_save_requested.emit)
+        action_row.addWidget(save_button)
+
+        save_as_button = QPushButton()
+        save_as_button.setIcon(build_save_icon(self.palette(), include_pencil=True))
+        save_as_button.setIconSize(CONFIG_ACTION_ICON_SIZE)
+        save_as_button.setFixedSize(CONFIG_ACTION_BUTTON_SIZE, CONFIG_ACTION_BUTTON_SIZE)
+        save_as_button.setToolTip("Enregistrer la configuration scene dans un nouveau fichier JSON")
+        save_as_button.clicked.connect(self.workspace_save_as_requested.emit)
+        action_row.addWidget(save_as_button)
+
+        fields_layout.addLayout(action_row, 2, 0, 1, 2)
+        header_layout.addLayout(fields_layout)
+        return header_layout
+
+    def _build_base_offset_group(self) -> QGroupBox:
+        group = QGroupBox("Décalage de base")
+        layout = QGridLayout(group)
+
+        layout.addWidget(QLabel("Base robot dans world"), 0, 0)
         pose_layout = QVBoxLayout()
         label_width = 16
         spinbox_width = 101
@@ -147,7 +220,8 @@ class WorkspaceConfigurationWidget(QWidget):
                 pose_row.addWidget(spinbox)
             pose_row.addStretch()
             pose_layout.addLayout(pose_row)
-        layout.addLayout(pose_layout, 1, 1, 1, 4)
+        layout.addLayout(pose_layout, 0, 1)
+        layout.setColumnStretch(1, 1)
 
         return group
 
@@ -272,6 +346,31 @@ class WorkspaceConfigurationWidget(QWidget):
 
     def _on_robot_base_pose_world_value_changed(self, _value: float) -> None:
         self.robot_base_pose_world_changed.emit(self.get_robot_base_pose_world())
+
+    def set_configuration_status(self, text: str, color: str = "#808080") -> None:
+        if self.status_label is None:
+            return
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+
+    def set_current_configuration_name(self, configuration_name: str) -> None:
+        if self.current_config_label is None:
+            return
+        name = str(configuration_name or "").strip()
+        self.current_config_label.setText(name or "Aucune configuration")
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        super().changeEvent(event)
+        if event.type() == event.Type.PaletteChange:
+            self._apply_current_config_label_style()
+
+    def _apply_current_config_label_style(self) -> None:
+        if self.current_config_label is None:
+            return
+        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.current_config_label.setStyleSheet(
+            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent};"
+        )
 
     def set_workspace_directory(self, directory: str) -> None:
         self._workspace_directory = str(directory or "").strip()

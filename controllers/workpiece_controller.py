@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import json
 
 import numpy as np
-from PyQt6.QtCore import QObject
-from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from models.external_axes_model import ExternalAxesModel
 from models.tooling_model import ToolingModel
@@ -19,14 +20,22 @@ from views.workpiece_view import WorkpieceView
 from widgets.workpiece_view.tooling_panel_widget import ToolingPanelWidget
 from widgets.workpiece_view.workpiece_config_widget import WorkpieceConfigWidget
 
-import json
-
 _DEFAULT_CONFIG_DIR = str(
     Path(__file__).parent.parent / "default_data" / "piece_configs"
 )
 
+STATUS_OK_COLOR = "#6fcf97"
+STATUS_NONE = "Configuration non chargée"
+STATUS_UNSAVED = "Configuration pièce non enregistrée"
+STATUS_MODIFIED = "Modifications non enregistrées"
+STATUS_SAVED = "Configuration pièce enregistrée"
+STATUS_LOADED = "Configuration pièce chargée"
+STATUS_UP_TO_DATE = "Configuration pièce à jour"
+
 
 class WorkpieceController(QObject):
+    validation_state_changed = pyqtSignal(bool)
+
     def __init__(
         self,
         workpiece_model: WorkpieceModel,
@@ -47,12 +56,109 @@ class WorkpieceController(QObject):
 
         self._tooling_panel: ToolingPanelWidget = workpiece_view.get_tooling_panel()
         self._piece_widget: WorkpieceConfigWidget = workpiece_view.get_piece_config()
+        self._current_config_file = ""
+        self._current_config_display_name = ""
+        self._reference_data: dict | None = None
+        self._has_reference = False
+        self._was_dirty_since_reference = False
+        self._clean_status_text = STATUS_NONE
+        self._validation_icon_visible = False
 
         self._setup_connections()
         self._refresh_parent_frames()
         self._tooling_panel.set_from_model(self.tooling_model)
         self._piece_widget.set_data(self.workpiece_model)
         self._refresh_viewer()
+        self._refresh_configuration_status()
+
+    def _refresh_configuration_header(self) -> None:
+        display_name = self._current_config_display_name
+        if not display_name and self._current_config_file:
+            display_name = os.path.basename(self._current_config_file)
+        self.view.set_current_configuration_name(display_name or "Aucune configuration")
+
+    def get_current_config_file(self) -> str:
+        return self._current_config_file
+
+    def is_dirty(self) -> bool:
+        return self._is_dirty()
+
+    def new_configuration(self) -> None:
+        self._on_new()
+
+    def _has_configuration_content(self, data: dict | None = None) -> bool:
+        if data is None:
+            data = self.get_serializable_state()
+        tooling = data.get("tooling") or {}
+        workpiece = data.get("workpiece") or {}
+        return bool(
+            tooling.get("parent_frame_id")
+            or tooling.get("elements")
+            or workpiece.get("cad_model")
+            or workpiece.get("parent_frame_id")
+            or workpiece.get("pose_in_parent") != Pose6.zeros().to_list()
+            or workpiece.get("workpiece_frame_pose") != Pose6.zeros().to_list()
+        )
+
+    @staticmethod
+    def _normalized_serialized_state(data: dict) -> str:
+        return json.dumps(json.loads(json.dumps(data)), sort_keys=True, ensure_ascii=True)
+
+    def _mark_current_configuration_as_reference(self, clean_status_text: str) -> None:
+        self._reference_data = self.get_serializable_state()
+        self._has_reference = True
+        self._was_dirty_since_reference = False
+        self._clean_status_text = clean_status_text
+        self._refresh_configuration_status()
+
+    def _is_dirty(self) -> bool:
+        if self._reference_data is None:
+            return True
+        return (
+            WorkpieceController._normalized_serialized_state(self.get_serializable_state())
+            != WorkpieceController._normalized_serialized_state(self._reference_data)
+        )
+
+    def _refresh_configuration_status(self) -> None:
+        self._refresh_configuration_header()
+        current_data = self.get_serializable_state()
+        show_validation_icon = self._should_show_validation_icon(current_data)
+        if show_validation_icon != self._validation_icon_visible:
+            self._validation_icon_visible = show_validation_icon
+            self.validation_state_changed.emit(show_validation_icon)
+
+        if not self._has_reference:
+            self.view.set_configuration_status(
+                STATUS_UNSAVED if self._has_configuration_content(current_data) else STATUS_NONE,
+                "#808080",
+            )
+            return
+
+        if self._is_dirty():
+            self._was_dirty_since_reference = True
+            self.view.set_configuration_status(STATUS_MODIFIED, "#d97706")
+            return
+
+        if self._was_dirty_since_reference:
+            self._clean_status_text = STATUS_UP_TO_DATE
+            self._was_dirty_since_reference = False
+        self.view.set_configuration_status(self._clean_status_text, STATUS_OK_COLOR)
+
+    def _should_show_validation_icon(self, current_data: dict | None = None) -> bool:
+        if not self._has_reference:
+            return False
+        if current_data is None:
+            current_data = self.get_serializable_state()
+        if (
+            WorkpieceController._normalized_serialized_state(current_data)
+            != WorkpieceController._normalized_serialized_state(self._reference_data)
+        ):
+            return False
+        return self._clean_status_text in {
+            STATUS_SAVED,
+            STATUS_LOADED,
+            STATUS_UP_TO_DATE,
+        }
 
     # ------------------------------------------------------------------
     # Connexions
@@ -75,7 +181,9 @@ class WorkpieceController(QObject):
 
         # Boutons save/load/clear
         self.view.save_requested.connect(self._on_save)
+        self.view.save_as_requested.connect(self._on_save_as)
         self.view.load_requested.connect(self._on_load)
+        self.view.new_requested.connect(self._on_new)
         self.view.clear_piece_requested.connect(self._on_clear_piece)
 
     # ------------------------------------------------------------------
@@ -95,6 +203,7 @@ class WorkpieceController(QObject):
         # Rebâtir le combo pièce (outillage peut avoir été ajouté/supprimé)
         self._refresh_piece_parent_combo()
         self._refresh_viewer()
+        self._refresh_configuration_status()
 
     def _on_piece_widget_changed(self) -> None:
         data = self._piece_widget.get_data()
@@ -106,6 +215,7 @@ class WorkpieceController(QObject):
         self.workpiece_model.set_workpiece_frame_pose(Pose6(*data["workpiece_frame_pose"]))
         self.workpiece_model.blockSignals(False)
         self._refresh_viewer()
+        self._refresh_configuration_status()
 
     # ------------------------------------------------------------------
     # Réactions modèle → widget
@@ -115,10 +225,12 @@ class WorkpieceController(QObject):
         self._tooling_panel.set_from_model(self.tooling_model)
         self._refresh_piece_parent_combo()
         self._refresh_viewer()
+        self._refresh_configuration_status()
 
     def _on_workpiece_model_changed(self) -> None:
         self._piece_widget.set_data(self.workpiece_model)
         self._refresh_viewer()
+        self._refresh_configuration_status()
 
     def _on_context_changed(self) -> None:
         self._refresh_parent_frames()
@@ -259,40 +371,87 @@ class WorkpieceController(QObject):
         self.workpiece_model.from_dict({})
         self._piece_widget.set_data(self.workpiece_model)
         self._refresh_viewer()
+        self._refresh_configuration_status()
 
     def _on_save(self) -> None:
+        if not self._current_config_file:
+            self._on_save_as()
+            return
+        self._save_to_path(self._current_config_file)
+
+    def _on_save_as(self) -> None:
         os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(
             self.view,
-            "Sauvegarder config pièce",
+            "Enregistrer une configuration pièce",
             _DEFAULT_CONFIG_DIR,
             "JSON (*.json);;All files (*)",
         )
         if not path:
             return
-        data = self.get_serializable_state()
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        self._save_to_path(path)
+
+    def _save_to_path(self, path: str) -> bool:
         try:
+            data = self.get_serializable_state()
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
         except OSError as exc:
-            print(f"Impossible d'enregistrer : {exc}")
+            QMessageBox.warning(self.view, "Erreur sauvegarde", f"Impossible d'enregistrer la configuration pièce.\n{exc}")
+            return False
+        self._current_config_file = str(path)
+        self._current_config_display_name = os.path.basename(self._current_config_file)
+        self._mark_current_configuration_as_reference(STATUS_SAVED)
+        self._refresh_configuration_header()
+        return True
 
     def _on_load(self) -> None:
         os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
         path, _ = QFileDialog.getOpenFileName(
             self.view,
-            "Charger config pièce",
+            "Charger une configuration pièce",
             _DEFAULT_CONFIG_DIR,
             "JSON (*.json);;All files (*)",
         )
         if not path:
             return
+        self.load_configuration_from_path(path, show_errors=True)
+
+    def _on_new(self) -> None:
+        self.tooling_model.from_dict({})
+        self.workpiece_model.from_dict({})
+        self._current_config_file = ""
+        self._current_config_display_name = ""
+        self._reference_data = None
+        self._has_reference = False
+        self._was_dirty_since_reference = False
+        self._clean_status_text = STATUS_NONE
+        self._refresh_parent_frames()
+        self._tooling_panel.set_from_model(self.tooling_model)
+        self._piece_widget.set_data(self.workpiece_model)
+        self._refresh_viewer()
+        self._refresh_configuration_status()
+
+    def load_configuration_from_path(self, path: str, show_errors: bool = False) -> bool:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self.restore_state(data)
         except (OSError, ValueError, KeyError) as exc:
-            print(f"Impossible de charger : {exc}")
+            if show_errors:
+                QMessageBox.warning(
+                    self.view,
+                    "Erreur chargement",
+                    f"Impossible de charger la configuration pièce.\n{exc}",
+                )
+            return False
+        self._current_config_file = str(path)
+        self._current_config_display_name = os.path.basename(self._current_config_file)
+        self._mark_current_configuration_as_reference(STATUS_LOADED)
+        self._refresh_configuration_header()
+        return True
 
     # ------------------------------------------------------------------
     # Sérialisation
@@ -304,7 +463,13 @@ class WorkpieceController(QObject):
             "workpiece": self.workpiece_model.to_dict(),
         }
 
-    def restore_state(self, data: dict) -> None:
+    def restore_state(
+        self,
+        data: dict,
+        mark_as_reference: bool = False,
+        clean_status_text: str = STATUS_LOADED,
+        display_name: str = "",
+    ) -> None:
         if not data:
             return
         tooling_data = data.get("tooling") or {}
@@ -317,3 +482,9 @@ class WorkpieceController(QObject):
         self._tooling_panel.set_from_model(self.tooling_model)
         self._piece_widget.set_data(self.workpiece_model)
         self._refresh_viewer()
+        if mark_as_reference:
+            self._current_config_file = ""
+            self._current_config_display_name = str(display_name or "").strip()
+            self._mark_current_configuration_as_reference(clean_status_text)
+        else:
+            self._refresh_configuration_status()

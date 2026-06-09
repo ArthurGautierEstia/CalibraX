@@ -88,6 +88,9 @@ class CameraController(QObject):
         self._update_configuration_status()
         self.session_state_changed.emit()
 
+    def new_configuration(self) -> None:
+        self._on_new_requested()
+
     def _on_load_requested(self) -> None:
         selected_path, _ = QFileDialog.getOpenFileName(
             self.camera_widget,

@@ -187,8 +187,13 @@ class ExternalAxesPanelWidget(QWidget):
     def _apply_current_config_field_style(self) -> None:
         if self.current_config_name_field is None:
             return
-        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
-        self.current_config_name_field.setStyleSheet(f"color: {accent};")
+        accent_color = self.palette().color(QPalette.ColorRole.Highlight)
+        field_palette = self.current_config_name_field.palette()
+        field_palette.setColor(QPalette.ColorRole.Text, accent_color)
+        field_palette.setColor(QPalette.ColorRole.WindowText, accent_color)
+        self.current_config_name_field.setPalette(field_palette)
+        accent = accent_color.name()
+        self.current_config_name_field.setStyleSheet(f"QLineEdit {{ color: {accent}; }}")
 
     def set_configuration_status(self, text: str, color: str) -> None:
         if self.status_label is None:
