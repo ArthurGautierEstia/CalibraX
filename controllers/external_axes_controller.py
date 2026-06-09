@@ -327,13 +327,19 @@ class ExternalAxesController(QObject):
     def _on_load_config(self) -> None:
         """Importe une configuration des axes externes depuis un fichier JSON."""
         os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
-        file_path, data = FileIOHandler.select_and_load_json(
+        file_path = FileIOHandler.select_file(
             self._panel,
             "Charger une configuration des axes externes",
             directory=_DEFAULT_CONFIG_DIR,
+            filter="JSON Files (*.json)",
         )
-        if data:
-            self.restore_state(data, file_path=file_path or "")
+        if not file_path:
+            return
+        self.viewer3d_controller.begin_loading_feedback("Chargement axes externes ...")
+        try:
+            self.load_configuration_from_path(file_path)
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _on_new_config(self) -> None:
         self._current_config_file = ""

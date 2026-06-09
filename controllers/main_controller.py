@@ -126,7 +126,11 @@ class MainController(QObject):
             trajectory_benchmark_verbose=trajectory_benchmark_verbose,
             validity_pool_size=validity_pool_size,
         )
-        self.workspace_controller = WorkspaceController(workspace_model, main_window.get_workspace_view())
+        self.workspace_controller = WorkspaceController(
+            workspace_model,
+            main_window.get_workspace_view(),
+            self.viewer3d_controller,
+        )
         self.external_axes_controller = ExternalAxesController(
             external_axes_model,
             workspace_model,
@@ -352,6 +356,7 @@ class MainController(QObject):
             program_base_config = startup.get("program_base_config") or {}
             if program_base_config:
                 self.program_controller.load_base_config_state(program_base_config)
+            self._fit_scene_view_after_loading()
             self._schedule_session_save()
             return
 
@@ -377,7 +382,10 @@ class MainController(QObject):
 
         workspace_path = self._resolve_existing_path(startup.get("workspace", ""))
         if workspace_path:
-            self.workspace_controller.load_workspace_from_path(workspace_path, show_errors=False)
+            self._load_with_feedback(
+                "Chargement configuration scene ...",
+                lambda: self.workspace_controller.load_workspace_from_path(workspace_path, show_errors=False),
+            )
 
         # Chargement de la configuration des axes externes
         external_axes_path = self._resolve_existing_path(startup.get("external_axes_config", "")) or ""
@@ -406,7 +414,10 @@ class MainController(QObject):
         # Restauration de l'outillage + pièce
         workpiece_config_path = self._guess_workpiece_config_from_workspace(startup.get("workspace", ""))
         if workpiece_config_path:
-            self.workpiece_controller.load_configuration_from_path(workpiece_config_path, show_errors=False)
+            self._load_with_feedback(
+                "Chargement configuration pièce ...",
+                lambda: self.workpiece_controller.load_configuration_from_path(workpiece_config_path, show_errors=False),
+            )
         else:
             combined_data = {
                 "tooling": startup.get("tooling_data") or {},
@@ -426,6 +437,7 @@ class MainController(QObject):
             self.program_controller.load_base_config_state(program_base_config)
 
         self._startup_completed = True
+        self._fit_scene_view_after_loading()
         self._schedule_session_save()
 
     def flush_session(self) -> None:
@@ -576,24 +588,35 @@ class MainController(QObject):
             return ""
 
         loaders = (
-            ("robot", lambda path: self.robot_controller.dh_controller.load_configuration_from_path(path, show_errors=True)),
-            ("tool", lambda path: self.robot_controller.tool_controller.load_tool_profile_from_path(path, show_errors=True)),
-            ("external_axes", lambda path: self.external_axes_controller.load_configuration_from_path(path)),
-            ("scene", lambda path: self.workspace_controller.load_workspace_from_path(path, show_errors=True)),
-            ("piece", lambda path: self.workpiece_controller.load_configuration_from_path(path, show_errors=True)),
-            ("camera", lambda path: self.camera_controller.load_configuration_from_path(path, show_errors=True)),
+            ("robot", "Chargement configuration robot ...", lambda path: self.robot_controller.dh_controller.load_configuration_from_path(path, show_errors=True)),
+            ("tool", "Chargement configuration tool ...", lambda path: self.robot_controller.tool_controller.load_tool_profile_from_path(path, show_errors=True)),
+            ("external_axes", "Chargement axes externes ...", lambda path: self.external_axes_controller.load_configuration_from_path(path)),
+            ("scene", "Chargement configuration scene ...", lambda path: self.workspace_controller.load_workspace_from_path(path, show_errors=True)),
+            ("piece", "Chargement configuration pièce ...", lambda path: self.workpiece_controller.load_configuration_from_path(path, show_errors=True)),
+            ("camera", "Chargement cameras ...", lambda path: self.camera_controller.load_configuration_from_path(path, show_errors=True)),
         )
-        for key, loader in loaders:
+        for key, loading_message, loader in loaders:
             path = resolve_config_path(key)
-            if path and not loader(path):
+            if path and not self._load_with_feedback(loading_message, lambda path=path, loader=loader: loader(path)):
                 QMessageBox.warning(
                     self.main_window,
                     "Chargement projet",
                     f"Impossible de charger la configuration {key}: {path}",
                 )
                 return False
+        self._fit_scene_view_after_loading()
         self._schedule_session_save()
         return True
+
+    def _load_with_feedback(self, message: str, load_callback) -> bool:
+        self.viewer3d_controller.begin_loading_feedback(message)
+        try:
+            return bool(load_callback())
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
+
+    def _fit_scene_view_after_loading(self) -> None:
+        QTimer.singleShot(0, self._on_fit_scene_view_requested)
 
     def reset_project_configurations(self) -> None:
         self.robot_controller.dh_controller.new_configuration()

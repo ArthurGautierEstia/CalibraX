@@ -417,7 +417,11 @@ class WorkpieceController(QObject):
         )
         if not path:
             return
-        self.load_configuration_from_path(path, show_errors=True)
+        self.viewer3d_controller.begin_loading_feedback("Chargement configuration pièce ...")
+        try:
+            self.load_configuration_from_path(path, show_errors=True)
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _on_new(self) -> None:
         self.tooling_model.from_dict({})

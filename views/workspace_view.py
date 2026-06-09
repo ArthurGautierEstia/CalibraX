@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from widgets.workspace_view.workspace_configuration_widget import WorkspaceConfigurationWidget
 
@@ -11,10 +11,7 @@ class WorkspaceView(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        scroll_area = QScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(self.configuration_widget)
-        layout.addWidget(scroll_area)
+        layout.addWidget(self.configuration_widget)
 
     def get_configuration_widget(self) -> WorkspaceConfigurationWidget:
         return self.configuration_widget

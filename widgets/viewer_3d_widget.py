@@ -4825,66 +4825,70 @@ class Viewer3DWidget(QWidget):
             axes: list[ExternalAxis]
             world_transforms: dict retourné par ExternalAxesModel.compute_world_transforms()
         """
-        from utils.math_utils import pose_zyx_to_matrix
-        # Sauvegarder le snapshot pour la restauration après clear_viewer()
-        self._last_external_axes_snapshot = list(axes)
-        self._last_external_world_transforms = dict(world_transforms)
-        # Initialiser la visibilité des nouveaux axes (défaut : visible)
-        current_ids = {axis.id for axis in axes}
-        for axis in axes:
-            if axis.id not in self._ext_axis_frames_visible:
-                self._ext_axis_frames_visible[axis.id] = True
-        # Supprimer les entrées pour les axes supprimés
-        for axis_id in list(self._ext_axis_frames_visible.keys()):
-            if axis_id not in current_ids:
-                del self._ext_axis_frames_visible[axis_id]
+        self.begin_loading_feedback("Chargement des CAO axes externes ...")
+        try:
+            from utils.math_utils import pose_zyx_to_matrix
+            # Sauvegarder le snapshot pour la restauration après clear_viewer()
+            self._last_external_axes_snapshot = list(axes)
+            self._last_external_world_transforms = dict(world_transforms)
+            # Initialiser la visibilité des nouveaux axes (défaut : visible)
+            current_ids = {axis.id for axis in axes}
+            for axis in axes:
+                if axis.id not in self._ext_axis_frames_visible:
+                    self._ext_axis_frames_visible[axis.id] = True
+            # Supprimer les entrées pour les axes supprimés
+            for axis_id in list(self._ext_axis_frames_visible.keys()):
+                if axis_id not in current_ids:
+                    del self._ext_axis_frames_visible[axis_id]
 
-        self._clear_viewer_items(self._external_axes_links)
-        self._external_axes_links.clear()
-        self._external_axes_link_keys.clear()
-        self._external_axes_cad_offsets.clear()
-        self._clear_viewer_items(self._external_axes_frame_items)
+            self._clear_viewer_items(self._external_axes_links)
+            self._external_axes_links.clear()
+            self._external_axes_link_keys.clear()
+            self._external_axes_cad_offsets.clear()
+            self._clear_viewer_items(self._external_axes_frame_items)
 
-        for axis in axes:
-            transforms = world_transforms.get(axis.id)
-            if transforms is None:
-                continue
+            for axis in axes:
+                transforms = world_transforms.get(axis.id)
+                if transforms is None:
+                    continue
 
-            # ── CAO base fixe ──────────────────────────────────────────
-            if axis.base_cad_model:
-                color_base = getattr(axis, "base_cad_color", (0.3, 0.3, 0.35, 1.0))
-                item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
-                if item:
-                    self._apply_ext_axis_item_transparency(item)
-                    self.viewer.addItem(item)
-                    self._external_axes_links.append(item)
-                    self._external_axes_link_keys.append((axis.id, -1))
-                    self._external_axes_cad_offsets.append(np.eye(4, dtype=float))
-
-            # ── CAO liens mobiles ──────────────────────────────────────
-            for ji, joint in enumerate(axis.joints):
-                T_joint = transforms["joint_links"][ji]
-                if joint.cad_model:
-                    color_link = getattr(joint, "cad_color", (0.25, 0.45, 0.65, 1.0))
-                    cad_offset_pose = getattr(joint, "cad_offset_in_joint", None)
-                    cad_offset = (
-                        pose_zyx_to_matrix(cad_offset_pose)
-                        if cad_offset_pose is not None
-                        else np.eye(4, dtype=float)
-                    )
-                    T_render = T_joint @ cad_offset
-                    item = self.load_robot_mesh(joint.cad_model, T_render, color_link)
+                # ── CAO base fixe ──────────────────────────────────────────
+                if axis.base_cad_model:
+                    color_base = getattr(axis, "base_cad_color", (0.3, 0.3, 0.35, 1.0))
+                    item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
                     if item:
                         self._apply_ext_axis_item_transparency(item)
                         self.viewer.addItem(item)
                         self._external_axes_links.append(item)
-                        self._external_axes_link_keys.append((axis.id, ji))
-                        self._external_axes_cad_offsets.append(cad_offset)
+                        self._external_axes_link_keys.append((axis.id, -1))
+                        self._external_axes_cad_offsets.append(np.eye(4, dtype=float))
 
-            # ── Repères ────────────────────────────────────────────────
-            self._draw_external_axis_frames(axis, transforms)
+                # ── CAO liens mobiles ──────────────────────────────────────
+                for ji, joint in enumerate(axis.joints):
+                    T_joint = transforms["joint_links"][ji]
+                    if joint.cad_model:
+                        color_link = getattr(joint, "cad_color", (0.25, 0.45, 0.65, 1.0))
+                        cad_offset_pose = getattr(joint, "cad_offset_in_joint", None)
+                        cad_offset = (
+                            pose_zyx_to_matrix(cad_offset_pose)
+                            if cad_offset_pose is not None
+                            else np.eye(4, dtype=float)
+                        )
+                        T_render = T_joint @ cad_offset
+                        item = self.load_robot_mesh(joint.cad_model, T_render, color_link)
+                        if item:
+                            self._apply_ext_axis_item_transparency(item)
+                            self.viewer.addItem(item)
+                            self._external_axes_links.append(item)
+                            self._external_axes_link_keys.append((axis.id, ji))
+                            self._external_axes_cad_offsets.append(cad_offset)
 
-        self.update_frame_list_ui()
+                # ── Repères ────────────────────────────────────────────────
+                self._draw_external_axis_frames(axis, transforms)
+
+            self.update_frame_list_ui()
+        finally:
+            self.end_loading_feedback()
 
     def _draw_external_axis_frames(self, axis, transforms: dict) -> None:
         """Dessine les repères XYZ de la base, des joints et du point de montage."""
@@ -5103,14 +5107,18 @@ class Viewer3DWidget(QWidget):
         frame_T_world: "np.ndarray",
     ) -> None:
         """Recharge la CAO pièce et son repère dans le viewer."""
-        self._workpiece_snapshot = {
-            "cad_model": cad_model,
-            "T_world": T_world.copy(),
-            "color": color,
-            "frame_T_world": frame_T_world.copy(),
-        }
-        self._render_workpiece()
-        self._redraw_piece_frames()
+        self.begin_loading_feedback("Chargement des CAO pièces ...")
+        try:
+            self._workpiece_snapshot = {
+                "cad_model": cad_model,
+                "T_world": T_world.copy(),
+                "color": color,
+                "frame_T_world": frame_T_world.copy(),
+            }
+            self._render_workpiece()
+            self._redraw_piece_frames()
+        finally:
+            self.end_loading_feedback()
 
     def _restore_workpiece(self) -> None:
         """Restaure la pièce après un clear_viewer()."""

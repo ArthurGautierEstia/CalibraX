@@ -31,12 +31,14 @@ class WorkspaceController(QObject):
         self,
         workspace_model: WorkspaceModel,
         workspace_view: WorkspaceView,
+        viewer3d_controller=None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.workspace_model = workspace_model
         self.workspace_view = workspace_view
         self.workspace_widget = workspace_view.get_configuration_widget()
+        self.viewer3d_controller = viewer3d_controller
         self._updating_from_view = False
         self._reference_data: dict | None = None
         self._has_reference = False
@@ -203,7 +205,11 @@ class WorkspaceController(QObject):
         if not selected_path:
             return
 
-        self.load_workspace_from_path(selected_path, show_errors=True)
+        self._begin_loading_feedback("Chargement configuration scene ...")
+        try:
+            self.load_workspace_from_path(selected_path, show_errors=True)
+        finally:
+            self._end_loading_feedback()
 
     def _on_clear_workspace_requested(self) -> None:
         self.workspace_model.clear_workspace()
@@ -251,6 +257,14 @@ class WorkspaceController(QObject):
         )
         self._mark_current_configuration_as_reference(STATUS_LOADED)
         return True
+
+    def _begin_loading_feedback(self, message: str) -> None:
+        if self.viewer3d_controller is not None:
+            self.viewer3d_controller.begin_loading_feedback(message)
+
+    def _end_loading_feedback(self) -> None:
+        if self.viewer3d_controller is not None:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _current_configuration_data(self) -> dict:
         return WorkspaceFile.from_workspace_model(self.workspace_model).to_dict()

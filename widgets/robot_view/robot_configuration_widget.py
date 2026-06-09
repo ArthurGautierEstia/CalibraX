@@ -146,9 +146,10 @@ class RobotConfigurationWidget(QWidget):
         self.default_tool_profile_combo.currentIndexChanged.connect(self._on_default_tool_profile_combo_changed)
         self._reload_default_tool_profile_options()
 
+        fields_layout.setHorizontalSpacing(8)
+        fields_layout.setVerticalSpacing(6)
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
-        header_layout.addLayout(fields_layout)
 
         actions_layout = QHBoxLayout()
         actions_layout.addStretch()
@@ -183,7 +184,8 @@ class RobotConfigurationWidget(QWidget):
         self.btn_save_as.setToolTip("Enregistrer la configuration robot dans un nouveau fichier JSON")
         actions_layout.addWidget(self.btn_save_as)
 
-        header_layout.addLayout(actions_layout)
+        fields_layout.addLayout(actions_layout, 2, 0, 1, 2)
+        header_layout.addLayout(fields_layout)
         header_layout.addSpacing(8)
 
         default_tool_row = QHBoxLayout()

@@ -371,25 +371,21 @@ class RobotConfigurationController(QObject):
 
     def load_configuration(self) -> None:
         configuration_dir = self._robot_configuration_directory()
-        file_path, data = FileIOHandler.select_and_load_json(
+        file_path = FileIOHandler.select_file(
             self.robot_configuration_widget,
             "Charger une configuration robot",
             configuration_dir,
+            "JSON Files (*.json)",
         )
-        if data:
-            if not isinstance(data, dict):
-                show_error_popup(
-                    "Erreur d'importation",
-                    "Le fichier de configuration n'est pas au format adapte. Veuillez verifier le contenu.",
-                )
-                return
+        if not file_path:
+            return
+        if self.viewer3d_controller is not None:
+            self.viewer3d_controller.begin_loading_feedback("Chargement configuration robot ...")
+        try:
+            self.load_configuration_from_path(file_path)
+        finally:
             if self.viewer3d_controller is not None:
-                self.viewer3d_controller.begin_loading_feedback("Chargement configuration robot ...")
-            try:
-                self.load_configuration_from_path(file_path)
-            finally:
-                if self.viewer3d_controller is not None:
-                    self.viewer3d_controller.end_loading_feedback()
+                self.viewer3d_controller.end_loading_feedback()
 
     def save_configuration(self) -> None:
         current_path = self.robot_model.get_current_config_file()
