@@ -230,7 +230,7 @@ class ProgramController:
             self.program_view,
             "Importer programme robot",
             str(self.DEFAULT_PROGRAMS_DIR),
-            "KUKA (*.src);;APT Source (*.apt *.aptsource *.cls *.cl);;CATNC (*.nc *.cnc *.mpf *.gcode);;Tous (*.*)",
+            "KUKA (*.src);;APT Source (*.apt *.aptsource *.cls *.cl);;CATNC (*.nc *.cnc *.mpf *.gcode *.CATNCCode);;Tous (*.*)",
         )
 
         if not file_path:
@@ -296,7 +296,7 @@ class ProgramController:
             suffix = Path(file_path).suffix.lower()
             if suffix in {".apt", ".aptsource", ".cls", ".cl"}:
                 loaded = load_aptsource_program(file_path)
-            elif suffix in {".nc", ".cnc", ".mpf", ".gcode"}:
+            elif suffix in {".nc", ".cnc", ".mpf", ".gcode", ".catnccode"}:
                 loaded = load_catnc_program(file_path)
             else:
                 loaded = load_kuka_src_program(file_path)
@@ -2559,7 +2559,7 @@ class ProgramController:
         from utils.robot_program_kuka import generate_kuka_src_text
         settings = self._generation_settings
         settings.header_text = self.generation_widget.get_header_text()
-        external_axes_order = [axis.axis_id for axis in self.external_axes_model.get_axes()]
+        external_axes_order = [axis.id for axis in self.external_axes_model.get_axes()]
         try:
             text = generate_kuka_src_text(
                 self.current_program, settings.header_text, settings, external_axes_order
@@ -2583,7 +2583,7 @@ class ProgramController:
         effective_base = self._compute_effective_base()
 
         if settings.home_enabled:
-            home_joints = self.robot_model.get_home_position()
+            home_joints = JointAngles6.from_values(self.robot_model.get_home_position())
             home_target = RobotProgramTarget(
                 target_type=RobotProgramTargetType.JOINT,
                 joint_angles=home_joints,

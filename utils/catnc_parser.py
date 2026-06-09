@@ -33,7 +33,24 @@ def _strip_nc_comment(line: str) -> str:
 
 
 def _parse_words(line: str) -> dict[str, float]:
-    return {m.group(1).upper(): float(m.group(2)) for m in _WORD_RE.finditer(line)}
+    """Retourne les mots G-code. Pour G, garde le PREMIER code de mouvement (0-3) si présent,
+    sinon le premier G rencontré (pour compatibilité). Évite l'écrasement par G94/G90 etc."""
+    result: dict[str, float] = {}
+    g_motion: float | None = None  # premier G code de mouvement (0,1,2,3)
+    for m in _WORD_RE.finditer(line):
+        letter = m.group(1).upper()
+        value = float(m.group(2))
+        if letter == "G":
+            if g_motion is None and int(round(value)) in {0, 1, 2, 3}:
+                g_motion = value
+            # Ne pas écraser avec des G modaux (G90, G94…)
+            if "G" not in result:
+                result["G"] = value
+        else:
+            result[letter] = value
+    if g_motion is not None:
+        result["G"] = g_motion
+    return result
 
 
 def _arc_midpoint(
