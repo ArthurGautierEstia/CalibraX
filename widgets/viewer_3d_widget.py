@@ -197,11 +197,9 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self._pan_gesture_speed_factor = self._compute_middle_pan_speed_factor(local_position)
             self._smooth_vel_x = self._SMOOTH_ALPHA * diff.x() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_x
             self._smooth_vel_y = self._SMOOTH_ALPHA * diff.y() + (1.0 - self._SMOOTH_ALPHA) * self._smooth_vel_y
-            self.pan(
+            self._pan_screen_aligned_world(
                 self._smooth_vel_x * self._pan_gesture_speed_factor,
-                0.0,
                 self._smooth_vel_y * self._pan_gesture_speed_factor,
-                relative="view-upright",
             )
             self._inertia_recent_diffs.append((self._smooth_vel_x, self._smooth_vel_y, "pan", self._pan_gesture_speed_factor))
             self._raw_recent_diffs.append((diff.x(), diff.y()))
@@ -315,7 +313,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
                 self._zoom_timer.start()
 
     _SMOOTH_ALPHA = 0.65        # EMA pendant le drag (0=figé, 1=brut)
-    _PAN_SPEED_SCALE = 0.5      # 1.0 = suivi 1:1 exact, réduire si trop rapide
+    _PAN_SPEED_SCALE = 1      # 1.0 = suivi 1:1 exact, réduire si trop rapide
     _ORBIT_SPEED_SCALE = 0.8    # réducteur global de vitesse de rotation (drag + inertie)
     _INERTIA_ORBIT_MAX_SPEED = 8.0  # px/frame max au lancement de l'inertie rotation
     _INERTIA_DAMPING = 0.87
@@ -325,7 +323,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         vx = self._inertia_vel_x
         vy = self._inertia_vel_y
         if self._inertia_mode == "pan":
-            self.pan(vx * self._inertia_pan_factor, 0.0, vy * self._inertia_pan_factor, relative="view-upright")
+            self._pan_screen_aligned_world(vx * self._inertia_pan_factor, vy * self._inertia_pan_factor)
         elif self._inertia_mode == "orbit_origin":
             self._orbit_around_fixed_pivot(
                 np.array([0.0, 0.0, 0.0], dtype=float),
@@ -958,6 +956,35 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
             ortho_d = max(1.0, float(self.opts.get("distance", 2000.0))) * max(1e-3, float(self._orthographic_zoom_factor))
             return 2.0 * ortho_d * half_tan / W * self._PAN_SPEED_SCALE
         return 2.0 * distance * half_tan / W * self._PAN_SPEED_SCALE
+
+    def _view_upright_internal_pan_scale(self) -> float:
+        """Échelle interne appliquée par GLViewWidget.pan(relative="view-upright")
+        de pyqtgraph : chaque unité passée déplace le centre de `xScale` unités-monde,
+        avec xScale = dist_centre · 2 · tan(fov/2) / W.
+
+        On la calcule pour la neutraliser (cf. _pan_screen_aligned_world) : sinon le
+        facteur de distance/fov/W est appliqué deux fois (ici + dans notre propre
+        _compute_middle_pan_speed_factor), rendant le pan ~quadratique en distance."""
+        camera_position = self.cameraPosition()
+        center = self.opts["center"]
+        distance = float((center - camera_position).length())
+        W = max(1, self.width())
+        half_tan = float(np.tan(np.radians(max(1.0, float(self.opts.get("fov", 60.0))) / 2.0)))
+        return 2.0 * distance * half_tan / W
+
+    def _pan_screen_aligned_world(self, world_dx: float, world_dz_up: float) -> None:
+        """Déplace le centre de `world_dx`/`world_dz_up` unités-monde le long des axes
+        écran (mode view-upright de pyqtgraph), en neutralisant l'échelle interne de
+        pyqtgraph pour que seule notre conversion pixel→monde s'applique."""
+        internal_scale = self._view_upright_internal_pan_scale()
+        if internal_scale <= 1e-12:
+            return
+        self.pan(
+            world_dx / internal_scale,
+            0.0,
+            world_dz_up / internal_scale,
+            relative="view-upright",
+        )
 
     def _orbit_around_fixed_pivot(
         self,
