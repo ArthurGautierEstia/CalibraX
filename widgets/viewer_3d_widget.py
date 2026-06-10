@@ -3202,7 +3202,7 @@ class Viewer3DWidget(QWidget):
         if index < 0 or index >= len(self.frames_visibility):
             return
         self.frames_visibility[index] = not self.frames_visibility[index]
-        self._clear_and_refresh()
+        self.draw_all_frames(self.last_dh_matrices)
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
     
@@ -3210,7 +3210,7 @@ class Viewer3DWidget(QWidget):
         if index < 0 or index >= len(self.workspace_frames_visibility):
             return
         self.workspace_frames_visibility[index] = not self.workspace_frames_visibility[index]
-        self._clear_and_refresh()
+        self.draw_workspace_frames()
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
 
@@ -3222,7 +3222,10 @@ class Viewer3DWidget(QWidget):
         if target_visibility[index] == is_visible:
             return
         target_visibility[index] = is_visible
-        self._clear_and_refresh()
+        if is_workspace_frame:
+            self.draw_workspace_frames()
+        else:
+            self.draw_all_frames(self.last_dh_matrices)
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
 
@@ -3244,7 +3247,11 @@ class Viewer3DWidget(QWidget):
             self._camera_frames_visible[camera_id] = self.show_axes
         self._tooling_frames_visible = self.show_axes
         self._workpiece_frame_visible = self.show_axes
-        self._clear_and_refresh()
+        self.draw_all_frames(self.last_dh_matrices)
+        self.draw_workspace_frames()
+        self.draw_external_axes_frames()
+        self._redraw_piece_frames()
+        self.refresh_cameras()
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
 

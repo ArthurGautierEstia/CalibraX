@@ -237,10 +237,6 @@ class MainController(QObject):
         dialog.resize(820, 340)
 
         layout = QVBoxLayout(dialog)
-        summary_label = QLabel(dialog)
-        summary_label.setStyleSheet("font-size: 13px; font-weight: 600;")
-        layout.addWidget(summary_label)
-
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
@@ -262,7 +258,7 @@ class MainController(QObject):
             load_button = QPushButton("...", dialog)
             load_button.setFixedWidth(34)
             load_button.setToolTip(f"Charger une configuration {label.lower()}")
-            load_button.clicked.connect(lambda _checked=False, config_key=key: self._load_configuration_from_dialog(dialog, config_key, rows, summary_label))
+            load_button.clicked.connect(lambda _checked=False, config_key=key: self._load_configuration_from_dialog(dialog, config_key, rows))
 
             path_layout = QHBoxLayout()
             path_layout.setContentsMargins(0, 0, 0, 0)
@@ -284,7 +280,7 @@ class MainController(QObject):
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
-        self._refresh_configurations_dialog(rows, summary_label)
+        self._refresh_configurations_dialog(rows)
         dialog.exec()
 
     def _on_fit_scene_view_requested(self) -> None:
@@ -310,28 +306,12 @@ class MainController(QObject):
     def _refresh_configurations_dialog(
         self,
         rows: dict[str, dict[str, object]],
-        summary_label: QLabel,
     ) -> None:
         entries = self.get_project_configuration_paths()
-        ok_count = 0
-        missing_count = 0
-        unsaved_count = 0
-        modified_count = 0
-        not_found_count = 0
 
         for key, _label, _loading_message in self._configuration_specs():
             path = entries.get(key, "")
             status_text, status_color = self._configuration_status_for_key(key, path)
-            if status_color == "#6fcf97":
-                ok_count += 1
-            elif status_color == "#d9534f":
-                not_found_count += 1
-            elif self._is_unsaved_configuration_status(status_text):
-                unsaved_count += 1
-            elif status_color == "#d97706":
-                modified_count += 1
-            else:
-                missing_count += 1
 
             row = rows.get(key, {})
             status_label = row.get("status_label")
@@ -342,22 +322,6 @@ class MainController(QObject):
                 path_field.setText(path)
                 path_field.setPlaceholderText("Aucune configuration")
                 path_field.setToolTip(path)
-
-        parts = [f"{ok_count} OK"]
-        if missing_count:
-            parts.append(f"{missing_count} non chargée(s)")
-        if unsaved_count:
-            parts.append(f"{unsaved_count} non enregistrée(s)")
-        if modified_count:
-            parts.append(f"{modified_count} modifiée(s)")
-        if not_found_count:
-            parts.append(f"{not_found_count} introuvable(s)")
-        summary_label.setText("Aperçu des statuts : " + " · ".join(parts))
-
-    @staticmethod
-    def _is_unsaved_configuration_status(status_text: str) -> bool:
-        normalized = status_text.strip().lower()
-        return "non enregistr" in normalized and "modification" not in normalized
 
     def _configuration_status_for_key(self, config_key: str, path: str) -> tuple[str, str]:
         if str(path or "").strip() and not self._configuration_path_exists(path):
@@ -413,7 +377,6 @@ class MainController(QObject):
         dialog: QDialog,
         config_key: str,
         rows: dict[str, dict[str, object]],
-        summary_label: QLabel,
     ) -> None:
         selected_path = self._select_configuration_file(config_key, dialog)
         if not selected_path:
@@ -422,7 +385,7 @@ class MainController(QObject):
         if self._load_single_configuration(config_key, selected_path):
             self._fit_scene_view_after_loading()
             self._schedule_session_save()
-        self._refresh_configurations_dialog(rows, summary_label)
+        self._refresh_configurations_dialog(rows)
 
     def _select_configuration_file(self, config_key: str, dialog: QDialog) -> str:
         entries = self.get_project_configuration_paths()
