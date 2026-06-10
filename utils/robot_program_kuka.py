@@ -233,8 +233,13 @@ def _parse_pose_block(block: str) -> Pose6 | None:
     return target.cartesian_pose.copy()
 
 
-def _format_kuka_motion_line(motion: RobotProgramMotion, emit_approximation: bool = False) -> str:
-    suffix = _format_approximation_suffix(motion.approximation) if emit_approximation else ""
+def _format_kuka_motion_line(
+    motion: RobotProgramMotion,
+    emit_approximation: bool = False,
+    approx_override: MotionApproximation | None = None,
+) -> str:
+    approx = approx_override if approx_override is not None else motion.approximation
+    suffix = _format_approximation_suffix(approx) if emit_approximation else ""
     if motion.mode == RobotProgramMotionMode.PTP:
         return f"PTP {_format_kuka_target(motion.target)}{suffix}"
     if motion.mode == RobotProgramMotionMode.LINEAR:
@@ -338,13 +343,20 @@ def generate_kuka_src_text(
     lines.append(f"$VEL.CP = {vel_cp:.4f}")
     lines.append("")
 
+    default_approx = settings.default_approximation if settings is not None else MotionApproximation.none()
+
     for motion in program.motions:
         if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
             lines.append(_format_external_axis_motion_line(motion.external_axis_target))
         elif motion.role in {MotionRole.HOME_START, MotionRole.HOME_END}:
             lines.append(f"PTP {_format_kuka_target(motion.target)}  ; HOME")
         else:
-            lines.append(_format_kuka_motion_line(motion, emit_approximation=True))
+            effective_approx = (
+                motion.approximation
+                if motion.approximation.mode != ApproximationMode.NONE
+                else default_approx
+            )
+            lines.append(_format_kuka_motion_line(motion, emit_approximation=True, approx_override=effective_approx))
 
     lines.append("")
     lines.append(f"END")

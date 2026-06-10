@@ -1,4 +1,4 @@
-from models.types.approach_retract import ApproachAxisRef, ApproachRetractConfig
+from models.types.approach_retract import ApproachAxisRef, ApproachRetractConfig, ApproachRetractStep
 from models.types.cad_color import CadColor
 from models.types.cad_color_palette import CadColorPalette
 from models.types.external_axis_joint_type import ExternalAxisJointType
@@ -13,7 +13,7 @@ from models.types.pose6 import Pose6
 from models.types.xyz3 import XYZ3
 
 __all__ = [
-    "ApproachAxisRef", "ApproachRetractConfig",
+    "ApproachAxisRef", "ApproachRetractConfig", "ApproachRetractStep",
     "ApproximationMode", "MotionApproximation",
     "CadColor", "CadColorPalette",
     "ExternalAxisJointType", "ExternalAxisMountMode",

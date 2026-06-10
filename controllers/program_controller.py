@@ -557,11 +557,22 @@ class ProgramController:
         if self.current_program is None:
             return roles, approx_texts, cible_overrides
 
+        total_approach = sum(1 for m in self.current_program.motions if m.role == MotionRole.APPROACH)
+        total_retract = sum(1 for m in self.current_program.motions if m.role == MotionRole.RETRACT)
+        approach_idx = 0
+        retract_idx = 0
+
+        default_approx = self._generation_settings.default_approximation
+
         for ref in self._display_target_refs:
             motion = self.current_program.motions[ref.motion_index]
             roles.append(motion.role.value)
 
-            approx = motion.approximation
+            approx = (
+                motion.approximation
+                if motion.approximation.mode != ApproximationMode.NONE
+                else default_approx
+            )
             if approx.mode == ApproximationMode.C_DIS:
                 approx_texts.append(f"C_DIS={approx.value:.3f}")
             elif approx.mode == ApproximationMode.C_VEL:
@@ -573,9 +584,11 @@ class ProgramController:
             if motion.role == MotionRole.HOME_START or motion.role == MotionRole.HOME_END:
                 cible = "HOME"
             elif motion.role == MotionRole.APPROACH:
-                cible = "Approche"
+                approach_idx += 1
+                cible = f"Approche {approach_idx}" if total_approach > 1 else "Approche"
             elif motion.role == MotionRole.RETRACT:
-                cible = "Retrait"
+                retract_idx += 1
+                cible = f"Retrait {retract_idx}" if total_retract > 1 else "Retrait"
             elif motion.role == MotionRole.EXTERNAL_SETUP:
                 cible = "Axe ext."
             elif motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
@@ -2525,7 +2538,11 @@ class ProgramController:
         if self.current_program is not None:
             self.current_program = self._rebuild_derived_motions(self.current_program, settings)
             self._program_dirty = True
-            self._recompute_current_program(reset_modes=False)
+            self._mark_simulation_dirty()
+            self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+            self._refresh_keypoint_table()
+            self._refresh_viewer_keypoints()
+            self._refresh_program_info()
 
     def get_generation_settings_dict(self) -> dict:
         return self._generation_settings.to_dict()
@@ -2535,9 +2552,24 @@ class ProgramController:
 
     def _on_generation_settings_changed(self, settings_dict: dict) -> None:
         settings = ProgramGenerationSettings.from_dict(settings_dict)
-        # header_text vient du widget generation, on le préserve
         settings.header_text = self.generation_widget.get_header_text()
-        self.set_generation_settings(settings)
+
+        old = self._generation_settings
+        structure_changed = (
+            old.home_enabled != settings.home_enabled
+            or old.approach != settings.approach
+            or old.retract != settings.retract
+        )
+
+        if structure_changed:
+            self.set_generation_settings(settings)
+        else:
+            # Seule l'approximation a changé — pas de reconstruction ni de re-simulation
+            self._generation_settings = settings
+            if self.current_program is not None:
+                self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+                self._refresh_keypoint_table()
+
         self._krl_preview_timer.start()
 
     def _on_save_header_requested(self, text: str) -> None:
@@ -2583,7 +2615,25 @@ class ProgramController:
         effective_base = self._compute_effective_base()
 
         if settings.home_enabled:
-            home_joints = JointAngles6.from_values(self.robot_model.get_home_position())
+            home_values = self.robot_model.get_home_position()
+            home_joints = JointAngles6.from_values(home_values)
+
+            # Retirer les PTP JOINT home en début/fin du programme source pour éviter les doublons
+            def _is_home_motion(m: RobotProgramMotion) -> bool:
+                if m.target.target_type != RobotProgramTargetType.JOINT:
+                    return False
+                if m.target.joint_angles is None:
+                    return False
+                return all(
+                    abs(a - b) < 0.5
+                    for a, b in zip(m.target.joint_angles.to_list(), home_values)
+                )
+
+            while normal_motions and _is_home_motion(normal_motions[0]):
+                normal_motions = normal_motions[1:]
+            while normal_motions and _is_home_motion(normal_motions[-1]):
+                normal_motions = normal_motions[:-1]
+
             home_target = RobotProgramTarget(
                 target_type=RobotProgramTargetType.JOINT,
                 joint_angles=home_joints,
@@ -2610,52 +2660,58 @@ class ProgramController:
         )
 
         if settings.approach.enabled and first_cartesian is not None:
-            approach_pose = self._compute_offset_pose(
-                first_cartesian.target.cartesian_pose,
-                first_cartesian.tool_pose,
-                first_cartesian.base_pose,
-                settings.approach.axis_ref,
-                settings.approach.distance_mm,
-            )
-            approach_target = RobotProgramTarget(
-                target_type=RobotProgramTargetType.CARTESIAN,
-                cartesian_pose=approach_pose,
-            )
-            approach_motion = replace(
-                first_cartesian,
-                mode=RobotProgramMotionMode.LINEAR,
-                target=approach_target,
-                cp_speed_mps=settings.approach.speed_mps,
-                role=MotionRole.APPROACH,
-                line_number=0,
-                source="; APPROACH",
-            )
-            derived_prefix.append(approach_motion)
+            for step in settings.approach.steps:
+                signed_dist = step.distance_mm * (-1 if step.inverted else 1)
+                approach_pose = self._compute_offset_pose(
+                    first_cartesian.target.cartesian_pose,
+                    first_cartesian.tool_pose,
+                    first_cartesian.base_pose,
+                    step.axis_ref,
+                    signed_dist,
+                )
+                approach_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.CARTESIAN,
+                    cartesian_pose=approach_pose,
+                )
+                approach_motion = replace(
+                    first_cartesian,
+                    mode=RobotProgramMotionMode.LINEAR,
+                    target=approach_target,
+                    cp_speed_mps=step.speed_mps,
+                    role=MotionRole.APPROACH,
+                    line_number=0,
+                    source="; APPROACH",
+                )
+                derived_prefix.append(approach_motion)
 
+        retract_motions: list[RobotProgramMotion] = []
         if settings.retract.enabled and last_cartesian is not None:
-            retract_pose = self._compute_offset_pose(
-                last_cartesian.target.cartesian_pose,
-                last_cartesian.tool_pose,
-                last_cartesian.base_pose,
-                settings.retract.axis_ref,
-                settings.retract.distance_mm,
-            )
-            retract_target = RobotProgramTarget(
-                target_type=RobotProgramTargetType.CARTESIAN,
-                cartesian_pose=retract_pose,
-            )
-            retract_motion = replace(
-                last_cartesian,
-                mode=RobotProgramMotionMode.LINEAR,
-                target=retract_target,
-                cp_speed_mps=settings.retract.speed_mps,
-                role=MotionRole.RETRACT,
-                line_number=0,
-                source="; RETRACT",
-            )
-            derived_suffix.insert(0, retract_motion)
+            for step in settings.retract.steps:
+                signed_dist = step.distance_mm * (-1 if step.inverted else 1)
+                retract_pose = self._compute_offset_pose(
+                    last_cartesian.target.cartesian_pose,
+                    last_cartesian.tool_pose,
+                    last_cartesian.base_pose,
+                    step.axis_ref,
+                    signed_dist,
+                )
+                retract_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.CARTESIAN,
+                    cartesian_pose=retract_pose,
+                )
+                retract_motion = replace(
+                    last_cartesian,
+                    mode=RobotProgramMotionMode.LINEAR,
+                    target=retract_target,
+                    cp_speed_mps=step.speed_mps,
+                    role=MotionRole.RETRACT,
+                    line_number=0,
+                    source="; RETRACT",
+                )
+                retract_motions.append(retract_motion)
 
-        all_motions = derived_prefix + normal_motions + derived_suffix
+        # Retrait avant HOME_END
+        all_motions = derived_prefix + normal_motions + retract_motions + derived_suffix
         return replace(program, motions=all_motions)
 
     def _compute_offset_pose(
@@ -2671,11 +2727,11 @@ class ProgramController:
 
         # Axe de décalage en repère robot
         if axis_ref == ApproachAxisRef.TOOL_Z:
-            # Z outil au point cible
+            # -Z outil : l'approche vient de devant l'outil (Z sortant = direction pièce)
             T_base = math_utils.pose_zyx_to_matrix(base_pose)
             T_target_in_prog = math_utils.pose_zyx_to_matrix(target_pose)
             T_target_in_robot = T_base @ T_target_in_prog
-            direction = T_target_in_robot[:3, 2]
+            direction = -T_target_in_robot[:3, 2]
         elif axis_ref == ApproachAxisRef.PIECE_X:
             T_base = math_utils.pose_zyx_to_matrix(base_pose)
             direction = T_base[:3, 0]

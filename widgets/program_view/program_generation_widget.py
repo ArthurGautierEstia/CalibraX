@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import partial
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -9,6 +11,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -16,7 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from models.program_generation_settings import ProgramGenerationSettings
-from models.types.approach_retract import ApproachAxisRef, ApproachRetractConfig
+from models.types.approach_retract import ApproachAxisRef, ApproachRetractConfig, ApproachRetractStep
 from models.types.motion_approximation import ApproximationMode, MotionApproximation
 
 
@@ -32,6 +35,179 @@ _APPROX_MODE_LABELS: dict[ApproximationMode, str] = {
     ApproximationMode.C_DIS: "C_DIS (mm)",
     ApproximationMode.C_VEL: "C_VEL (%)",
 }
+
+_DEFAULT_STEP = ApproachRetractStep(ApproachAxisRef.TOOL_Z, 50.0, 0.2)
+
+
+class _StepRow(QWidget):
+    """Ligne représentant un pas d'approche/retrait : axe, distance, vitesse, bouton suppr."""
+
+    changed = pyqtSignal()
+    removed = pyqtSignal()
+
+    def __init__(self, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self._combo = QComboBox()
+        for ref in ApproachAxisRef:
+            self._combo.addItem(_AXIS_REF_LABELS[ref], ref.value)
+
+        self._spin_dist = QDoubleSpinBox()
+        self._spin_dist.setRange(0.0, 2000.0)
+        self._spin_dist.setDecimals(1)
+        self._spin_dist.setSuffix(" mm")
+        self._spin_dist.setValue(50.0)
+
+        self._spin_speed = QDoubleSpinBox()
+        self._spin_speed.setRange(0.001, 5.0)
+        self._spin_speed.setDecimals(3)
+        self._spin_speed.setSuffix(" m/s")
+        self._spin_speed.setValue(0.2)
+
+        self._btn_invert = QPushButton("⇄")
+        self._btn_invert.setCheckable(True)
+        self._btn_invert.setFixedWidth(30)
+        self._btn_invert.setToolTip("Inverser le sens : actif = sens +axe, inactif = sens -axe (défaut)")
+
+        btn_remove = QPushButton("×")
+        btn_remove.setFixedWidth(24)
+        btn_remove.setToolTip("Supprimer ce pas")
+
+        layout.addWidget(self._combo, stretch=2)
+        layout.addWidget(self._spin_dist, stretch=2)
+        layout.addWidget(self._spin_speed, stretch=2)
+        layout.addWidget(self._btn_invert)
+        layout.addWidget(btn_remove)
+
+        self._combo.currentIndexChanged.connect(self.changed)
+        self._spin_dist.editingFinished.connect(self.changed)
+        self._spin_speed.editingFinished.connect(self.changed)
+        self._btn_invert.toggled.connect(self.changed)
+        btn_remove.clicked.connect(self.removed)
+
+    def get_step(self) -> ApproachRetractStep:
+        return ApproachRetractStep(
+            axis_ref=ApproachAxisRef(self._combo.currentData()),
+            distance_mm=self._spin_dist.value(),
+            speed_mps=self._spin_speed.value(),
+            inverted=self._btn_invert.isChecked(),
+        )
+
+    def set_step(self, step: ApproachRetractStep) -> None:
+        idx = self._combo.findData(step.axis_ref.value)
+        if idx >= 0:
+            self._combo.setCurrentIndex(idx)
+        self._spin_dist.setValue(step.distance_mm)
+        self._spin_speed.setValue(step.speed_mps)
+        self._btn_invert.setChecked(step.inverted)
+
+
+class _ApproachRetractSectionWidget(QWidget):
+    """Section approche ou retrait : en-tête repliable, liste de pas, bouton ajout."""
+
+    changed = pyqtSignal()
+
+    def __init__(self, label: str, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        self._updating = False
+        self._step_rows: list[_StepRow] = []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        # En-tête : bouton déplier + label + checkbox activé
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+
+        self._btn_expand = QPushButton("▶")
+        self._btn_expand.setCheckable(True)
+        self._btn_expand.setFixedWidth(26)
+        self._btn_expand.setFlat(True)
+
+        lbl = QLabel(label)
+        font = lbl.font()
+        font.setBold(True)
+        lbl.setFont(font)
+
+        self._cb_enabled = QCheckBox("Activé(e)")
+
+        header_layout.addWidget(self._btn_expand)
+        header_layout.addWidget(lbl)
+        header_layout.addStretch()
+        header_layout.addWidget(self._cb_enabled)
+        layout.addWidget(header)
+
+        # Corps repliable
+        self._body = QWidget()
+        body_layout = QVBoxLayout(self._body)
+        body_layout.setContentsMargins(14, 2, 0, 4)
+        body_layout.setSpacing(2)
+
+        self._steps_layout = QVBoxLayout()
+        self._steps_layout.setSpacing(2)
+        body_layout.addLayout(self._steps_layout)
+
+        self._btn_add = QPushButton("+ Ajouter un pas")
+        body_layout.addWidget(self._btn_add)
+
+        layout.addWidget(self._body)
+        self._body.setVisible(False)
+
+        self._btn_expand.toggled.connect(self._on_expand_toggled)
+        self._cb_enabled.stateChanged.connect(self._emit_changed)
+        self._btn_add.clicked.connect(lambda: self._add_step())
+
+    def _on_expand_toggled(self, checked: bool) -> None:
+        self._btn_expand.setText("▼" if checked else "▶")
+        self._body.setVisible(checked)
+
+    def _emit_changed(self) -> None:
+        if not self._updating:
+            self.changed.emit()
+
+    def _add_step(self, step: ApproachRetractStep | None = None) -> None:
+        row = _StepRow(self)
+        if step is not None:
+            row.set_step(step)
+        row.changed.connect(self._emit_changed)
+        row.removed.connect(partial(self._remove_step, row))
+        self._steps_layout.addWidget(row)
+        self._step_rows.append(row)
+        self._emit_changed()
+
+    def _remove_step(self, row: _StepRow) -> None:
+        if len(self._step_rows) <= 1:
+            return  # Toujours au moins un pas
+        self._steps_layout.removeWidget(row)
+        row.deleteLater()
+        self._step_rows.remove(row)
+        self._emit_changed()
+
+    def get_config(self) -> ApproachRetractConfig:
+        return ApproachRetractConfig(
+            enabled=self._cb_enabled.isChecked(),
+            steps=tuple(r.get_step() for r in self._step_rows),
+        )
+
+    def set_config(self, cfg: ApproachRetractConfig) -> None:
+        self._updating = True
+        try:
+            self._cb_enabled.setChecked(cfg.enabled)
+            for row in self._step_rows:
+                self._steps_layout.removeWidget(row)
+                row.deleteLater()
+            self._step_rows.clear()
+            steps = cfg.steps if cfg.steps else (_DEFAULT_STEP,)
+            for step in steps:
+                self._add_step(step)
+        finally:
+            self._updating = False
 
 
 class ProgramGenerationWidget(QWidget):
@@ -52,26 +228,19 @@ class ProgramGenerationWidget(QWidget):
         layout.setContentsMargins(0, 4, 0, 4)
         layout.setSpacing(6)
 
-        # ── Settings group ──────────────────────────────────────────────────
+        # Groupe réglages
         self._group_settings = QGroupBox("Réglages génération programme")
         group_layout = QVBoxLayout(self._group_settings)
         group_layout.setSpacing(4)
 
-        self._cb_home = QCheckBox("Activer HOME (position de départ / fin)")
+        self._cb_home = QCheckBox("Activer HOME (position de départ)")
         self._cb_home.setChecked(True)
         group_layout.addWidget(self._cb_home)
 
-        approach_box = self._build_motion_box("Approche")
-        self._cb_approach, self._combo_approach_ref, self._spin_approach_dist, self._spin_approach_speed = (
-            approach_box[0], approach_box[1], approach_box[2], approach_box[3]
-        )
-        group_layout.addWidget(approach_box[4])
-
-        retract_box = self._build_motion_box("Retrait")
-        self._cb_retract, self._combo_retract_ref, self._spin_retract_dist, self._spin_retract_speed = (
-            retract_box[0], retract_box[1], retract_box[2], retract_box[3]
-        )
-        group_layout.addWidget(retract_box[4])
+        self._approach_section = _ApproachRetractSectionWidget("Approche")
+        self._retract_section = _ApproachRetractSectionWidget("Retrait")
+        group_layout.addWidget(self._approach_section)
+        group_layout.addWidget(self._retract_section)
 
         approx_box = QGroupBox("Approximation par défaut")
         approx_form = QFormLayout(approx_box)
@@ -89,7 +258,7 @@ class ProgramGenerationWidget(QWidget):
 
         layout.addWidget(self._group_settings)
 
-        # ── Header zone ─────────────────────────────────────────────────────
+        # Zone header KRL
         self._btn_toggle_header = QPushButton("Afficher header KRL")
         self._btn_toggle_header.setCheckable(True)
         layout.addWidget(self._btn_toggle_header)
@@ -114,7 +283,7 @@ class ProgramGenerationWidget(QWidget):
         self._header_zone.setVisible(False)
         layout.addWidget(self._header_zone)
 
-        # ── KRL Preview ──────────────────────────────────────────────────────
+        # Preview KRL
         self._btn_toggle_preview = QPushButton("Afficher preview KRL")
         self._btn_toggle_preview.setCheckable(True)
         layout.addWidget(self._btn_toggle_preview)
@@ -128,49 +297,17 @@ class ProgramGenerationWidget(QWidget):
         self._preview_edit.setVisible(False)
         layout.addWidget(self._preview_edit)
 
-    @staticmethod
-    def _build_motion_box(
-        label: str,
-    ) -> tuple[QCheckBox, QComboBox, QDoubleSpinBox, QDoubleSpinBox, QGroupBox]:
-        box = QGroupBox(label)
-        form = QFormLayout(box)
-        form.setContentsMargins(6, 4, 6, 4)
-        cb = QCheckBox("Activé(e)")
-        combo = QComboBox()
-        for ref in ApproachAxisRef:
-            combo.addItem(_AXIS_REF_LABELS[ref], ref.value)
-        spin_dist = QDoubleSpinBox()
-        spin_dist.setRange(0.0, 2000.0)
-        spin_dist.setDecimals(1)
-        spin_dist.setSuffix(" mm")
-        spin_dist.setValue(50.0)
-        spin_speed = QDoubleSpinBox()
-        spin_speed.setRange(0.001, 5.0)
-        spin_speed.setDecimals(3)
-        spin_speed.setSuffix(" m/s")
-        spin_speed.setValue(0.2)
-        form.addRow(cb)
-        form.addRow("Axe :", combo)
-        form.addRow("Distance :", spin_dist)
-        form.addRow("Vitesse :", spin_speed)
-        return cb, combo, spin_dist, spin_speed, box
-
     def _setup_connections(self) -> None:
         self._btn_toggle_header.toggled.connect(self._on_header_toggled)
         self._btn_toggle_preview.toggled.connect(self._on_preview_toggled)
         self._btn_save_header.clicked.connect(self._on_save_header)
         self._btn_reset_header.clicked.connect(self.resetHeaderRequested.emit)
 
-        for cb in (self._cb_home, self._cb_approach, self._cb_retract):
-            cb.stateChanged.connect(self._emit_settings_changed)
-        for combo in (self._combo_approach_ref, self._combo_retract_ref, self._combo_approx_mode):
-            combo.currentIndexChanged.connect(self._emit_settings_changed)
-        for spin in (
-            self._spin_approach_dist, self._spin_approach_speed,
-            self._spin_retract_dist, self._spin_retract_speed,
-            self._spin_approx_value,
-        ):
-            spin.valueChanged.connect(self._emit_settings_changed)
+        self._cb_home.stateChanged.connect(self._emit_settings_changed)
+        self._combo_approx_mode.currentIndexChanged.connect(self._emit_settings_changed)
+        self._spin_approx_value.editingFinished.connect(self._emit_settings_changed)
+        self._approach_section.changed.connect(self._emit_settings_changed)
+        self._retract_section.changed.connect(self._emit_settings_changed)
 
     def _on_header_toggled(self, checked: bool) -> None:
         self._header_zone.setVisible(checked)
@@ -192,23 +329,13 @@ class ProgramGenerationWidget(QWidget):
             return
         self.generationSettingsChanged.emit(self.get_settings().to_dict())
 
-    # ── Public API ──────────────────────────────────────────────────────────
+    # ── Public API ────────────────────────────────────────────────────────────
 
     def get_settings(self) -> ProgramGenerationSettings:
         return ProgramGenerationSettings(
             home_enabled=self._cb_home.isChecked(),
-            approach=ApproachRetractConfig(
-                enabled=self._cb_approach.isChecked(),
-                axis_ref=ApproachAxisRef(self._combo_approach_ref.currentData()),
-                distance_mm=self._spin_approach_dist.value(),
-                speed_mps=self._spin_approach_speed.value(),
-            ),
-            retract=ApproachRetractConfig(
-                enabled=self._cb_retract.isChecked(),
-                axis_ref=ApproachAxisRef(self._combo_retract_ref.currentData()),
-                distance_mm=self._spin_retract_dist.value(),
-                speed_mps=self._spin_retract_speed.value(),
-            ),
+            approach=self._approach_section.get_config(),
+            retract=self._retract_section.get_config(),
             header_text=self._header_edit.toPlainText(),
             default_approximation=MotionApproximation(
                 mode=ApproximationMode(self._combo_approx_mode.currentData()),
@@ -220,14 +347,8 @@ class ProgramGenerationWidget(QWidget):
         self._updating = True
         try:
             self._cb_home.setChecked(settings.home_enabled)
-            _set_combo(self._combo_approach_ref, settings.approach.axis_ref.value)
-            self._cb_approach.setChecked(settings.approach.enabled)
-            self._spin_approach_dist.setValue(settings.approach.distance_mm)
-            self._spin_approach_speed.setValue(settings.approach.speed_mps)
-            _set_combo(self._combo_retract_ref, settings.retract.axis_ref.value)
-            self._cb_retract.setChecked(settings.retract.enabled)
-            self._spin_retract_dist.setValue(settings.retract.distance_mm)
-            self._spin_retract_speed.setValue(settings.retract.speed_mps)
+            self._approach_section.set_config(settings.approach)
+            self._retract_section.set_config(settings.retract)
             _set_combo(self._combo_approx_mode, settings.default_approximation.mode.value)
             self._spin_approx_value.setValue(settings.default_approximation.value)
         finally:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from models.types.approach_retract import ApproachAxisRef, ApproachRetractConfig
+from models.types.approach_retract import ApproachAxisRef, ApproachRetractConfig, ApproachRetractStep
 from models.types.motion_approximation import ApproximationMode, MotionApproximation
 
 
@@ -49,9 +49,7 @@ class ProgramGenerationSettings:
 def _approach_retract_to_dict(cfg: ApproachRetractConfig) -> dict[str, Any]:
     return {
         "enabled": cfg.enabled,
-        "axis_ref": cfg.axis_ref.value,
-        "distance_mm": cfg.distance_mm,
-        "speed_mps": cfg.speed_mps,
+        "steps": [s.to_dict() for s in cfg.steps],
     }
 
 
@@ -60,15 +58,22 @@ def _approach_retract_from_dict(
 ) -> ApproachRetractConfig:
     if not isinstance(data, dict):
         return default
-    try:
-        axis_ref = ApproachAxisRef(data.get("axis_ref", default.axis_ref.value))
-    except ValueError:
-        axis_ref = default.axis_ref
+    # Rétrocompatibilité : ancien format avec axis_ref/distance_mm/speed_mps directement
+    if "steps" in data and isinstance(data["steps"], list):
+        steps = tuple(
+            ApproachRetractStep.from_dict(s)
+            for s in data["steps"]
+            if isinstance(s, dict)
+        )
+        if not steps:
+            steps = default.steps
+    elif "axis_ref" in data:
+        steps = (ApproachRetractStep.from_dict(data),)
+    else:
+        steps = default.steps
     return ApproachRetractConfig(
         enabled=bool(data.get("enabled", default.enabled)),
-        axis_ref=axis_ref,
-        distance_mm=float(data.get("distance_mm", default.distance_mm)),
-        speed_mps=float(data.get("speed_mps", default.speed_mps)),
+        steps=steps,
     )
 
 
