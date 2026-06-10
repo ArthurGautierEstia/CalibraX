@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         self._validated_tab_icon: QIcon | None = None
         self.main_splitter: QSplitter | None = None
         self._initial_splitter_sizes_applied = False
+        self._main_splitter_ratio = (1, 1)
         self._maximize_on_first_show = False
         self._was_maximized_before_fullscreen = False
         self._geometry_before_fullscreen = None
@@ -141,6 +142,8 @@ class MainWindow(QMainWindow):
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setCollapsible(0, True)
+        self.main_splitter.setCollapsible(1, False)
 
         layout = QVBoxLayout(central_widget)
         layout.addWidget(self.main_splitter)
@@ -198,10 +201,31 @@ class MainWindow(QMainWindow):
         self.action_toggle_fullscreen.triggered.connect(self._toggle_fullscreen)
         display_menu.addAction(self.action_toggle_fullscreen)
 
-        self.action_fit_scene = QAction("Adapter la vue à la scène", self)
+        self.action_fit_scene = QAction("Vue isométrique", self)
         self.action_fit_scene.setShortcut("Ctrl+0")
         self.action_fit_scene.triggered.connect(self.fit_scene_view_requested.emit)
         display_menu.addAction(self.action_fit_scene)
+
+        display_menu.addSeparator()
+        layout_menu = display_menu.addMenu("Répartition écran")
+        layout_menu.setFont(menu_font)
+        self.splitter_layout_actions = QActionGroup(self)
+        self.splitter_layout_actions.setExclusive(True)
+        for label, ratio, checked in (
+            ("Onglets 1:1 Viewer", (1, 1), True),
+            ("Onglets 1:2 Viewer", (1, 2), False),
+            ("Viewer uniquement", (0, 1), False),
+        ):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(checked)
+            action.triggered.connect(
+                lambda is_checked=False, selected_ratio=ratio: (
+                    self._set_main_splitter_ratio(*selected_ratio) if is_checked else None
+                )
+            )
+            self.splitter_layout_actions.addAction(action)
+            layout_menu.addAction(action)
 
         display_menu.addSeparator()
         self.action_manage_viewer_themes = QAction("Thème du viewer", self)
@@ -338,11 +362,22 @@ class MainWindow(QMainWindow):
     def _apply_initial_splitter_sizes(self) -> None:
         if self._initial_splitter_sizes_applied or self.main_splitter is None:
             return
-        total_width = max(2, self.main_splitter.size().width())
-        left_width = total_width // 2
-        right_width = total_width - left_width
-        self.main_splitter.setSizes([left_width, right_width])
+        self._apply_main_splitter_ratio()
         self._initial_splitter_sizes_applied = True
+
+    def _set_main_splitter_ratio(self, tabs_weight: int, viewer_weight: int) -> None:
+        self._main_splitter_ratio = (tabs_weight, viewer_weight)
+        self._apply_main_splitter_ratio()
+
+    def _apply_main_splitter_ratio(self) -> None:
+        if self.main_splitter is None:
+            return
+        tabs_weight, viewer_weight = self._main_splitter_ratio
+        total_weight = max(1, tabs_weight + viewer_weight)
+        total_width = max(2, self.main_splitter.size().width())
+        tabs_width = int(total_width * tabs_weight / total_weight)
+        viewer_width = total_width - tabs_width
+        self.main_splitter.setSizes([tabs_width, viewer_width])
 
     ####################
     # VIEW GETTERS

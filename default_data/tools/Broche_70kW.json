@@ -5,7 +5,7 @@
         "y": 422.045,
         "z": 331.886,
         "a": 0.0,
-        "b": -90.0,
+        "b": 0.0,
         "c": -90.0
     },
     "tool_cad_model": "./default_data/tools_stl/Precsix tool V3.stl",

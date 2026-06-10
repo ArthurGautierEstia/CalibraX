@@ -277,6 +277,9 @@ class MainController(QObject):
         layout.addLayout(grid)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        close_button = buttons.button(QDialogButtonBox.StandardButton.Close)
+        if close_button is not None:
+            close_button.setText("Fermer")
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
@@ -439,13 +442,18 @@ class MainController(QObject):
         QMessageBox.information(
             self.main_window,
             "Raccourcis clavier",
-            "Ctrl+N : Nouveau projet\n"
-            "Ctrl+O : Charger projet\n"
-            "Ctrl+S : Enregistrer projet\n"
-            "Ctrl+Shift+S : Enregistrer projet sous\n"
-            "Ctrl+0 : Adapter la vue à la scène\n"
-            "F11 : Plein écran\n"
-            "Ctrl+Q : Quitter",
+            """
+            <table cellspacing="0" cellpadding="4">
+                <tr><th align="left">Raccourci</th><th align="left">Action</th></tr>
+                <tr><td><b>Ctrl+N</b></td><td>Nouveau projet</td></tr>
+                <tr><td><b>Ctrl+O</b></td><td>Charger projet</td></tr>
+                <tr><td><b>Ctrl+S</b></td><td>Enregistrer projet</td></tr>
+                <tr><td><b>Ctrl+Shift+S</b></td><td>Enregistrer projet sous</td></tr>
+                <tr><td><b>Ctrl+0</b></td><td>Vue isométrique</td></tr>
+                <tr><td><b>F11</b></td><td>Plein écran</td></tr>
+                <tr><td><b>Ctrl+Q</b></td><td>Quitter</td></tr>
+            </table>
+            """,
         )
 
     def _on_show_about_requested(self) -> None:
@@ -453,7 +461,8 @@ class MainController(QObject):
             self.main_window,
             "À propos de CalibraX",
             "CalibraX\n\n"
-            "Configuration, calibration et visualisation de cellule robotisée.",
+            "Configuration, calibration et visualisation de cellule robotisée.\n\n"
+            "Créé avec passion par Arthur, Anselme et Roman.",
         )
 
     def bootstrap_startup(self) -> None:
@@ -471,10 +480,15 @@ class MainController(QObject):
             program_base_config = startup.get("program_base_config") or {}
             if program_base_config:
                 self.program_controller.load_base_config_state(program_base_config)
-            self._fit_scene_view_after_loading()
             self._schedule_session_save()
             return
 
+        self._on_fit_scene_view_requested()
+        self._bootstrap_startup_configurations(startup)
+        self._startup_completed = True
+        self._schedule_session_save()
+
+    def _bootstrap_startup_configurations(self, startup: dict[str, object]) -> None:
         robot_configuration_loaded = False
         config_path = self._resolve_existing_path(startup.get("config", ""))
         if config_path:
@@ -562,10 +576,6 @@ class MainController(QObject):
             self.program_controller._generation_settings
         )
         self.program_controller.generation_widget.set_header_text(loaded_header)
-
-        self._startup_completed = True
-        self._fit_scene_view_after_loading()
-        self._schedule_session_save()
 
     def flush_session(self) -> None:
         base_cfg = self.program_controller.get_base_config_state()
@@ -717,13 +727,14 @@ class MainController(QObject):
             return ""
 
         loaders = (
+            ("external_axes", "Chargement axes externes ...", lambda path: self.external_axes_controller.load_configuration_from_path(path)),
             ("robot", "Chargement configuration robot ...", lambda path: self.robot_controller.dh_controller.load_configuration_from_path(path, show_errors=True)),
             ("tool", "Chargement configuration tool ...", lambda path: self.robot_controller.tool_controller.load_tool_profile_from_path(path, show_errors=True)),
-            ("external_axes", "Chargement axes externes ...", lambda path: self.external_axes_controller.load_configuration_from_path(path)),
-            ("scene", "Chargement configuration scene ...", lambda path: self.workspace_controller.load_workspace_from_path(path, show_errors=True)),
             ("piece", "Chargement configuration pièce ...", lambda path: self.workpiece_controller.load_configuration_from_path(path, show_errors=True)),
+            ("scene", "Chargement configuration scene ...", lambda path: self.workspace_controller.load_workspace_from_path(path, show_errors=True)),
             ("camera", "Chargement cameras ...", lambda path: self.camera_controller.load_configuration_from_path(path, show_errors=True)),
         )
+        self._on_fit_scene_view_requested()
         for key, loading_message, loader in loaders:
             path = resolve_config_path(key)
             if path and not self._load_with_feedback(loading_message, lambda path=path, loader=loader: loader(path)):
@@ -733,7 +744,6 @@ class MainController(QObject):
                     f"Impossible de charger la configuration {key}: {path}",
                 )
                 return False
-        self._fit_scene_view_after_loading()
         self._schedule_session_save()
         return True
 

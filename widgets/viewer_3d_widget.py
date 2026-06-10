@@ -2057,6 +2057,9 @@ class Viewer3DWidget(QWidget):
         horizontal_margin_px = 32.0
         usable_width_px = max(1.0, viewer_width_px - (2.0 * horizontal_margin_px))
         horizontal_fill_ratio = np.clip(usable_width_px / viewer_width_px, 0.6, 0.98)
+        vertical_margin_px = 32.0
+        usable_height_px = max(1.0, viewer_height_px - (2.0 * vertical_margin_px))
+        vertical_fill_ratio = np.clip(usable_height_px / viewer_height_px, 0.6, 0.98)
         fov_rad = np.radians(float(self.viewer.opts["fov"]))
         tan_half_fov = max(1e-6, np.tan(0.5 * fov_rad))
         aspect_ratio = max(1e-6, viewer_width_px / viewer_height_px)
@@ -2067,12 +2070,13 @@ class Viewer3DWidget(QWidget):
 
         floor_target_y_px = self._get_side_view_floor_target_y()
         floor_ndc_y = 1.0 - (2.0 * floor_target_y_px / viewer_height_px)
-        visible_height_world = 2.0 * side_distance * tan_half_fov
-        side_center_z = max(0.0, -floor_ndc_y * (0.5 * visible_height_world))
+        side_visible_height_world = 2.0 * side_distance * tan_half_fov
+        side_center_z = max(0.0, -floor_ndc_y * (0.5 * side_visible_height_world))
 
         side_center_world = np.array([0.0, 0.0, side_center_z], dtype=float)
         top_center_world = np.array([0.0, 0.0, 0.0], dtype=float)
-        isometric_distance = side_distance * 1.35
+        isometric_visible_height_world = grid_size / vertical_fill_ratio
+        isometric_distance = (isometric_visible_height_world / (2.0 * tan_half_fov)) * 1.35
         return side_center_world, top_center_world, side_distance, top_distance, isometric_distance
 
     def _get_side_view_floor_target_y(self) -> float:
