@@ -245,9 +245,9 @@ class ToolController(QObject):
 
     def _should_show_validation_icon(self) -> bool:
         if not self._has_saved_reference:
-            return self._is_dirty()
+            return False
         if self._is_dirty():
-            return True
+            return False
         if self._was_dirty_since_reference:
             return True
         return self._clean_status_text not in {

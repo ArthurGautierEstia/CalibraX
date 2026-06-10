@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt
 from models.external_axis import ExternalAxis
 from models.external_axes_model import ExternalAxesModel
 from utils.config_action_icons import build_new_icon, build_save_icon
+from utils.status_badge import apply_status_badge
 from widgets.external_axes_view.external_axis_config_widget import ExternalAxisConfigWidget
 
 
@@ -57,9 +58,10 @@ class ExternalAxesPanelWidget(QWidget):
         title_row.addWidget(title_label)
         title_row.addStretch()
 
-        self.status_label = QLabel("Configuration non enregistrée")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(QLabel("Statut :"))
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        apply_status_badge(self.status_label, "Configuration non enregistrée", "#808080")
         title_row.addWidget(self.status_label)
         top_layout.addLayout(title_row)
 
@@ -200,8 +202,7 @@ class ExternalAxesPanelWidget(QWidget):
     def set_configuration_status(self, text: str, color: str) -> None:
         if self.status_label is None:
             return
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+        apply_status_badge(self.status_label, text, color)
 
     # ------------------------------------------------------------------
     # Ajout rapide via menu

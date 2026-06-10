@@ -36,6 +36,7 @@ from utils.config_action_icons import (
     build_save_icon,
 )
 from utils.math_utils import safe_float
+from utils.status_badge import apply_status_badge
 from widgets.toggle_switch_widget import ToggleSwitchWidget
 
 
@@ -112,9 +113,10 @@ class RobotConfigurationWidget(QWidget):
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         title_row.addWidget(title_label)
         title_row.addStretch()
-        self.status_label = QLabel("Configuration non enregistrée")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(QLabel("Statut :"))
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        apply_status_badge(self.status_label, "Configuration non enregistrée", "#808080")
         title_row.addWidget(self.status_label)
         top_layout.addLayout(title_row)
 
@@ -217,8 +219,7 @@ class RobotConfigurationWidget(QWidget):
         self.set_axis_colliders(default_axis_colliders(RobotConfigurationWidget.AXIS_COLLIDER_COUNT))
 
     def set_configuration_status(self, text: str, color: str) -> None:
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+        apply_status_badge(self.status_label, text, color)
 
     def set_current_configuration_name(self, file_name: str) -> None:
         self.current_config_name_label.setText(file_name)

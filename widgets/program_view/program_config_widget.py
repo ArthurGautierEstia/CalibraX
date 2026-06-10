@@ -4,6 +4,8 @@ from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
+from utils.status_badge import apply_status_badge
+
 
 class ProgramConfigWidget(QWidget):
     load_program_requested = pyqtSignal()
@@ -18,7 +20,8 @@ class ProgramConfigWidget(QWidget):
         self.btn_save_program_as = QPushButton("Enregistrer sous")
         self.btn_clear = QPushButton("Effacer")
         self.lbl_program = QLabel("Aucun programme")
-        self.status_label = QLabel("Aucun programme charge")
+        self.status_label = QLabel()
+        apply_status_badge(self.status_label, "Aucun programme charge", "#808080")
         self.lbl_summary_title = QLabel("Mouvements :")
         self.lbl_summary_value = QLabel("0")
         self.log_text = QTextEdit()
@@ -40,8 +43,8 @@ class ProgramConfigWidget(QWidget):
         title_row = QHBoxLayout()
         title_row.addWidget(title_label)
         title_row.addStretch()
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(QLabel("Statut :"))
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_row.addWidget(self.status_label)
         layout.addLayout(title_row)
 
@@ -102,8 +105,7 @@ class ProgramConfigWidget(QWidget):
         self.btn_save_program_as.setEnabled(bool(enabled))
 
     def set_program_status(self, text: str, color: str) -> None:
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+        apply_status_badge(self.status_label, text, color)
 
     def _apply_current_program_label_style(self) -> None:
         accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()

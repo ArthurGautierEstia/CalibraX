@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 import os
+import re
 
 from PyQt6.QtCore import QObject, QTimer
-from PyQt6.QtGui import QColor, QPalette
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+)
 
 from controllers.calibration_controller import CalibrationController
 from controllers.camera_controller import CameraController
@@ -29,6 +41,7 @@ from models.tool_model import ToolModel
 from models.tooling_model import ToolingModel
 from models.workspace_model import WorkspaceModel
 from models.workpiece_model import WorkpieceModel
+from utils.status_badge import apply_status_badge
 from views.main_window import MainWindow
 
 
@@ -71,10 +84,6 @@ class MainController(QObject):
         self._session_save_timer.setInterval(250)
         self._session_save_timer.timeout.connect(self.flush_session)
         self._startup_completed = False
-        app = QApplication.instance()
-        self._system_palette = QPalette(app.palette()) if app is not None else QPalette()
-        self._application_theme = "system"
-
         self.robot_model.set_tool(self.tool_model.get_tool())
         self.collision_scene_model = CollisionSceneModel(
             self.robot_model,
@@ -187,7 +196,6 @@ class MainController(QObject):
         self.main_window.verify_configurations_requested.connect(self._on_verify_configurations_requested)
         self.main_window.fit_scene_view_requested.connect(self._on_fit_scene_view_requested)
         self.main_window.manage_viewer_themes_requested.connect(self._on_manage_viewer_themes_requested)
-        self.main_window.application_theme_changed.connect(self.apply_application_theme)
         self.main_window.show_keyboard_shortcuts_requested.connect(self._on_show_keyboard_shortcuts_requested)
         self.main_window.show_about_requested.connect(self._on_show_about_requested)
         self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
@@ -224,30 +232,60 @@ class MainController(QObject):
         self.robot_controller.dh_controller.robot_configuration_widget.measured_dh_toggle.setEnabled(True)
 
     def _on_verify_configurations_requested(self) -> None:
-        entries = self.get_project_configuration_paths()
-        expected = (
-            ("robot", "Robot"),
-            ("tool", "Tool"),
-            ("external_axes", "Axe externe"),
-            ("scene", "Scene"),
-            ("piece", "Pièce"),
-            ("camera", "Camera"),
-        )
-        lines = []
-        for key, label in expected:
-            path = entries.get(key, "")
-            if not path:
-                lines.append(f"{label}: aucune configuration")
-                continue
-            resolved = self._resolve_existing_path(path)
-            state = "OK" if resolved else "fichier introuvable"
-            lines.append(f"{label}: {state}\n  {path}")
+        dialog = QDialog(self.main_window)
+        dialog.setWindowTitle("Vérification des configurations")
+        dialog.resize(820, 340)
 
-        QMessageBox.information(
-            self.main_window,
-            "Vérification des configurations",
-            "\n\n".join(lines),
-        )
+        layout = QVBoxLayout(dialog)
+        summary_label = QLabel(dialog)
+        summary_label.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(summary_label)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.addWidget(QLabel("Configuration", dialog), 0, 0)
+        grid.addWidget(QLabel("Statut", dialog), 0, 1)
+        grid.addWidget(QLabel("Chemin", dialog), 0, 2)
+
+        rows: dict[str, dict[str, object]] = {}
+        for row_index, (key, label, _loading_message) in enumerate(self._configuration_specs(), start=1):
+            name_label = QLabel(label, dialog)
+            status_label = QLabel(dialog)
+            status_label.setMinimumWidth(170)
+
+            path_field = QLineEdit(dialog)
+            path_field.setReadOnly(True)
+            path_field.setMinimumWidth(360)
+            path_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+            load_button = QPushButton("...", dialog)
+            load_button.setFixedWidth(34)
+            load_button.setToolTip(f"Charger une configuration {label.lower()}")
+            load_button.clicked.connect(lambda _checked=False, config_key=key: self._load_configuration_from_dialog(dialog, config_key, rows, summary_label))
+
+            path_layout = QHBoxLayout()
+            path_layout.setContentsMargins(0, 0, 0, 0)
+            path_layout.addWidget(path_field, 1)
+            path_layout.addWidget(load_button)
+
+            grid.addWidget(name_label, row_index, 0)
+            grid.addWidget(status_label, row_index, 1)
+            grid.addLayout(path_layout, row_index, 2)
+            rows[key] = {
+                "status_label": status_label,
+                "path_field": path_field,
+            }
+
+        grid.setColumnStretch(2, 1)
+        layout.addLayout(grid)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        self._refresh_configurations_dialog(rows, summary_label)
+        dialog.exec()
 
     def _on_fit_scene_view_requested(self) -> None:
         viewer = self.main_window.get_viewer3d()
@@ -259,65 +297,180 @@ class MainController(QObject):
         if hasattr(viewer, "open_viewer_theme_settings_dialog"):
             viewer.open_viewer_theme_settings_dialog()
 
-    def apply_application_theme(self, theme_key: str, save_session: bool = True) -> None:
-        normalized = str(theme_key or "").strip().lower()
-        if normalized not in {"system", "light", "dark"}:
-            normalized = "system"
-        self._application_theme = normalized
+    def _configuration_specs(self) -> tuple[tuple[str, str, str], ...]:
+        return (
+            ("robot", "Robot", "Chargement configuration robot ..."),
+            ("tool", "Tool", "Chargement configuration tool ..."),
+            ("external_axes", "Axe externe", "Chargement axes externes ..."),
+            ("scene", "Scene", "Chargement configuration scene ..."),
+            ("piece", "Pièce", "Chargement configuration pièce ..."),
+            ("camera", "Camera", "Chargement cameras ..."),
+        )
 
-        app = QApplication.instance()
-        if app is None:
+    def _refresh_configurations_dialog(
+        self,
+        rows: dict[str, dict[str, object]],
+        summary_label: QLabel,
+    ) -> None:
+        entries = self.get_project_configuration_paths()
+        ok_count = 0
+        missing_count = 0
+        unsaved_count = 0
+        modified_count = 0
+        not_found_count = 0
+
+        for key, _label, _loading_message in self._configuration_specs():
+            path = entries.get(key, "")
+            status_text, status_color = self._configuration_status_for_key(key, path)
+            if status_color == "#6fcf97":
+                ok_count += 1
+            elif status_color == "#d9534f":
+                not_found_count += 1
+            elif self._is_unsaved_configuration_status(status_text):
+                unsaved_count += 1
+            elif status_color == "#d97706":
+                modified_count += 1
+            else:
+                missing_count += 1
+
+            row = rows.get(key, {})
+            status_label = row.get("status_label")
+            path_field = row.get("path_field")
+            if isinstance(status_label, QLabel):
+                apply_status_badge(status_label, status_text, status_color)
+            if isinstance(path_field, QLineEdit):
+                path_field.setText(path)
+                path_field.setPlaceholderText("Aucune configuration")
+                path_field.setToolTip(path)
+
+        parts = [f"{ok_count} OK"]
+        if missing_count:
+            parts.append(f"{missing_count} non chargée(s)")
+        if unsaved_count:
+            parts.append(f"{unsaved_count} non enregistrée(s)")
+        if modified_count:
+            parts.append(f"{modified_count} modifiée(s)")
+        if not_found_count:
+            parts.append(f"{not_found_count} introuvable(s)")
+        summary_label.setText("Aperçu des statuts : " + " · ".join(parts))
+
+    @staticmethod
+    def _is_unsaved_configuration_status(status_text: str) -> bool:
+        normalized = status_text.strip().lower()
+        return "non enregistr" in normalized and "modification" not in normalized
+
+    def _configuration_status_for_key(self, config_key: str, path: str) -> tuple[str, str]:
+        if str(path or "").strip() and not self._configuration_path_exists(path):
+            return "Fichier introuvable", "#d9534f"
+
+        status_label = self._configuration_status_label(config_key)
+        if status_label is not None:
+            text = status_label.text().strip()
+            color = self._color_from_stylesheet(status_label.styleSheet())
+            if text:
+                return text, color or "#808080"
+
+        if not str(path or "").strip():
+            return "Configuration non chargée", "#808080"
+        if self._configuration_path_exists(path):
+            return "Configuration à jour", "#6fcf97"
+        return "Fichier introuvable", "#d9534f"
+
+    def _configuration_status_label(self, config_key: str) -> QLabel | None:
+        widgets = {
+            "robot": self.robot_controller.dh_controller.robot_configuration_widget,
+            "tool": self.robot_controller.tool_controller.robot_configuration_widget,
+            "external_axes": self.external_axes_controller._panel,
+            "scene": self.workspace_controller.workspace_widget,
+            "piece": self.workpiece_controller.view,
+            "camera": self.camera_controller.camera_widget,
+        }
+        widget = widgets.get(config_key)
+        status_label = getattr(widget, "status_label", None)
+        return status_label if isinstance(status_label, QLabel) else None
+
+    @staticmethod
+    def _color_from_stylesheet(stylesheet: str) -> str:
+        match = re.search(r"background-color\s*:\s*(#[0-9A-Fa-f]{6})", stylesheet or "")
+        if match:
+            return match.group(1)
+        match = re.search(r"color\s*:\s*(#[0-9A-Fa-f]{6})", stylesheet or "")
+        return match.group(1) if match else ""
+
+    def _configuration_path_exists(self, path: str) -> bool:
+        normalized = str(path or "").strip()
+        if not normalized:
+            return False
+        resolved = (
+            os.path.abspath(normalized)
+            if os.path.isabs(normalized)
+            else os.path.abspath(os.path.join(self.project_root, normalized))
+        )
+        return os.path.exists(resolved)
+
+    def _load_configuration_from_dialog(
+        self,
+        dialog: QDialog,
+        config_key: str,
+        rows: dict[str, dict[str, object]],
+        summary_label: QLabel,
+    ) -> None:
+        selected_path = self._select_configuration_file(config_key, dialog)
+        if not selected_path:
             return
 
-        if normalized == "dark":
-            palette = self._build_dark_application_palette()
-        elif normalized == "light":
-            palette = self._build_light_application_palette()
-        else:
-            palette = QPalette(self._system_palette)
-
-        self._apply_accent_to_palette(palette)
-        app.setPalette(palette)
-        self.main_window.set_application_theme_selection(normalized)
-        if save_session:
+        if self._load_single_configuration(config_key, selected_path):
+            self._fit_scene_view_after_loading()
             self._schedule_session_save()
+        self._refresh_configurations_dialog(rows, summary_label)
 
-    def _build_light_application_palette(self) -> QPalette:
-        palette = QPalette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#f3f3f3"))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor("#1f1f1f"))
-        palette.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#f0f0f0"))
-        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#ffffff"))
-        palette.setColor(QPalette.ColorRole.ToolTipText, QColor("#1f1f1f"))
-        palette.setColor(QPalette.ColorRole.Text, QColor("#1f1f1f"))
-        palette.setColor(QPalette.ColorRole.Button, QColor("#f3f3f3"))
-        palette.setColor(QPalette.ColorRole.ButtonText, QColor("#1f1f1f"))
-        palette.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
-        return palette
+    def _select_configuration_file(self, config_key: str, dialog: QDialog) -> str:
+        entries = self.get_project_configuration_paths()
+        current_path = self._resolve_existing_path(entries.get(config_key, ""))
+        start_dir = os.path.dirname(current_path) if current_path else self.project_root
+        selected_path, _filter = QFileDialog.getOpenFileName(
+            dialog,
+            "Charger une configuration",
+            start_dir,
+            "Configurations JSON (*.json);;Tous les fichiers (*)",
+        )
+        return selected_path
 
-    def _build_dark_application_palette(self) -> QPalette:
-        palette = QPalette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#2b2b2b"))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor("#e6e6e6"))
-        palette.setColor(QPalette.ColorRole.Base, QColor("#1f1f1f"))
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#303030"))
-        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#2b2b2b"))
-        palette.setColor(QPalette.ColorRole.ToolTipText, QColor("#e6e6e6"))
-        palette.setColor(QPalette.ColorRole.Text, QColor("#e6e6e6"))
-        palette.setColor(QPalette.ColorRole.Button, QColor("#333333"))
-        palette.setColor(QPalette.ColorRole.ButtonText, QColor("#e6e6e6"))
-        palette.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
-        return palette
-
-    def _apply_accent_to_palette(self, palette: QPalette) -> None:
-        accent = QColor("#FF6F00")
-        palette.setColor(QPalette.ColorRole.Highlight, accent)
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
-        palette.setColor(QPalette.ColorRole.Link, accent)
-        palette.setColor(QPalette.ColorRole.LinkVisited, QColor("#D65E00"))
-        if hasattr(QPalette.ColorRole, "Accent"):
-            palette.setColor(QPalette.ColorRole.Accent, accent)
+    def _load_single_configuration(self, config_key: str, path: str) -> bool:
+        loaders = {
+            "robot": lambda selected_path: self.robot_controller.dh_controller.load_configuration_from_path(
+                selected_path,
+                show_errors=True,
+            ),
+            "tool": lambda selected_path: self.robot_controller.tool_controller.load_tool_profile_from_path(
+                selected_path,
+                show_errors=True,
+            ),
+            "external_axes": self.external_axes_controller.load_configuration_from_path,
+            "scene": lambda selected_path: self.workspace_controller.load_workspace_from_path(
+                selected_path,
+                show_errors=True,
+            ),
+            "piece": lambda selected_path: self.workpiece_controller.load_configuration_from_path(
+                selected_path,
+                show_errors=True,
+            ),
+            "camera": lambda selected_path: self.camera_controller.load_configuration_from_path(
+                selected_path,
+                show_errors=True,
+            ),
+        }
+        loading_messages = {
+            key: loading_message
+            for key, _label, loading_message in self._configuration_specs()
+        }
+        loader = loaders.get(config_key)
+        if loader is None:
+            return False
+        return self._load_with_feedback(
+            loading_messages.get(config_key, "Chargement configuration ..."),
+            lambda: loader(path),
+        )
 
     def _on_show_keyboard_shortcuts_requested(self) -> None:
         QMessageBox.information(
@@ -344,7 +497,6 @@ class MainController(QObject):
         session = self._load_session()
         startup = self._build_startup_payload(session)
         self.project_controller.set_recent_projects(startup.get("recent_projects", []))
-        self.apply_application_theme(str(startup.get("application_theme", "system") or "system"), save_session=False)
 
         viewer_state = startup.get("viewer_state")
         if isinstance(viewer_state, ViewerDisplayState):
@@ -448,7 +600,7 @@ class MainController(QObject):
                 self._normalize_project_path(path)
                 for path in self.project_controller.get_recent_projects()
             ],
-            application_theme=self._application_theme,
+            application_theme="system",
             robot_config_path=self._normalize_project_path(self.robot_model.get_current_config_file()),
             tool_profile_path=self._session_tool_profile_path(),
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
@@ -520,7 +672,7 @@ class MainController(QObject):
         return {
             "project": session.project_path if session is not None else "",
             "recent_projects": session.recent_project_paths if session is not None else [],
-            "application_theme": session.application_theme if session is not None else "system",
+            "application_theme": "system",
             "config": config_override or (session.robot_config_path if session is not None else ""),
             "tool": tool_override or (session.tool_profile_path if session is not None else ""),
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),

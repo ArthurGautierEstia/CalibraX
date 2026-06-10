@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
@@ -42,7 +42,6 @@ class MainWindow(QMainWindow):
     verify_configurations_requested = pyqtSignal()
     fit_scene_view_requested = pyqtSignal()
     manage_viewer_themes_requested = pyqtSignal()
-    application_theme_changed = pyqtSignal(str)
     show_keyboard_shortcuts_requested = pyqtSignal()
     show_about_requested = pyqtSignal()
 
@@ -205,24 +204,6 @@ class MainWindow(QMainWindow):
         display_menu.addAction(self.action_fit_scene)
 
         display_menu.addSeparator()
-        app_theme_menu = display_menu.addMenu("Thème de l'application")
-        app_theme_menu.setFont(menu_font)
-        self.application_theme_action_group = QActionGroup(self)
-        self.application_theme_action_group.setExclusive(True)
-        self.application_theme_actions: dict[str, QAction] = {}
-        for theme_key, theme_label in (
-            ("system", "Système"),
-            ("light", "Clair"),
-            ("dark", "Sombre"),
-        ):
-            action = QAction(theme_label, self)
-            action.setCheckable(True)
-            action.triggered.connect(lambda _checked=False, key=theme_key: self.application_theme_changed.emit(key))
-            self.application_theme_action_group.addAction(action)
-            app_theme_menu.addAction(action)
-            self.application_theme_actions[theme_key] = action
-        self.set_application_theme_selection("system")
-
         self.action_manage_viewer_themes = QAction("Thème du viewer", self)
         self.action_manage_viewer_themes.triggered.connect(self.manage_viewer_themes_requested.emit)
         display_menu.addAction(self.action_manage_viewer_themes)
@@ -250,12 +231,6 @@ class MainWindow(QMainWindow):
     def select_cell_configuration_tab(self, tab_index: int) -> None:
         self.tabs.setCurrentWidget(self.cell_configuration_tabs)
         self.cell_configuration_tabs.setCurrentIndex(tab_index)
-
-    def set_application_theme_selection(self, theme_key: str) -> None:
-        normalized = str(theme_key or "").strip().lower()
-        if normalized not in self.application_theme_actions:
-            normalized = "system"
-        self.application_theme_actions[normalized].setChecked(True)
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():
@@ -344,6 +319,8 @@ class MainWindow(QMainWindow):
             MainWindow.ROBOT_TAB_INDEX,
             MainWindow.TOOL_TAB_INDEX,
             MainWindow.EXTERNAL_AXES_TAB_INDEX,
+            MainWindow.WORKSPACE_TAB_INDEX,
+            MainWindow.WORKPIECE_TAB_INDEX,
             MainWindow.CAMERA_TAB_INDEX,
         ):
             current_icon = self.cell_configuration_tabs.tabIcon(tab_index)

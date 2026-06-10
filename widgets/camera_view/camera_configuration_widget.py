@@ -40,6 +40,7 @@ from utils.config_action_icons import (
     build_new_icon,
     build_save_icon,
 )
+from utils.status_badge import apply_status_badge
 
 
 class CameraDetailWidget(QScrollArea):
@@ -419,9 +420,10 @@ class CameraConfigurationWidget(QWidget):
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         header_row.addWidget(title_label)
         header_row.addStretch()
-        self.status_label = QLabel("Configuration non chargée")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        header_row.addWidget(QLabel("Statut :"))
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        apply_status_badge(self.status_label, "Configuration non chargée", "#808080")
         header_row.addWidget(self.status_label)
         main_layout.addLayout(header_row)
 
@@ -506,8 +508,7 @@ class CameraConfigurationWidget(QWidget):
         main_layout.addWidget(splitter, 1)
 
     def set_configuration_status(self, text: str, color: str = "#808080") -> None:
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+        apply_status_badge(self.status_label, text, color)
 
     def changeEvent(self, event) -> None:  # type: ignore[override]
         super().changeEvent(event)
