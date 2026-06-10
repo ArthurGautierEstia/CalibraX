@@ -404,7 +404,7 @@ class CalibraXGLViewWidget(gl.GLViewWidget):
         x0, y0, w, h = viewport
         dist = max(1e-6, float(self.opts["distance"]))
         fov = float(self.opts["fov"])
-        near_clip = max(1.0, dist * 0.05)
+        near_clip = max(0.1, dist * 0.01)
         far_clip = max(near_clip + 1.0, dist * 50.0)
 
         r = near_clip * np.tan(0.5 * np.radians(fov))
