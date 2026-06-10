@@ -119,9 +119,10 @@ class ToolConfigurationWidget(QWidget):
         self.tool_name_line_edit.setMinimumWidth(220)
         self.tool_name_line_edit.textChanged.connect(self.tool_name_changed.emit)
         fields_layout.addWidget(self.tool_name_line_edit, 1, 1)
+        fields_layout.setHorizontalSpacing(8)
+        fields_layout.setVerticalSpacing(6)
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
-        header_layout.addLayout(fields_layout)
 
         actions_layout = QHBoxLayout()
         actions_layout.addStretch()
@@ -156,7 +157,8 @@ class ToolConfigurationWidget(QWidget):
         self.btn_save_as.clicked.connect(self._on_save_tool_profile_as)
         actions_layout.addWidget(self.btn_save_as)
 
-        header_layout.addLayout(actions_layout)
+        fields_layout.addLayout(actions_layout, 2, 0, 1, 2)
+        header_layout.addLayout(fields_layout)
         layout.addLayout(header_layout)
 
         tabs = QTabWidget()

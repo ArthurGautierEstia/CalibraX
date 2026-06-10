@@ -2245,6 +2245,268 @@ class Viewer3DWidget(QWidget):
         dialog.resize(320, 260)
         dialog.exec()
 
+    def open_viewer_theme_settings_dialog(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Paramétrage du thème viewer")
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(12, 12, 12, 12)
+        dialog_layout.setSpacing(8)
+
+        def _add_row(label_text: str, widget: QWidget) -> None:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
+            label = QLabel(label_text, dialog)
+            label.setMinimumWidth(130)
+            row.addWidget(label)
+            row.addWidget(widget, 1)
+            dialog_layout.addLayout(row)
+
+        theme_combo = QComboBox(dialog)
+        _add_row("Thème", theme_combo)
+
+        background_mode_combo = QComboBox(dialog)
+        background_mode_combo.addItem("Solid", userData="solid")
+        background_mode_combo.addItem("Gradient", userData="gradient")
+        _add_row("Fond", background_mode_combo)
+
+        primary_color_button = QPushButton(dialog)
+        _add_row("Couleur 1", primary_color_button)
+
+        secondary_color_button = QPushButton(dialog)
+        secondary_color_row = QHBoxLayout()
+        secondary_color_row.setContentsMargins(0, 0, 0, 0)
+        secondary_color_row.setSpacing(8)
+        secondary_color_label = QLabel("Couleur 2", dialog)
+        secondary_color_label.setMinimumWidth(130)
+        secondary_color_row.addWidget(secondary_color_label)
+        secondary_color_row.addWidget(secondary_color_button, 1)
+        dialog_layout.addLayout(secondary_color_row)
+
+        gradient_direction_combo = QComboBox(dialog)
+        gradient_direction_combo.addItem("Vertical", userData="vertical")
+        gradient_direction_combo.addItem("Horizontal", userData="horizontal")
+        gradient_direction_combo.addItem("Diagonal", userData="diagonal")
+        gradient_direction_combo.addItem("Radial", userData="radial")
+        gradient_direction_row = QHBoxLayout()
+        gradient_direction_row.setContentsMargins(0, 0, 0, 0)
+        gradient_direction_row.setSpacing(8)
+        gradient_direction_label = QLabel("Direction", dialog)
+        gradient_direction_label.setMinimumWidth(130)
+        gradient_direction_row.addWidget(gradient_direction_label)
+        gradient_direction_row.addWidget(gradient_direction_combo, 1)
+        dialog_layout.addLayout(gradient_direction_row)
+
+        swap_colors_button = QPushButton("Inverser les couleurs", dialog)
+        dialog_layout.addWidget(swap_colors_button)
+
+        text_color_button = QPushButton(dialog)
+        _add_row("Texte", text_color_button)
+
+        accent_color_button = QPushButton(dialog)
+        _add_row("Accent", accent_color_button)
+
+        grid_size_spin = QSpinBox(dialog)
+        grid_size_spin.setRange(200, 20000)
+        grid_size_spin.setSingleStep(100)
+        grid_size_spin.setKeyboardTracking(False)
+        _add_row("Taille grille", grid_size_spin)
+
+        grid_spacing_spin = QSpinBox(dialog)
+        grid_spacing_spin.setRange(10, 5000)
+        grid_spacing_spin.setSingleStep(10)
+        grid_spacing_spin.setKeyboardTracking(False)
+        _add_row("Pas grille", grid_spacing_spin)
+
+        grid_color_button = QPushButton(dialog)
+        _add_row("Grille couleur", grid_color_button)
+
+        action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, 8, 0, 0)
+        action_row.setSpacing(8)
+        save_button = QPushButton("Enregistrer", dialog)
+        create_button = QPushButton("Définir un nouveau thème", dialog)
+        manage_button = QPushButton("Gérer les thèmes", dialog)
+        close_button = QPushButton("Fermer", dialog)
+        action_row.addWidget(save_button)
+        action_row.addWidget(create_button)
+        action_row.addWidget(manage_button)
+        action_row.addStretch()
+        action_row.addWidget(close_button)
+        dialog_layout.addLayout(action_row)
+
+        color_buttons = (
+            primary_color_button,
+            secondary_color_button,
+            text_color_button,
+            accent_color_button,
+            grid_color_button,
+        )
+
+        def _refresh_dialog_controls() -> None:
+            theme_combo.blockSignals(True)
+            theme_combo.clear()
+            theme_combo.addItem("Original", userData="")
+            for stored_theme in self._list_visible_viewer_themes():
+                theme_combo.addItem(stored_theme.name, userData=stored_theme.name)
+            theme_index = theme_combo.findData(self._selected_viewer_theme_name.strip())
+            theme_combo.setCurrentIndex(max(0, theme_index))
+            theme_combo.blockSignals(False)
+
+            background_mode_combo.blockSignals(True)
+            background_mode_combo.setCurrentIndex(max(0, background_mode_combo.findData(self._viewer_background_mode)))
+            background_mode_combo.blockSignals(False)
+
+            gradient_direction_combo.blockSignals(True)
+            gradient_direction_combo.setCurrentIndex(
+                max(0, gradient_direction_combo.findData(self._viewer_background_gradient_direction))
+            )
+            gradient_direction_combo.blockSignals(False)
+
+            grid_size_spin.blockSignals(True)
+            grid_size_spin.setValue(int(self._grid_size))
+            grid_size_spin.blockSignals(False)
+
+            grid_spacing_spin.blockSignals(True)
+            grid_spacing_spin.setValue(int(self._grid_spacing))
+            grid_spacing_spin.blockSignals(False)
+
+            self._set_color_button_preview(primary_color_button, self._viewer_background_primary_color)
+            self._set_color_button_preview(secondary_color_button, self._viewer_background_secondary_color)
+            self._set_color_button_preview(text_color_button, self._viewer_text_color)
+            self._set_color_button_preview(accent_color_button, self._viewer_accent_color)
+            self._set_color_button_preview(grid_color_button, self._grid_color)
+
+            is_gradient = self._viewer_background_mode == "gradient"
+            secondary_color_label.setVisible(is_gradient)
+            secondary_color_button.setVisible(is_gradient)
+            gradient_direction_label.setVisible(is_gradient)
+            gradient_direction_combo.setVisible(is_gradient)
+            swap_colors_button.setVisible(is_gradient)
+
+            has_theme_changes = self._current_theme_differs_from_applied()
+            has_selected_theme = self._selected_viewer_theme_name.strip() != ""
+            save_button.setEnabled(has_selected_theme and has_theme_changes)
+            create_button.setEnabled(has_theme_changes)
+
+        def _apply_dialog_change() -> None:
+            self._apply_viewer_chrome_style()
+            self._apply_viewer_background_style()
+            self._apply_grid_style()
+            self._refresh_toolbar_buttons()
+            self._refresh_position_buttons()
+            self._refresh_viewer_style_controls()
+            _refresh_dialog_controls()
+            self._emit_display_state_changed()
+
+        def _choose_color(current_color: QColor, title: str) -> QColor | None:
+            color = QColorDialog.getColor(current_color, dialog, title)
+            return color if color.isValid() else None
+
+        def _on_theme_changed(index: int) -> None:
+            selected_theme_name = str(theme_combo.itemData(index) or "").strip()
+            if selected_theme_name == "":
+                self._apply_theme_state(self._build_original_viewer_theme_state(), selected_theme_name="")
+                _apply_dialog_change()
+                return
+            selected_theme = self._viewer_theme_store.load_theme(selected_theme_name)
+            if selected_theme is None:
+                return
+            self._apply_theme_state(selected_theme, selected_theme_name=selected_theme_name)
+            _apply_dialog_change()
+
+        def _on_background_mode_changed(_index: int) -> None:
+            self._viewer_background_mode = str(background_mode_combo.currentData())
+            _apply_dialog_change()
+
+        def _on_gradient_direction_changed(_index: int) -> None:
+            self._viewer_background_gradient_direction = str(gradient_direction_combo.currentData())
+            _apply_dialog_change()
+
+        def _on_primary_color() -> None:
+            color = _choose_color(self._viewer_background_primary_color, "Choisir la couleur du fond")
+            if color is None:
+                return
+            self._viewer_background_primary_color = color
+            _apply_dialog_change()
+
+        def _on_secondary_color() -> None:
+            color = _choose_color(self._viewer_background_secondary_color, "Choisir la seconde couleur du fond")
+            if color is None:
+                return
+            self._viewer_background_secondary_color = color
+            _apply_dialog_change()
+
+        def _on_text_color() -> None:
+            color = _choose_color(self._viewer_text_color, "Choisir la couleur du texte")
+            if color is None:
+                return
+            self._viewer_text_color = color
+            _apply_dialog_change()
+
+        def _on_accent_color() -> None:
+            color = _choose_color(self._viewer_accent_color, "Choisir la couleur d'accent")
+            if color is None:
+                return
+            self._viewer_accent_color = color
+            self.accent_color_changed.emit()
+            _apply_dialog_change()
+
+        def _on_grid_color() -> None:
+            color = _choose_color(self._grid_color, "Choisir la couleur de la grille")
+            if color is None:
+                return
+            self._grid_color = color
+            _apply_dialog_change()
+
+        def _on_swap_colors() -> None:
+            primary_color = QColor(self._viewer_background_primary_color)
+            self._viewer_background_primary_color = QColor(self._viewer_background_secondary_color)
+            self._viewer_background_secondary_color = primary_color
+            _apply_dialog_change()
+
+        def _on_grid_size_changed(value: int) -> None:
+            self._grid_size = int(value)
+            _apply_dialog_change()
+
+        def _on_grid_spacing_changed(value: int) -> None:
+            self._grid_spacing = int(value)
+            _apply_dialog_change()
+
+        def _on_save_theme() -> None:
+            self._save_current_viewer_theme()
+            _refresh_dialog_controls()
+
+        def _on_create_theme() -> None:
+            self._create_new_viewer_theme()
+            _refresh_dialog_controls()
+
+        def _on_manage_themes() -> None:
+            self._manage_viewer_themes()
+            _refresh_dialog_controls()
+
+        theme_combo.currentIndexChanged.connect(_on_theme_changed)
+        background_mode_combo.currentIndexChanged.connect(_on_background_mode_changed)
+        gradient_direction_combo.currentIndexChanged.connect(_on_gradient_direction_changed)
+        primary_color_button.clicked.connect(_on_primary_color)
+        secondary_color_button.clicked.connect(_on_secondary_color)
+        text_color_button.clicked.connect(_on_text_color)
+        accent_color_button.clicked.connect(_on_accent_color)
+        grid_color_button.clicked.connect(_on_grid_color)
+        swap_colors_button.clicked.connect(_on_swap_colors)
+        grid_size_spin.valueChanged.connect(_on_grid_size_changed)
+        grid_spacing_spin.valueChanged.connect(_on_grid_spacing_changed)
+        save_button.clicked.connect(_on_save_theme)
+        create_button.clicked.connect(_on_create_theme)
+        manage_button.clicked.connect(_on_manage_themes)
+        close_button.clicked.connect(dialog.accept)
+
+        _refresh_dialog_controls()
+        for button in color_buttons:
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        dialog.resize(620, 430)
+        dialog.exec()
+
     def _sync_viewer_style_controls(self) -> None:
         mode_index = self.background_mode_combo.findData(self._viewer_background_mode)
         self.background_mode_combo.blockSignals(True)
@@ -4563,66 +4825,70 @@ class Viewer3DWidget(QWidget):
             axes: list[ExternalAxis]
             world_transforms: dict retourné par ExternalAxesModel.compute_world_transforms()
         """
-        from utils.math_utils import pose_zyx_to_matrix
-        # Sauvegarder le snapshot pour la restauration après clear_viewer()
-        self._last_external_axes_snapshot = list(axes)
-        self._last_external_world_transforms = dict(world_transforms)
-        # Initialiser la visibilité des nouveaux axes (défaut : visible)
-        current_ids = {axis.id for axis in axes}
-        for axis in axes:
-            if axis.id not in self._ext_axis_frames_visible:
-                self._ext_axis_frames_visible[axis.id] = True
-        # Supprimer les entrées pour les axes supprimés
-        for axis_id in list(self._ext_axis_frames_visible.keys()):
-            if axis_id not in current_ids:
-                del self._ext_axis_frames_visible[axis_id]
+        self.begin_loading_feedback("Chargement des CAO axes externes ...")
+        try:
+            from utils.math_utils import pose_zyx_to_matrix
+            # Sauvegarder le snapshot pour la restauration après clear_viewer()
+            self._last_external_axes_snapshot = list(axes)
+            self._last_external_world_transforms = dict(world_transforms)
+            # Initialiser la visibilité des nouveaux axes (défaut : visible)
+            current_ids = {axis.id for axis in axes}
+            for axis in axes:
+                if axis.id not in self._ext_axis_frames_visible:
+                    self._ext_axis_frames_visible[axis.id] = True
+            # Supprimer les entrées pour les axes supprimés
+            for axis_id in list(self._ext_axis_frames_visible.keys()):
+                if axis_id not in current_ids:
+                    del self._ext_axis_frames_visible[axis_id]
 
-        self._clear_viewer_items(self._external_axes_links)
-        self._external_axes_links.clear()
-        self._external_axes_link_keys.clear()
-        self._external_axes_cad_offsets.clear()
-        self._clear_viewer_items(self._external_axes_frame_items)
+            self._clear_viewer_items(self._external_axes_links)
+            self._external_axes_links.clear()
+            self._external_axes_link_keys.clear()
+            self._external_axes_cad_offsets.clear()
+            self._clear_viewer_items(self._external_axes_frame_items)
 
-        for axis in axes:
-            transforms = world_transforms.get(axis.id)
-            if transforms is None:
-                continue
+            for axis in axes:
+                transforms = world_transforms.get(axis.id)
+                if transforms is None:
+                    continue
 
-            # ── CAO base fixe ──────────────────────────────────────────
-            if axis.base_cad_model:
-                color_base = getattr(axis, "base_cad_color", (0.3, 0.3, 0.35, 1.0))
-                item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
-                if item:
-                    self._apply_ext_axis_item_transparency(item)
-                    self.viewer.addItem(item)
-                    self._external_axes_links.append(item)
-                    self._external_axes_link_keys.append((axis.id, -1))
-                    self._external_axes_cad_offsets.append(np.eye(4, dtype=float))
-
-            # ── CAO liens mobiles ──────────────────────────────────────
-            for ji, joint in enumerate(axis.joints):
-                T_joint = transforms["joint_links"][ji]
-                if joint.cad_model:
-                    color_link = getattr(joint, "cad_color", (0.25, 0.45, 0.65, 1.0))
-                    cad_offset_pose = getattr(joint, "cad_offset_in_joint", None)
-                    cad_offset = (
-                        pose_zyx_to_matrix(cad_offset_pose)
-                        if cad_offset_pose is not None
-                        else np.eye(4, dtype=float)
-                    )
-                    T_render = T_joint @ cad_offset
-                    item = self.load_robot_mesh(joint.cad_model, T_render, color_link)
+                # ── CAO base fixe ──────────────────────────────────────────
+                if axis.base_cad_model:
+                    color_base = getattr(axis, "base_cad_color", (0.3, 0.3, 0.35, 1.0))
+                    item = self.load_robot_mesh(axis.base_cad_model, transforms["base"], color_base)
                     if item:
                         self._apply_ext_axis_item_transparency(item)
                         self.viewer.addItem(item)
                         self._external_axes_links.append(item)
-                        self._external_axes_link_keys.append((axis.id, ji))
-                        self._external_axes_cad_offsets.append(cad_offset)
+                        self._external_axes_link_keys.append((axis.id, -1))
+                        self._external_axes_cad_offsets.append(np.eye(4, dtype=float))
 
-            # ── Repères ────────────────────────────────────────────────
-            self._draw_external_axis_frames(axis, transforms)
+                # ── CAO liens mobiles ──────────────────────────────────────
+                for ji, joint in enumerate(axis.joints):
+                    T_joint = transforms["joint_links"][ji]
+                    if joint.cad_model:
+                        color_link = getattr(joint, "cad_color", (0.25, 0.45, 0.65, 1.0))
+                        cad_offset_pose = getattr(joint, "cad_offset_in_joint", None)
+                        cad_offset = (
+                            pose_zyx_to_matrix(cad_offset_pose)
+                            if cad_offset_pose is not None
+                            else np.eye(4, dtype=float)
+                        )
+                        T_render = T_joint @ cad_offset
+                        item = self.load_robot_mesh(joint.cad_model, T_render, color_link)
+                        if item:
+                            self._apply_ext_axis_item_transparency(item)
+                            self.viewer.addItem(item)
+                            self._external_axes_links.append(item)
+                            self._external_axes_link_keys.append((axis.id, ji))
+                            self._external_axes_cad_offsets.append(cad_offset)
 
-        self.update_frame_list_ui()
+                # ── Repères ────────────────────────────────────────────────
+                self._draw_external_axis_frames(axis, transforms)
+
+            self.update_frame_list_ui()
+        finally:
+            self.end_loading_feedback()
 
     def _draw_external_axis_frames(self, axis, transforms: dict) -> None:
         """Dessine les repères XYZ de la base, des joints et du point de montage."""
@@ -4841,14 +5107,18 @@ class Viewer3DWidget(QWidget):
         frame_T_world: "np.ndarray",
     ) -> None:
         """Recharge la CAO pièce et son repère dans le viewer."""
-        self._workpiece_snapshot = {
-            "cad_model": cad_model,
-            "T_world": T_world.copy(),
-            "color": color,
-            "frame_T_world": frame_T_world.copy(),
-        }
-        self._render_workpiece()
-        self._redraw_piece_frames()
+        self.begin_loading_feedback("Chargement des CAO pièces ...")
+        try:
+            self._workpiece_snapshot = {
+                "cad_model": cad_model,
+                "T_world": T_world.copy(),
+                "color": color,
+                "frame_T_world": frame_T_world.copy(),
+            }
+            self._render_workpiece()
+            self._redraw_piece_frames()
+        finally:
+            self.end_loading_feedback()
 
     def _restore_workpiece(self) -> None:
         """Restaure la pièce après un clear_viewer()."""

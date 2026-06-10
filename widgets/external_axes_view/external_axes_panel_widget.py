@@ -66,6 +66,8 @@ class ExternalAxesPanelWidget(QWidget):
         header_layout = QVBoxLayout()
 
         fields_layout = QGridLayout()
+        fields_layout.setHorizontalSpacing(8)
+        fields_layout.setVerticalSpacing(6)
         current_config_title_label = QLabel("Configuration courante :")
         current_config_title_label.setMinimumWidth(150)
         fields_layout.addWidget(current_config_title_label, 0, 0)
@@ -80,11 +82,14 @@ class ExternalAxesPanelWidget(QWidget):
         action_button_size = 36
         action_icon_size = QSize(22, 22)
 
+        action_row = QHBoxLayout()
+        action_row.addStretch()
+
         self.btn_load = QPushButton("...")
         self.btn_load.setFixedSize(action_button_size, action_button_size)
         self.btn_load.setToolTip("Charger une configuration des axes externes")
         self.btn_load.clicked.connect(self.load_config_requested.emit)
-        fields_layout.addWidget(self.btn_load, 0, 2)
+        action_row.addWidget(self.btn_load)
 
         self.btn_new = QPushButton()
         self.btn_new.setIcon(build_new_icon(self.palette()))
@@ -92,7 +97,7 @@ class ExternalAxesPanelWidget(QWidget):
         self.btn_new.setFixedSize(action_button_size, action_button_size)
         self.btn_new.setToolTip("Créer une nouvelle configuration des axes externes")
         self.btn_new.clicked.connect(self.new_config_requested.emit)
-        fields_layout.addWidget(self.btn_new, 0, 3)
+        action_row.addWidget(self.btn_new)
 
         self.btn_save = QPushButton()
         self.btn_save.setIcon(build_save_icon(self.palette()))
@@ -100,7 +105,7 @@ class ExternalAxesPanelWidget(QWidget):
         self.btn_save.setFixedSize(action_button_size, action_button_size)
         self.btn_save.setToolTip("Enregistrer la configuration des axes externes courante")
         self.btn_save.clicked.connect(self.save_config_requested.emit)
-        fields_layout.addWidget(self.btn_save, 0, 4)
+        action_row.addWidget(self.btn_save)
 
         self.btn_save_as = QPushButton()
         self.btn_save_as.setIcon(build_save_icon(self.palette(), include_pencil=True))
@@ -108,13 +113,10 @@ class ExternalAxesPanelWidget(QWidget):
         self.btn_save_as.setFixedSize(action_button_size, action_button_size)
         self.btn_save_as.setToolTip("Enregistrer la configuration des axes externes dans un nouveau fichier JSON")
         self.btn_save_as.clicked.connect(self.save_as_config_requested.emit)
-        fields_layout.addWidget(self.btn_save_as, 0, 5)
+        action_row.addWidget(self.btn_save_as)
         fields_layout.setColumnStretch(0, 0)
         fields_layout.setColumnStretch(1, 1)
-        fields_layout.setColumnStretch(2, 0)
-        fields_layout.setColumnStretch(3, 0)
-        fields_layout.setColumnStretch(4, 0)
-        fields_layout.setColumnStretch(5, 0)
+        fields_layout.addLayout(action_row, 1, 0, 1, 2)
         header_layout.addLayout(fields_layout)
         top_layout.addLayout(header_layout)
         main_layout.addLayout(top_layout)
@@ -187,8 +189,13 @@ class ExternalAxesPanelWidget(QWidget):
     def _apply_current_config_field_style(self) -> None:
         if self.current_config_name_field is None:
             return
-        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
-        self.current_config_name_field.setStyleSheet(f"color: {accent};")
+        accent_color = self.palette().color(QPalette.ColorRole.Highlight)
+        field_palette = self.current_config_name_field.palette()
+        field_palette.setColor(QPalette.ColorRole.Text, accent_color)
+        field_palette.setColor(QPalette.ColorRole.WindowText, accent_color)
+        self.current_config_name_field.setPalette(field_palette)
+        accent = accent_color.name()
+        self.current_config_name_field.setStyleSheet(f"QLineEdit {{ color: {accent}; }}")
 
     def set_configuration_status(self, text: str, color: str) -> None:
         if self.status_label is None:

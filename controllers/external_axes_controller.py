@@ -51,7 +51,7 @@ class ExternalAxesController(QObject):
     STATUS_SAVED = "Configuration axe externe enregistrée"
     STATUS_LOADED = "Configuration axe externe chargée"
     STATUS_UP_TO_DATE = "Configuration axe externe à jour"
-    STATUS_OK_COLOR = "#2e7d32"
+    STATUS_OK_COLOR = "#6fcf97"
     validation_state_changed = pyqtSignal(bool)
 
     def __init__(
@@ -149,6 +149,9 @@ class ExternalAxesController(QObject):
 
     def get_current_config_file(self) -> str:
         return self._current_config_file
+
+    def is_dirty(self) -> bool:
+        return self._is_dirty()
 
     def _has_axes_configuration(self) -> bool:
         return bool(self.model.get_axes())
@@ -324,13 +327,19 @@ class ExternalAxesController(QObject):
     def _on_load_config(self) -> None:
         """Importe une configuration des axes externes depuis un fichier JSON."""
         os.makedirs(_DEFAULT_CONFIG_DIR, exist_ok=True)
-        file_path, data = FileIOHandler.select_and_load_json(
+        file_path = FileIOHandler.select_file(
             self._panel,
             "Charger une configuration des axes externes",
             directory=_DEFAULT_CONFIG_DIR,
+            filter="JSON Files (*.json)",
         )
-        if data:
-            self.restore_state(data, file_path=file_path or "")
+        if not file_path:
+            return
+        self.viewer3d_controller.begin_loading_feedback("Chargement axes externes ...")
+        try:
+            self.load_configuration_from_path(file_path)
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
     def _on_new_config(self) -> None:
         self._current_config_file = ""
@@ -341,6 +350,9 @@ class ExternalAxesController(QObject):
             }
         )
         self._mark_as_none_reference()
+
+    def new_configuration(self) -> None:
+        self._on_new_config()
 
     def load_configuration_from_path(self, file_path: str) -> bool:
         if not file_path:

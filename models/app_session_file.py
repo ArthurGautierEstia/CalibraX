@@ -113,6 +113,9 @@ class ViewerDisplayState:
 
 @dataclass
 class AppSessionFile:
+    project_path: str = ""
+    recent_project_paths: list[str] = field(default_factory=list)
+    application_theme: str = "system"
     robot_config_path: str = ""
     tool_profile_path: str = ""
     workspace_path: str = ""
@@ -132,6 +135,13 @@ class AppSessionFile:
         if not isinstance(data, dict):
             raise TypeError("La session applicative doit etre un dictionnaire JSON.")
         return cls(
+            project_path="" if data.get("project_path") is None else str(data.get("project_path")),
+            recent_project_paths=[
+                str(path) for path in data.get("recent_project_paths", []) if str(path or "").strip()
+            ]
+            if isinstance(data.get("recent_project_paths", []), list)
+            else [],
+            application_theme=str(data.get("application_theme", "system") or "system"),
             robot_config_path="" if data.get("robot_config_path") is None else str(data.get("robot_config_path")),
             tool_profile_path="" if data.get("tool_profile_path") is None else str(data.get("tool_profile_path")),
             workspace_path="" if data.get("workspace_path") is None else str(data.get("workspace_path")),
