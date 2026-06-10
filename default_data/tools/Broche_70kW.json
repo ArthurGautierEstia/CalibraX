@@ -5,10 +5,10 @@
         "y": 422.045,
         "z": 331.886,
         "a": 0.0,
-        "b": 0.0,
+        "b": -90.0,
         "c": -90.0
     },
-    "tool_cad_model": "C:\\Users\\anselme.angot\\Downloads\\Precsix tool V3.stl",
+    "tool_cad_model": "./default_data/tools_stl/Precsix tool V3.stl",
     "tool_cad_offset_rz": 0.0,
     "tool_colliders": [
         {

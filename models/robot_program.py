@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from models.types import JointAngles6, Pose6
+from models.types.external_axis_program_target import ExternalAxisProgramTarget
+from models.types.motion_approximation import MotionApproximation
 
 
 class RobotProgramBrand(Enum):
@@ -14,6 +16,7 @@ class RobotProgramMotionMode(Enum):
     PTP = "PTP"
     LINEAR = "LINEAR"
     CIRCULAR = "CIRCULAR"
+    EXTERNAL_AXIS = "EXTERNAL_AXIS"
 
 
 class RobotProgramTargetType(Enum):
@@ -37,6 +40,22 @@ class TrajectoryPlaybackMode(Enum):
     COMPENSATED = "COMPENSATED"
 
 
+class ProgramOrigin(Enum):
+    LOADED_KRL = "LOADED_KRL"
+    IMPORTED_APT = "IMPORTED_APT"
+    IMPORTED_CATNC = "IMPORTED_CATNC"
+    BUILT = "BUILT"
+
+
+class MotionRole(Enum):
+    NORMAL = "NORMAL"
+    HOME_START = "HOME_START"
+    HOME_END = "HOME_END"
+    APPROACH = "APPROACH"
+    RETRACT = "RETRACT"
+    EXTERNAL_SETUP = "EXTERNAL_SETUP"
+
+
 @dataclass(frozen=True)
 class RobotProgramTarget:
     target_type: RobotProgramTargetType
@@ -54,6 +73,9 @@ class RobotProgramMotion:
     tool_pose: Pose6 = field(default_factory=Pose6.zeros)
     via_target: RobotProgramTarget | None = None
     cp_speed_mps: float | None = None
+    role: MotionRole = MotionRole.NORMAL
+    approximation: MotionApproximation = field(default_factory=MotionApproximation.none)
+    external_axis_target: ExternalAxisProgramTarget | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +86,7 @@ class RobotProgram:
     program_base_pose: Pose6 = field(default_factory=Pose6.zeros)
     motions: list[RobotProgramMotion] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    origin: ProgramOrigin = ProgramOrigin.LOADED_KRL
 
 
 @dataclass(frozen=True)

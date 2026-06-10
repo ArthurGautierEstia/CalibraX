@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 import re
+from typing import TYPE_CHECKING
 
 from models.robot_program import (
+    MotionRole,
+    ProgramOrigin,
     RobotProgram,
     RobotProgramBrand,
     RobotProgramMotion,
@@ -13,6 +17,11 @@ from models.robot_program import (
     RobotProgramTargetType,
 )
 from models.types import JointAngles6, Pose6
+from models.types.external_axis_program_target import ExternalAxisProgramTarget
+from models.types.motion_approximation import ApproximationMode, MotionApproximation
+
+if TYPE_CHECKING:
+    from models.program_generation_settings import ProgramGenerationSettings
 
 
 _MOTION_RE = re.compile(r"^\s*(PTP|LIN|CIRC|JOINT)\b(.*)$", re.IGNORECASE)
@@ -224,13 +233,21 @@ def _parse_pose_block(block: str) -> Pose6 | None:
     return target.cartesian_pose.copy()
 
 
-def _format_kuka_motion_line(motion: RobotProgramMotion) -> str:
+def _format_kuka_motion_line(
+    motion: RobotProgramMotion,
+    emit_approximation: bool = False,
+    approx_override: MotionApproximation | None = None,
+) -> str:
+    approx = approx_override if approx_override is not None else motion.approximation
+    suffix = _format_approximation_suffix(approx) if emit_approximation else ""
     if motion.mode == RobotProgramMotionMode.PTP:
-        return f"PTP {_format_kuka_target(motion.target)}"
+        return f"PTP {_format_kuka_target(motion.target)}{suffix}"
     if motion.mode == RobotProgramMotionMode.LINEAR:
-        return f"LIN {_format_kuka_target(motion.target)}"
+        return f"LIN {_format_kuka_target(motion.target)}{suffix}"
     if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
-        return f"CIRC {_format_kuka_target(motion.via_target)}, {_format_kuka_target(motion.target)}"
+        return f"CIRC {_format_kuka_target(motion.via_target)}, {_format_kuka_target(motion.target)}{suffix}"
+    if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
+        return _format_external_axis_motion_line(motion.external_axis_target)
     return motion.source
 
 
@@ -264,3 +281,112 @@ def _format_kuka_pose(pose: Pose6) -> str:
         f"A {values[3]:.3f},B {values[4]:.3f},C {values[5]:.3f}"
         "}"
     )
+
+
+def _format_approximation_suffix(approx: MotionApproximation) -> str:
+    if approx.mode == ApproximationMode.C_DIS:
+        return f" C_DIS={approx.value:.3f}"
+    if approx.mode == ApproximationMode.C_VEL:
+        return f" C_VEL={approx.value:.1f}"
+    return ""
+
+
+def _format_external_axis_motion_line(target: ExternalAxisProgramTarget) -> str:
+    """Génère un bloc PTP axes externes (ASYPTP = asynchrone, non synchronisé avec TCP)."""
+    if not target.values:
+        return "; EXTERNAL_AXIS (vide)"
+    parts = ", ".join(f"E{v.joint_index + 1} {v.value:.3f}" for v in target.values)
+    return f"ASYPTP {{{parts}}}  ; positionnement axe externe (asynchrone)"
+
+
+# ---------------------------------------------------------------------------
+# Générateur KRL from-scratch
+# ---------------------------------------------------------------------------
+
+def generate_kuka_src_text(
+    program: RobotProgram,
+    header_text: str,
+    settings: ProgramGenerationSettings | None,
+    external_axes_order: list[str] | None = None,
+) -> str:
+    """Génère un .src KRL complet depuis un programme importé (non LOADED_KRL)."""
+    from models.types import Pose6
+    program_name = Path(program.source_path).stem if program.source_path else "PROG"
+    base_pose = program.program_base_pose
+    n_normal = sum(1 for m in program.motions if m.role == MotionRole.NORMAL)
+    vel_cp = 0.2
+    for m in program.motions:
+        if m.cp_speed_mps is not None:
+            vel_cp = m.cp_speed_mps
+            break
+
+    # Substitution tokens dans le header
+    resolved_header = (
+        header_text
+        .replace("{PROGRAM_NAME}", program_name)
+        .replace("{DATE}", datetime.now().strftime("%Y-%m-%d %H:%M"))
+        .replace("{BASE}", _format_kuka_pose(base_pose))
+        .replace("{TOOL}", _format_kuka_pose(Pose6.zeros()))
+        .replace("{VEL_CP}", f"{vel_cp:.3f}")
+        .replace("{N_MOTIONS}", str(n_normal))
+    )
+
+    lines: list[str] = []
+    if resolved_header.strip():
+        lines.append(resolved_header.rstrip("\n"))
+        lines.append("")
+
+    lines.append(f"DEF {program_name}()")
+    lines.append("")
+    lines.append(f"$BASE = {_format_kuka_pose(base_pose)}")
+    lines.append(f"$TOOL = {_format_kuka_pose(Pose6.zeros())}")
+    lines.append(f"$VEL.CP = {vel_cp:.4f}")
+    lines.append("")
+
+    default_approx = settings.default_approximation if settings is not None else MotionApproximation.none()
+
+    for motion in program.motions:
+        if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
+            lines.append(_format_external_axis_motion_line(motion.external_axis_target))
+        elif motion.role in {MotionRole.HOME_START, MotionRole.HOME_END}:
+            lines.append(f"PTP {_format_kuka_target(motion.target)}  ; HOME")
+        else:
+            effective_approx = (
+                motion.approximation
+                if motion.approximation.mode != ApproximationMode.NONE
+                else default_approx
+            )
+            lines.append(_format_kuka_motion_line(motion, emit_approximation=True, approx_override=effective_approx))
+
+    lines.append("")
+    lines.append(f"END")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def generate_program_to_path(
+    path: str | Path,
+    program: RobotProgram,
+    settings: ProgramGenerationSettings | None = None,
+    external_axes_order: list[str] | None = None,
+) -> None:
+    """Point d'entrée unique d'export KRL.
+
+    - Programme LOADED_KRL : patch du source original (export_kuka_src_program).
+    - Programme importé/généré : génération from-scratch (generate_kuka_src_text).
+    """
+    if program.origin == ProgramOrigin.LOADED_KRL:
+        export_kuka_src_program(
+            path,
+            program.source_text,
+            program.motions,
+            program.program_base_pose,
+        )
+        return
+
+    header_text = ""
+    if settings is not None:
+        header_text = settings.header_text
+
+    src_text = generate_kuka_src_text(program, header_text, settings, external_axes_order)
+    Path(path).write_text(src_text, encoding="utf-8")

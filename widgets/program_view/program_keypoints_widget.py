@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -57,7 +58,7 @@ class ProgramKeypointsWidget(QWidget):
         self.tool_model = tool_model
         self.workspace_model = workspace_model
 
-        self.keypoints_table = QTableWidget(0, 9)
+        self.keypoints_table = QTableWidget(0, 10)
         self.btn_add = QPushButton("Ajouter")
         self.btn_edit = QPushButton("Editer")
         self.btn_go_to = QPushButton("Aller a")
@@ -72,6 +73,9 @@ class ProgramKeypointsWidget(QWidget):
         self._keypoints: list[TrajectoryKeypoint] = []
         self._current_tool_source = "CURRENT"
         self._has_program = False
+        self._row_roles: list[str] = []
+        self._row_approx_texts: list[str] = []
+        self._row_cible_overrides: list[str | None] = []
 
         self._setup_ui()
         self._setup_connections()
@@ -149,13 +153,14 @@ class ProgramKeypointsWidget(QWidget):
                 "J4 / A",
                 "J5 / B",
                 "J6 / C",
+                "Approx",
             ]
         )
 
         header = self.keypoints_table.horizontalHeader()
         header.setMinimumSectionSize(60)
 
-        for col in range(0, 9):
+        for col in range(0, 10):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
         self.keypoints_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -192,11 +197,19 @@ class ProgramKeypointsWidget(QWidget):
     def _update_buttons_state(self) -> None:
         row = self._selected_row()
         has_selection = row is not None
+        is_locked = has_selection and self._is_row_locked(row)
 
         self.btn_add.setEnabled(self._has_program)
-        self.btn_edit.setEnabled(has_selection)
+        self.btn_edit.setEnabled(has_selection and not is_locked)
         self.btn_go_to.setEnabled(has_selection)
-        self.btn_delete.setEnabled(has_selection)
+        self.btn_delete.setEnabled(has_selection and not is_locked)
+
+    _LOCKED_ROLES = frozenset({"HOME_START", "HOME_END", "APPROACH", "RETRACT", "EXTERNAL_SETUP"})
+
+    def _is_row_locked(self, row: int) -> bool:
+        if row < 0 or row >= len(self._row_roles):
+            return False
+        return self._row_roles[row] in self._LOCKED_ROLES
 
     def _on_cartesian_display_frame_changed(self, _index: int) -> None:
         self.cartesianDisplayFrameChanged.emit(self.get_cartesian_display_frame())
@@ -329,25 +342,80 @@ class ProgramKeypointsWidget(QWidget):
             self.keypoints_table.insertRow(idx)
             target_values = self._keypoint_target_values(keypoint)
 
+            cible_override = self._row_cible_overrides[idx] if idx < len(self._row_cible_overrides) else None
+            cible_text = cible_override if cible_override is not None else (
+                "CARTESIAN" if keypoint.target_type == KeypointTargetType.CARTESIAN else "JOINT"
+            )
+            approx_text = self._row_approx_texts[idx] if idx < len(self._row_approx_texts) else ""
+
             values = [
-                (
-                    "CARTESIAN"
-                    if keypoint.target_type == KeypointTargetType.CARTESIAN
-                    else "JOINT"
-                ),
+                cible_text,
                 self._mode_text(keypoint),
                 self._speed_text(keypoint),
             ]
             values.extend(f"{v:.3f}" for v in target_values[:6])
+            values.append(approx_text)
 
             for col, text in enumerate(values):
                 self.keypoints_table.setItem(idx, col, QTableWidgetItem(text))
+
+            if self._is_row_locked(idx):
+                gray = QBrush(QColor(180, 180, 180))
+                for col in range(self.keypoints_table.columnCount()):
+                    item = self.keypoints_table.item(idx, col)
+                    if item is not None:
+                        item.setForeground(gray)
+
         self._update_buttons_state()
 
     def set_keypoints(self, keypoints: list[TrajectoryKeypoint]) -> None:
         self._keypoints = [keypoint.clone() for keypoint in keypoints]
+        n = len(self._keypoints)
+        if len(self._row_roles) != n:
+            self._row_roles = ["NORMAL"] * n
+        if len(self._row_approx_texts) != n:
+            self._row_approx_texts = [""] * n
+        if len(self._row_cible_overrides) != n:
+            self._row_cible_overrides = [None] * n
         self._refresh_table()
         self._emit_selection_changed()
+
+    def set_row_metadata(
+        self,
+        roles: list[str],
+        approx_texts: list[str],
+        cible_overrides: list[str | None],
+    ) -> None:
+        self._row_roles = list(roles)
+        self._row_approx_texts = list(approx_texts)
+        self._row_cible_overrides = list(cible_overrides)
+        self._apply_row_metadata()
+        self._update_buttons_state()
+
+    def _apply_row_metadata(self) -> None:
+        gray = QBrush(QColor(180, 180, 180))
+        default_fg = QBrush(QColor(0, 0, 0, 0))
+        for row in range(self.keypoints_table.rowCount()):
+            cible_override = self._row_cible_overrides[row] if row < len(self._row_cible_overrides) else None
+            approx_text = self._row_approx_texts[row] if row < len(self._row_approx_texts) else ""
+            locked = self._is_row_locked(row)
+
+            if cible_override is not None:
+                item = self.keypoints_table.item(row, 0)
+                if item is not None:
+                    item.setText(cible_override)
+
+            approx_item = self.keypoints_table.item(row, 9)
+            if approx_item is not None:
+                approx_item.setText(approx_text)
+            else:
+                self.keypoints_table.setItem(row, 9, QTableWidgetItem(approx_text))
+
+            brush = gray if locked else default_fg
+            for col in range(self.keypoints_table.columnCount()):
+                item = self.keypoints_table.item(row, col)
+                if item is not None:
+                    item.setForeground(brush)
 
     def set_program_loaded(self, loaded: bool) -> None:
         self._has_program = bool(loaded)

@@ -24,16 +24,20 @@ from models.robot_program import (
 )
 
 from models.external_axes_model import ExternalAxesModel
+from models.program_generation_settings import ProgramGenerationSettings
 from models.robot_model import RobotModel
-from models.robot_program import ProgramBaseSource
+from models.robot_program import MotionRole, ProgramBaseSource, ProgramOrigin
 from models.tool_model import ToolModel
+from models.types.approach_retract import ApproachAxisRef
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6
 from models.workspace_model import WorkspaceModel
 from utils.reference_frame_utils import matrix_to_pose, pose_to_matrix
 from utils.program_simulator import ProgramSimulator
 from utils.mgi import RobotTool
-from utils.robot_program_kuka import export_kuka_src_program, load_kuka_src_program
+from utils.aptsource_parser import load_aptsource_program
+from utils.catnc_parser import load_catnc_program
+from utils.robot_program_kuka import export_kuka_src_program, generate_program_to_path, load_kuka_src_program
 from widgets.program_view.program_base_dialog import ProgramBaseDialog
 from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
@@ -98,6 +102,7 @@ class ProgramController:
         self.header_widget = self.program_view.get_header_widget()
         self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
+        self.generation_widget = self.program_view.get_generation_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
         self.playback_widgets: list[ProgramPlaybackWidget] = [self.playback_widget]
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
@@ -145,6 +150,11 @@ class ProgramController:
         self._simulation_dirty = False
         self._program_dirty = False
         self._clean_status_text = ProgramController.STATUS_NONE
+        self._generation_settings: ProgramGenerationSettings = ProgramGenerationSettings()
+        self._krl_preview_timer = QTimer()
+        self._krl_preview_timer.setSingleShot(True)
+        self._krl_preview_timer.setInterval(400)
+        self._krl_preview_timer.timeout.connect(self._refresh_krl_preview)
         self._setup_connections()
         self._refresh_view()
 
@@ -178,6 +188,9 @@ class ProgramController:
         self.external_axes_model.mount_topology_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.axes_changed.connect(self._on_external_chain_changed)
         self.workpiece_controller.workpiece_model.workpiece_changed.connect(self._on_workpiece_changed)
+        self.generation_widget.generationSettingsChanged.connect(self._on_generation_settings_changed)
+        self.generation_widget.saveHeaderRequested.connect(self._on_save_header_requested)
+        self.generation_widget.resetHeaderRequested.connect(self._on_reset_header_requested)
 
     def register_playback_widget(self, playback_widget: ProgramPlaybackWidget) -> None:
         if playback_widget in self.playback_widgets:
@@ -217,7 +230,7 @@ class ProgramController:
             self.program_view,
             "Importer programme robot",
             str(self.DEFAULT_PROGRAMS_DIR),
-            "Programmes KUKA (*.src);;Tous les fichiers (*.*)",
+            "KUKA (*.src);;APT Source (*.apt *.aptsource *.cls *.cl);;CATNC (*.nc *.cnc *.mpf *.gcode *.CATNCCode);;Tous (*.*)",
         )
 
         if not file_path:
@@ -260,11 +273,11 @@ class ProgramController:
         if self.current_program is None:
             return
         try:
-            export_kuka_src_program(
+            generation_settings = getattr(self, "_generation_settings", None)
+            generate_program_to_path(
                 file_path,
-                self.current_program.source_text,
-                self.current_program.motions,
-                self.current_program.program_base_pose,
+                self.current_program,
+                generation_settings,
             )
         except OSError as exc:
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible d'enregistrer le programme.\n{exc}")
@@ -278,23 +291,38 @@ class ProgramController:
 
 
     def _load_program_from_path(self, file_path: str) -> None:
+        from models.robot_program import ProgramOrigin
         try:
-            if Path(file_path).suffix.lower() != ".src":
-                QMessageBox.warning(
-                    self.program_view,
-                    "Programme robot",
-                    "Seuls les programmes KUKA .src sont supportes dans cette premiere version.",
-                )
-                return
-            loaded = load_kuka_src_program(file_path)
-            self._manual_base = loaded.program_base_pose.copy()
+            suffix = Path(file_path).suffix.lower()
+            if suffix in {".apt", ".aptsource", ".cls", ".cl"}:
+                loaded = load_aptsource_program(file_path)
+            elif suffix in {".nc", ".cnc", ".mpf", ".gcode", ".catnccode"}:
+                loaded = load_catnc_program(file_path)
+            else:
+                loaded = load_kuka_src_program(file_path)
+
+            is_imported = loaded.origin in {ProgramOrigin.IMPORTED_APT, ProgramOrigin.IMPORTED_CATNC}
+
+            if is_imported:
+                # Programmes FAO : base pièce, outil courant
+                self._base_source = ProgramBaseSource.WORKPIECE
+                self._tool_source = "CURRENT"
+                self.config_widget.set_tool_source("CURRENT", emit_signal=False)
+                self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
+            else:
+                self._manual_base = loaded.program_base_pose.copy()
+                self._tool_source = "PROGRAM"
+                self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
+                self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
+
             effective = self._compute_effective_base()
-            self.current_program = self._program_with_updated_base_pose(loaded, effective)
-            self._tool_source = "PROGRAM"
+            program_with_base = self._program_with_updated_base_pose(loaded, effective)
+            if is_imported:
+                self.current_program = self._rebuild_derived_motions(program_with_base, self._generation_settings)
+            else:
+                self.current_program = program_with_base
             self._program_dirty = False
             self._clean_status_text = ProgramController.STATUS_LOADED
-            self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
-            self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
             self._apply_program_tool()
             self._recompute_current_program()
         except (OSError, ValueError) as exc:
@@ -441,6 +469,7 @@ class ProgramController:
         self.actions_widget.set_compensation_enabled(self.current_program is not None and not self._simulation_dirty)
 
         self._refresh_view()
+        self._krl_preview_timer.start()
 
 
     def _refresh_view(self) -> None:
@@ -515,7 +544,65 @@ class ProgramController:
             return
 
         self.config_widget.set_program_loaded(True)
+        roles, approx_texts, cible_overrides = self._build_row_metadata()
+        self.config_widget.set_row_metadata(roles, approx_texts, cible_overrides)
         self.config_widget.set_keypoints(self._display_keypoints)
+
+    def _build_row_metadata(self) -> tuple[list[str], list[str], list[str | None]]:
+        from models.robot_program import MotionRole, RobotProgramMotionMode
+        from models.types.motion_approximation import ApproximationMode
+        roles: list[str] = []
+        approx_texts: list[str] = []
+        cible_overrides: list[str | None] = []
+        if self.current_program is None:
+            return roles, approx_texts, cible_overrides
+
+        total_approach = sum(1 for m in self.current_program.motions if m.role == MotionRole.APPROACH)
+        total_retract = sum(1 for m in self.current_program.motions if m.role == MotionRole.RETRACT)
+        approach_idx = 0
+        retract_idx = 0
+
+        default_approx = self._generation_settings.default_approximation
+
+        for ref in self._display_target_refs:
+            motion = self.current_program.motions[ref.motion_index]
+            roles.append(motion.role.value)
+
+            approx = (
+                motion.approximation
+                if motion.approximation.mode != ApproximationMode.NONE
+                else default_approx
+            )
+            if approx.mode == ApproximationMode.C_DIS:
+                approx_texts.append(f"C_DIS={approx.value:.3f}")
+            elif approx.mode == ApproximationMode.C_VEL:
+                approx_texts.append(f"C_VEL={approx.value:.1f}")
+            else:
+                approx_texts.append("")
+
+            cible: str | None = None
+            if motion.role == MotionRole.HOME_START or motion.role == MotionRole.HOME_END:
+                cible = "HOME"
+            elif motion.role == MotionRole.APPROACH:
+                approach_idx += 1
+                cible = f"Approche {approach_idx}" if total_approach > 1 else "Approche"
+            elif motion.role == MotionRole.RETRACT:
+                retract_idx += 1
+                cible = f"Retrait {retract_idx}" if total_retract > 1 else "Retrait"
+            elif motion.role == MotionRole.EXTERNAL_SETUP:
+                cible = "Axe ext."
+            elif motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                if motion.external_axis_target is not None and motion.external_axis_target.values:
+                    e_parts = " ".join(
+                        f"E{v.joint_index + 1}={v.value:.1f}"
+                        for v in motion.external_axis_target.values
+                    )
+                    cible = f"Axe ext. {e_parts}"
+                else:
+                    cible = "Axe ext."
+            cible_overrides.append(cible)
+
+        return roles, approx_texts, cible_overrides
 
 
 
@@ -1211,6 +1298,7 @@ class ProgramController:
                 draft_motion.target,
                 False,
                 allow_motion_type_editing=True,
+                external_axes_model=self.external_axes_model,
                 parent=self.program_view,
             )
 
@@ -1219,9 +1307,9 @@ class ProgramController:
 
             updated_motion = self._motion_from_dialog(draft_motion, dialog, is_via_target=False)
             self.current_program = self._program_with_inserted_motion(updated_motion, insertion_motion_index)
-            self._refresh_program_after_target_change()
-
             inserted_motion_index = len(self.current_program.motions) - 1 if insertion_motion_index is None else insertion_motion_index + 1
+            self._refresh_program_after_target_change(dirty_indices=[inserted_motion_index])
+
             new_selection_row = self._display_row_for_motion_target(inserted_motion_index)
             if new_selection_row is not None:
                 self.config_widget.select_row(new_selection_row)
@@ -1247,6 +1335,7 @@ class ProgramController:
             target,
             target_ref.is_via_target,
             allow_motion_type_editing=not target_ref.is_via_target,
+            external_axes_model=self.external_axes_model,
             parent=self.program_view,
         )
 
@@ -1256,7 +1345,7 @@ class ProgramController:
 
         updated_motion = self._motion_from_dialog(motion, dialog, is_via_target=target_ref.is_via_target)
         self.current_program = self._program_with_replaced_motion(target_ref.motion_index, updated_motion)
-        self._refresh_program_after_target_change()
+        self._refresh_program_after_target_change(dirty_indices=[target_ref.motion_index])
         self.config_widget.select_row(row)
 
     def _motion_from_dialog(
@@ -1270,6 +1359,17 @@ class ProgramController:
             return replace(source_motion, via_target=updated_target)
 
         updated_mode = dialog.get_motion_mode()
+
+        if updated_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+            ext_target = dialog.get_external_axis_target()
+            return replace(
+                source_motion,
+                mode=RobotProgramMotionMode.EXTERNAL_AXIS,
+                target=updated_target,
+                external_axis_target=ext_target,
+                cp_speed_mps=None,
+            )
+
         return replace(
             source_motion,
             mode=updated_mode,
@@ -1281,14 +1381,46 @@ class ProgramController:
             ),
         )
 
-    def _refresh_program_after_target_change(self) -> None:
+    def _refresh_program_after_target_change(self, dirty_indices: list[int] | None = None) -> None:
         self._program_dirty = True
-        self._mark_simulation_dirty()
+        if dirty_indices is not None and self.current_program is not None:
+            self._run_incremental_recompute(dirty_indices)
+        else:
+            self._mark_simulation_dirty()
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
         self._refresh_status()
         self._refresh_program_save_status()
+
+    def _run_incremental_recompute(self, dirty_indices: list[int]) -> None:
+        if self.current_program is None:
+            return
+        self._stop_playback()
+        self._current_time_s = 0.0
+        simulation_program = self._get_simulation_program()
+        if simulation_program is None:
+            return
+        incremental_result = self.program_simulator.simulate_program_incremental(
+            simulation_program, dirty_indices
+        )
+        self._nominal_cartesian_result = incremental_result
+        self._nominal_articular_result = None
+        self._compensated_cartesian_result = None
+        self._compensated_articular_result = None
+        self._compensation_computed = False
+        self.actions_widget.set_compensated_checkbox_enabled(False)
+        self.current_result = incremental_result
+        active_motion_mode = self.config_widget.get_motion_mode()
+        _theo_samples = incremental_result.nominal_samples
+        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
+            _theo_samples, self._get_nominal_color(), self.MEASURED_COLOR,
+        )
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples)
+        self._compensated_segments_cache = []
+        self._simulation_dirty = False
+        self.actions_widget.set_compensation_enabled(self.current_program is not None)
+        self._refresh_viewer_segments()
 
     def _insertion_motion_index_for_selected_row(self) -> int | None:
 
@@ -2393,4 +2525,241 @@ class ProgramController:
             segments.append((current_points, color))
 
         return segments
+
+    # ---------------------------------------------------------------------------
+    # Réglages de génération (HOME / approche / retrait / header / approximation)
+    # ---------------------------------------------------------------------------
+
+    def get_generation_settings(self) -> ProgramGenerationSettings:
+        return self._generation_settings
+
+    def set_generation_settings(self, settings: ProgramGenerationSettings) -> None:
+        self._generation_settings = settings
+        if self.current_program is not None:
+            self.current_program = self._rebuild_derived_motions(self.current_program, settings)
+            self._program_dirty = True
+            self._mark_simulation_dirty()
+            self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+            self._refresh_keypoint_table()
+            self._refresh_viewer_keypoints()
+            self._refresh_program_info()
+
+    def get_generation_settings_dict(self) -> dict:
+        return self._generation_settings.to_dict()
+
+    def load_generation_settings_dict(self, data: dict) -> None:
+        self._generation_settings = ProgramGenerationSettings.from_dict(data)
+
+    def _on_generation_settings_changed(self, settings_dict: dict) -> None:
+        settings = ProgramGenerationSettings.from_dict(settings_dict)
+        settings.header_text = self.generation_widget.get_header_text()
+
+        old = self._generation_settings
+        structure_changed = (
+            old.home_enabled != settings.home_enabled
+            or old.approach != settings.approach
+            or old.retract != settings.retract
+        )
+
+        if structure_changed:
+            self.set_generation_settings(settings)
+        else:
+            # Seule l'approximation a changé — pas de reconstruction ni de re-simulation
+            self._generation_settings = settings
+            if self.current_program is not None:
+                self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
+                self._refresh_keypoint_table()
+
+        self._krl_preview_timer.start()
+
+    def _on_save_header_requested(self, text: str) -> None:
+        from models.krl_header_file import save_header_template
+        save_header_template(text)
+        self._generation_settings.header_text = text
+
+    def _on_reset_header_requested(self) -> None:
+        from models.krl_header_file import load_header_template, reset_header_template
+        reset_header_template()
+        loaded = load_header_template()
+        self._generation_settings.header_text = loaded
+        self.generation_widget.set_header_text(loaded)
+
+    def _refresh_krl_preview(self) -> None:
+        if self.current_program is None:
+            self.generation_widget.set_krl_preview_text("")
+            return
+        from utils.robot_program_kuka import generate_kuka_src_text
+        settings = self._generation_settings
+        settings.header_text = self.generation_widget.get_header_text()
+        external_axes_order = [axis.id for axis in self.external_axes_model.get_axes()]
+        try:
+            text = generate_kuka_src_text(
+                self.current_program, settings.header_text, settings, external_axes_order
+            )
+        except Exception:
+            text = "Erreur lors de la génération KRL."
+        self.generation_widget.set_krl_preview_text(text)
+
+    def _rebuild_derived_motions(
+        self,
+        program: RobotProgram,
+        settings: ProgramGenerationSettings,
+    ) -> RobotProgram:
+        """Retire les motions dérivées (rôle ≠ NORMAL) et reconstruit HOME/APPROACH/RETRACT."""
+        # Garder uniquement les NORMAL
+        normal_motions = [m for m in program.motions if m.role == MotionRole.NORMAL]
+
+        derived_prefix: list[RobotProgramMotion] = []
+        derived_suffix: list[RobotProgramMotion] = []
+
+        effective_base = self._compute_effective_base()
+
+        if settings.home_enabled:
+            home_values = self.robot_model.get_home_position()
+            home_joints = JointAngles6.from_values(home_values)
+
+            # Retirer les PTP JOINT home en début/fin du programme source pour éviter les doublons
+            def _is_home_motion(m: RobotProgramMotion) -> bool:
+                if m.target.target_type != RobotProgramTargetType.JOINT:
+                    return False
+                if m.target.joint_angles is None:
+                    return False
+                return all(
+                    abs(a - b) < 0.5
+                    for a, b in zip(m.target.joint_angles.to_list(), home_values)
+                )
+
+            while normal_motions and _is_home_motion(normal_motions[0]):
+                normal_motions = normal_motions[1:]
+            while normal_motions and _is_home_motion(normal_motions[-1]):
+                normal_motions = normal_motions[:-1]
+
+            home_target = RobotProgramTarget(
+                target_type=RobotProgramTargetType.JOINT,
+                joint_angles=home_joints,
+            )
+            home_start = RobotProgramMotion(
+                mode=RobotProgramMotionMode.PTP,
+                target=home_target,
+                line_number=0,
+                source="; HOME",
+                base_pose=effective_base,
+                role=MotionRole.HOME_START,
+            )
+            home_end = replace(home_start, role=MotionRole.HOME_END)
+            derived_prefix.append(home_start)
+            derived_suffix.append(home_end)
+
+        first_cartesian = next(
+            (m for m in normal_motions if m.target.target_type == RobotProgramTargetType.CARTESIAN),
+            None,
+        )
+        last_cartesian = next(
+            (m for m in reversed(normal_motions) if m.target.target_type == RobotProgramTargetType.CARTESIAN),
+            None,
+        )
+
+        if settings.approach.enabled and first_cartesian is not None:
+            for step in settings.approach.steps:
+                signed_dist = step.distance_mm * (-1 if step.inverted else 1)
+                approach_pose = self._compute_offset_pose(
+                    first_cartesian.target.cartesian_pose,
+                    first_cartesian.tool_pose,
+                    first_cartesian.base_pose,
+                    step.axis_ref,
+                    signed_dist,
+                )
+                approach_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.CARTESIAN,
+                    cartesian_pose=approach_pose,
+                )
+                approach_motion = replace(
+                    first_cartesian,
+                    mode=RobotProgramMotionMode.LINEAR,
+                    target=approach_target,
+                    cp_speed_mps=step.speed_mps,
+                    role=MotionRole.APPROACH,
+                    line_number=0,
+                    source="; APPROACH",
+                )
+                derived_prefix.append(approach_motion)
+
+        retract_motions: list[RobotProgramMotion] = []
+        if settings.retract.enabled and last_cartesian is not None:
+            for step in settings.retract.steps:
+                signed_dist = step.distance_mm * (-1 if step.inverted else 1)
+                retract_pose = self._compute_offset_pose(
+                    last_cartesian.target.cartesian_pose,
+                    last_cartesian.tool_pose,
+                    last_cartesian.base_pose,
+                    step.axis_ref,
+                    signed_dist,
+                )
+                retract_target = RobotProgramTarget(
+                    target_type=RobotProgramTargetType.CARTESIAN,
+                    cartesian_pose=retract_pose,
+                )
+                retract_motion = replace(
+                    last_cartesian,
+                    mode=RobotProgramMotionMode.LINEAR,
+                    target=retract_target,
+                    cp_speed_mps=step.speed_mps,
+                    role=MotionRole.RETRACT,
+                    line_number=0,
+                    source="; RETRACT",
+                )
+                retract_motions.append(retract_motion)
+
+        # Retrait avant HOME_END
+        all_motions = derived_prefix + normal_motions + retract_motions + derived_suffix
+        return replace(program, motions=all_motions)
+
+    def _compute_offset_pose(
+        self,
+        target_pose: Pose6,
+        tool_pose: Pose6,
+        base_pose: Pose6,
+        axis_ref: ApproachAxisRef,
+        distance_mm: float,
+    ) -> Pose6:
+        """Calcule une pose décalée de distance_mm dans la direction axis_ref."""
+        import utils.math_utils as math_utils
+
+        # Axe de décalage en repère robot
+        if axis_ref == ApproachAxisRef.TOOL_Z:
+            # -Z outil : l'approche vient de devant l'outil (Z sortant = direction pièce)
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            T_target_in_prog = math_utils.pose_zyx_to_matrix(target_pose)
+            T_target_in_robot = T_base @ T_target_in_prog
+            direction = -T_target_in_robot[:3, 2]
+        elif axis_ref == ApproachAxisRef.PIECE_X:
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            direction = T_base[:3, 0]
+        elif axis_ref == ApproachAxisRef.PIECE_Y:
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            direction = T_base[:3, 1]
+        else:  # PIECE_Z
+            T_base = math_utils.pose_zyx_to_matrix(base_pose)
+            direction = T_base[:3, 2]
+
+        norm = float(np.linalg.norm(direction))
+        if norm < 1e-9:
+            return target_pose
+
+        direction = direction / norm
+
+        # Décalage en repère programme
+        T_base = math_utils.pose_zyx_to_matrix(base_pose)
+        T_base_inv = math_utils.invert_homogeneous_transform(T_base)
+        offset_robot = direction * distance_mm
+        offset_prog = T_base_inv[:3, :3] @ offset_robot
+
+        return Pose6(
+            target_pose.x + offset_prog[0],
+            target_pose.y + offset_prog[1],
+            target_pose.z + offset_prog[2],
+            target_pose.a,
+            target_pose.b,
+            target_pose.c,
+        )
 

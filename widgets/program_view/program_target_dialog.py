@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -17,13 +18,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from models.external_axes_model import ExternalAxesModel
 from models.reference_frame import ReferenceFrame
 from models.robot_model import RobotModel
 from models.robot_program import RobotProgramMotion, RobotProgramMotionMode, RobotProgramTarget, RobotProgramTargetType
 from models.types import JointAngles6, Pose6
+from models.types.external_axis_program_target import ExternalAxisJointValue, ExternalAxisProgramTarget
 from utils.reference_frame_utils import matrix_to_pose, pose_to_matrix
 from widgets.cartesian_control_view.cartesian_control_widget import CartesianControlWidget
 from widgets.joint_control_view.joints_control_widget import JointsControlWidget
+
+_EXTERNAL_AXIS_MODE = "EXTERNAL_AXIS"
 
 
 class ProgramTargetDialog(QDialog):
@@ -34,6 +39,7 @@ class ProgramTargetDialog(QDialog):
         target: RobotProgramTarget,
         is_via_target: bool,
         allow_motion_type_editing: bool = False,
+        external_axes_model: ExternalAxesModel | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -44,6 +50,8 @@ class ProgramTargetDialog(QDialog):
         self._target = target
         self._is_via_target = bool(is_via_target)
         self._allow_motion_type_editing = bool(allow_motion_type_editing)
+        self._external_axes_model = external_axes_model
+        self._ext_axis_spinboxes: list[tuple[str, int, str, QDoubleSpinBox]] = []  # (axis_id, joint_idx, unit, spinbox)
         self._current_frame = ReferenceFrame.PROGRAM
 
         self.target_type_label = QLabel()
@@ -55,6 +63,7 @@ class ProgramTargetDialog(QDialog):
         self.frame_combo = QComboBox()
         self.cartesian_widget = CartesianControlWidget(compact=True)
         self.joint_widget = JointsControlWidget(compact=True)
+        self.ext_axis_widget = QWidget()
         self.apply_current_position_button = QPushButton("Appliquer la position courante")
         self.target_stack = QStackedWidget()
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -71,11 +80,14 @@ class ProgramTargetDialog(QDialog):
 
         info_group = QGroupBox("Parametrage")
         info_layout = QFormLayout(info_group)
+        has_ext_axes = self._external_axes_model is not None and bool(self._external_axes_model.get_axes())
         if self._allow_motion_type_editing:
             self.motion_mode_combo.addItem("PTP", RobotProgramMotionMode.PTP.value)
             self.motion_mode_combo.addItem("LIN", RobotProgramMotionMode.LINEAR.value)
-            self.target_type_combo.addItem("CARTESIAN", RobotProgramTargetType.CARTESIAN.value)
-            self.target_type_combo.addItem("JOINT", RobotProgramTargetType.JOINT.value)
+            self.target_type_combo.addItem("Cartesien", RobotProgramTargetType.CARTESIAN.value)
+            self.target_type_combo.addItem("Articulaire", RobotProgramTargetType.JOINT.value)
+            if has_ext_axes:
+                self.target_type_combo.addItem("Axe externe", _EXTERNAL_AXIS_MODE)
             info_layout.addRow("Mouvement", self.motion_mode_combo)
             info_layout.addRow("Type cible", self.target_type_combo)
         else:
@@ -92,8 +104,12 @@ class ProgramTargetDialog(QDialog):
         frame_row.addStretch()
         layout.addWidget(self.frame_row_widget)
 
+        # Widget axes externes
+        self._build_ext_axis_widget()
+
         self.target_stack.addWidget(self.cartesian_widget)
         self.target_stack.addWidget(self.joint_widget)
+        self.target_stack.addWidget(self.ext_axis_widget)
         layout.addWidget(self.target_stack)
         actions_layout = QHBoxLayout()
         actions_layout.setContentsMargins(0, 0, 0, 0)
@@ -101,6 +117,25 @@ class ProgramTargetDialog(QDialog):
         actions_layout.addStretch()
         layout.addLayout(actions_layout)
         layout.addWidget(self.button_box)
+
+    def _build_ext_axis_widget(self) -> None:
+        form = QFormLayout(self.ext_axis_widget)
+        self._ext_axis_spinboxes = []
+        if self._external_axes_model is None:
+            return
+        for axis in self._external_axes_model.get_axes():
+            for joint_idx, joint in enumerate(axis.joints):
+                spinbox = QDoubleSpinBox()
+                spinbox.setDecimals(3)
+                if joint.joint_type.value == "linear":
+                    spinbox.setRange(-9999.0, 9999.0)
+                    spinbox.setSuffix(" mm")
+                else:
+                    spinbox.setRange(-360.0, 360.0)
+                    spinbox.setSuffix(" °")
+                spinbox.setValue(float(self._external_axes_model.get_axis_joint_value(axis.id, joint_idx)))
+                form.addRow(f"{axis.name} J{joint_idx + 1} ({joint.unit()})", spinbox)
+                self._ext_axis_spinboxes.append((axis.id, joint_idx, joint.unit(), spinbox))
 
     def _setup_connections(self) -> None:
         ok_button = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
@@ -121,12 +156,18 @@ class ProgramTargetDialog(QDialog):
     def _load_target(self) -> None:
         target_kind = "Intermediaire CIRC" if self._is_via_target else "Finale"
         if self._allow_motion_type_editing:
-            index = self.motion_mode_combo.findData(self._motion.mode.value)
+            mode_data = self._motion.mode.value
+            index = self.motion_mode_combo.findData(mode_data)
             if index >= 0:
                 self.motion_mode_combo.blockSignals(True)
                 self.motion_mode_combo.setCurrentIndex(index)
                 self.motion_mode_combo.blockSignals(False)
-            target_index = self.target_type_combo.findData(self._target.target_type.value)
+
+            if self._motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                type_data = _EXTERNAL_AXIS_MODE
+            else:
+                type_data = self._target.target_type.value
+            target_index = self.target_type_combo.findData(type_data)
             if target_index >= 0:
                 self.target_type_combo.blockSignals(True)
                 self.target_type_combo.setCurrentIndex(target_index)
@@ -136,7 +177,19 @@ class ProgramTargetDialog(QDialog):
             self.motion_mode_label.setText("PTP" if self._motion.mode == RobotProgramMotionMode.PTP else self._motion.mode.value)
         self._refresh_target_editor(target_kind)
 
+    def _is_ext_axis_mode(self) -> bool:
+        if not self._allow_motion_type_editing:
+            return self._motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS
+        return self.target_type_combo.currentData() == _EXTERNAL_AXIS_MODE
+
     def _refresh_target_editor(self, target_kind: str) -> None:
+        if self._is_ext_axis_mode():
+            self.target_type_label.setText(f"{target_kind} / Axe externe")
+            self.editor_mode_label.setText("Positionnement axe externe")
+            self.frame_row_widget.setVisible(False)
+            self.target_stack.setCurrentWidget(self.ext_axis_widget)
+            return
+
         self.target_type_label.setText(f"{target_kind} / {self._target.target_type.value}")
         is_joint_target = self._target.target_type == RobotProgramTargetType.JOINT
         self.editor_mode_label.setText("Edition articulaire" if is_joint_target else "Edition cartesienne")
@@ -153,13 +206,15 @@ class ProgramTargetDialog(QDialog):
         if not self._allow_motion_type_editing:
             return
         self._sync_target_type_options_with_motion()
-        self._target = self._build_target_for_type(self.get_target_type())
+        if not self._is_ext_axis_mode():
+            self._target = self._build_target_for_type(self.get_target_type())
         self._refresh_target_editor("Finale")
 
     def _on_target_type_changed(self, _index: int) -> None:
         if not self._allow_motion_type_editing:
             return
-        self._target = self._build_target_for_type(self.get_target_type())
+        if not self._is_ext_axis_mode():
+            self._target = self._build_target_for_type(self.get_target_type())
         self._refresh_target_editor("Finale")
 
     def _sync_target_type_options_with_motion(self) -> None:
@@ -203,6 +258,10 @@ class ProgramTargetDialog(QDialog):
         self._set_cartesian_editor_pose(next_pose, next_frame)
 
     def _on_apply_current_position_clicked(self) -> None:
+        if self._is_ext_axis_mode() and self._external_axes_model is not None:
+            for axis_id, joint_idx, _unit, spinbox in self._ext_axis_spinboxes:
+                spinbox.setValue(float(self._external_axes_model.get_axis_joint_value(axis_id, joint_idx)))
+            return
         if self._target.target_type == RobotProgramTargetType.JOINT:
             current_joint_angles = JointAngles6.from_values(self._robot_model.get_joints())
             self.joint_widget.set_all_joints(current_joint_angles.to_list())
@@ -216,6 +275,10 @@ class ProgramTargetDialog(QDialog):
             self._set_cartesian_editor_pose(pose_to_apply, self._current_frame)
 
     def get_target(self) -> RobotProgramTarget:
+        if self._is_ext_axis_mode():
+            # Pour EXTERNAL_AXIS on retourne une target articulaire nulle (non utilisée)
+            return RobotProgramTarget(target_type=RobotProgramTargetType.JOINT)
+
         if self._target.target_type == RobotProgramTargetType.JOINT:
             return RobotProgramTarget(
                 target_type=RobotProgramTargetType.JOINT,
@@ -229,14 +292,36 @@ class ProgramTargetDialog(QDialog):
             cartesian_pose=pose_program,
         )
 
+    def get_external_axis_target(self) -> ExternalAxisProgramTarget | None:
+        if not self._is_ext_axis_mode():
+            return None
+        from models.types.external_axis_joint_type import ExternalAxisJointType
+        values = []
+        for axis_id, joint_idx, unit, spinbox in self._ext_axis_spinboxes:
+            joint_type = ExternalAxisJointType.LINEAR if unit == "mm" else ExternalAxisJointType.ROTARY
+            values.append(ExternalAxisJointValue(
+                axis_id=axis_id,
+                joint_index=joint_idx,
+                value=spinbox.value(),
+                joint_type=joint_type,
+            ))
+        return ExternalAxisProgramTarget.from_list(values) if values else None
+
     def get_motion_mode(self) -> RobotProgramMotionMode:
+        if self._is_ext_axis_mode():
+            return RobotProgramMotionMode.EXTERNAL_AXIS
         if self._allow_motion_type_editing:
             return RobotProgramMotionMode(self.motion_mode_combo.currentData())
         return self._motion.mode
 
     def get_target_type(self) -> RobotProgramTargetType:
+        if self._is_ext_axis_mode():
+            return RobotProgramTargetType.JOINT
         if self._allow_motion_type_editing:
-            return RobotProgramTargetType(self.target_type_combo.currentData())
+            data = self.target_type_combo.currentData()
+            if data == _EXTERNAL_AXIS_MODE:
+                return RobotProgramTargetType.JOINT
+            return RobotProgramTargetType(data)
         return self._target.target_type
 
     def _display_cartesian_slider_limits_xyz(

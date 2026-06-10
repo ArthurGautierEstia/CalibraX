@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 import json
 from typing import Any
 
+from models.program_generation_settings import ProgramGenerationSettings
 from models.reference_frame import ReferenceFrame
 
 
@@ -125,6 +126,9 @@ class AppSessionFile:
     workpiece_data: dict = field(default_factory=dict)
     tooling_data: dict = field(default_factory=dict)
     program_base_config: ProgramBaseConfigState = field(default_factory=ProgramBaseConfigState)
+    program_generation_settings: ProgramGenerationSettings = field(
+        default_factory=ProgramGenerationSettings
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AppSessionFile":
@@ -150,12 +154,16 @@ class AppSessionFile:
             workpiece_data=data.get("workpiece_data") or {},
             tooling_data=data.get("tooling_data") or {},
             program_base_config=ProgramBaseConfigState.from_dict(data.get("program_base_config")),
+            program_generation_settings=ProgramGenerationSettings.from_dict(
+                data.get("program_generation_settings")
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["viewer_state"] = self.viewer_state.to_dict()
         payload["program_base_config"] = self.program_base_config.to_dict()
+        payload["program_generation_settings"] = self.program_generation_settings.to_dict()
         return payload
 
     def save(self, file_path: str) -> None:

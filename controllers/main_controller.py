@@ -551,6 +551,18 @@ class MainController(QObject):
         if program_base_config:
             self.program_controller.load_base_config_state(program_base_config)
 
+        # Restauration des réglages de génération
+        generation_settings_data = startup.get("program_generation_settings") or {}
+        if generation_settings_data:
+            self.program_controller.load_generation_settings_dict(generation_settings_data)
+        from models.krl_header_file import load_header_template
+        loaded_header = load_header_template()
+        self.program_controller._generation_settings.header_text = loaded_header
+        self.program_controller.generation_widget.set_settings(
+            self.program_controller._generation_settings
+        )
+        self.program_controller.generation_widget.set_header_text(loaded_header)
+
         self._startup_completed = True
         self._fit_scene_view_after_loading()
         self._schedule_session_save()
@@ -576,6 +588,7 @@ class MainController(QObject):
             workpiece_data=self.workpiece_controller.get_serializable_state().get("workpiece", {}),
             tooling_data=self.workpiece_controller.get_serializable_state().get("tooling", {}),
             program_base_config=ProgramBaseConfigState.from_dict(base_cfg),
+            program_generation_settings=self.program_controller.get_generation_settings(),
         )
 
         session_dir = os.path.dirname(self.session_path)
@@ -646,6 +659,7 @@ class MainController(QObject):
             "workpiece_data": session.workpiece_data if session is not None else {},
             "tooling_data": session.tooling_data if session is not None else {},
             "program_base_config": session.program_base_config.to_dict() if session is not None else {},
+            "program_generation_settings": session.program_generation_settings.to_dict() if session is not None else {},
         }
 
     def _guess_external_axes_config_from_workspace(self, workspace_path: str) -> str:
