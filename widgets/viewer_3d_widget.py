@@ -5064,6 +5064,36 @@ class Viewer3DWidget(QWidget):
         self._render_tooling()
         self._redraw_piece_frames()
 
+    def update_tooling_poses(self, elements: list[dict]) -> None:
+        """Met à jour les poses d'outillage sans recharger les meshes CAO."""
+        from PyQt6 import QtGui
+
+        self._tooling_snapshot = [dict(e) for e in elements]
+        mesh_index = 0
+        for snap in self._tooling_snapshot:
+            cad_model = snap.get("cad_model", "")
+            if not cad_model:
+                continue
+            if mesh_index >= len(self._tooling_mesh_items):
+                self.reload_tooling(elements)
+                return
+            item = self._tooling_mesh_items[mesh_index]
+            T_world = snap["T_world"]
+            item.resetTransform()
+            item.setTransform(QtGui.QMatrix4x4(
+                T_world[0, 0], T_world[0, 1], T_world[0, 2], T_world[0, 3],
+                T_world[1, 0], T_world[1, 1], T_world[1, 2], T_world[1, 3],
+                T_world[2, 0], T_world[2, 1], T_world[2, 2], T_world[2, 3],
+                T_world[3, 0], T_world[3, 1], T_world[3, 2], T_world[3, 3],
+            ))
+            if hasattr(item, "_calibrax_world_transform"):
+                item._calibrax_world_transform = np.array(T_world, dtype=float)
+            mesh_index += 1
+        if mesh_index != len(self._tooling_mesh_items):
+            self.reload_tooling(elements)
+            return
+        self._redraw_piece_frames()
+
     def _restore_tooling(self) -> None:
         if self._tooling_snapshot is not None:
             self._render_tooling()
@@ -5119,6 +5149,30 @@ class Viewer3DWidget(QWidget):
             self._redraw_piece_frames()
         finally:
             self.end_loading_feedback()
+
+    def update_workpiece_pose(
+        self,
+        T_world: "np.ndarray",
+        frame_T_world: "np.ndarray",
+    ) -> None:
+        """Met à jour la pose de la pièce sans recharger sa CAO."""
+        if self._workpiece_snapshot is None:
+            return
+        from PyQt6 import QtGui
+
+        self._workpiece_snapshot["T_world"] = T_world.copy()
+        self._workpiece_snapshot["frame_T_world"] = frame_T_world.copy()
+        if self._workpiece_mesh_item is not None:
+            self._workpiece_mesh_item.resetTransform()
+            self._workpiece_mesh_item.setTransform(QtGui.QMatrix4x4(
+                T_world[0, 0], T_world[0, 1], T_world[0, 2], T_world[0, 3],
+                T_world[1, 0], T_world[1, 1], T_world[1, 2], T_world[1, 3],
+                T_world[2, 0], T_world[2, 1], T_world[2, 2], T_world[2, 3],
+                T_world[3, 0], T_world[3, 1], T_world[3, 2], T_world[3, 3],
+            ))
+            if hasattr(self._workpiece_mesh_item, "_calibrax_world_transform"):
+                self._workpiece_mesh_item._calibrax_world_transform = np.array(T_world, dtype=float)
+        self._redraw_piece_frames()
 
     def _restore_workpiece(self) -> None:
         """Restaure la pièce après un clear_viewer()."""

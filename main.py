@@ -3,7 +3,7 @@ import os
 import sys
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QColor, QIcon, QPalette, QSurfaceFormat
+from PyQt6.QtGui import QIcon, QSurfaceFormat
 from PyQt6.QtWidgets import QApplication
 
 _fmt = QSurfaceFormat()
@@ -47,7 +47,6 @@ def parse_startup_options(argv: list[str]) -> dict[str, str]:
 class CalibraxApplication:
     def __init__(self, startup_options: dict[str, str]):
         self.app = QApplication(sys.argv)
-        self.apply_kuka_accent()
         ensure_user_data_directories()
 
         current_dir = os.getcwd()
@@ -77,18 +76,6 @@ class CalibraxApplication:
         )
 
         self.app.aboutToQuit.connect(self.main_controller.shutdown)
-
-    def apply_kuka_accent(self):
-        """Force une couleur d'accent orange au lieu de la couleur système."""
-        accent = QColor("#FF6F00")
-        palette = self.app.palette()
-        palette.setColor(QPalette.ColorRole.Highlight, accent)
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
-        palette.setColor(QPalette.ColorRole.Link, accent)
-        palette.setColor(QPalette.ColorRole.LinkVisited, QColor("#D65E00"))
-        if hasattr(QPalette.ColorRole, "Accent"):
-            palette.setColor(QPalette.ColorRole.Accent, accent)
-        self.app.setPalette(palette)
 
     def run(self):
         self.main_window.show_maximized_on_startup()

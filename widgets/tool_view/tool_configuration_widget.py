@@ -33,6 +33,7 @@ from utils.config_action_icons import (
     build_save_icon,
 )
 from utils.math_utils import safe_float
+from utils.status_badge import apply_status_badge
 from utils.mgi import RobotTool
 
 
@@ -93,9 +94,10 @@ class ToolConfigurationWidget(QWidget):
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         title_row.addWidget(title_label)
         title_row.addStretch()
-        self.status_label = QLabel("Configuration non enregistrée")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(QLabel("Statut :"))
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        apply_status_badge(self.status_label, "Configuration non enregistrée", "#808080")
         title_row.addWidget(self.status_label)
         layout.addLayout(title_row)
 
@@ -772,8 +774,7 @@ class ToolConfigurationWidget(QWidget):
     def set_configuration_status(self, text: str, color: str) -> None:
         if self.status_label is None:
             return
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+        apply_status_badge(self.status_label, text, color)
 
     def set_tool_name(self, name: str) -> None:
         if self.tool_name_line_edit is None:

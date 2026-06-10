@@ -175,7 +175,7 @@ class WorkpieceController(QObject):
 
         # Contexte externe → rebâtir les combos
         self.external_axes_model.axes_changed.connect(self._on_context_changed)
-        self.external_axes_model.axes_values_changed.connect(self._refresh_viewer)
+        self.external_axes_model.axes_values_changed.connect(self._refresh_viewer_poses)
         self.external_axes_model.mount_topology_changed.connect(self._refresh_viewer)
         self.workspace_model.workspace_changed.connect(self._on_context_changed)
 
@@ -362,6 +362,26 @@ class WorkpieceController(QObject):
         T_world = self._compute_piece_world_transform()
         frame_T_world = T_world @ pose_zyx_to_matrix(self.workpiece_model.get_workpiece_frame_pose())
         viewer.reload_workpiece(cad_model, T_world, color, frame_T_world)
+
+    def _refresh_viewer_poses(self) -> None:
+        viewer = getattr(self.viewer3d_controller, "viewer_3d_widget", None)
+        if viewer is None:
+            return
+
+        tooling_elems = self._compute_tooling_world_transforms()
+        if hasattr(viewer, "update_tooling_poses"):
+            viewer.update_tooling_poses(tooling_elems)
+        else:
+            viewer.reload_tooling(tooling_elems)
+
+        T_world = self._compute_piece_world_transform()
+        frame_T_world = T_world @ pose_zyx_to_matrix(self.workpiece_model.get_workpiece_frame_pose())
+        if hasattr(viewer, "update_workpiece_pose"):
+            viewer.update_workpiece_pose(T_world, frame_T_world)
+        else:
+            cad_model = self.workpiece_model.get_cad_model()
+            color = self.workpiece_model.get_cad_color()
+            viewer.reload_workpiece(cad_model, T_world, color, frame_T_world)
 
     # ------------------------------------------------------------------
     # Sauvegarde / chargement

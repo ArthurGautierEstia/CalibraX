@@ -28,6 +28,7 @@ from utils.config_action_icons import (
     build_new_icon,
     build_save_icon,
 )
+from utils.status_badge import apply_status_badge
 from widgets.workspace_view.workspace_primitive_zones_editor_widget import WorkspacePrimitiveZonesEditorWidget
 
 
@@ -119,9 +120,10 @@ class WorkspaceConfigurationWidget(QWidget):
         title_row.addWidget(title_label)
         title_row.addStretch()
 
-        self.status_label = QLabel("Configuration non chargée")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #808080; font-size: 13px; font-weight: 400;")
+        title_row.addWidget(QLabel("Statut :"))
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        apply_status_badge(self.status_label, "Configuration non chargée", "#808080")
         title_row.addWidget(self.status_label)
         header_layout.addLayout(title_row)
 
@@ -350,8 +352,7 @@ class WorkspaceConfigurationWidget(QWidget):
     def set_configuration_status(self, text: str, color: str = "#808080") -> None:
         if self.status_label is None:
             return
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 400;")
+        apply_status_badge(self.status_label, text, color)
 
     def set_current_configuration_name(self, configuration_name: str) -> None:
         if self.current_config_label is None:
