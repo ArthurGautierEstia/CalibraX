@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import partial
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -36,7 +36,7 @@ _APPROX_MODE_LABELS: dict[ApproximationMode, str] = {
     ApproximationMode.C_VEL: "C_VEL (%)",
 }
 
-_DEFAULT_STEP = ApproachRetractStep(ApproachAxisRef.TOOL_Z, 50.0, 0.2)
+_DEFAULT_STEP = ApproachRetractStep(ApproachAxisRef.TOOL_Z, 0.0, 0.2)
 
 
 class _StepRow(QWidget):
@@ -59,7 +59,7 @@ class _StepRow(QWidget):
         self._spin_dist.setRange(0.0, 2000.0)
         self._spin_dist.setDecimals(1)
         self._spin_dist.setSuffix(" mm")
-        self._spin_dist.setValue(50.0)
+        self._spin_dist.setValue(0.0)
 
         self._spin_speed = QDoubleSpinBox()
         self._spin_speed.setRange(0.001, 5.0)
@@ -67,13 +67,16 @@ class _StepRow(QWidget):
         self._spin_speed.setSuffix(" m/s")
         self._spin_speed.setValue(0.2)
 
-        self._btn_invert = QPushButton("⇄")
-        self._btn_invert.setCheckable(True)
+        self._inverted = False
+        self._btn_invert = QPushButton("→")
         self._btn_invert.setFixedWidth(30)
-        self._btn_invert.setToolTip("Inverser le sens : actif = sens +axe, inactif = sens -axe (défaut)")
+        self._btn_invert.setFlat(True)
+        self._btn_invert.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_invert.setToolTip("Sens : → = sens +axe (défaut), ← = sens −axe")
 
         btn_remove = QPushButton("×")
         btn_remove.setFixedWidth(24)
+        btn_remove.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn_remove.setToolTip("Supprimer ce pas")
 
         layout.addWidget(self._combo, stretch=2)
@@ -85,7 +88,7 @@ class _StepRow(QWidget):
         self._combo.currentIndexChanged.connect(self.changed)
         self._spin_dist.editingFinished.connect(self.changed)
         self._spin_speed.editingFinished.connect(self.changed)
-        self._btn_invert.toggled.connect(self.changed)
+        self._btn_invert.clicked.connect(self._on_invert_clicked)
         btn_remove.clicked.connect(self.removed)
 
     def get_step(self) -> ApproachRetractStep:
@@ -93,8 +96,13 @@ class _StepRow(QWidget):
             axis_ref=ApproachAxisRef(self._combo.currentData()),
             distance_mm=self._spin_dist.value(),
             speed_mps=self._spin_speed.value(),
-            inverted=self._btn_invert.isChecked(),
+            inverted=self._inverted,
         )
+
+    def _on_invert_clicked(self) -> None:
+        self._inverted = not self._inverted
+        self._btn_invert.setText("←" if self._inverted else "→")
+        self.changed.emit()
 
     def set_step(self, step: ApproachRetractStep) -> None:
         idx = self._combo.findData(step.axis_ref.value)
@@ -102,70 +110,33 @@ class _StepRow(QWidget):
             self._combo.setCurrentIndex(idx)
         self._spin_dist.setValue(step.distance_mm)
         self._spin_speed.setValue(step.speed_mps)
-        self._btn_invert.setChecked(step.inverted)
+        self._inverted = step.inverted
+        self._btn_invert.setText("←" if self._inverted else "→")
 
 
-class _ApproachRetractSectionWidget(QWidget):
-    """Section approche ou retrait : en-tête repliable, liste de pas, bouton ajout."""
+class _ApproachRetractSectionWidget(QGroupBox):
+    """Section approche ou retrait : liste de pas + bouton ajout."""
 
     changed = pyqtSignal()
 
     def __init__(self, label: str, parent: QWidget = None) -> None:
-        super().__init__(parent)
+        super().__init__(label, parent)
         self._updating = False
         self._step_rows: list[_StepRow] = []
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(2)
-
-        # En-tête : bouton déplier + label + checkbox activé
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
-
-        self._btn_expand = QPushButton("▶")
-        self._btn_expand.setCheckable(True)
-        self._btn_expand.setFixedWidth(26)
-        self._btn_expand.setFlat(True)
-
-        lbl = QLabel(label)
-        font = lbl.font()
-        font.setBold(True)
-        lbl.setFont(font)
-
-        self._cb_enabled = QCheckBox("Activé(e)")
-
-        header_layout.addWidget(self._btn_expand)
-        header_layout.addWidget(lbl)
-        header_layout.addStretch()
-        header_layout.addWidget(self._cb_enabled)
-        layout.addWidget(header)
-
-        # Corps repliable
-        self._body = QWidget()
-        body_layout = QVBoxLayout(self._body)
-        body_layout.setContentsMargins(14, 2, 0, 4)
-        body_layout.setSpacing(2)
 
         self._steps_layout = QVBoxLayout()
         self._steps_layout.setSpacing(2)
-        body_layout.addLayout(self._steps_layout)
+        layout.addLayout(self._steps_layout)
 
         self._btn_add = QPushButton("+ Ajouter un pas")
-        body_layout.addWidget(self._btn_add)
+        self._btn_add.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self._btn_add)
 
-        layout.addWidget(self._body)
-        self._body.setVisible(False)
-
-        self._btn_expand.toggled.connect(self._on_expand_toggled)
-        self._cb_enabled.stateChanged.connect(self._emit_changed)
         self._btn_add.clicked.connect(lambda: self._add_step())
-
-    def _on_expand_toggled(self, checked: bool) -> None:
-        self._btn_expand.setText("▼" if checked else "▶")
-        self._body.setVisible(checked)
 
     def _emit_changed(self) -> None:
         if not self._updating:
@@ -183,22 +154,20 @@ class _ApproachRetractSectionWidget(QWidget):
 
     def _remove_step(self, row: _StepRow) -> None:
         if len(self._step_rows) <= 1:
-            return  # Toujours au moins un pas
+            return
         self._steps_layout.removeWidget(row)
         row.deleteLater()
         self._step_rows.remove(row)
         self._emit_changed()
 
     def get_config(self) -> ApproachRetractConfig:
-        return ApproachRetractConfig(
-            enabled=self._cb_enabled.isChecked(),
-            steps=tuple(r.get_step() for r in self._step_rows),
-        )
+        steps = tuple(r.get_step() for r in self._step_rows)
+        enabled = any(s.distance_mm > 0.0 for s in steps)
+        return ApproachRetractConfig(enabled=enabled, steps=steps)
 
     def set_config(self, cfg: ApproachRetractConfig) -> None:
         self._updating = True
         try:
-            self._cb_enabled.setChecked(cfg.enabled)
             for row in self._step_rows:
                 self._steps_layout.removeWidget(row)
                 row.deleteLater()
