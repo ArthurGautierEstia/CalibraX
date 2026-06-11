@@ -43,6 +43,7 @@ from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
 from widgets.program_view.program_playback_widget import ProgramPlaybackWidget
+from widgets.program_view.program_settings_dialog import ProgramSettingsDialog
 from widgets.program_view.program_tool_orientation_dialog import ProgramToolOrientationDialog
 from views.program_view import ProgramView
 
@@ -102,8 +103,9 @@ class ProgramController:
         self.header_widget = self.program_view.get_header_widget()
         self.config_widget: ProgramKeypointsWidget = self.program_view.get_config_widget()
         self.actions_widget = self.program_view.get_actions_widget()
-        self.generation_widget = self.program_view.get_generation_widget()
         self.graphs_widget = self.program_view.get_graphs_widget()
+        self.settings_dialog = ProgramSettingsDialog(parent=self.program_view)
+        self.generation_widget = self.settings_dialog.get_generation_widget()
         self.playback_widgets: list[ProgramPlaybackWidget] = [self.playback_widget]
         self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
         self.current_program: RobotProgram | None = None
@@ -177,6 +179,7 @@ class ProgramController:
         self.config_widget.delete_requested.connect(self._on_program_delete_requested)
         self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
         self.config_widget.editToolOrientationRequested.connect(self._on_edit_tool_orientation_requested)
+        self.config_widget.programSettingsRequested.connect(self._on_program_settings_requested)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
         self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
         self.config_widget.motionModeChanged.connect(self._on_motion_mode_changed)
@@ -1283,7 +1286,10 @@ class ProgramController:
         self._refresh_status()
         self._refresh_program_save_status()
 
-
+    def _on_program_settings_requested(self) -> None:
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+        self.settings_dialog.activateWindow()
 
     def _open_program_target_dialog(self, row: int | None) -> None:
         if self.current_program is None:

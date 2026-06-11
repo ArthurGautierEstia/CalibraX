@@ -45,6 +45,7 @@ class ProgramKeypointsWidget(QWidget):
     motionModeChanged = pyqtSignal(str)
     editProgramBaseRequested = pyqtSignal()
     editToolOrientationRequested = pyqtSignal()
+    programSettingsRequested = pyqtSignal()
 
     def __init__(
         self,
@@ -69,6 +70,7 @@ class ProgramKeypointsWidget(QWidget):
         self.motion_mode_combo = QComboBox()
         self.btn_edit_program_base = QPushButton("Editer la base programme")
         self.btn_edit_tool_orientation = QPushButton("Editer l'orientation de l'outil")
+        self.btn_program_settings = QPushButton("Paramètres")
 
         self._keypoints: list[TrajectoryKeypoint] = []
         self._current_tool_source = "CURRENT"
@@ -139,6 +141,7 @@ class ProgramKeypointsWidget(QWidget):
         base_actions_row = QHBoxLayout()
         base_actions_row.addWidget(self.btn_edit_program_base, 1)
         base_actions_row.addWidget(self.btn_edit_tool_orientation, 1)
+        base_actions_row.addWidget(self.btn_program_settings, 1)
         base_actions_row.addStretch(2)
         layout.addLayout(base_actions_row)
 
@@ -190,6 +193,7 @@ class ProgramKeypointsWidget(QWidget):
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
         self.btn_edit_program_base.clicked.connect(self.editProgramBaseRequested.emit)
         self.btn_edit_tool_orientation.clicked.connect(self.editToolOrientationRequested.emit)
+        self.btn_program_settings.clicked.connect(self.programSettingsRequested.emit)
 
     def _emit_selection_changed(self) -> None:
         self.keypointSelectionChanged.emit(self._selected_row())
@@ -203,6 +207,7 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_edit.setEnabled(has_selection and not is_locked)
         self.btn_go_to.setEnabled(has_selection)
         self.btn_delete.setEnabled(has_selection and not is_locked)
+        self.btn_program_settings.setEnabled(self._has_program)
 
     _LOCKED_ROLES = frozenset({"HOME_START", "HOME_END", "APPROACH", "RETRACT", "EXTERNAL_SETUP"})
 
