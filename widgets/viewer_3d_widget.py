@@ -1389,6 +1389,7 @@ class Viewer3DWidget(QWidget):
         self.transparency_enabled = False
         self.ext_axes_transparency_enabled = False
         self.workspace_transparency_enabled = True
+        self.piece_transparency_enabled = False
         self._loading_feedback_depth = 0
         self._position_match_tolerance_deg = 0.05
         self._robot_controls_collapsed = False
@@ -1692,10 +1693,10 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_cad = self._create_overlay_button("Affichage CAD", "cad")
         self.btn_toggle_transparency = self._create_overlay_button("Transparence robot", "transparency")
         self.btn_toggle_ext_axes_transparency = self._create_overlay_button("Transparence axes externes", "ext_axes_transparency")
+        self.btn_toggle_piece_transparency = self._create_overlay_button("Transparence pièce et outillage", "piece_transparency")
         self.btn_toggle_robot_controls = self._create_overlay_button("Contrôles robot", "robot_controls")
         self.btn_toggle_frame_lists = self._create_overlay_button("Liste de repères", "frame_list")
         self.btn_toggle_axes = self._create_overlay_button("Afficher / Masquer tous les repères", "axes")
-        self.btn_toggle_viewer_style = self._create_overlay_button("Style viewer", "appearance")
         self.btn_toggle_view_presets = self._create_overlay_button("Vues prédéfinies", "view_cube")
         self.btn_toggle_perspective = self._create_overlay_button("Perspective", "perspective")
         self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zone de travail", "tcp_zones")
@@ -1711,7 +1712,12 @@ class Viewer3DWidget(QWidget):
             ),
             self._create_toolbar_zone(
                 "Transparence",
-                (self.btn_toggle_transparency, self.btn_toggle_ext_axes_transparency, self.btn_toggle_workspace_transparency),
+                (
+                    self.btn_toggle_transparency,
+                    self.btn_toggle_ext_axes_transparency,
+                    self.btn_toggle_workspace_transparency,
+                    self.btn_toggle_piece_transparency,
+                ),
             ),
             self._create_toolbar_zone(
                 "Repères",
@@ -1719,7 +1725,7 @@ class Viewer3DWidget(QWidget):
             ),
             self._create_toolbar_zone(
                 "Vue",
-                (self.btn_toggle_viewer_style, self.btn_toggle_view_presets, self.btn_toggle_perspective),
+                (self.btn_toggle_view_presets, self.btn_toggle_perspective),
             ),
             self._create_toolbar_zone(
                 "Zones",
@@ -1772,9 +1778,9 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_ext_axes_transparency.clicked.connect(self._on_ext_axes_transparency_button_clicked)
         self.btn_toggle_workspace_transparency.clicked.connect(self._on_workspace_transparency_button_clicked)
+        self.btn_toggle_piece_transparency.clicked.connect(self._on_piece_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
         self.btn_toggle_frame_lists.clicked.connect(self._on_frame_lists_button_clicked)
-        self.btn_toggle_viewer_style.clicked.connect(self._on_viewer_style_button_clicked)
         self.btn_toggle_view_presets.clicked.connect(self._on_view_presets_button_clicked)
         self.btn_toggle_perspective.clicked.connect(self._on_perspective_button_clicked)
         self.btn_toggle_workspace_tcp_zones.clicked.connect(self._on_workspace_tcp_zones_button_clicked)
@@ -1853,19 +1859,6 @@ class Viewer3DWidget(QWidget):
                 ),
             )
             self.frame_lists_overlay.move(frame_overlay_x, overlay_y)
-        if hasattr(self, "btn_toggle_viewer_style") and hasattr(self, "viewer_style_overlay"):
-            self.viewer_style_overlay.adjustSize()
-            style_anchor_pos = self.btn_toggle_viewer_style.mapTo(self.viewer, QPoint(0, 0))
-            style_anchor_center_x = style_anchor_pos.x() + (self.btn_toggle_viewer_style.width() // 2)
-            style_overlay_x = max(
-                margin,
-                min(
-                    self.viewer.width() - self.viewer_style_overlay.width() - margin,
-                    style_anchor_center_x - (self.viewer_style_overlay.width() // 2),
-                ),
-            )
-            style_overlay_y = style_anchor_pos.y() + self.btn_toggle_viewer_style.height() + 16
-            self.viewer_style_overlay.move(style_overlay_x, style_overlay_y)
         if hasattr(self, "btn_toggle_view_presets") and hasattr(self, "viewer_presets_overlay"):
             self.viewer_presets_overlay.adjustSize()
             presets_anchor_pos = self.btn_toggle_view_presets.mapTo(self.viewer, QPoint(0, 0))
@@ -2714,10 +2707,10 @@ class Viewer3DWidget(QWidget):
         yield self.btn_toggle_cad
         yield self.btn_toggle_transparency
         yield self.btn_toggle_ext_axes_transparency
+        yield self.btn_toggle_piece_transparency
         yield self.btn_toggle_robot_controls
         yield self.btn_toggle_frame_lists
         yield self.btn_toggle_axes
-        yield self.btn_toggle_viewer_style
         yield self.btn_toggle_view_presets
         yield self.btn_toggle_perspective
         yield self.btn_toggle_workspace_tcp_zones
@@ -2843,6 +2836,7 @@ class Viewer3DWidget(QWidget):
             transparency_enabled=bool(self.transparency_enabled),
             ext_axes_transparency_enabled=bool(self.ext_axes_transparency_enabled),
             workspace_transparency_enabled=bool(self.workspace_transparency_enabled),
+            piece_transparency_enabled=bool(self.piece_transparency_enabled),
             show_axes=bool(self.show_axes),
             frames_visibility=[bool(v) for v in self.frames_visibility],
             workspace_frames_visibility=[bool(v) for v in self.workspace_frames_visibility],
@@ -2861,6 +2855,7 @@ class Viewer3DWidget(QWidget):
         self.transparency_enabled = bool(state.transparency_enabled)
         self.ext_axes_transparency_enabled = bool(state.ext_axes_transparency_enabled)
         self.workspace_transparency_enabled = bool(state.workspace_transparency_enabled)
+        self.piece_transparency_enabled = bool(state.piece_transparency_enabled)
         self.show_axes = bool(state.show_axes)
         self.frames_visibility = [bool(v) for v in state.frames_visibility]
         self.workspace_frames_visibility = [bool(v) for v in state.workspace_frames_visibility]
@@ -2884,6 +2879,8 @@ class Viewer3DWidget(QWidget):
             self.set_transparency(True, emit_signal=False)
         if self.ext_axes_transparency_enabled:
             self.set_ext_axes_transparency(True, emit_signal=False)
+        if self.piece_transparency_enabled:
+            self.set_piece_transparency(True, emit_signal=False)
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
@@ -2959,9 +2956,9 @@ class Viewer3DWidget(QWidget):
         self._set_overlay_button_state(self.btn_toggle_cad, self._cad_showed)
         self._set_overlay_button_state(self.btn_toggle_transparency, self.transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_ext_axes_transparency, self.ext_axes_transparency_enabled)
+        self._set_overlay_button_state(self.btn_toggle_piece_transparency, self.piece_transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_axes, self.show_axes)
         self._set_overlay_button_state(self.btn_toggle_frame_lists, self._is_frame_lists_overlay_visible())
-        self._set_overlay_button_state(self.btn_toggle_viewer_style, self.viewer_style_overlay.isVisible())
         self._set_overlay_button_state(self.btn_toggle_view_presets, self.viewer_presets_overlay.isVisible())
         self._set_overlay_button_state(self.btn_toggle_perspective, self.viewer.is_perspective_enabled())
         self._set_overlay_button_state(self.btn_toggle_workspace_tcp_zones, self._workspace_tcp_zones_visible)
@@ -3208,6 +3205,13 @@ class Viewer3DWidget(QWidget):
         elif icon_kind == "workspace_transparency":
             painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 70)))
             painter.drawPolygon(QPolygonF([QPointF(3, 13), QPointF(10, 8), QPointF(17, 13), QPointF(10, 18)]))
+        elif icon_kind == "piece_transparency":
+            painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 70)))
+            painter.drawRoundedRect(3, 7, 14, 9, 2, 2)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(6, 7, 10, 4)
+            painter.drawLine(17, 7, 13, 4)
+            painter.drawLine(10, 4, 13, 4)
         elif icon_kind == "calibration_pose":
             painter.drawEllipse(4, 4, 12, 12)
             painter.drawEllipse(8, 8, 4, 4)
@@ -5155,9 +5159,9 @@ class Viewer3DWidget(QWidget):
             color = snap["color"]
 
             if cad_model:
-                item = self.load_robot_mesh(cad_model, T_world, color)
+                item = self.load_robot_mesh(cad_model, T_world, self._piece_render_color(color))
                 if item is not None:
-                    self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
+                    self._apply_piece_item_transparency(item)
                     self.viewer.addItem(item)
                     self._tooling_mesh_items.append(item)
 
@@ -5235,9 +5239,9 @@ class Viewer3DWidget(QWidget):
         color = snap["color"]
 
         if cad_model:
-            item = self.load_robot_mesh(cad_model, T_world, color)
+            item = self.load_robot_mesh(cad_model, T_world, self._piece_render_color(color))
             if item is not None:
-                self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
+                self._apply_piece_item_transparency(item)
                 self.viewer.addItem(item)
                 self._workpiece_mesh_item = item
 
@@ -5742,11 +5746,38 @@ class Viewer3DWidget(QWidget):
         if emit_signal:
             self._emit_display_state_changed()
 
+    def _piece_render_color(self, color: tuple) -> tuple:
+        red, green, blue = (float(color[index]) for index in range(3))
+        alpha = 0.45 if self.piece_transparency_enabled else 1.0
+        return (red, green, blue, alpha)
+
+    def _apply_piece_item_transparency(self, item) -> None:
+        c = item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
+        if self.piece_transparency_enabled:
+            item.setColor((c[0], c[1], c[2], 0.45))
+            self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+        else:
+            item.setColor((c[0], c[1], c[2], 1.0))
+            self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
+
+    def set_piece_transparency(self, enabled: bool, emit_signal: bool = True) -> None:
+        self.piece_transparency_enabled = enabled
+        for item in self._tooling_mesh_items:
+            self._apply_piece_item_transparency(item)
+        if self._workpiece_mesh_item is not None:
+            self._apply_piece_item_transparency(self._workpiece_mesh_item)
+        self._refresh_toolbar_buttons()
+        if emit_signal:
+            self._emit_display_state_changed()
+
     def _on_ext_axes_transparency_button_clicked(self) -> None:
         self.set_ext_axes_transparency(not self.ext_axes_transparency_enabled)
 
     def _on_workspace_transparency_button_clicked(self) -> None:
         self.set_workspace_transparency(not self.workspace_transparency_enabled)
+
+    def _on_piece_transparency_button_clicked(self) -> None:
+        self.set_piece_transparency(not self.piece_transparency_enabled)
 
     def toogle_base_axis_frames(self):
         self.show_axes = True

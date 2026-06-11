@@ -75,6 +75,7 @@ class ViewerDisplayState:
     tool_colliders_visible: bool = True
     ext_axes_transparency_enabled: bool = False
     workspace_transparency_enabled: bool = True
+    piece_transparency_enabled: bool = False
     tooling_frames_visible: bool = True
     workpiece_frame_visible: bool = True
     theme: ViewerThemeState = field(default_factory=ViewerThemeState)
@@ -99,6 +100,7 @@ class ViewerDisplayState:
             tool_colliders_visible=bool(payload.get("tool_colliders_visible", True)),
             ext_axes_transparency_enabled=bool(payload.get("ext_axes_transparency_enabled", False)),
             workspace_transparency_enabled=bool(payload.get("workspace_transparency_enabled", True)),
+            piece_transparency_enabled=bool(payload.get("piece_transparency_enabled", False)),
             tooling_frames_visible=bool(payload.get("tooling_frames_visible", True)),
             workpiece_frame_visible=bool(payload.get("workpiece_frame_visible", True)),
             theme=ViewerThemeState.from_dict(payload.get("theme")),
@@ -116,6 +118,7 @@ class AppSessionFile:
     project_path: str = ""
     recent_project_paths: list[str] = field(default_factory=list)
     application_theme: str = "system"
+    main_tabs_visibility: dict[str, bool] = field(default_factory=dict)
     robot_config_path: str = ""
     tool_profile_path: str = ""
     workspace_path: str = ""
@@ -142,6 +145,12 @@ class AppSessionFile:
             if isinstance(data.get("recent_project_paths", []), list)
             else [],
             application_theme=str(data.get("application_theme", "system") or "system"),
+            main_tabs_visibility={
+                str(key): bool(value)
+                for key, value in (data.get("main_tabs_visibility") or {}).items()
+            }
+            if isinstance(data.get("main_tabs_visibility"), dict)
+            else {},
             robot_config_path="" if data.get("robot_config_path") is None else str(data.get("robot_config_path")),
             tool_profile_path="" if data.get("tool_profile_path") is None else str(data.get("tool_profile_path")),
             workspace_path="" if data.get("workspace_path") is None else str(data.get("workspace_path")),
