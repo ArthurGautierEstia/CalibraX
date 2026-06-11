@@ -118,29 +118,30 @@ class ExternalAxesModel(QObject):
     # Calcul des transformations monde (résolution topologique)
     # ------------------------------------------------------------------
 
-    def compute_world_transforms(self) -> dict[str, dict]:
-        """Calcule les matrices monde pour tous les axes (tri topologique).
+    def compute_world_transforms_for(
+        self,
+        values: dict[tuple[str, int], float],
+    ) -> dict[str, dict]:
+        """Calcule les matrices monde avec des valeurs articulaires explicites (pur, sans muter).
+
+        Args:
+            values: (axis_id, joint_idx) → valeur. Les joints absents gardent leur valeur live.
 
         Returns:
-            dict axis_id -> {
-                "base": np.ndarray 4×4,
-                "joint_links": [np.ndarray ...],
-                "end": np.ndarray 4×4,
-            }
+            dict axis_id -> {"base": 4×4, "joint_links": [...], "end": 4×4}
         """
         world_transforms: dict[str, dict] = {}
         IDENTITY = np.eye(4, dtype=float)
 
-        # Tri topologique simple (liste déjà ordonnée en général)
         remaining = list(self._axes)
         max_iters = len(remaining) + 1
         iters = 0
         while remaining:
             iters += 1
             if iters > max_iters:
-                # Cycle détecté ou axe parent introuvable — on place à l'origine
                 for a in remaining:
-                    world_transforms[a.id] = a.compute_chain(IDENTITY)
+                    joint_vals = [values.get((a.id, i), j.value) for i, j in enumerate(a.joints)]
+                    world_transforms[a.id] = a.compute_chain_with_values(IDENTITY, joint_vals)
                 break
             pending_again = []
             for a in remaining:
@@ -151,15 +152,25 @@ class ExternalAxesModel(QObject):
                 else:
                     pending_again.append(a)
                     continue
-                world_transforms[a.id] = a.compute_chain(parent_T)
+                joint_vals = [values.get((a.id, i), j.value) for i, j in enumerate(a.joints)]
+                world_transforms[a.id] = a.compute_chain_with_values(parent_T, joint_vals)
             if len(pending_again) == len(remaining):
-                # Pas de progrès → cycle
                 for a in pending_again:
-                    world_transforms[a.id] = a.compute_chain(IDENTITY)
+                    joint_vals = [values.get((a.id, i), j.value) for i, j in enumerate(a.joints)]
+                    world_transforms[a.id] = a.compute_chain_with_values(IDENTITY, joint_vals)
                 break
             remaining = pending_again
 
         return world_transforms
+
+    def compute_world_transforms(self) -> dict[str, dict]:
+        """Calcule les matrices monde avec les valeurs live des joints."""
+        live: dict[tuple[str, int], float] = {
+            (a.id, i): j.value
+            for a in self._axes
+            for i, j in enumerate(a.joints)
+        }
+        return self.compute_world_transforms_for(live)
 
     def get_robot_world_base_matrix(self) -> np.ndarray:
         """Retourne T_world_robotBase en tenant compte du montage sur axe externe."""
@@ -169,6 +180,14 @@ class ExternalAxesModel(QObject):
         if self._robot_mount_parent_id in transforms:
             return transforms[self._robot_mount_parent_id]["end"].copy()
         return None
+
+    def get_robot_world_base_matrix_for(self, values: dict[tuple[str, int], float]) -> np.ndarray | None:
+        """Retourne T_world_robotBase pour des valeurs articulaires simulées (pur)."""
+        if self._robot_mount_parent_id is None:
+            return None
+        transforms = self.compute_world_transforms_for(values)
+        t = transforms.get(self._robot_mount_parent_id)
+        return t["end"].copy() if t is not None else None
 
     # ------------------------------------------------------------------
     # Sérialisation

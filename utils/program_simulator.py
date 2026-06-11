@@ -21,9 +21,14 @@ from models.robot_program import (
     RobotProgramTarget,
     RobotProgramTargetType,
 )
+from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
 from models.types import JointAngles6, Pose6
+from models.workpiece_model import WorkpieceModel
+from models.workspace_model import WorkspaceModel
+from utils.external_axes_kinematics import piece_frame_world
+from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
 from utils.mgi import MGI, MgiAxisLimits, MgiConfigurationFilter, MgiGeometricParams, MgiParams, RobotTool
 from utils.reference_frame_utils import pose_to_matrix, matrix_to_pose
 
@@ -57,6 +62,12 @@ class _MotionSimCacheEntry:
 
 def _motion_signature(motion: RobotProgramMotion) -> str:
     """Hash stable des champs influençant la simulation (hors approximation)."""
+    ext_key = None
+    if motion.external_axis_target is not None:
+        ext_key = tuple(
+            (v.axis_id, v.joint_index, v.value, v.speed)
+            for v in motion.external_axis_target.values
+        )
     key = (
         motion.mode.value,
         motion.target.target_type.value,
@@ -67,6 +78,7 @@ def _motion_signature(motion: RobotProgramMotion) -> str:
         motion.base_pose.to_list() if motion.base_pose else None,
         motion.via_target.target_type.value if motion.via_target else None,
         motion.via_target.cartesian_pose.to_list() if (motion.via_target and motion.via_target.cartesian_pose) else None,
+        ext_key,
     )
     return hashlib.md5(str(key).encode(), usedforsecurity=False).hexdigest()
 
@@ -78,9 +90,19 @@ class ProgramSimulator:
     MAX_TRAJECTORY_SAMPLES = 3000
     MIN_CARTESIAN_SAMPLE_STEP_MM = 1.0
 
-    def __init__(self, robot_model: RobotModel, tool_model: ToolModel) -> None:
+    def __init__(
+        self,
+        robot_model: RobotModel,
+        tool_model: ToolModel,
+        external_axes_model: ExternalAxesModel | None = None,
+        workspace_model: WorkspaceModel | None = None,
+        workpiece_model: WorkpieceModel | None = None,
+    ) -> None:
         self.robot_model = robot_model
         self.tool_model = tool_model
+        self.external_axes_model = external_axes_model
+        self.workspace_model = workspace_model
+        self.workpiece_model = workpiece_model
         # Lot A.1 : cache DH mesuré valide pendant une passe de simulate_program
         self._cached_measured_dh: list[list[float]] | None = None
         # Lot F : arrays numpy pré-extraits pour FK mesuré vectorisé
@@ -90,6 +112,8 @@ class ProgramSimulator:
         self._motion_cache: list[_MotionSimCacheEntry] = []
         # Lot B : pas d'interpolation actif pour la simulation courante
         self._active_cartesian_step_mm: float = self.MIN_CARTESIAN_SAMPLE_STEP_MM
+        # État courant des axes externes pendant la simulation (axis_id, joint_idx) → valeur
+        self._current_ext_axis_values: dict[tuple[str, int], float] = {}
 
     def simulate_program(self, program: RobotProgram, include_compensation: bool = True) -> ProgramSimulationResult:
         if program.brand != RobotProgramBrand.KUKA:
@@ -97,6 +121,7 @@ class ProgramSimulator:
         if not self.robot_model.get_has_configuration():
             return ProgramSimulationResult(warnings=["Charger une configuration robot avant de simuler un programme."])
 
+        self._init_ext_axis_state()
         # Lot A.1 : snapshot DH mesuré pour toute la passe
         self._cached_measured_dh = self._compute_normalized_measured_dh_table()
         # Lot F : pré-extraire les arrays numpy pour FK mesuré vectorisé
@@ -154,6 +179,7 @@ class ProgramSimulator:
         if not self.robot_model.get_has_configuration():
             return ProgramSimulationResult(warnings=["Charger une configuration robot avant de simuler un programme."])
 
+        self._init_ext_axis_state()
         self._cached_measured_dh = self._compute_normalized_measured_dh_table()
         self._rebuild_measured_dh_arrays()
         total_length_mm = self._estimate_total_path_length_mm(program.motions)
@@ -279,6 +305,9 @@ class ProgramSimulator:
                 current_joints = list(cached.end_joints)
                 current_pose = cached.end_pose
                 current_time_s += cached.duration_s
+                # Synchroniser l'état des axes externes depuis le dernier sample du cache
+                if cached.relative_samples and cached.relative_samples[-1].ext_axis_values:
+                    self._update_ext_axis_state_from_snapshot(cached.relative_samples[-1].ext_axis_values)
                 new_cache.append(cached)
                 continue
 
@@ -547,12 +576,7 @@ class ProgramSimulator:
             path = self._circle_pose_points(current_pose_base, via_pose_base, target_pose_base, intervals)
             return self._simulate_cartesian_path(motion, path, current_joints_deg, current_time_s, motion_tool, step_time_s)
         if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
-            # Le TCP ne se déplace pas ; on émet un unique sample au temps courant + durée estimée
-            _EXTERNAL_AXIS_DEFAULT_DURATION_S = 1.0
-            end_time_s = current_time_s + _EXTERNAL_AXIS_DEFAULT_DURATION_S
-            return [
-                self._build_sample(end_time_s, motion, current_joints_deg, motion_tool)
-            ]
+            return self._simulate_external_axis(motion, current_joints_deg, current_time_s, motion_tool)
         return []
 
     # =========================================================================
@@ -736,6 +760,35 @@ class ProgramSimulator:
             return 1
         return max(1, int(math.ceil(float(distance_mm) / step_mm)))
 
+    def _world_robot_base_for(self, ext_values: dict[tuple[str, int], float]) -> np.ndarray:
+        """T_world_robotBase pour l'état d'axes simulé donné."""
+        if self.workspace_model is None:
+            return np.eye(4, dtype=float)
+        workspace_base = np.array(self.workspace_model.get_robot_base_transform_world().matrix, dtype=float)
+        if self.external_axes_model is None:
+            return workspace_base
+        override = self.external_axes_model.get_robot_world_base_matrix_for(ext_values)
+        return override if override is not None else workspace_base
+
+    def _piece_frame_world_for(self, ext_values: dict[tuple[str, int], float]) -> np.ndarray | None:
+        """T_world_pieceFrame pour l'état d'axes simulé donné. None si aucun modèle pièce."""
+        if self.workpiece_model is None or self.workspace_model is None:
+            return None
+        workspace_base = np.array(self.workspace_model.get_robot_base_transform_world().matrix, dtype=float)
+        world_base = self._world_robot_base_for(ext_values)
+        world_transforms: dict[str, dict] = {}
+        if self.external_axes_model is not None:
+            world_transforms = self.external_axes_model.compute_world_transforms_for(ext_values)
+        # Pour les repères workspace (PREFIX_WS), on ne les a pas ici — fallback identité
+        return piece_frame_world(
+            piece_parent_id=self.workpiece_model.get_parent_frame_id(),
+            world_transforms=world_transforms,
+            piece_pose_in_parent=self.workpiece_model.get_pose_in_parent(),
+            piece_frame_pose=self.workpiece_model.get_workpiece_frame_pose(),
+            workspace_robot_base_matrix=workspace_base,
+            world_robot_base_matrix=world_base,
+        )
+
     def _build_sample(
         self,
         time_s: float,
@@ -745,6 +798,10 @@ class ProgramSimulator:
     ) -> ProgramSimulationSample:
         nominal_pose_base = self._fk_nominal_pose_base(joints_deg, motion_tool)
         measured_pose_base = self._fk_measured_pose_base(joints_deg, motion_tool)
+        # Pose monde : T_world_robotBase · T_base_tcp
+        T_world_robotBase = self._world_robot_base_for(self._current_ext_axis_values)
+        T_base_tcp = pose_to_matrix(nominal_pose_base)
+        nominal_pose_world = matrix_to_pose(T_world_robotBase @ T_base_tcp)
         return ProgramSimulationSample(
             time_s=float(time_s),
             motion_mode=motion.mode,
@@ -752,7 +809,94 @@ class ProgramSimulator:
             joints_deg=JointAngles6.from_values(joints_deg),
             nominal_pose_base=nominal_pose_base,
             measured_pose_base=measured_pose_base,
+            ext_axis_values=self._build_ext_axis_snapshot(),
+            nominal_pose_world=nominal_pose_world,
         )
+
+    def _init_ext_axis_state(self) -> None:
+        self._current_ext_axis_values = {}
+        if self.external_axes_model is None:
+            return
+        # Initialiser à zéro (home programme) pour une simulation déterministe et auto-portée
+        for axis in self.external_axes_model.get_axes():
+            for joint_idx in range(len(axis.joints)):
+                self._current_ext_axis_values[(axis.id, joint_idx)] = 0.0
+
+    def _build_ext_axis_snapshot(self) -> tuple[float, ...]:
+        if self.external_axes_model is None:
+            return ()
+        return tuple(
+            self._current_ext_axis_values.get((axis.id, joint_idx), joint.value)
+            for axis in self.external_axes_model.get_axes()
+            for joint_idx, joint in enumerate(axis.joints)
+        )
+
+    def _update_ext_axis_state_from_snapshot(self, snapshot: tuple[float, ...]) -> None:
+        if self.external_axes_model is None:
+            return
+        idx = 0
+        for axis in self.external_axes_model.get_axes():
+            for joint_idx in range(len(axis.joints)):
+                if idx < len(snapshot):
+                    self._current_ext_axis_values[(axis.id, joint_idx)] = snapshot[idx]
+                idx += 1
+
+    def _simulate_external_axis(
+        self,
+        motion: RobotProgramMotion,
+        current_joints_deg: list[float],
+        current_time_s: float,
+        motion_tool: RobotTool,
+    ) -> list[ProgramSimulationSample]:
+        if motion.external_axis_target is None or not motion.external_axis_target.values:
+            return [self._build_sample(current_time_s + self.DEFAULT_DT_S, motion, current_joints_deg, motion_tool)]
+
+        # Calculer la durée totale : max(|delta_i| / speed_i) sur tous les joints
+        max_duration_s = self.DEFAULT_DT_S
+        for jv in motion.external_axis_target.values:
+            start_val = self._current_ext_axis_values.get((jv.axis_id, jv.joint_index), 0.0)
+            delta = abs(jv.value - start_val)
+            if delta < 1e-9:
+                continue
+
+            # Vitesse cible : celle du mouvement si renseignée, sinon default_speed de l'axe
+            speed = jv.speed
+            if speed is None and self.external_axes_model is not None:
+                axis_obj = self.external_axes_model.get_axis(jv.axis_id)
+                if axis_obj is not None and jv.joint_index < len(axis_obj.joints):
+                    speed = axis_obj.joints[jv.joint_index].default_speed
+            speed = float(speed) if speed is not None else 500.0
+
+            # Plafonner à max_speed
+            if self.external_axes_model is not None:
+                axis_obj = self.external_axes_model.get_axis(jv.axis_id)
+                if axis_obj is not None and jv.joint_index < len(axis_obj.joints):
+                    speed = min(speed, axis_obj.joints[jv.joint_index].max_speed)
+            speed = max(1e-6, speed)
+
+            max_duration_s = max(max_duration_s, delta / speed)
+
+        # Générer les samples linéairement interpolés
+        n_steps = max(1, int(math.ceil(max_duration_s / self.DEFAULT_DT_S)))
+        start_values = {
+            (jv.axis_id, jv.joint_index): self._current_ext_axis_values.get((jv.axis_id, jv.joint_index), 0.0)
+            for jv in motion.external_axis_target.values
+        }
+
+        samples: list[ProgramSimulationSample] = []
+        for step in range(1, n_steps + 1):
+            alpha = step / n_steps
+            for jv in motion.external_axis_target.values:
+                start = start_values[(jv.axis_id, jv.joint_index)]
+                self._current_ext_axis_values[(jv.axis_id, jv.joint_index)] = start + (jv.value - start) * alpha
+            t = current_time_s + max_duration_s * alpha
+            samples.append(self._build_sample(t, motion, current_joints_deg, motion_tool))
+
+        # Fixer les valeurs finales exactes
+        for jv in motion.external_axis_target.values:
+            self._current_ext_axis_values[(jv.axis_id, jv.joint_index)] = jv.value
+
+        return samples
 
     def _resolve_ptp_target_joints(
         self,
@@ -1046,7 +1190,16 @@ class ProgramSimulator:
     def _target_pose_base(self, motion: RobotProgramMotion, target: RobotProgramTarget, motion_tool: RobotTool) -> Pose6:
         if target.target_type == RobotProgramTargetType.JOINT:
             return self._fk_nominal_pose_base(target.joint_angles.to_list(), motion_tool)
-        return self._pose_from_program_base_to_robot_base(target.cartesian_pose, motion.base_pose)
+        # Chemin monde : cible en repère pièce → monde → base robot courant
+        T_world_pieceFrame = self._piece_frame_world_for(self._current_ext_axis_values)
+        if T_world_pieceFrame is None:
+            # Sans modèle pièce/workspace : chemin legacy (base_pose statique)
+            return self._pose_from_program_base_to_robot_base(target.cartesian_pose, motion.base_pose)
+        T_world_robotBase = self._world_robot_base_for(self._current_ext_axis_values)
+        T_robotBase_world = invert_homogeneous_transform(T_world_robotBase)
+        T_target_in_piece = pose_to_matrix(target.cartesian_pose)
+        T_target_in_base = T_robotBase_world @ T_world_pieceFrame @ T_target_in_piece
+        return matrix_to_pose(T_target_in_base)
 
     @staticmethod
     def _pose_from_program_base_to_robot_base(pose_program_base: Pose6, base_pose: Pose6) -> Pose6:

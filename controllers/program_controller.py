@@ -107,7 +107,13 @@ class ProgramController:
         self.settings_dialog = ProgramSettingsDialog(parent=self.program_view)
         self.generation_widget = self.settings_dialog.get_generation_widget()
         self.playback_widgets: list[ProgramPlaybackWidget] = [self.playback_widget]
-        self.program_simulator = ProgramSimulator(self.robot_model, self.tool_model)
+        self.program_simulator = ProgramSimulator(
+            self.robot_model,
+            self.tool_model,
+            self.external_axes_model,
+            workspace_model=self.workspace_model,
+            workpiece_model=self.workpiece_controller.workpiece_model,
+        )
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
 
@@ -158,6 +164,7 @@ class ProgramController:
         self._krl_preview_timer.setInterval(400)
         self._krl_preview_timer.timeout.connect(self._refresh_krl_preview)
         self._setup_connections()
+        self._update_ext_axes_table_columns()
         self._refresh_view()
 
 
@@ -190,6 +197,7 @@ class ProgramController:
         self.external_axes_model.axes_values_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.mount_topology_changed.connect(self._on_external_chain_changed)
         self.external_axes_model.axes_changed.connect(self._on_external_chain_changed)
+        self.external_axes_model.axes_changed.connect(self._update_ext_axes_table_columns)
         self.workpiece_controller.workpiece_model.workpiece_changed.connect(self._on_workpiece_changed)
         self.generation_widget.generationSettingsChanged.connect(self._on_generation_settings_changed)
         self.generation_widget.saveHeaderRequested.connect(self._on_save_header_requested)
@@ -460,12 +468,14 @@ class ProgramController:
         )
 
         _theo_samples = self._get_samples_for_modes("THEORETICAL", active_motion_mode)
+        _inv_base = self._inv_robot_base_matrix()
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             _theo_samples,
             self._get_nominal_color(),
             self.MEASURED_COLOR,
+            inv_robot_base_matrix=_inv_base,
         )
-        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples)
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples, _inv_base)
         self._compensated_segments_cache = []
         self._simulation_dirty = False
 
@@ -539,6 +549,14 @@ class ProgramController:
 
 
 
+    def _update_ext_axes_table_columns(self) -> None:
+        col_headers: list[str] = []
+        for axis in self.external_axes_model.get_axes():
+            for joint_idx, joint in enumerate(axis.joints):
+                label = f"{axis.name} J{joint_idx + 1} ({joint.unit()})"
+                col_headers.append(label)
+        self.config_widget.setup_external_axes_columns(col_headers)
+
     def _refresh_keypoint_table(self) -> None:
 
         if self.current_program is None:
@@ -547,18 +565,26 @@ class ProgramController:
             return
 
         self.config_widget.set_program_loaded(True)
-        roles, approx_texts, cible_overrides = self._build_row_metadata()
-        self.config_widget.set_row_metadata(roles, approx_texts, cible_overrides)
+        roles, approx_texts, cible_overrides, ext_axis_values_per_row = self._build_row_metadata()
+        self.config_widget.set_row_metadata(roles, approx_texts, cible_overrides, ext_axis_values_per_row)
         self.config_widget.set_keypoints(self._display_keypoints)
 
-    def _build_row_metadata(self) -> tuple[list[str], list[str], list[str | None]]:
+    def _build_row_metadata(self) -> tuple[list[str], list[str], list[str | None], list[tuple[float, ...]]]:
         from models.robot_program import MotionRole, RobotProgramMotionMode
         from models.types.motion_approximation import ApproximationMode
         roles: list[str] = []
         approx_texts: list[str] = []
         cible_overrides: list[str | None] = []
+        ext_axis_values_per_row: list[tuple[float, ...]] = []
         if self.current_program is None:
-            return roles, approx_texts, cible_overrides
+            return roles, approx_texts, cible_overrides, ext_axis_values_per_row
+
+        # Ordre des joints d'axes pour les colonnes (même ordre que setup_external_axes_columns)
+        axes_joint_order: list[tuple[str, int]] = [
+            (axis.id, joint_idx)
+            for axis in self.external_axes_model.get_axes()
+            for joint_idx in range(len(axis.joints))
+        ]
 
         total_approach = sum(1 for m in self.current_program.motions if m.role == MotionRole.APPROACH)
         total_retract = sum(1 for m in self.current_program.motions if m.role == MotionRole.RETRACT)
@@ -605,7 +631,18 @@ class ProgramController:
                     cible = "Axe ext."
             cible_overrides.append(cible)
 
-        return roles, approx_texts, cible_overrides
+            # Valeurs d'axes externes pour cette ligne
+            if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
+                val_by_joint = {
+                    (jv.axis_id, jv.joint_index): jv.value
+                    for jv in motion.external_axis_target.values
+                }
+                row_vals = tuple(val_by_joint.get(key, float("nan")) for key in axes_joint_order)
+            else:
+                row_vals = ()
+            ext_axis_values_per_row.append(row_vals)
+
+        return roles, approx_texts, cible_overrides, ext_axis_values_per_row
 
 
 
@@ -831,6 +868,15 @@ class ProgramController:
         sample_index = self._sample_index_at_time(self._current_time_s)
         sample = samples[sample_index]
         self.robot_model.set_joints(sample.joints_deg.to_list())
+        # Animer les axes externes depuis les valeurs stockées dans le sample
+        if sample.ext_axis_values:
+            axes = self.external_axes_model.get_axes()
+            idx = 0
+            for axis in axes:
+                for joint_idx in range(len(axis.joints)):
+                    if idx < len(sample.ext_axis_values):
+                        self.external_axes_model.set_axis_joint_value(axis.id, joint_idx, sample.ext_axis_values[idx])
+                    idx += 1
         # Mise à jour directe du viewer (chemin léger, bypasse _refresh_robot_state_items)
         if self.viewer3d_controller.is_playback_active():
             self.viewer3d_controller.update_robot_poses_for_playback()
@@ -1027,6 +1073,15 @@ class ProgramController:
         if row < 0 or row >= len(self._display_keypoints):
 
             return
+
+        # Pour les mouvements EXTERNAL_AXIS : appliquer les positions cibles des axes
+        if row < len(self._display_target_refs) and self.current_program is not None:
+            ref = self._display_target_refs[row]
+            motion = self.current_program.motions[ref.motion_index]
+            if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
+                for jv in motion.external_axis_target.values:
+                    self.external_axes_model.set_axis_joint_value(jv.axis_id, jv.joint_index, jv.value)
+                return
 
         keypoint = self._display_keypoints[row]
 
@@ -1388,16 +1443,15 @@ class ProgramController:
         )
 
     def _refresh_program_after_target_change(self, dirty_indices: list[int] | None = None) -> None:
+        _ = dirty_indices  # le recalcul incrémental n'est plus déclenché à l'édition
         self._program_dirty = True
-        if dirty_indices is not None and self.current_program is not None:
-            self._run_incremental_recompute(dirty_indices)
-        else:
-            self._mark_simulation_dirty()
+        self._mark_simulation_dirty()
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
         self._refresh_status()
         self._refresh_program_save_status()
+        self._refresh_program_info()
 
     def _run_incremental_recompute(self, dirty_indices: list[int]) -> None:
         if self.current_program is None:
@@ -1417,12 +1471,13 @@ class ProgramController:
         self._compensation_computed = False
         self.actions_widget.set_compensated_checkbox_enabled(False)
         self.current_result = incremental_result
-        active_motion_mode = self.config_widget.get_motion_mode()
         _theo_samples = incremental_result.nominal_samples
+        _inv_base = self._inv_robot_base_matrix()
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             _theo_samples, self._get_nominal_color(), self.MEASURED_COLOR,
+            inv_robot_base_matrix=_inv_base,
         )
-        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples)
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples, _inv_base)
         self._compensated_segments_cache = []
         self._simulation_dirty = False
         self.actions_widget.set_compensation_enabled(self.current_program is not None)
@@ -1887,6 +1942,12 @@ class ProgramController:
             return
         self._invalidate_simulation_results()
 
+    def _inv_robot_base_matrix(self) -> np.ndarray:
+        """Inverse de T_world_robotBase courant, pour convertir pose-monde → repère base viewer."""
+        from utils.external_axes_kinematics import get_effective_robot_base_in_world
+        T = get_effective_robot_base_in_world(self.workspace_model, self.external_axes_model)
+        return np.linalg.inv(T)
+
     def _refresh_program_save_status(self) -> None:
         if self.current_program is None:
             self.header_widget.set_program_status(ProgramController.STATUS_NONE, "#808080")
@@ -2270,12 +2331,14 @@ class ProgramController:
         )
 
         _theo_samples_2 = self._get_samples_for_modes("THEORETICAL", motion_mode)
+        _inv_base2 = self._inv_robot_base_matrix()
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             _theo_samples_2,
             self._get_nominal_color(),
             self.MEASURED_COLOR,
+            inv_robot_base_matrix=_inv_base2,
         )
-        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples_2)
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples_2, _inv_base2)
         self._compensated_segments_cache = self._build_segments(
             self._get_samples_for_modes("COMPENSATED", motion_mode),
             self.COMPENSATED_COLOR,
@@ -2396,6 +2459,7 @@ class ProgramController:
         done_nominal_color: tuple[float, float, float, float] | None = None,
         done_measured_color: tuple[float, float, float, float] | None = None,
         split_time_s: float | None = None,
+        inv_robot_base_matrix: np.ndarray | None = None,
     ) -> tuple[
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
@@ -2423,6 +2487,14 @@ class ProgramController:
                 color = done_measured_color if is_done else measured_color
                 measured_segments.append((meas_points[:], color))
 
+        def _nom_xyz(sample: ProgramSimulationSample) -> list[float]:
+            if inv_robot_base_matrix is not None and sample.nominal_pose_world is not None:
+                p = sample.nominal_pose_world
+                v = inv_robot_base_matrix @ np.array([p.x, p.y, p.z, 1.0], dtype=float)
+                return [float(v[0]), float(v[1]), float(v[2])]
+            nom = sample.nominal_pose_base
+            return [nom.x, nom.y, nom.z]
+
         for sample in samples:
             nom_pose = sample.nominal_pose_base
             meas_pose = sample.measured_pose_base
@@ -2442,7 +2514,6 @@ class ProgramController:
                 current_nom_is_done = sample_is_done
                 current_meas_is_done = sample_is_done
             elif use_split and nom_points and sample_is_done != current_nom_is_done:
-                # Couleur change : on coupe le segment nominal au point de transition
                 _flush_nom(current_nom_is_done)
                 nom_points = [nom_points[-1]]
                 current_nom_is_done = sample_is_done
@@ -2460,7 +2531,7 @@ class ProgramController:
                 current_meas_is_done = sample_is_done
 
             if nom_pose is not None:
-                nom_points.append([nom_pose.x, nom_pose.y, nom_pose.z])
+                nom_points.append(_nom_xyz(sample))
             if meas_pose is not None:
                 meas_points.append([meas_pose.x, meas_pose.y, meas_pose.z])
 
@@ -2473,12 +2544,13 @@ class ProgramController:
     @staticmethod
     def _build_nom_segs_np(
         samples: list[ProgramSimulationSample],
+        inv_robot_base_matrix: np.ndarray | None = None,
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        """Pré-construit les segments nominaux comme numpy arrays (robot frame).
+        """Pré-construit les segments nominaux comme numpy arrays.
 
         Retourne deux listes parallèles :
-        - pts_segs  : (K, 3) float64 par segment
-        - time_segs : (K,)   float64 par segment (temps en secondes par vertex)
+        - pts_segs  : (K, 3) float64 par segment (dans le repère base robot pour le viewer)
+        - time_segs : (K,)   float64 par segment
         """
         pts_segs: list[np.ndarray] = []
         time_segs: list[np.ndarray] = []
@@ -2491,9 +2563,16 @@ class ProgramController:
                 pts_segs.append(np.array(cur_pts, dtype=np.float64))
                 time_segs.append(np.array(cur_times, dtype=np.float64))
 
-        for sample in samples:
+        def _nom_xyz(sample: ProgramSimulationSample) -> list[float]:
+            if inv_robot_base_matrix is not None and sample.nominal_pose_world is not None:
+                p = sample.nominal_pose_world
+                v = inv_robot_base_matrix @ np.array([p.x, p.y, p.z, 1.0], dtype=float)
+                return [float(v[0]), float(v[1]), float(v[2])]
             nom = sample.nominal_pose_base
-            if nom is None:
+            return [nom.x, nom.y, nom.z]
+
+        for sample in samples:
+            if sample.nominal_pose_base is None:
                 continue
             key = (sample.motion_mode.value, int(sample.source_line))
             if cur_key is not None and key != cur_key:
@@ -2501,7 +2580,7 @@ class ProgramController:
                 cur_pts = [cur_pts[-1]] if cur_pts else []
                 cur_times = [cur_times[-1]] if cur_times else []
             cur_key = key
-            cur_pts.append([nom.x, nom.y, nom.z])
+            cur_pts.append(_nom_xyz(sample))
             cur_times.append(float(sample.time_s))
 
         _flush()

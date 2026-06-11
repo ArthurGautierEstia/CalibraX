@@ -12,6 +12,10 @@ from models.types.pose6 import Pose6
 from models.workspace_model import WorkspaceModel
 from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
 
+PREFIX_EXT = "ext:"
+PREFIX_WS = "ws:"
+FRAME_ROBOT = "robot"
+
 
 def world_robot_base(
     external_axes_model: ExternalAxesModel,
@@ -58,6 +62,45 @@ def world_workpiece(
     if piece_mount_parent_id in world_transforms:
         return world_transforms[piece_mount_parent_id]["end"] @ T_local
     return T_local
+
+
+def piece_frame_world(
+    piece_parent_id: str,
+    world_transforms: dict[str, dict],
+    piece_pose_in_parent: Pose6,
+    piece_frame_pose: Pose6,
+    workspace_robot_base_matrix: np.ndarray,
+    world_robot_base_matrix: np.ndarray,
+) -> np.ndarray:
+    """Retourne T_world_pieceFrame pour un état d'axes simulé.
+
+    Args:
+        piece_parent_id: ID du repère parent (WorkpieceModel.get_parent_frame_id()).
+        world_transforms: dict retourné par ExternalAxesModel.compute_world_transforms_for().
+        piece_pose_in_parent: pose de la pièce dans son repère parent.
+        piece_frame_pose: repère pièce dans la CAO pièce.
+        workspace_robot_base_matrix: T_world_robotBase issue du workspace (statique).
+        world_robot_base_matrix: T_world_robotBase effectif (avec rail si présent).
+    """
+    T_pose = pose_zyx_to_matrix(piece_pose_in_parent)
+    T_frame = pose_zyx_to_matrix(piece_frame_pose)
+
+    if piece_parent_id == "" or piece_parent_id is None:
+        T_parent = np.eye(4, dtype=float)
+    elif piece_parent_id == FRAME_ROBOT:
+        T_parent = world_robot_base_matrix
+    elif piece_parent_id.startswith(PREFIX_EXT):
+        axis_id = piece_parent_id[len(PREFIX_EXT):]
+        t = world_transforms.get(axis_id)
+        T_parent = t["end"] if t is not None else np.eye(4, dtype=float)
+    elif piece_parent_id.startswith(PREFIX_WS):
+        # Repère workspace statique — non accessible ici sans workspace_model ;
+        # le simulateur doit fournir un world_transforms vide pour ce cas.
+        T_parent = np.eye(4, dtype=float)
+    else:
+        T_parent = np.eye(4, dtype=float)
+
+    return T_parent @ T_pose @ T_frame
 
 
 def compute_target_in_robot_base(

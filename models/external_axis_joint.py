@@ -37,6 +37,8 @@ class ExternalAxisJoint:
         q_max: float = 1000.0,
         offset: float = 0.0,
         value: float = 0.0,
+        default_speed: float = 500.0,
+        max_speed: float = 2000.0,
     ) -> None:
         self.joint_type = ExternalAxisJointType(joint_type)
         ax = normalize3(list(axis))
@@ -49,6 +51,8 @@ class ExternalAxisJoint:
         self.q_max: float = float(q_max)
         self.offset: float = float(offset)
         self.value: float = float(np.clip(value, q_min, q_max))
+        self.default_speed: float = float(max(1e-6, default_speed))
+        self.max_speed: float = float(max(1e-6, max_speed))
 
     # ------------------------------------------------------------------
     # Queries
@@ -59,7 +63,11 @@ class ExternalAxisJoint:
 
     def joint_transform(self) -> np.ndarray:
         """Matrice 4×4 de la transformation articulaire J(value + offset)."""
-        q = self.value + self.offset
+        return self.joint_transform_for_value(self.value)
+
+    def joint_transform_for_value(self, q_user: float) -> np.ndarray:
+        """Matrice 4×4 avec une valeur articulaire explicite (sans muter le modèle)."""
+        q = q_user + self.offset
         ax, ay, az = self.axis
         T = np.eye(4, dtype=float)
         if self.joint_type == ExternalAxisJointType.LINEAR:
@@ -100,6 +108,8 @@ class ExternalAxisJoint:
             q_max=self.q_max,
             offset=self.offset,
             value=self.value,
+            default_speed=self.default_speed,
+            max_speed=self.max_speed,
         )
 
     def to_dict(self) -> dict:
@@ -114,6 +124,8 @@ class ExternalAxisJoint:
             "q_max": self.q_max,
             "offset": self.offset,
             "value": self.value,
+            "default_speed": self.default_speed,
+            "max_speed": self.max_speed,
         }
 
     @classmethod
@@ -131,6 +143,8 @@ class ExternalAxisJoint:
             q_max=float(data.get("q_max", 1000.0)),
             offset=float(data.get("offset", 0.0)),
             value=float(data.get("value", 0.0)),
+            default_speed=float(data.get("default_speed", 500.0)),
+            max_speed=float(data.get("max_speed", 2000.0)),
         )
 
     def __eq__(self, other: object) -> bool:

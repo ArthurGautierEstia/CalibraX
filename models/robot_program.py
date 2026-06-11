@@ -97,6 +97,8 @@ class ProgramSimulationSample:
     joints_deg: JointAngles6
     nominal_pose_base: Pose6
     measured_pose_base: Pose6 | None = None
+    ext_axis_values: tuple[float, ...] = field(default_factory=tuple)
+    nominal_pose_world: Pose6 | None = None
 
 
 @dataclass(frozen=True)

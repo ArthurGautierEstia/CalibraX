@@ -48,7 +48,11 @@ class ExternalAxis:
     # ------------------------------------------------------------------
 
     def compute_chain(self, world_parent_transform: np.ndarray) -> dict:
-        """Calcule les matrices monde pour chaque lien.
+        """Calcule les matrices monde pour chaque lien (valeurs live des joints)."""
+        return self.compute_chain_with_values(world_parent_transform, [j.value for j in self.joints])
+
+    def compute_chain_with_values(self, world_parent_transform: np.ndarray, joint_values: list[float]) -> dict:
+        """Calcule les matrices monde pour des valeurs articulaires explicites.
 
         Returns:
             {
@@ -61,8 +65,9 @@ class ExternalAxis:
         T = T_world_base @ pose_zyx_to_matrix(self.axis_frame_in_base)
 
         joint_matrices: list[np.ndarray] = []
-        for joint in self.joints:
-            T = T @ joint.link_pose_matrix() @ joint.joint_transform()
+        for i, joint in enumerate(self.joints):
+            q = joint_values[i] if i < len(joint_values) else joint.value
+            T = T @ joint.link_pose_matrix() @ joint.joint_transform_for_value(q)
             joint_matrices.append(T.copy())
 
         T_world_end = T
