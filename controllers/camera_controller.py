@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from controllers.viewer3d_controller import Viewer3DController
-from models.camera_model import CameraConfiguration, CameraConfigurationFile, CameraModel
+from models.camera_model import CameraConfiguration, CameraConfigurationFile, CameraModel, CameraTargetBody
 from views.camera_view import CameraView
 from widgets.camera_view.camera_configuration_widget import CameraConfigurationWidget
 
@@ -60,6 +60,7 @@ class CameraController(QObject):
         self.camera_widget.duplicate_camera_requested.connect(self._on_duplicate_camera_requested)
         self.camera_widget.remove_camera_requested.connect(self._on_remove_camera_requested)
         self.camera_widget.camera_updated.connect(self._on_camera_updated)
+        self.camera_widget.target_body_updated.connect(self._on_target_body_updated)
         self.camera_widget.selection_changed.connect(self._on_selection_changed)
 
     def _on_camera_model_changed(self) -> None:
@@ -70,6 +71,7 @@ class CameraController(QObject):
 
     def _update_camera_view(self) -> None:
         self.camera_widget.set_current_file_path(self.camera_model.get_current_file_path())
+        self.camera_widget.set_target_body(self.camera_model.get_target_body())
         self.camera_widget.set_cameras(self.camera_model.get_cameras())
         self._update_visibility_view()
 
@@ -79,6 +81,7 @@ class CameraController(QObject):
     def _on_new_requested(self) -> None:
         self.camera_model.set_current_file_path("")
         self.camera_model.set_setup_name("Camera setup")
+        self.camera_model.set_target_body(CameraTargetBody.default())
         self.camera_model.set_cameras([])
         self._reference_data = None
         self._has_reference = False
@@ -212,6 +215,18 @@ class CameraController(QObject):
 
     def _on_remove_camera_requested(self, index: int) -> None:
         self.camera_model.remove_camera(index)
+
+    def _on_target_body_updated(self, target_body: CameraTargetBody) -> None:
+        errors = target_body.validate()
+        if errors:
+            QMessageBox.warning(
+                self.camera_widget,
+                "Rigid Body invalide",
+                "\n".join(errors),
+            )
+            self._update_camera_view()
+            return
+        self.camera_model.set_target_body(target_body)
 
     def _on_selection_changed(self, index: int) -> None:
         self.viewer3d_controller.set_selected_camera_index(index)

@@ -16,6 +16,8 @@ from utils import math_utils
 class CameraVisibilityState(str, Enum):
     DISABLED = "disabled"
     VISIBLE = "visible"
+    PARTIAL = "partial"
+    NOT_VISIBLE = "not_visible"
     OUT_OF_FOV = "out_of_fov"
     OUT_OF_RANGE = "out_of_range"
     OCCLUDED = "occluded"
@@ -85,8 +87,8 @@ class CameraStl:
 class CameraVisual:
     color: str = "#00AEEF"
     show_frustum: bool = True
-    show_line_to_tcp: bool = True
-    verify_tcp_in_fov: bool = True
+    show_lines_to_markers: bool = True
+    verify_markers_in_fov: bool = True
     verify_line_of_sight: bool = True
 
     @classmethod
@@ -95,8 +97,18 @@ class CameraVisual:
         return cls(
             color=str(values.get("color", "#00AEEF")).strip() or "#00AEEF",
             show_frustum=bool(values.get("show_frustum", True)),
-            show_line_to_tcp=bool(values.get("show_line_to_tcp", True)),
-            verify_tcp_in_fov=bool(values.get("verify_tcp_in_fov", True)),
+            show_lines_to_markers=bool(
+                values.get(
+                    "show_lines_to_markers",
+                    values.get("show_lines_to_target_points", values.get("show_line_to_tcp", True)),
+                )
+            ),
+            verify_markers_in_fov=bool(
+                values.get(
+                    "verify_markers_in_fov",
+                    values.get("verify_target_points_in_fov", values.get("verify_tcp_in_fov", True)),
+                )
+            ),
             verify_line_of_sight=bool(values.get("verify_line_of_sight", True)),
         )
 
@@ -104,10 +116,144 @@ class CameraVisual:
         return {
             "color": self.color,
             "show_frustum": bool(self.show_frustum),
-            "show_line_to_tcp": bool(self.show_line_to_tcp),
-            "verify_tcp_in_fov": bool(self.verify_tcp_in_fov),
+            "show_lines_to_markers": bool(self.show_lines_to_markers),
+            "verify_markers_in_fov": bool(self.verify_markers_in_fov),
             "verify_line_of_sight": bool(self.verify_line_of_sight),
         }
+
+    @property
+    def show_line_to_tcp(self) -> bool:
+        return self.show_lines_to_markers
+
+    @property
+    def verify_tcp_in_fov(self) -> bool:
+        return self.verify_markers_in_fov
+
+    @property
+    def show_lines_to_target_points(self) -> bool:
+        return self.show_lines_to_markers
+
+    @property
+    def verify_target_points_in_fov(self) -> bool:
+        return self.verify_markers_in_fov
+
+
+@dataclass(frozen=True)
+class CameraTargetPoint:
+    point_id: str
+    name: str
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    diameter_mm: float = 20.0
+    enabled: bool = True
+
+    @classmethod
+    def default(cls, index: int = 1) -> "CameraTargetPoint":
+        return cls(point_id=f"M{index}", name=f"Marker {index}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CameraTargetPoint":
+        if not isinstance(data, dict):
+            raise ValueError("Un marker Rigid Body doit etre un objet JSON")
+        point_id = str(data.get("id", data.get("marker_id", data.get("point_id", "")))).strip()
+        position = data.get("position", data.get("position_mm"))
+        if isinstance(position, (list, tuple)) and len(position) >= 3:
+            x, y, z = float(position[0]), float(position[1]), float(position[2])
+        else:
+            x = float(data.get("x", 0.0))
+            y = float(data.get("y", 0.0))
+            z = float(data.get("z", 0.0))
+        return cls(
+            point_id=point_id,
+            name=str(data.get("name", point_id or "Marker")).strip() or "Marker",
+            x=x,
+            y=y,
+            z=z,
+            diameter_mm=float(data.get("diameter_mm", data.get("diameter", 20.0))),
+            enabled=bool(data.get("enabled", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.point_id,
+            "name": self.name,
+            "enabled": bool(self.enabled),
+            "x": float(self.x),
+            "y": float(self.y),
+            "z": float(self.z),
+            "diameter_mm": float(self.diameter_mm),
+        }
+
+    def validate(self) -> list[str]:
+        errors: list[str] = []
+        if self.point_id.strip() == "":
+            errors.append("ID marker manquant")
+        if self.diameter_mm <= 0.0:
+            errors.append("Diametre marker doit etre strictement positif")
+        return errors
+
+    def xyz(self) -> np.ndarray:
+        return np.array([float(self.x), float(self.y), float(self.z)], dtype=float)
+
+
+@dataclass(frozen=True)
+class CameraTargetBody:
+    name: str = "Rigid Body"
+    parent_frame: str = "frame_6"
+    pose: Pose6 = field(default_factory=Pose6.zeros)
+    stl: CameraStl = CameraStl(color="#4F8CFF")
+    points: tuple[CameraTargetPoint, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def default(cls) -> "CameraTargetBody":
+        return cls(points=(CameraTargetPoint.default(1),))
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "CameraTargetBody":
+        values = data if isinstance(data, dict) else {}
+        points_data = values.get("markers", values.get("points", []))
+        if not isinstance(points_data, list):
+            raise ValueError("Le champ 'target_body.markers' doit etre une liste")
+        pose_values = values.get("pose", values.get("rigid_body_pose"))
+        return cls(
+            name=str(values.get("name", "Rigid Body")).strip() or "Rigid Body",
+            parent_frame=str(values.get("parent_frame", "frame_6")).strip().lower() or "frame_6",
+            pose=Pose6.from_values(pose_values),
+            stl=CameraStl.from_dict(values.get("stl")),
+            points=tuple(CameraTargetPoint.from_dict(item) for item in points_data),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "parent_frame": self.parent_frame,
+            "pose": list(self.pose.to_tuple()),
+            "stl": self.stl.to_dict(),
+            "markers": [point.to_dict() for point in self.points],
+        }
+
+    def validate(self) -> list[str]:
+        errors: list[str] = []
+        if self.parent_frame not in {"frame_6", "tool"}:
+            errors.append("target_body.parent_frame doit etre 'frame_6' ou 'tool'")
+        errors.extend(self.stl.validate())
+        seen_ids: set[str] = set()
+        for index, point in enumerate(self.points):
+            prefix = f"Marker Rigid Body {index + 1}"
+            for error in point.validate():
+                errors.append(f"{prefix}: {error}")
+            point_id = point.point_id.strip()
+            if point_id in seen_ids:
+                errors.append(f"{prefix}: ID marker duplique '{point_id}'")
+            seen_ids.add(point_id)
+        return errors
+
+    def pose_matrix(self) -> np.ndarray:
+        return math_utils.pose_zyx_to_matrix(self.pose)
+
+    def enabled_points(self) -> list[CameraTargetPoint]:
+        return [point for point in self.points if point.enabled]
 
 
 @dataclass(frozen=True)
@@ -213,11 +359,62 @@ class CameraVisibilityResult:
     horizontal_angle_deg: float = 0.0
     vertical_angle_deg: float = 0.0
     occluder_name: str = ""
+    visible_points: int = 0
+    total_points: int = 0
+    point_results: tuple["CameraPointVisibilityResult", ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "camera_id": self.camera_id,
             "state": self.state.value,
+            "distance_mm": float(self.distance_mm),
+            "horizontal_angle_deg": float(self.horizontal_angle_deg),
+            "vertical_angle_deg": float(self.vertical_angle_deg),
+            "occluder_name": self.occluder_name,
+            "visible_points": int(self.visible_points),
+            "total_points": int(self.total_points),
+            "point_results": [result.to_dict() for result in self.point_results],
+        }
+
+
+@dataclass(frozen=True)
+class CameraPointVisibilityResult:
+    camera_id: str
+    point_id: str
+    point_name: str
+    state: CameraVisibilityState
+    world_xyz: tuple[float, float, float]
+    distance_mm: float = 0.0
+    horizontal_angle_deg: float = 0.0
+    vertical_angle_deg: float = 0.0
+    occluder_name: str = ""
+
+    @classmethod
+    def from_camera_result(
+        cls,
+        point: CameraTargetPoint,
+        world_xyz: np.ndarray,
+        result: CameraVisibilityResult,
+    ) -> "CameraPointVisibilityResult":
+        return cls(
+            camera_id=result.camera_id,
+            point_id=point.point_id,
+            point_name=point.name,
+            state=result.state,
+            world_xyz=(float(world_xyz[0]), float(world_xyz[1]), float(world_xyz[2])),
+            distance_mm=result.distance_mm,
+            horizontal_angle_deg=result.horizontal_angle_deg,
+            vertical_angle_deg=result.vertical_angle_deg,
+            occluder_name=result.occluder_name,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "camera_id": self.camera_id,
+            "point_id": self.point_id,
+            "point_name": self.point_name,
+            "state": self.state.value,
+            "world_xyz": [float(value) for value in self.world_xyz],
             "distance_mm": float(self.distance_mm),
             "horizontal_angle_deg": float(self.horizontal_angle_deg),
             "vertical_angle_deg": float(self.vertical_angle_deg),
@@ -268,9 +465,15 @@ def evaluate_camera_fov(
 
 
 class CameraConfigurationFile:
-    def __init__(self, cameras: list[CameraConfiguration] | None = None, name: str = "Camera setup") -> None:
+    def __init__(
+        self,
+        cameras: list[CameraConfiguration] | None = None,
+        name: str = "Camera setup",
+        target_body: CameraTargetBody | None = None,
+    ) -> None:
         self.name = str(name).strip() or "Camera setup"
         self.cameras = [camera for camera in (cameras or [])]
+        self.target_body = target_body or CameraTargetBody.default()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CameraConfigurationFile":
@@ -280,7 +483,11 @@ class CameraConfigurationFile:
         if not isinstance(cameras_data, list):
             raise ValueError("Le champ 'cameras' doit etre une liste")
         cameras = [CameraConfiguration.from_dict(item) for item in cameras_data]
-        config = cls(cameras=cameras, name=str(data.get("name", "Camera setup")))
+        config = cls(
+            cameras=cameras,
+            name=str(data.get("name", "Camera setup")),
+            target_body=CameraTargetBody.from_dict(data.get("target_body")),
+        )
         errors = config.validate()
         if errors:
             raise ValueError("\n".join(errors))
@@ -294,11 +501,16 @@ class CameraConfigurationFile:
 
     @classmethod
     def from_camera_model(cls, model: "CameraModel") -> "CameraConfigurationFile":
-        return cls(cameras=model.get_cameras(), name=model.get_setup_name())
+        return cls(
+            cameras=model.get_cameras(),
+            name=model.get_setup_name(),
+            target_body=model.get_target_body(),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
+            "target_body": self.target_body.to_dict(),
             "cameras": [camera.to_dict() for camera in self.cameras],
         }
 
@@ -311,6 +523,8 @@ class CameraConfigurationFile:
 
     def validate(self) -> list[str]:
         errors: list[str] = []
+        for error in self.target_body.validate():
+            errors.append(f"Rigid Body: {error}")
         seen_ids: set[str] = set()
         for index, camera in enumerate(self.cameras):
             prefix = f"Camera {index + 1}"
@@ -334,6 +548,7 @@ class CameraModel(QObject):
         self._setup_name = "Camera setup"
         self._current_file_path = ""
         self._cameras: list[CameraConfiguration] = []
+        self._target_body = CameraTargetBody.default()
         self._visibility_results: dict[str, CameraVisibilityResult] = {}
 
     def get_setup_name(self) -> str:
@@ -354,6 +569,17 @@ class CameraModel(QObject):
 
     def get_cameras(self) -> list[CameraConfiguration]:
         return list(self._cameras)
+
+    def get_target_body(self) -> CameraTargetBody:
+        return self._target_body
+
+    def set_target_body(self, value: CameraTargetBody) -> None:
+        if not isinstance(value, CameraTargetBody):
+            raise TypeError("value must be CameraTargetBody")
+        if value == self._target_body:
+            return
+        self._target_body = value
+        self.cameras_changed.emit()
 
     def set_cameras(self, values: list[CameraConfiguration]) -> None:
         if not all(isinstance(camera, CameraConfiguration) for camera in values):
@@ -397,6 +623,7 @@ class CameraModel(QObject):
     def load_configuration_file(self, config: CameraConfigurationFile, file_path: str | None = None) -> None:
         self._setup_name = config.name
         self._cameras = list(config.cameras)
+        self._target_body = config.target_body
         self._current_file_path = "" if file_path is None else str(file_path).strip()
         self._visibility_results = {}
         self.cameras_changed.emit()
