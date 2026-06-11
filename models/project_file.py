@@ -13,6 +13,7 @@ PROJECT_VERSION = 1
 class ProjectFile:
     name: str = ""
     configurations: dict[str, str] = field(default_factory=dict)
+    main_tabs_visibility: dict[str, bool] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ProjectFile":
@@ -31,9 +32,17 @@ class ProjectFile:
             str(key): "" if value is None else str(value)
             for key, value in raw_configurations.items()
         }
+        raw_main_tabs_visibility = data.get("main_tabs_visibility") or {}
+        if not isinstance(raw_main_tabs_visibility, dict):
+            raw_main_tabs_visibility = {}
+        main_tabs_visibility = {
+            str(key): bool(value)
+            for key, value in raw_main_tabs_visibility.items()
+        }
         return cls(
             name="" if data.get("name") is None else str(data.get("name")),
             configurations=configurations,
+            main_tabs_visibility=main_tabs_visibility,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -42,6 +51,7 @@ class ProjectFile:
             "version": PROJECT_VERSION,
             "name": self.name,
             "configurations": dict(self.configurations),
+            "main_tabs_visibility": dict(self.main_tabs_visibility),
         }
 
     def save(self, file_path: str) -> None:

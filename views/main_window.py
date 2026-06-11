@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPainterPath, QPixmap
-from PyQt6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -31,6 +31,16 @@ class MainTabsBar(QTabBar):
         if index < MainTabsBar.PRIMARY_TAB_COUNT:
             return default_size.expandedTo(QSize(100, 40))
         return default_size
+
+
+class PersistentCheckMenu(QMenu):
+    def mouseReleaseEvent(self, event) -> None:
+        action = self.activeAction()
+        if action is not None and action.isCheckable() and action.isEnabled():
+            action.trigger()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -237,8 +247,9 @@ class MainWindow(QMainWindow):
             layout_menu.addAction(action)
 
         display_menu.addSeparator()
-        tabs_menu = display_menu.addMenu("Onglets principaux")
+        tabs_menu = PersistentCheckMenu("Onglets principaux", display_menu)
         tabs_menu.setFont(menu_font)
+        display_menu.addMenu(tabs_menu)
         for key, label in (
             ("calibration", "Calibration"),
             ("trajectory", "Trajectoire"),
