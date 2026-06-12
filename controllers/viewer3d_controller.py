@@ -131,6 +131,7 @@ class Viewer3DController(QObject):
         self.viewer_3d_widget.update_robot_poses(corrected)
         if any(self.viewer_3d_widget.frames_visibility):
             self.viewer_3d_widget.draw_all_frames(self.robot_model.get_current_tcp_dh_matrices())
+        self.viewer_3d_widget.refresh_camera_target_tracking()
 
     def _on_robot_kinematics_changed(self) -> None:
         self.viewer_3d_widget.update_robot(self.robot_model, self.tool_model)

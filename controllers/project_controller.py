@@ -29,6 +29,7 @@ class ProjectController(QObject):
         self._main_window.open_recent_project_requested.connect(self.load_project_from_path)
         self._main_window.save_project_requested.connect(self.save_project)
         self._main_window.save_project_as_requested.connect(self.save_project_as)
+        self._main_window.main_tabs_visibility_changed.connect(self.mark_dirty)
 
     def get_current_project_file(self) -> str:
         return self._current_project_file
@@ -74,6 +75,7 @@ class ProjectController(QObject):
         project_dir = os.path.dirname(os.path.abspath(file_path))
         if not self._main_controller.load_project_configurations(project_file.configurations, project_dir):
             return False
+        self._main_window.set_optional_main_tabs_visibility(project_file.main_tabs_visibility)
 
         self._current_project_file = os.path.abspath(file_path)
         self._is_dirty = False
@@ -113,8 +115,13 @@ class ProjectController(QObject):
         configurations = self._main_controller.get_project_configuration_paths(
             base_dir=os.path.dirname(project_path)
         )
+        main_tabs_visibility = self._main_window.get_optional_main_tabs_visibility()
         try:
-            ProjectFile(name=project_name, configurations=configurations).save(project_path)
+            ProjectFile(
+                name=project_name,
+                configurations=configurations,
+                main_tabs_visibility=main_tabs_visibility,
+            ).save(project_path)
         except OSError as exc:
             QMessageBox.warning(self._main_window, "Erreur sauvegarde", f"Impossible d'enregistrer le projet.\n{exc}")
             return False

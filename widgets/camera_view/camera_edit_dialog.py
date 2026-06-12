@@ -94,7 +94,7 @@ class CameraEditDialog(QDialog):
         visual_group = QGroupBox("Visualisation")
         visual_layout = QGridLayout(visual_group)
         self.show_frustum_checkbox = QCheckBox("Afficher le FOV")
-        self.show_line_checkbox = QCheckBox("Afficher ligne TCP")
+        self.show_line_checkbox = QCheckBox("Afficher lignes vers markers")
         self.visual_color_button = QPushButton()
         self.visual_color_button.setFixedSize(26, 26)
         self.visual_color_button.clicked.connect(lambda: self._pick_color("visual"))
@@ -185,7 +185,7 @@ class CameraEditDialog(QDialog):
             visual=CameraVisual(
                 color=self._visual_color,
                 show_frustum=self.show_frustum_checkbox.isChecked(),
-                show_line_to_tcp=self.show_line_checkbox.isChecked(),
+                show_lines_to_markers=self.show_line_checkbox.isChecked(),
             ),
         )
 

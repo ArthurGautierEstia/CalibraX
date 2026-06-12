@@ -9,6 +9,9 @@ from models.camera_model import (
     CameraConfiguration,
     CameraConfigurationFile,
     CameraFov,
+    CameraTargetBody,
+    CameraTargetPoint,
+    CameraVisual,
     CameraVisibilityState,
     evaluate_camera_fov,
 )
@@ -32,6 +35,47 @@ class CameraModelTest(unittest.TestCase):
     def test_range_m_is_converted_to_mm(self) -> None:
         fov = CameraFov.from_dict({"horizontal_deg": 50.0, "vertical_deg": 40.0, "range_m": 3.5})
         self.assertEqual(fov.range_mm, 3500.0)
+
+    def test_legacy_visual_flags_are_converted_to_marker_flags(self) -> None:
+        visual = CameraVisual.from_dict({"show_line_to_tcp": False, "verify_tcp_in_fov": False})
+        self.assertFalse(visual.show_lines_to_markers)
+        self.assertFalse(visual.verify_markers_in_fov)
+        self.assertFalse(visual.show_lines_to_target_points)
+        self.assertFalse(visual.verify_target_points_in_fov)
+        self.assertFalse(visual.show_line_to_tcp)
+        self.assertFalse(visual.verify_tcp_in_fov)
+
+    def test_camera_configuration_file_loads_default_target_body(self) -> None:
+        config = CameraConfigurationFile.from_dict({"name": "Legacy", "cameras": []})
+        self.assertEqual(config.target_body.name, "Rigid Body")
+        self.assertEqual(config.target_body.parent_frame, "frame_6")
+        self.assertEqual(len(config.target_body.points), 0)
+        self.assertEqual(config.validate(), [])
+
+    def test_camera_configuration_file_serializes_target_body(self) -> None:
+        target_body = CameraTargetBody(
+            name="Calibration body",
+            parent_frame="tool",
+            pose=Pose6(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+            points=(CameraTargetPoint("P1", "Point 1", 10.0, 20.0, 30.0),),
+        )
+        config = CameraConfigurationFile(cameras=[], target_body=target_body)
+        data = config.to_dict()
+        self.assertEqual(data["target_body"]["parent_frame"], "tool")
+        self.assertEqual(data["target_body"]["pose"], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        self.assertEqual(data["target_body"]["markers"][0]["x"], 10.0)
+        self.assertEqual(data["target_body"]["markers"][0]["diameter_mm"], 20.0)
+
+    def test_duplicate_target_point_ids_are_invalid(self) -> None:
+        target_body = CameraTargetBody(
+            points=(
+                CameraTargetPoint("P1", "Point 1"),
+                CameraTargetPoint("P1", "Point 1 copy"),
+            )
+        )
+        config = CameraConfigurationFile(cameras=[], target_body=target_body)
+        errors = config.validate()
+        self.assertTrue(any("ID marker duplique" in error for error in errors))
 
     def test_evaluate_camera_fov_visible_and_outside(self) -> None:
         camera = CameraConfiguration(

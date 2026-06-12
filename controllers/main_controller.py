@@ -196,6 +196,7 @@ class MainController(QObject):
         self.main_window.verify_configurations_requested.connect(self._on_verify_configurations_requested)
         self.main_window.fit_scene_view_requested.connect(self._on_fit_scene_view_requested)
         self.main_window.manage_viewer_themes_requested.connect(self._on_manage_viewer_themes_requested)
+        self.main_window.main_tabs_visibility_changed.connect(self._schedule_session_save)
         self.main_window.show_keyboard_shortcuts_requested.connect(self._on_show_keyboard_shortcuts_requested)
         self.main_window.show_about_requested.connect(self._on_show_about_requested)
         self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
@@ -474,6 +475,10 @@ class MainController(QObject):
         if isinstance(viewer_state, ViewerDisplayState):
             self.main_window.get_viewer3d().apply_display_state(viewer_state)
 
+        main_tabs_visibility = startup.get("main_tabs_visibility")
+        if isinstance(main_tabs_visibility, dict):
+            self.main_window.set_optional_main_tabs_visibility(main_tabs_visibility)
+
         project_path = self._resolve_existing_path(startup.get("project", ""))
         project_loaded = bool(project_path and self.project_controller.load_project_from_path(project_path))
         if project_loaded:
@@ -586,6 +591,7 @@ class MainController(QObject):
                 for path in self.project_controller.get_recent_projects()
             ],
             application_theme="system",
+            main_tabs_visibility=self.main_window.get_optional_main_tabs_visibility(),
             robot_config_path=self._normalize_project_path(self.robot_model.get_current_config_file()),
             tool_profile_path=self._session_tool_profile_path(),
             workspace_path=self._normalize_project_path(self.workspace_model.get_workspace_file_path()),
@@ -659,6 +665,7 @@ class MainController(QObject):
             "project": session.project_path if session is not None else "",
             "recent_projects": session.recent_project_paths if session is not None else [],
             "application_theme": "system",
+            "main_tabs_visibility": session.main_tabs_visibility if session is not None else {},
             "config": config_override or (session.robot_config_path if session is not None else ""),
             "tool": tool_override or (session.tool_profile_path if session is not None else ""),
             "workspace": workspace_override or (session.workspace_path if session is not None else ""),

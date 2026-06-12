@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -28,6 +30,8 @@ from models.camera_model import (
     CameraConfiguration,
     CameraFov,
     CameraStl,
+    CameraTargetBody,
+    CameraTargetPoint,
     CameraVisibilityResult,
     CameraVisibilityState,
     CameraVisual,
@@ -118,8 +122,8 @@ class CameraDetailWidget(QScrollArea):
         visual_group = QGroupBox("Visualisation")
         visual_layout = QGridLayout(visual_group)
         self.show_frustum_checkbox = QCheckBox("Afficher le FOV")
-        self.show_line_checkbox = QCheckBox("Afficher ligne TCP")
-        self.verify_fov_checkbox = QCheckBox("Verifier TCP dans FOV")
+        self.show_line_checkbox = QCheckBox("Afficher lignes vers markers")
+        self.verify_fov_checkbox = QCheckBox("Verifier markers dans FOV")
         self.verify_occlusion_checkbox = QCheckBox("Verifier occlusion")
         self.visual_color_button = QPushButton()
         self.visual_color_button.setFixedSize(26, 26)
@@ -265,8 +269,8 @@ class CameraDetailWidget(QScrollArea):
             visual=CameraVisual(
                 color=self._visual_color,
                 show_frustum=self.show_frustum_checkbox.isChecked(),
-                show_line_to_tcp=self.show_line_checkbox.isChecked(),
-                verify_tcp_in_fov=self.verify_fov_checkbox.isChecked(),
+                show_lines_to_markers=self.show_line_checkbox.isChecked(),
+                verify_markers_in_fov=self.verify_fov_checkbox.isChecked(),
                 verify_line_of_sight=self.verify_occlusion_checkbox.isChecked(),
             ),
         )
@@ -325,6 +329,245 @@ class CameraDetailWidget(QScrollArea):
             return absolute_path
         relative_path = os.path.relpath(absolute_path, project_root).replace("\\", "/")
         return f"./{relative_path}" if not relative_path.startswith(".") else relative_path
+
+
+class CameraTargetBodyWidget(QGroupBox):
+    target_body_changed = pyqtSignal(object)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__("Corps solide suivi", parent)
+        self._building = False
+        self._target_body = CameraTargetBody.default()
+        self._stl_color = self._target_body.stl.color
+        self._pose_spinboxes: list[QDoubleSpinBox] = []
+        self._setup_ui()
+        self.set_target_body(self._target_body)
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(6)
+
+        general_layout = QGridLayout()
+        self.name_edit = QLineEdit()
+        self.parent_frame_combo = QComboBox()
+        self.parent_frame_combo.addItem("Frame 6", "frame_6")
+        self.parent_frame_combo.addItem("Tool", "tool")
+        general_layout.addWidget(QLabel("Nom"), 0, 0)
+        general_layout.addWidget(self.name_edit, 0, 1)
+        general_layout.addWidget(QLabel("Parent"), 1, 0)
+        general_layout.addWidget(self.parent_frame_combo, 1, 1)
+        layout.addLayout(general_layout)
+
+        pose_group = QGroupBox("Pose Rigid Body dans parent")
+        pose_layout = QGridLayout(pose_group)
+        labels = ("X", "Y", "Z", "A", "B", "C")
+        suffixes = (" mm", " mm", " mm", " deg", " deg", " deg")
+        for index, label in enumerate(labels):
+            spin = CameraDetailWidget._build_spinbox(-100000.0, 100000.0, 0.0, 1.0, suffixes[index])
+            self._pose_spinboxes.append(spin)
+            row = index // 3
+            col = (index % 3) * 2
+            pose_layout.addWidget(QLabel(label), row, col)
+            pose_layout.addWidget(spin, row, col + 1)
+        layout.addWidget(pose_group)
+
+        stl_group = QGroupBox("STL Rigid Body")
+        stl_layout = QGridLayout(stl_group)
+        self.stl_path_edit = QLineEdit()
+        self.stl_path_edit.setReadOnly(True)
+        self.stl_path_edit.setPlaceholderText("Aucun fichier STL")
+        self.stl_color_button = QPushButton()
+        self.stl_color_button.setFixedSize(26, 26)
+        self.stl_color_button.clicked.connect(self._pick_stl_color)
+        browse_button = QPushButton("Parcourir")
+        browse_button.clicked.connect(self._on_browse_stl)
+        clear_button = QPushButton("Vider")
+        clear_button.clicked.connect(self._on_clear_stl)
+        stl_layout.addWidget(QLabel("Fichier"), 0, 0)
+        stl_layout.addWidget(self.stl_path_edit, 0, 1, 1, 2)
+        stl_layout.addWidget(browse_button, 0, 3)
+        stl_layout.addWidget(clear_button, 0, 4)
+        stl_layout.addWidget(QLabel("Couleur"), 1, 0)
+        stl_layout.addWidget(self.stl_color_button, 1, 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(stl_group)
+
+        points_label = QLabel("Markers dans Rigid Body")
+        points_label.setStyleSheet("font-weight: 600;")
+        layout.addWidget(points_label)
+        self.points_tree = QTreeWidget()
+        self.points_tree.setHeaderLabels(["Actif", "ID", "Nom", "X", "Y", "Z", "Diam."])
+        self.points_tree.setRootIsDecorated(False)
+        self.points_tree.setAlternatingRowColors(True)
+        self.points_tree.itemChanged.connect(self._on_point_item_changed)
+        layout.addWidget(self.points_tree, 1)
+
+        button_row = QHBoxLayout()
+        self.add_point_button = QPushButton("+ Marker")
+        self.add_point_button.clicked.connect(self._on_add_point)
+        self.duplicate_point_button = QPushButton("Dupliquer")
+        self.duplicate_point_button.clicked.connect(self._on_duplicate_point)
+        self.remove_point_button = QPushButton("- Supprimer")
+        self.remove_point_button.clicked.connect(self._on_remove_point)
+        button_row.addWidget(self.add_point_button)
+        button_row.addWidget(self.duplicate_point_button)
+        button_row.addWidget(self.remove_point_button)
+        layout.addLayout(button_row)
+
+        self.name_edit.editingFinished.connect(self._emit_target_body_changed)
+        self.parent_frame_combo.currentIndexChanged.connect(self._emit_target_body_changed)
+        for spin in self._pose_spinboxes:
+            spin.valueChanged.connect(self._emit_target_body_changed)
+
+    def set_target_body(self, target_body: CameraTargetBody) -> None:
+        self._building = True
+        self._target_body = target_body
+        self._stl_color = target_body.stl.color
+        self.name_edit.setText(target_body.name)
+        parent_index = self.parent_frame_combo.findData(target_body.parent_frame)
+        self.parent_frame_combo.setCurrentIndex(max(0, parent_index))
+        for spin, value in zip(self._pose_spinboxes, target_body.pose.to_tuple()):
+            spin.setValue(float(value))
+        self.stl_path_edit.setText(target_body.stl.path)
+        CameraDetailWidget._update_color_button(self.stl_color_button, self._stl_color)
+        self._populate_points_tree(target_body.points)
+        self._building = False
+
+    def get_target_body(self) -> CameraTargetBody:
+        return CameraTargetBody(
+            name=self.name_edit.text().strip() or "Rigid Body",
+            parent_frame=str(self.parent_frame_combo.currentData() or "frame_6"),
+            pose=Pose6.from_values([spin.value() for spin in self._pose_spinboxes]),
+            stl=CameraStl(
+                path=self.stl_path_edit.text().strip(),
+                color=self._stl_color,
+            ),
+            points=tuple(self._read_points()),
+        )
+
+    def _populate_points_tree(self, points: tuple[CameraTargetPoint, ...]) -> None:
+        self.points_tree.clear()
+        for point in points:
+            item = QTreeWidgetItem(
+                [
+                    "",
+                    point.point_id,
+                    point.name,
+                    f"{point.x:.3f}",
+                    f"{point.y:.3f}",
+                    f"{point.z:.3f}",
+                    f"{point.diameter_mm:.3f}",
+                ]
+            )
+            item.setCheckState(0, Qt.CheckState.Checked if point.enabled else Qt.CheckState.Unchecked)
+            for column in range(1, 7):
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.points_tree.addTopLevelItem(item)
+        for column in range(7):
+            self.points_tree.resizeColumnToContents(column)
+
+    def _read_points(self) -> list[CameraTargetPoint]:
+        points: list[CameraTargetPoint] = []
+        for row in range(self.points_tree.topLevelItemCount()):
+            item = self.points_tree.topLevelItem(row)
+            point_id = item.text(1).strip() or f"M{row + 1}"
+            name = item.text(2).strip() or point_id
+            points.append(
+                CameraTargetPoint(
+                    point_id=point_id,
+                    name=name,
+                    x=self._item_float(item, 3),
+                    y=self._item_float(item, 4),
+                    z=self._item_float(item, 5),
+                    diameter_mm=max(1e-6, self._item_float(item, 6)),
+                    enabled=item.checkState(0) == Qt.CheckState.Checked,
+                )
+            )
+        return points
+
+    @staticmethod
+    def _item_float(item: QTreeWidgetItem, column: int) -> float:
+        try:
+            return float(item.text(column).replace(",", "."))
+        except ValueError:
+            return 0.0
+
+    def _on_point_item_changed(self, _item: QTreeWidgetItem, _column: int) -> None:
+        self._emit_target_body_changed()
+
+    def _on_add_point(self) -> None:
+        next_index = self.points_tree.topLevelItemCount() + 1
+        points = self._read_points()
+        points.append(CameraTargetPoint.default(next_index))
+        self._replace_points(points)
+
+    def _on_duplicate_point(self) -> None:
+        current = self.points_tree.currentItem()
+        if current is None:
+            return
+        points = self._read_points()
+        row = self.points_tree.indexOfTopLevelItem(current)
+        if not (0 <= row < len(points)):
+            return
+        source = points[row]
+        points.insert(
+            row + 1,
+            CameraTargetPoint(
+                point_id=f"{source.point_id}_copy",
+                name=f"{source.name} copie",
+                x=source.x,
+                y=source.y,
+                z=source.z,
+                diameter_mm=source.diameter_mm,
+                enabled=source.enabled,
+            ),
+        )
+        self._replace_points(points)
+
+    def _on_remove_point(self) -> None:
+        current = self.points_tree.currentItem()
+        if current is None:
+            return
+        row = self.points_tree.indexOfTopLevelItem(current)
+        points = self._read_points()
+        if not (0 <= row < len(points)):
+            return
+        points.pop(row)
+        self._replace_points(points)
+
+    def _replace_points(self, points: list[CameraTargetPoint]) -> None:
+        self._building = True
+        self._populate_points_tree(tuple(points))
+        self._building = False
+        self._emit_target_body_changed()
+
+    def _on_browse_stl(self) -> None:
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importer STL Rigid Body",
+            os.getcwd(),
+            "STL Files (*.stl);;All Files (*.*)",
+        )
+        if not selected_path:
+            return
+        self.stl_path_edit.setText(CameraDetailWidget._normalize_project_path(selected_path))
+        self._emit_target_body_changed()
+
+    def _on_clear_stl(self) -> None:
+        self.stl_path_edit.clear()
+        self._emit_target_body_changed()
+
+    def _pick_stl_color(self) -> None:
+        selected = QColorDialog.getColor(QColor(self._stl_color), self, "Couleur Rigid Body")
+        if not selected.isValid():
+            return
+        self._stl_color = selected.name().upper()
+        CameraDetailWidget._update_color_button(self.stl_color_button, self._stl_color)
+        self._emit_target_body_changed()
+
+    def _emit_target_body_changed(self, *_args) -> None:
+        if self._building:
+            return
+        self.target_body_changed.emit(self.get_target_body())
 
 
 class CameraListItemWidget(QWidget):
@@ -400,11 +643,13 @@ class CameraConfigurationWidget(QWidget):
     duplicate_camera_requested = pyqtSignal(int)
     remove_camera_requested = pyqtSignal(int)
     camera_updated = pyqtSignal(int, object)
+    target_body_updated = pyqtSignal(object)
     selection_changed = pyqtSignal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._cameras: list[CameraConfiguration] = []
+        self._target_body = CameraTargetBody.default()
         self._visibility_results: dict[str, CameraVisibilityResult] = {}
         self._current_id: str | None = None
         self._updating_ui = False
@@ -476,10 +721,13 @@ class CameraConfigurationWidget(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         left = QWidget()
-        left.setMinimumWidth(190)
-        left.setMaximumWidth(240)
+        left.setMinimumWidth(300)
+        left.setMaximumWidth(420)
         left_layout = QVBoxLayout(left)
         left_layout.setSpacing(6)
+        self.target_body_widget = CameraTargetBodyWidget()
+        self.target_body_widget.target_body_changed.connect(self._on_target_body_changed)
+        left_layout.addWidget(self.target_body_widget, 2)
         left_layout.addWidget(QLabel("<b>Cameras</b>"))
         self.list_widget = QListWidget()
         self.list_widget.setSpacing(2)
@@ -504,7 +752,7 @@ class CameraConfigurationWidget(QWidget):
 
         splitter.addWidget(left)
         splitter.addWidget(self.detail_widget)
-        splitter.setSizes([220, 660])
+        splitter.setSizes([360, 660])
         main_layout.addWidget(splitter, 1)
 
     def set_configuration_status(self, text: str, color: str = "#808080") -> None:
@@ -528,6 +776,10 @@ class CameraConfigurationWidget(QWidget):
     def set_current_configuration_name(self, configuration_name: str) -> None:
         name = str(configuration_name or "").strip()
         self.current_config_label.setText(name or "Aucune configuration")
+
+    def set_target_body(self, target_body: CameraTargetBody) -> None:
+        self._target_body = target_body
+        self.target_body_widget.set_target_body(target_body)
 
     def set_cameras(self, cameras: list[CameraConfiguration]) -> None:
         previous_id = self._current_id
@@ -597,7 +849,15 @@ class CameraConfigurationWidget(QWidget):
         if result is None:
             return "-", QColor("#505050")
         if result.state == CameraVisibilityState.VISIBLE:
-            return "TCP visible", QColor("#198754")
+            if result.total_points > 0:
+                return f"{result.visible_points}/{result.total_points} markers visibles", QColor("#198754")
+            return "Markers visibles", QColor("#198754")
+        if result.state == CameraVisibilityState.PARTIAL:
+            return f"{result.visible_points}/{result.total_points} markers visibles", QColor("#FD7E14")
+        if result.state == CameraVisibilityState.NOT_VISIBLE:
+            if result.total_points > 0:
+                return f"0/{result.total_points} marker visible", QColor("#DC3545")
+            return "Aucun marker", QColor("#842029")
         if result.state == CameraVisibilityState.OCCLUDED:
             name = f" ({result.occluder_name})" if result.occluder_name else ""
             return f"Occlusion{name}", QColor("#DC3545")
@@ -636,6 +896,12 @@ class CameraConfigurationWidget(QWidget):
         index = self.selected_camera_index()
         if index >= 0 and not self._updating_ui:
             self.camera_updated.emit(index, camera)
+
+    def _on_target_body_changed(self, target_body: CameraTargetBody) -> None:
+        if self._updating_ui:
+            return
+        self._target_body = target_body
+        self.target_body_updated.emit(target_body)
 
     def _on_duplicate_clicked(self) -> None:
         index = self.selected_camera_index()

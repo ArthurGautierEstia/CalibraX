@@ -33,6 +33,9 @@ from models.app_session_file import ViewerDisplayState, ViewerThemeState
 from models.camera_model import (
     CameraConfiguration,
     CameraModel,
+    CameraPointVisibilityResult,
+    CameraTargetBody,
+    CameraTargetPoint,
     CameraVisibilityResult,
     CameraVisibilityState,
     evaluate_camera_fov,
@@ -1356,7 +1359,11 @@ class Viewer3DWidget(QWidget):
         self._camera_frustum_items: list[gl.GLLinePlotItem] = []
         self._camera_line_items: list[gl.GLLinePlotItem] = []
         self._camera_frame_items: list[gl.GLLinePlotItem] = []
+        self._camera_target_mesh_items: list[gl.GLMeshItem] = []
+        self._camera_target_point_items: list[gl.GLScatterPlotItem] = []
+        self._camera_target_frame_items: list[gl.GLLinePlotItem] = []
         self._camera_frames_visible: dict[str, bool] = {}
+        self._camera_target_frame_visible: bool = True
         self._selected_camera_index: int = -1
         # Axes externes
         self._external_axes_links: list[gl.GLMeshItem] = []
@@ -1389,6 +1396,7 @@ class Viewer3DWidget(QWidget):
         self.transparency_enabled = False
         self.ext_axes_transparency_enabled = False
         self.workspace_transparency_enabled = True
+        self.piece_transparency_enabled = False
         self._loading_feedback_depth = 0
         self._position_match_tolerance_deg = 0.05
         self._robot_controls_collapsed = False
@@ -1692,10 +1700,10 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_cad = self._create_overlay_button("Affichage CAD", "cad")
         self.btn_toggle_transparency = self._create_overlay_button("Transparence robot", "transparency")
         self.btn_toggle_ext_axes_transparency = self._create_overlay_button("Transparence axes externes", "ext_axes_transparency")
+        self.btn_toggle_piece_transparency = self._create_overlay_button("Transparence pièce et outillage", "piece_transparency")
         self.btn_toggle_robot_controls = self._create_overlay_button("Contrôles robot", "robot_controls")
         self.btn_toggle_frame_lists = self._create_overlay_button("Liste de repères", "frame_list")
         self.btn_toggle_axes = self._create_overlay_button("Afficher / Masquer tous les repères", "axes")
-        self.btn_toggle_viewer_style = self._create_overlay_button("Style viewer", "appearance")
         self.btn_toggle_view_presets = self._create_overlay_button("Vues prédéfinies", "view_cube")
         self.btn_toggle_perspective = self._create_overlay_button("Perspective", "perspective")
         self.btn_toggle_workspace_tcp_zones = self._create_overlay_button("Zone de travail", "tcp_zones")
@@ -1711,7 +1719,12 @@ class Viewer3DWidget(QWidget):
             ),
             self._create_toolbar_zone(
                 "Transparence",
-                (self.btn_toggle_transparency, self.btn_toggle_ext_axes_transparency, self.btn_toggle_workspace_transparency),
+                (
+                    self.btn_toggle_transparency,
+                    self.btn_toggle_ext_axes_transparency,
+                    self.btn_toggle_workspace_transparency,
+                    self.btn_toggle_piece_transparency,
+                ),
             ),
             self._create_toolbar_zone(
                 "Repères",
@@ -1719,7 +1732,7 @@ class Viewer3DWidget(QWidget):
             ),
             self._create_toolbar_zone(
                 "Vue",
-                (self.btn_toggle_viewer_style, self.btn_toggle_view_presets, self.btn_toggle_perspective),
+                (self.btn_toggle_view_presets, self.btn_toggle_perspective),
             ),
             self._create_toolbar_zone(
                 "Zones",
@@ -1772,9 +1785,9 @@ class Viewer3DWidget(QWidget):
         self.btn_toggle_transparency.clicked.connect(self._on_transparency_button_clicked)
         self.btn_toggle_ext_axes_transparency.clicked.connect(self._on_ext_axes_transparency_button_clicked)
         self.btn_toggle_workspace_transparency.clicked.connect(self._on_workspace_transparency_button_clicked)
+        self.btn_toggle_piece_transparency.clicked.connect(self._on_piece_transparency_button_clicked)
         self.btn_toggle_axes.clicked.connect(self._on_axes_button_clicked)
         self.btn_toggle_frame_lists.clicked.connect(self._on_frame_lists_button_clicked)
-        self.btn_toggle_viewer_style.clicked.connect(self._on_viewer_style_button_clicked)
         self.btn_toggle_view_presets.clicked.connect(self._on_view_presets_button_clicked)
         self.btn_toggle_perspective.clicked.connect(self._on_perspective_button_clicked)
         self.btn_toggle_workspace_tcp_zones.clicked.connect(self._on_workspace_tcp_zones_button_clicked)
@@ -1853,19 +1866,6 @@ class Viewer3DWidget(QWidget):
                 ),
             )
             self.frame_lists_overlay.move(frame_overlay_x, overlay_y)
-        if hasattr(self, "btn_toggle_viewer_style") and hasattr(self, "viewer_style_overlay"):
-            self.viewer_style_overlay.adjustSize()
-            style_anchor_pos = self.btn_toggle_viewer_style.mapTo(self.viewer, QPoint(0, 0))
-            style_anchor_center_x = style_anchor_pos.x() + (self.btn_toggle_viewer_style.width() // 2)
-            style_overlay_x = max(
-                margin,
-                min(
-                    self.viewer.width() - self.viewer_style_overlay.width() - margin,
-                    style_anchor_center_x - (self.viewer_style_overlay.width() // 2),
-                ),
-            )
-            style_overlay_y = style_anchor_pos.y() + self.btn_toggle_viewer_style.height() + 16
-            self.viewer_style_overlay.move(style_overlay_x, style_overlay_y)
         if hasattr(self, "btn_toggle_view_presets") and hasattr(self, "viewer_presets_overlay"):
             self.viewer_presets_overlay.adjustSize()
             presets_anchor_pos = self.btn_toggle_view_presets.mapTo(self.viewer, QPoint(0, 0))
@@ -2714,10 +2714,10 @@ class Viewer3DWidget(QWidget):
         yield self.btn_toggle_cad
         yield self.btn_toggle_transparency
         yield self.btn_toggle_ext_axes_transparency
+        yield self.btn_toggle_piece_transparency
         yield self.btn_toggle_robot_controls
         yield self.btn_toggle_frame_lists
         yield self.btn_toggle_axes
-        yield self.btn_toggle_viewer_style
         yield self.btn_toggle_view_presets
         yield self.btn_toggle_perspective
         yield self.btn_toggle_workspace_tcp_zones
@@ -2843,6 +2843,7 @@ class Viewer3DWidget(QWidget):
             transparency_enabled=bool(self.transparency_enabled),
             ext_axes_transparency_enabled=bool(self.ext_axes_transparency_enabled),
             workspace_transparency_enabled=bool(self.workspace_transparency_enabled),
+            piece_transparency_enabled=bool(self.piece_transparency_enabled),
             show_axes=bool(self.show_axes),
             frames_visibility=[bool(v) for v in self.frames_visibility],
             workspace_frames_visibility=[bool(v) for v in self.workspace_frames_visibility],
@@ -2861,6 +2862,7 @@ class Viewer3DWidget(QWidget):
         self.transparency_enabled = bool(state.transparency_enabled)
         self.ext_axes_transparency_enabled = bool(state.ext_axes_transparency_enabled)
         self.workspace_transparency_enabled = bool(state.workspace_transparency_enabled)
+        self.piece_transparency_enabled = bool(state.piece_transparency_enabled)
         self.show_axes = bool(state.show_axes)
         self.frames_visibility = [bool(v) for v in state.frames_visibility]
         self.workspace_frames_visibility = [bool(v) for v in state.workspace_frames_visibility]
@@ -2884,6 +2886,8 @@ class Viewer3DWidget(QWidget):
             self.set_transparency(True, emit_signal=False)
         if self.ext_axes_transparency_enabled:
             self.set_ext_axes_transparency(True, emit_signal=False)
+        if self.piece_transparency_enabled:
+            self.set_piece_transparency(True, emit_signal=False)
         self._refresh_toolbar_buttons()
         if emit_signal:
             self._emit_display_state_changed()
@@ -2959,9 +2963,9 @@ class Viewer3DWidget(QWidget):
         self._set_overlay_button_state(self.btn_toggle_cad, self._cad_showed)
         self._set_overlay_button_state(self.btn_toggle_transparency, self.transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_ext_axes_transparency, self.ext_axes_transparency_enabled)
+        self._set_overlay_button_state(self.btn_toggle_piece_transparency, self.piece_transparency_enabled)
         self._set_overlay_button_state(self.btn_toggle_axes, self.show_axes)
         self._set_overlay_button_state(self.btn_toggle_frame_lists, self._is_frame_lists_overlay_visible())
-        self._set_overlay_button_state(self.btn_toggle_viewer_style, self.viewer_style_overlay.isVisible())
         self._set_overlay_button_state(self.btn_toggle_view_presets, self.viewer_presets_overlay.isVisible())
         self._set_overlay_button_state(self.btn_toggle_perspective, self.viewer.is_perspective_enabled())
         self._set_overlay_button_state(self.btn_toggle_workspace_tcp_zones, self._workspace_tcp_zones_visible)
@@ -3208,6 +3212,13 @@ class Viewer3DWidget(QWidget):
         elif icon_kind == "workspace_transparency":
             painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 70)))
             painter.drawPolygon(QPolygonF([QPointF(3, 13), QPointF(10, 8), QPointF(17, 13), QPointF(10, 18)]))
+        elif icon_kind == "piece_transparency":
+            painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 70)))
+            painter.drawRoundedRect(3, 7, 14, 9, 2, 2)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(6, 7, 10, 4)
+            painter.drawLine(17, 7, 13, 4)
+            painter.drawLine(10, 4, 13, 4)
         elif icon_kind == "calibration_pose":
             painter.drawEllipse(4, 4, 12, 12)
             painter.drawEllipse(8, 8, 4, 4)
@@ -3276,6 +3287,7 @@ class Viewer3DWidget(QWidget):
             self._ext_axis_frames_visible[axis_id] = self.show_axes
         for camera_id in self._camera_frames_visible:
             self._camera_frames_visible[camera_id] = self.show_axes
+        self._camera_target_frame_visible = self.show_axes
         self._tooling_frames_visible = self.show_axes
         self._workpiece_frame_visible = self.show_axes
         self.draw_all_frames(self.last_dh_matrices)
@@ -3470,7 +3482,7 @@ class Viewer3DWidget(QWidget):
             if hasattr(self, "_cb_tooling_frames"):
                 self._cb_tooling_frames.setVisible(has_tooling)
         should_show_overlay = self.btn_toggle_frame_lists.isChecked() and (
-            has_robot_frames or has_scene_frames or has_ext_axes or has_piece_frames
+            has_robot_frames or has_scene_frames or has_ext_axes or has_camera_frames or has_piece_frames
         )
         self.frame_lists_overlay.setVisible(should_show_overlay)
         self.frame_lists_overlay.adjustSize()
@@ -3599,6 +3611,10 @@ class Viewer3DWidget(QWidget):
     def refresh_cameras(self) -> None:
         self._render_cameras()
         self.update_frame_list_ui()
+        self.refresh_camera_visibility()
+
+    def refresh_camera_target_tracking(self) -> None:
+        self._render_cameras()
         self.refresh_camera_visibility()
 
     def set_selected_camera_index(self, index: int) -> None:
@@ -3780,9 +3796,13 @@ class Viewer3DWidget(QWidget):
         self._clear_viewer_items(self._camera_frustum_items)
         self._clear_viewer_items(self._camera_line_items)
         self._clear_viewer_items(self._camera_frame_items)
+        self._clear_viewer_items(self._camera_target_mesh_items)
+        self._clear_viewer_items(self._camera_target_point_items)
+        self._clear_viewer_items(self._camera_target_frame_items)
         if self._camera_model is None:
             return
 
+        self._render_camera_target_body()
         cameras = self._camera_model.get_cameras()
         existing_ids = {camera.camera_id for camera in cameras}
         self._camera_frames_visible = {
@@ -3816,28 +3836,131 @@ class Viewer3DWidget(QWidget):
                 frame_length = 180.0 if index == self._selected_camera_index else 120.0
                 self._camera_frame_items.extend(self.draw_frame(camera_mount_world, longueur=frame_length))
 
+    def _render_camera_target_body(self) -> None:
+        if self._camera_model is None:
+            return
+        target_body = self._camera_model.get_target_body()
+        target_world = self._target_body_world_matrix(target_body)
+        if target_world is None:
+            return
+
+        if self._camera_target_frame_visible:
+            self._camera_target_frame_items.extend(self.draw_frame(target_world, longueur=100.0))
+
+        points_world = self._target_body_points_world(target_body, target_world)
+        for point, point_world in points_world:
+            item = gl.GLScatterPlotItem(
+                pos=np.array([point_world], dtype=float),
+                color=self._hex_to_rgba_tuple(target_body.stl.color, alpha=1.0),
+                size=max(1e-6, float(point.diameter_mm)),
+                pxMode=False,
+            )
+            self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+            self.viewer.addItem(item)
+            self._camera_target_point_items.append(item)
+
+        mesh_item = self._load_target_body_mesh(target_body, target_world)
+        if mesh_item is not None:
+            self.viewer.addItem(mesh_item)
+            self._camera_target_mesh_items.append(mesh_item)
+
+    def _target_body_points_world(
+        self,
+        target_body: CameraTargetBody,
+        target_world: np.ndarray | None = None,
+    ) -> list[tuple[CameraTargetPoint, np.ndarray]]:
+        transform = target_world if target_world is not None else self._target_body_world_matrix(target_body)
+        if transform is None:
+            return []
+        result: list[tuple[CameraTargetPoint, np.ndarray]] = []
+        for point in target_body.enabled_points():
+            point_h = np.array([point.x, point.y, point.z, 1.0], dtype=float)
+            world_xyz = (transform @ point_h)[:3]
+            result.append((point, np.array(world_xyz, dtype=float)))
+        return result
+
+    def _target_body_world_matrix(self, target_body: CameraTargetBody) -> np.ndarray | None:
+        parent_world = self._target_body_parent_world_matrix(target_body.parent_frame)
+        if parent_world is None:
+            return None
+        return parent_world @ target_body.pose_matrix()
+
+    def _target_body_parent_world_matrix(self, parent_frame: str) -> np.ndarray | None:
+        normalized = str(parent_frame or "").strip().lower()
+        if normalized == "tool":
+            if self.last_corrected_matrices:
+                return self._transform_robot_matrix_to_world(self.last_corrected_matrices[-1])
+            return None
+        if normalized == "frame_6":
+            if len(self.last_corrected_matrices) >= 2:
+                return self._transform_robot_matrix_to_world(self.last_corrected_matrices[-2])
+            if self.last_corrected_matrices:
+                return self._transform_robot_matrix_to_world(self.last_corrected_matrices[-1])
+            return None
+        return None
+
+    def _load_target_body_mesh(
+        self,
+        target_body: CameraTargetBody,
+        target_world: np.ndarray,
+    ) -> gl.GLMeshItem | None:
+        if not target_body.stl.path:
+            return None
+        resolved_stl_path = self._resolve_filesystem_path(target_body.stl.path)
+        if not resolved_stl_path or not os.path.exists(resolved_stl_path):
+            if resolved_stl_path:
+                self._missing_mesh_paths.add(resolved_stl_path)
+                print(f"STL Rigid Body introuvable {resolved_stl_path}")
+            return None
+        if resolved_stl_path in self._missing_mesh_paths:
+            self._missing_mesh_paths.remove(resolved_stl_path)
+
+        try:
+            mesh_data = self._mesh_data_cache.get(resolved_stl_path)
+            if mesh_data is None:
+                stl_mesh = mesh.Mesh.from_file(resolved_stl_path)
+                verts = np.array(stl_mesh.vectors.reshape(-1, 3), dtype=float)
+                faces = np.arange(len(verts)).reshape(-1, 3)
+                mesh_data = gl.MeshData(vertexes=verts, faces=faces)
+                self._mesh_data_cache[resolved_stl_path] = mesh_data
+
+            color = self._brighten_mesh_color(self._hex_to_rgba_tuple(target_body.stl.color, alpha=1.0))
+            mesh_item = gl.GLMeshItem(
+                meshdata=mesh_data,
+                smooth=True,
+                color=color,
+                shader=Viewer3DWidget.CAD_SHADER_NAME,
+            )
+            mesh_item.setTransform(self._matrix_to_qmatrix4x4(target_world))
+            self._apply_layer(mesh_item, self.LAYER_SCENE_TRANSLUCENT)
+            return mesh_item
+        except Exception as exc:
+            print(f"Erreur STL Rigid Body {resolved_stl_path}: {exc}")
+            return None
+
     def _render_camera_lines(self, results: list[CameraVisibilityResult]) -> None:
         self._clear_viewer_items(self._camera_line_items)
         if self._camera_model is None:
             return
-        tcp_world = self._current_tcp_world_xyz()
-        if tcp_world is None:
-            return
         result_by_id = {result.camera_id: result for result in results}
         for camera in self._camera_model.get_cameras():
-            if not camera.enabled or not camera.visual.show_line_to_tcp:
+            if not camera.enabled or not camera.visual.show_lines_to_markers:
                 continue
             origin = self._camera_optical_world_matrix(camera)[:3, 3]
             result = result_by_id.get(camera.camera_id)
-            item = gl.GLLinePlotItem(
-                pos=np.array([origin, tcp_world], dtype=float),
-                color=self._camera_line_color(result),
-                width=2,
-                antialias=True,
-            )
-            self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
-            self.viewer.addItem(item)
-            self._camera_line_items.append(item)
+            if result is None or not result.point_results:
+                continue
+            for point_result in result.point_results:
+                target = np.array(point_result.world_xyz, dtype=float)
+                item = gl.GLLinePlotItem(
+                    pos=np.array([origin, target], dtype=float),
+                    color=self._camera_point_line_color(point_result),
+                    width=2,
+                    antialias=True,
+                )
+                self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+                self.viewer.addItem(item)
+                self._camera_line_items.append(item)
 
     def _load_camera_mesh(
         self,
@@ -3879,36 +4002,72 @@ class Viewer3DWidget(QWidget):
     def _evaluate_camera_visibility(self) -> list[CameraVisibilityResult]:
         if self._camera_model is None:
             return []
-        tcp_world = self._current_tcp_world_xyz()
-        if tcp_world is None:
-            return [
-                CameraVisibilityResult(camera.camera_id, CameraVisibilityState.INVALID)
-                for camera in self._camera_model.get_cameras()
-            ]
+        target_body = self._camera_model.get_target_body()
+        target_world = self._target_body_world_matrix(target_body)
+        if target_world is None:
+            return [CameraVisibilityResult(camera.camera_id, CameraVisibilityState.INVALID) for camera in self._camera_model.get_cameras()]
+        target_points_world = self._target_body_points_world(target_body, target_world)
+        total_points = len(target_points_world)
 
         results: list[CameraVisibilityResult] = []
         for camera in self._camera_model.get_cameras():
             optical_world = self._camera_optical_world_matrix(camera)
             if not camera.enabled:
-                result = CameraVisibilityResult(camera.camera_id, CameraVisibilityState.DISABLED)
-            elif camera.visual.verify_tcp_in_fov:
-                result = evaluate_camera_fov(camera, tcp_world, optical_world)
-            else:
-                distance = float(np.linalg.norm(np.array(tcp_world, dtype=float) - optical_world[:3, 3]))
-                result = CameraVisibilityResult(camera.camera_id, CameraVisibilityState.VISIBLE, distance)
-
-            if result.state == CameraVisibilityState.VISIBLE and camera.visual.verify_line_of_sight:
-                occluder_name = self._find_line_of_sight_occluder(optical_world[:3, 3], tcp_world)
-                if occluder_name:
-                    result = CameraVisibilityResult(
+                results.append(
+                    CameraVisibilityResult(
                         camera.camera_id,
-                        CameraVisibilityState.OCCLUDED,
-                        result.distance_mm,
-                        result.horizontal_angle_deg,
-                        result.vertical_angle_deg,
-                        occluder_name,
+                        CameraVisibilityState.DISABLED,
+                        total_points=total_points,
                     )
-            results.append(result)
+                )
+                continue
+            if total_points == 0:
+                results.append(CameraVisibilityResult(camera.camera_id, CameraVisibilityState.INVALID))
+                continue
+
+            point_results: list[CameraPointVisibilityResult] = []
+            for point, point_world in target_points_world:
+                if camera.visual.verify_markers_in_fov:
+                    point_result_base = evaluate_camera_fov(camera, point_world, optical_world)
+                else:
+                    distance = float(np.linalg.norm(np.array(point_world, dtype=float) - optical_world[:3, 3]))
+                    point_result_base = CameraVisibilityResult(
+                        camera.camera_id,
+                        CameraVisibilityState.VISIBLE,
+                        distance,
+                    )
+
+                if point_result_base.state == CameraVisibilityState.VISIBLE and camera.visual.verify_line_of_sight:
+                    occluder_name = self._find_line_of_sight_occluder(optical_world[:3, 3], point_world)
+                    if occluder_name:
+                        point_result_base = CameraVisibilityResult(
+                            camera.camera_id,
+                            CameraVisibilityState.OCCLUDED,
+                            point_result_base.distance_mm,
+                            point_result_base.horizontal_angle_deg,
+                            point_result_base.vertical_angle_deg,
+                            occluder_name,
+                        )
+                point_results.append(
+                    CameraPointVisibilityResult.from_camera_result(point, point_world, point_result_base)
+                )
+
+            visible_points = sum(1 for point_result in point_results if point_result.state == CameraVisibilityState.VISIBLE)
+            if visible_points == total_points:
+                state = CameraVisibilityState.VISIBLE
+            elif visible_points > 0:
+                state = CameraVisibilityState.PARTIAL
+            else:
+                state = CameraVisibilityState.NOT_VISIBLE
+            results.append(
+                CameraVisibilityResult(
+                    camera.camera_id,
+                    state,
+                    visible_points=visible_points,
+                    total_points=total_points,
+                    point_results=tuple(point_results),
+                )
+            )
         return results
 
     def _current_tcp_world_xyz(self) -> np.ndarray | None:
@@ -3993,6 +4152,20 @@ class Viewer3DWidget(QWidget):
         if result.state == CameraVisibilityState.OCCLUDED:
             return (0.95, 0.05, 0.05, 1.0)
         if result.state == CameraVisibilityState.OUT_OF_RANGE:
+            return (1.0, 0.5, 0.1, 1.0)
+        if result.state == CameraVisibilityState.DISABLED:
+            return (0.4, 0.4, 0.4, 0.7)
+        return (1.0, 0.62, 0.05, 1.0)
+
+    @staticmethod
+    def _camera_point_line_color(result: CameraPointVisibilityResult | None) -> tuple[float, float, float, float]:
+        if result is None:
+            return (0.55, 0.55, 0.55, 1.0)
+        if result.state == CameraVisibilityState.VISIBLE:
+            return (0.1, 0.75, 0.28, 1.0)
+        if result.state == CameraVisibilityState.OCCLUDED:
+            return (0.95, 0.05, 0.05, 1.0)
+        if result.state in {CameraVisibilityState.OUT_OF_FOV, CameraVisibilityState.OUT_OF_RANGE}:
             return (1.0, 0.5, 0.1, 1.0)
         if result.state == CameraVisibilityState.DISABLED:
             return (0.4, 0.4, 0.4, 0.7)
@@ -4743,6 +4916,8 @@ class Viewer3DWidget(QWidget):
             self._cad_loaded = True
 
         self._refresh_robot_state_items()
+        self._render_cameras()
+        self.refresh_camera_visibility()
         self._refresh_position_buttons()
 
     def update_workspace(self, workspace_model: WorkspaceModel | None) -> None:
@@ -4805,6 +4980,7 @@ class Viewer3DWidget(QWidget):
         self._render_workspace_zones()
         self._render_robot_axis_colliders()
         self._render_tool_colliders()
+        self._render_cameras()
         self.refresh_camera_visibility()
 
     @staticmethod
@@ -5066,12 +5242,28 @@ class Viewer3DWidget(QWidget):
                 lambda checked, camera_id=camera.camera_id: self._on_camera_frame_toggled(camera_id, checked)
             )
             self.camera_frame_list.setItemWidget(item, checkbox)
-        self._set_frame_list_height(self.camera_frame_list, len(cameras))
+        if self._camera_model is not None:
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 28))
+            self.camera_frame_list.addItem(item)
+            checkbox = QCheckBox("Rigid Body Frame", self.camera_frame_list)
+            checkbox.setChecked(bool(self._camera_target_frame_visible))
+            checkbox.toggled.connect(self._on_camera_target_frame_toggled)
+            self.camera_frame_list.setItemWidget(item, checkbox)
+        self._set_frame_list_height(self.camera_frame_list, self.camera_frame_list.count())
 
     def _on_camera_frame_toggled(self, camera_id: str, checked: bool) -> None:
         if self._camera_frames_visible.get(camera_id, True) == bool(checked):
             return
         self._camera_frames_visible[camera_id] = bool(checked)
+        self.refresh_cameras()
+        self._refresh_toolbar_buttons()
+        self._emit_display_state_changed()
+
+    def _on_camera_target_frame_toggled(self, checked: bool) -> None:
+        if self._camera_target_frame_visible == bool(checked):
+            return
+        self._camera_target_frame_visible = bool(checked)
         self.refresh_cameras()
         self._refresh_toolbar_buttons()
         self._emit_display_state_changed()
@@ -5155,9 +5347,9 @@ class Viewer3DWidget(QWidget):
             color = snap["color"]
 
             if cad_model:
-                item = self.load_robot_mesh(cad_model, T_world, color)
+                item = self.load_robot_mesh(cad_model, T_world, self._piece_render_color(color))
                 if item is not None:
-                    self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
+                    self._apply_piece_item_transparency(item)
                     self.viewer.addItem(item)
                     self._tooling_mesh_items.append(item)
 
@@ -5235,9 +5427,9 @@ class Viewer3DWidget(QWidget):
         color = snap["color"]
 
         if cad_model:
-            item = self.load_robot_mesh(cad_model, T_world, color)
+            item = self.load_robot_mesh(cad_model, T_world, self._piece_render_color(color))
             if item is not None:
-                self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
+                self._apply_piece_item_transparency(item)
                 self.viewer.addItem(item)
                 self._workpiece_mesh_item = item
 
@@ -5427,6 +5619,7 @@ class Viewer3DWidget(QWidget):
         self.update_frame_list_ui()
 
     def update_robot_poses(self, matrices):
+        self.last_corrected_matrices = list(matrices)
         tool_offset_rz = self._resolve_tool_cad_offset_rz()
         for mesh_item, matrix_index, role in zip(self.robot_links, self._robot_link_matrix_indices, self._robot_link_roles):
             if matrix_index >= len(matrices):
@@ -5742,11 +5935,38 @@ class Viewer3DWidget(QWidget):
         if emit_signal:
             self._emit_display_state_changed()
 
+    def _piece_render_color(self, color: tuple) -> tuple:
+        red, green, blue = (float(color[index]) for index in range(3))
+        alpha = 0.45 if self.piece_transparency_enabled else 1.0
+        return (red, green, blue, alpha)
+
+    def _apply_piece_item_transparency(self, item) -> None:
+        c = item.opts.get('color', (1.0, 1.0, 1.0, 1.0))
+        if self.piece_transparency_enabled:
+            item.setColor((c[0], c[1], c[2], 0.45))
+            self._apply_layer(item, self.LAYER_SCENE_TRANSLUCENT)
+        else:
+            item.setColor((c[0], c[1], c[2], 1.0))
+            self._apply_layer(item, self.LAYER_SCENE_OPAQUE)
+
+    def set_piece_transparency(self, enabled: bool, emit_signal: bool = True) -> None:
+        self.piece_transparency_enabled = enabled
+        for item in self._tooling_mesh_items:
+            self._apply_piece_item_transparency(item)
+        if self._workpiece_mesh_item is not None:
+            self._apply_piece_item_transparency(self._workpiece_mesh_item)
+        self._refresh_toolbar_buttons()
+        if emit_signal:
+            self._emit_display_state_changed()
+
     def _on_ext_axes_transparency_button_clicked(self) -> None:
         self.set_ext_axes_transparency(not self.ext_axes_transparency_enabled)
 
     def _on_workspace_transparency_button_clicked(self) -> None:
         self.set_workspace_transparency(not self.workspace_transparency_enabled)
+
+    def _on_piece_transparency_button_clicked(self) -> None:
+        self.set_piece_transparency(not self.piece_transparency_enabled)
 
     def toogle_base_axis_frames(self):
         self.show_axes = True

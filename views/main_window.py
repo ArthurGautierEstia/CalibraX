@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPainterPath, QPixmap
-from PyQt6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -33,6 +33,16 @@ class MainTabsBar(QTabBar):
         return default_size
 
 
+class PersistentCheckMenu(QMenu):
+    def mouseReleaseEvent(self, event) -> None:
+        action = self.activeAction()
+        if action is not None and action.isCheckable() and action.isEnabled():
+            action.trigger()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class MainWindow(QMainWindow):
     new_project_requested = pyqtSignal()
     open_project_requested = pyqtSignal()
@@ -42,6 +52,7 @@ class MainWindow(QMainWindow):
     verify_configurations_requested = pyqtSignal()
     fit_scene_view_requested = pyqtSignal()
     manage_viewer_themes_requested = pyqtSignal()
+    main_tabs_visibility_changed = pyqtSignal()
     show_keyboard_shortcuts_requested = pyqtSignal()
     show_about_requested = pyqtSignal()
 
@@ -74,6 +85,8 @@ class MainWindow(QMainWindow):
         self._was_maximized_before_fullscreen = False
         self._geometry_before_fullscreen = None
         self._recent_project_actions: list[QAction] = []
+        self._optional_main_tab_actions: dict[str, QAction] = {}
+        self._optional_main_tab_widgets: dict[str, QWidget] = {}
 
         self.robot_view = RobotView()
         self.tool_view = ToolView()
@@ -117,6 +130,12 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.trajectory_view, "Trajectoire")
         self.tabs.addTab(self.program_view, "Programme")
         self.tabs.addTab(self.machining_view, "Usinage")
+        self._optional_main_tab_widgets = {
+            "calibration": self.calibration_view,
+            "trajectory": self.trajectory_view,
+            "program": self.program_view,
+            "machining": self.machining_view,
+        }
 
         self.robot_view.add_tab(self.mgi_solutions_widget, "Solutions")
         self.calibration_view.add_tab(self.mgi_solutions_widget.get_jacobien_widget(), "MGI optimisé")
@@ -228,6 +247,25 @@ class MainWindow(QMainWindow):
             layout_menu.addAction(action)
 
         display_menu.addSeparator()
+        tabs_menu = PersistentCheckMenu("Onglets principaux", display_menu)
+        tabs_menu.setFont(menu_font)
+        display_menu.addMenu(tabs_menu)
+        for key, label in (
+            ("calibration", "Calibration"),
+            ("trajectory", "Trajectoire"),
+            ("program", "Programme"),
+            ("machining", "Usinage"),
+        ):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(True)
+            action.toggled.connect(
+                lambda checked=False, tab_key=key: self.set_optional_main_tab_visible(tab_key, checked)
+            )
+            tabs_menu.addAction(action)
+            self._optional_main_tab_actions[key] = action
+
+        display_menu.addSeparator()
         self.action_manage_viewer_themes = QAction("Thème du viewer", self)
         self.action_manage_viewer_themes.triggered.connect(self.manage_viewer_themes_requested.emit)
         display_menu.addAction(self.action_manage_viewer_themes)
@@ -268,6 +306,56 @@ class MainWindow(QMainWindow):
             self._was_maximized_before_fullscreen = self.isMaximized()
             self._geometry_before_fullscreen = self.geometry()
             self.showFullScreen()
+
+    def get_optional_main_tabs_visibility(self) -> dict[str, bool]:
+        return {
+            key: self.tabs.isTabVisible(index)
+            for key, widget in self._optional_main_tab_widgets.items()
+            if (index := self.tabs.indexOf(widget)) >= 0
+        }
+
+    def set_optional_main_tabs_visibility(self, visibility: dict[str, bool]) -> None:
+        for key in self._optional_main_tab_widgets:
+            if key in visibility:
+                self.set_optional_main_tab_visible(key, bool(visibility[key]), emit_changed=False)
+
+    def set_optional_main_tab_visible(self, key: str, visible: bool, emit_changed: bool = True) -> None:
+        widget = self._optional_main_tab_widgets.get(key)
+        if widget is None:
+            return
+
+        tab_index = self.tabs.indexOf(widget)
+        if tab_index < 0:
+            return
+
+        if self.tabs.isTabVisible(tab_index) == visible:
+            self._set_optional_main_tab_action_checked(key, visible)
+            return
+
+        self.tabs.setTabVisible(tab_index, visible)
+        self._set_optional_main_tab_action_checked(key, visible)
+        if not visible and self.tabs.currentWidget() == widget:
+            self._select_first_visible_main_tab()
+        if emit_changed:
+            self.main_tabs_visibility_changed.emit()
+
+    def _set_optional_main_tab_action_checked(self, key: str, checked: bool) -> None:
+        action = self._optional_main_tab_actions.get(key)
+        if action is None or action.isChecked() == checked:
+            return
+        previous_block_state = action.blockSignals(True)
+        action.setChecked(checked)
+        action.blockSignals(previous_block_state)
+
+    def _select_first_visible_main_tab(self) -> None:
+        cell_tab_index = self.tabs.indexOf(self.cell_configuration_tabs)
+        if cell_tab_index >= 0 and self.tabs.isTabVisible(cell_tab_index):
+            self.tabs.setCurrentIndex(cell_tab_index)
+            return
+        for tab_index in range(self.tabs.count()):
+            if self.tabs.isTabVisible(tab_index):
+                self.tabs.setCurrentIndex(tab_index)
+                return
 
     def set_robot_tab_validated(self, is_validated: bool) -> None:
         self._set_tab_validated(MainWindow.ROBOT_TAB_INDEX, is_validated)
