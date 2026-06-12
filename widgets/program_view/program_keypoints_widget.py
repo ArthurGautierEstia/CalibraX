@@ -40,10 +40,8 @@ class ProgramKeypointsWidget(QWidget):
     add_requested = pyqtSignal()
     edit_requested = pyqtSignal(int)
     delete_requested = pyqtSignal()
-    toolSourceChanged = pyqtSignal(str)
     targetModeChanged = pyqtSignal(str)
     motionModeChanged = pyqtSignal(str)
-    editProgramBaseRequested = pyqtSignal()
     editToolOrientationRequested = pyqtSignal()
     programSettingsRequested = pyqtSignal()
 
@@ -65,19 +63,18 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_go_to = QPushButton("Aller a")
         self.btn_delete = QPushButton("Supprimer")
         self.cartesian_display_frame_combo = QComboBox()
-        self.tool_source_combo = QComboBox()
         self.target_mode_combo = QComboBox()
         self.motion_mode_combo = QComboBox()
-        self.btn_edit_program_base = QPushButton("Editer la base programme")
         self.btn_edit_tool_orientation = QPushButton("Editer l'orientation de l'outil")
         self.btn_program_settings = QPushButton("Paramètres")
 
         self._keypoints: list[TrajectoryKeypoint] = []
-        self._current_tool_source = "CURRENT"
         self._has_program = False
         self._row_roles: list[str] = []
         self._row_approx_texts: list[str] = []
         self._row_cible_overrides: list[str | None] = []
+        self._ext_axis_col_headers: list[str] = []
+        self._ext_axis_values_per_row: list[tuple[float, ...]] = []
 
         self._setup_ui()
         self._setup_connections()
@@ -97,21 +94,16 @@ class ProgramKeypointsWidget(QWidget):
         selectors_row.setHorizontalSpacing(12)
         selectors_row.setVerticalSpacing(0)
 
+        # Repère d'EXPRESSION des coordonnées de la table (n'altère pas la trajectoire) ;
+        # il définit aussi le $BASE utilisé à la génération KRL.
         base_layout = QHBoxLayout()
         base_layout.setContentsMargins(0, 0, 0, 0)
         base_layout.setSpacing(6)
-        base_layout.addWidget(QLabel("Base : "))
-        self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.ROBOT.value)
+        base_layout.addWidget(QLabel("Repère : "))
         self.cartesian_display_frame_combo.addItem("Programme", ReferenceFrame.PROGRAM.value)
+        self.cartesian_display_frame_combo.addItem("Robot", ReferenceFrame.ROBOT.value)
+        self.cartesian_display_frame_combo.addItem("Monde", ReferenceFrame.WORLD.value)
         base_layout.addWidget(self.cartesian_display_frame_combo, 1)
-
-        tool_layout = QHBoxLayout()
-        tool_layout.setContentsMargins(0, 0, 0, 0)
-        tool_layout.setSpacing(6)
-        tool_layout.addWidget(QLabel("Tool : "))
-        self.tool_source_combo.addItem("Courant", "CURRENT")
-        self.tool_source_combo.addItem("Programme", "PROGRAM")
-        tool_layout.addWidget(self.tool_source_combo, 1)
 
         target_layout = QHBoxLayout()
         target_layout.setContentsMargins(0, 0, 0, 0)
@@ -126,20 +118,18 @@ class ProgramKeypointsWidget(QWidget):
         mode_layout.setSpacing(6)
         mode_layout.addWidget(QLabel("Mode : "))
         self.motion_mode_combo.addItem("Cartesien", "CARTESIAN")
-        self.motion_mode_combo.addItem("Articulaire", "JOINT")
+        self.motion_mode_combo.addItem("Articulaire", "ARTICULAR")
         mode_layout.addWidget(self.motion_mode_combo, 1)
 
         selectors_row.addLayout(base_layout, 0, 0)
-        selectors_row.addLayout(tool_layout, 0, 1)
-        selectors_row.addLayout(target_layout, 0, 2)
-        selectors_row.addLayout(mode_layout, 0, 3)
-        for column in range(4):
+        selectors_row.addLayout(target_layout, 0, 1)
+        selectors_row.addLayout(mode_layout, 0, 2)
+        for column in range(3):
             selectors_row.setColumnStretch(column, 1)
 
         layout.addLayout(selectors_row)
 
         base_actions_row = QHBoxLayout()
-        base_actions_row.addWidget(self.btn_edit_program_base, 1)
         base_actions_row.addWidget(self.btn_edit_tool_orientation, 1)
         base_actions_row.addWidget(self.btn_program_settings, 1)
         base_actions_row.addStretch(2)
@@ -186,12 +176,10 @@ class ProgramKeypointsWidget(QWidget):
         self.btn_go_to.clicked.connect(self._on_go_to_clicked)
         self.btn_delete.clicked.connect(self._on_delete_clicked)
         self.cartesian_display_frame_combo.currentIndexChanged.connect(self._on_cartesian_display_frame_changed)
-        self.tool_source_combo.currentIndexChanged.connect(self._on_tool_source_changed)
         self.target_mode_combo.currentIndexChanged.connect(self._on_target_mode_changed)
         self.motion_mode_combo.currentIndexChanged.connect(self._on_motion_mode_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
-        self.btn_edit_program_base.clicked.connect(self.editProgramBaseRequested.emit)
         self.btn_edit_tool_orientation.clicked.connect(self.editToolOrientationRequested.emit)
         self.btn_program_settings.clicked.connect(self.programSettingsRequested.emit)
 
@@ -219,10 +207,6 @@ class ProgramKeypointsWidget(QWidget):
     def _on_cartesian_display_frame_changed(self, _index: int) -> None:
         self.cartesianDisplayFrameChanged.emit(self.get_cartesian_display_frame())
 
-    def _on_tool_source_changed(self, _index: int) -> None:
-        self._current_tool_source = self.tool_source_combo.currentData()
-        self.toolSourceChanged.emit(self._current_tool_source)
-
     def _on_target_mode_changed(self, _index: int) -> None:
         self.targetModeChanged.emit(self.get_target_mode())
 
@@ -242,20 +226,6 @@ class ProgramKeypointsWidget(QWidget):
         self.cartesian_display_frame_combo.blockSignals(False)
         if emit_signal:
             self.cartesianDisplayFrameChanged.emit(normalized.value)
-
-    def get_tool_source(self) -> str:
-        return self._current_tool_source
-
-    def set_tool_source(self, tool_source: str, emit_signal: bool = False) -> None:
-        index = self.tool_source_combo.findData(tool_source)
-        if index < 0:
-            return
-        self.tool_source_combo.blockSignals(True)
-        self.tool_source_combo.setCurrentIndex(index)
-        self.tool_source_combo.blockSignals(False)
-        self._current_tool_source = tool_source
-        if emit_signal:
-            self.toolSourceChanged.emit(tool_source)
 
     def get_target_mode(self) -> str:
         return self.target_mode_combo.currentData()
@@ -361,6 +331,11 @@ class ProgramKeypointsWidget(QWidget):
             values.extend(f"{v:.3f}" for v in target_values[:6])
             values.append(approx_text)
 
+            ext_vals = self._ext_axis_values_per_row[idx] if idx < len(self._ext_axis_values_per_row) else ()
+            for col_idx in range(len(self._ext_axis_col_headers)):
+                v = ext_vals[col_idx] if col_idx < len(ext_vals) else float("nan")
+                values.append("" if v != v else f"{v:.3f}")  # nan check
+
             for col, text in enumerate(values):
                 self.keypoints_table.setItem(idx, col, QTableWidgetItem(text))
 
@@ -385,15 +360,31 @@ class ProgramKeypointsWidget(QWidget):
         self._refresh_table()
         self._emit_selection_changed()
 
+    def setup_external_axes_columns(self, col_headers: list[str]) -> None:
+        self._ext_axis_col_headers = list(col_headers)
+        total = 10 + len(col_headers)
+        self.keypoints_table.setColumnCount(total)
+        base_labels = [
+            "Cible", "Mode", "Vitesse",
+            "J1 / X", "J2 / Y", "J3 / Z", "J4 / A", "J5 / B", "J6 / C",
+            "Approx",
+        ]
+        self.keypoints_table.setHorizontalHeaderLabels(base_labels + col_headers)
+        header = self.keypoints_table.horizontalHeader()
+        for col in range(total):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+
     def set_row_metadata(
         self,
         roles: list[str],
         approx_texts: list[str],
         cible_overrides: list[str | None],
+        ext_axis_values_per_row: list[tuple[float, ...]] | None = None,
     ) -> None:
         self._row_roles = list(roles)
         self._row_approx_texts = list(approx_texts)
         self._row_cible_overrides = list(cible_overrides)
+        self._ext_axis_values_per_row = list(ext_axis_values_per_row) if ext_axis_values_per_row is not None else []
         self._apply_row_metadata()
         self._update_buttons_state()
 
@@ -415,6 +406,17 @@ class ProgramKeypointsWidget(QWidget):
                 approx_item.setText(approx_text)
             else:
                 self.keypoints_table.setItem(row, 9, QTableWidgetItem(approx_text))
+
+            ext_vals = self._ext_axis_values_per_row[row] if row < len(self._ext_axis_values_per_row) else ()
+            for col_idx in range(len(self._ext_axis_col_headers)):
+                col = 10 + col_idx
+                v = ext_vals[col_idx] if col_idx < len(ext_vals) else float("nan")
+                text = "" if v != v else f"{v:.3f}"
+                item = self.keypoints_table.item(row, col)
+                if item is not None:
+                    item.setText(text)
+                else:
+                    self.keypoints_table.setItem(row, col, QTableWidgetItem(text))
 
             brush = gray if locked else default_fg
             for col in range(self.keypoints_table.columnCount()):
@@ -443,9 +445,6 @@ class ProgramKeypointsWidget(QWidget):
             self.target_mode_combo.model().item(index_compensated).setEnabled(enabled)
         if not enabled and self.get_target_mode() == "COMPENSATED":
             self.set_target_mode("THEORETICAL", emit_signal=True)
-
-    def set_program_base_edit_enabled(self, enabled: bool) -> None:
-        self.btn_edit_program_base.setEnabled(enabled)
 
     def set_tool_orientation_edit_enabled(self, enabled: bool) -> None:
         self.btn_edit_tool_orientation.setEnabled(enabled)

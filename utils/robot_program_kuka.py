@@ -239,9 +239,10 @@ def _format_kuka_motion_line(
     approx_override: MotionApproximation | None = None,
 ) -> str:
     approx = approx_override if approx_override is not None else motion.approximation
+    # La mention d'approximation (C_DIS / C_VEL) ne s'applique qu'aux mouvements LIN/CIRC
     suffix = _format_approximation_suffix(approx) if emit_approximation else ""
     if motion.mode == RobotProgramMotionMode.PTP:
-        return f"PTP {_format_kuka_target(motion.target)}{suffix}"
+        return f"PTP {_format_kuka_target(motion.target)}"
     if motion.mode == RobotProgramMotionMode.LINEAR:
         return f"LIN {_format_kuka_target(motion.target)}{suffix}"
     if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
@@ -276,7 +277,7 @@ def _format_kuka_base_line(base_pose: Pose6) -> str:
 def _format_kuka_pose(pose: Pose6) -> str:
     values = pose.to_list()
     return (
-        "{X "
+        "{FRAME: X "
         f"{values[0]:.3f},Y {values[1]:.3f},Z {values[2]:.3f},"
         f"A {values[3]:.3f},B {values[4]:.3f},C {values[5]:.3f}"
         "}"
@@ -284,11 +285,21 @@ def _format_kuka_pose(pose: Pose6) -> str:
 
 
 def _format_approximation_suffix(approx: MotionApproximation) -> str:
+    # KRL : la valeur est portée par $APO.CDIS / $APO.CVEL ; l'instruction porte
+    # seulement la mention C_DIS / C_VEL.
     if approx.mode == ApproximationMode.C_DIS:
-        return f" C_DIS={approx.value:.3f}"
+        return " C_DIS"
     if approx.mode == ApproximationMode.C_VEL:
-        return f" C_VEL={approx.value:.1f}"
+        return " C_VEL"
     return ""
+
+
+def _format_apo_line(approx: MotionApproximation) -> str | None:
+    if approx.mode == ApproximationMode.C_DIS:
+        return f"$APO.CDIS = {approx.value:.3f}"
+    if approx.mode == ApproximationMode.C_VEL:
+        return f"$APO.CVEL = {approx.value:.1f}"
+    return None
 
 
 def _format_external_axis_motion_line(target: ExternalAxisProgramTarget) -> str:
@@ -308,25 +319,37 @@ def generate_kuka_src_text(
     header_text: str,
     settings: ProgramGenerationSettings | None,
     external_axes_order: list[str] | None = None,
+    tool_pose: Pose6 | None = None,
+    base_pose: Pose6 | None = None,
 ) -> str:
-    """Génère un .src KRL complet depuis un programme importé (non LOADED_KRL)."""
-    from models.types import Pose6
+    """Génère un .src KRL complet.
+
+    tool_pose : pose $TOOL effective (flange → TCP). Zéros si None.
+    base_pose : pose $BASE effective (repère choisi dans la table). Sinon base programme.
+    Le nom du DEF reprend le nom du programme (obligatoire côté KUKA).
+    """
     program_name = Path(program.source_path).stem if program.source_path else "PROG"
-    base_pose = program.program_base_pose
+    effective_base = base_pose if base_pose is not None else program.program_base_pose
+    effective_tool = tool_pose if tool_pose is not None else Pose6.zeros()
     n_normal = sum(1 for m in program.motions if m.role == MotionRole.NORMAL)
-    vel_cp = 0.2
-    for m in program.motions:
-        if m.cp_speed_mps is not None:
-            vel_cp = m.cp_speed_mps
-            break
+
+    constant_speed_mmps = settings.constant_speed_mmps if settings is not None else None
+    if constant_speed_mmps is not None:
+        vel_cp = float(constant_speed_mmps) / 1000.0
+    else:
+        vel_cp = 0.2
+        for m in program.motions:
+            if m.cp_speed_mps is not None:
+                vel_cp = m.cp_speed_mps
+                break
 
     # Substitution tokens dans le header
     resolved_header = (
         header_text
         .replace("{PROGRAM_NAME}", program_name)
         .replace("{DATE}", datetime.now().strftime("%Y-%m-%d %H:%M"))
-        .replace("{BASE}", _format_kuka_pose(base_pose))
-        .replace("{TOOL}", _format_kuka_pose(Pose6.zeros()))
+        .replace("{BASE}", _format_kuka_pose(effective_base))
+        .replace("{TOOL}", _format_kuka_pose(effective_tool))
         .replace("{VEL_CP}", f"{vel_cp:.3f}")
         .replace("{N_MOTIONS}", str(n_normal))
     )
@@ -338,12 +361,17 @@ def generate_kuka_src_text(
 
     lines.append(f"DEF {program_name}()")
     lines.append("")
-    lines.append(f"$BASE = {_format_kuka_pose(base_pose)}")
-    lines.append(f"$TOOL = {_format_kuka_pose(Pose6.zeros())}")
-    lines.append(f"$VEL.CP = {vel_cp:.4f}")
-    lines.append("")
 
     default_approx = settings.default_approximation if settings is not None else MotionApproximation.none()
+    apo_line = _format_apo_line(default_approx)
+    if apo_line is not None:
+        lines.append(apo_line)
+    lines.append(f"$VEL.CP = {vel_cp:.5f}")
+    lines.append("; ---- Setting reference (Base) ----")
+    lines.append(f"$BASE = {_format_kuka_pose(effective_base)}")
+    lines.append("; ---- Setting tool (TCP) ----")
+    lines.append(f"$TOOL = {_format_kuka_pose(effective_tool)}")
+    lines.append("")
 
     for motion in program.motions:
         if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
@@ -359,7 +387,7 @@ def generate_kuka_src_text(
             lines.append(_format_kuka_motion_line(motion, emit_approximation=True, approx_override=effective_approx))
 
     lines.append("")
-    lines.append(f"END")
+    lines.append("END")
     lines.append("")
     return "\n".join(lines)
 
@@ -369,6 +397,8 @@ def generate_program_to_path(
     program: RobotProgram,
     settings: ProgramGenerationSettings | None = None,
     external_axes_order: list[str] | None = None,
+    tool_pose: Pose6 | None = None,
+    base_pose: Pose6 | None = None,
 ) -> None:
     """Point d'entrée unique d'export KRL.
 
@@ -380,7 +410,7 @@ def generate_program_to_path(
             path,
             program.source_text,
             program.motions,
-            program.program_base_pose,
+            base_pose if base_pose is not None else program.program_base_pose,
         )
         return
 
@@ -388,5 +418,8 @@ def generate_program_to_path(
     if settings is not None:
         header_text = settings.header_text
 
-    src_text = generate_kuka_src_text(program, header_text, settings, external_axes_order)
+    src_text = generate_kuka_src_text(
+        program, header_text, settings, external_axes_order,
+        tool_pose=tool_pose, base_pose=base_pose,
+    )
     Path(path).write_text(src_text, encoding="utf-8")

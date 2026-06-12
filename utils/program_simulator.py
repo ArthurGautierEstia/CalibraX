@@ -54,6 +54,7 @@ class _MotionSimCacheEntry:
     signature: str              # hash des champs métier (hors approximation)
     start_joints: tuple         # joints au début du motion
     start_pose: Pose6           # pose TCP au début du motion
+    start_ext_values: tuple     # snapshot axes externes au début du motion
     relative_samples: list[ProgramSimulationSample]  # temps relatifs à partir de 0
     end_joints: tuple           # joints après le motion
     end_pose: Pose6             # pose TCP après le motion
@@ -114,6 +115,8 @@ class ProgramSimulator:
         self._active_cartesian_step_mm: float = self.MIN_CARTESIAN_SAMPLE_STEP_MM
         # État courant des axes externes pendant la simulation (axis_id, joint_idx) → valeur
         self._current_ext_axis_values: dict[tuple[str, int], float] = {}
+        # Snapshot des axes externes au démarrage de la passe (validation du cache incrémental)
+        self._initial_ext_snapshot: tuple[float, ...] = ()
 
     def simulate_program(self, program: RobotProgram, include_compensation: bool = True) -> ProgramSimulationResult:
         if program.brand != RobotProgramBrand.KUKA:
@@ -133,7 +136,7 @@ class ProgramSimulator:
             total_length_mm / max(1, self.MAX_TRAJECTORY_SAMPLES),
         )
         try:
-            nominal_samples = self._simulate_motion_list(program.motions)
+            nominal_samples = self._simulate_motion_list(program.motions, build_cache=True)
             warnings = list(program.warnings)
             cartesian_program: RobotProgram | None = None
             articular_program: RobotProgram | None = None
@@ -159,8 +162,6 @@ class ProgramSimulator:
                 compensation_computed=include_compensation or measured_dh is None,
             )
         finally:
-            # Reconstruire le cache après une simulation complète
-            self._motion_cache = self._build_motion_cache(program.motions, nominal_samples)
             self._cached_measured_dh = None
             self._cached_measured_dh_arrays = None
             self._cached_axis_reversed = None
@@ -200,61 +201,25 @@ class ProgramSimulator:
             warnings=list(program.warnings),
         )
 
-    def _build_motion_cache(
-        self,
-        motions: list[RobotProgramMotion],
-        all_samples: list[ProgramSimulationSample],
-    ) -> list[_MotionSimCacheEntry]:
-        """Construit le cache à partir des samples d'une simulation complète."""
-        if not motions:
-            return []
-
-        # Grouper les samples par source_line (correspondance approximative)
-        samples_by_line: dict[int, list[ProgramSimulationSample]] = defaultdict(list)
-        for s in all_samples:
-            samples_by_line[int(s.source_line)].append(s)
-
-        cache: list[_MotionSimCacheEntry] = []
-        prev_joints: tuple = tuple(self.robot_model.get_joints())
-        prev_pose: Pose6 = Pose6.zeros()
-
-        for motion in motions:
-            sig = _motion_signature(motion)
-            motion_samples = samples_by_line.get(int(motion.line_number), [])
-
-            if not motion_samples:
-                cache.append(_MotionSimCacheEntry(
-                    signature=sig,
-                    start_joints=prev_joints,
-                    start_pose=prev_pose,
-                    relative_samples=[],
-                    end_joints=prev_joints,
-                    end_pose=prev_pose,
-                    duration_s=0.0,
-                ))
-                continue
-
-            t0 = float(motion_samples[0].time_s)
-            relative = [
-                replace(s, time_s=float(s.time_s) - t0) for s in motion_samples
-            ]
-            end_joints = tuple(motion_samples[-1].joints_deg.to_list())
-            end_pose = motion_samples[-1].nominal_pose_base
-            duration_s = float(motion_samples[-1].time_s) - float(motion_samples[0].time_s)
-
-            cache.append(_MotionSimCacheEntry(
-                signature=sig,
-                start_joints=prev_joints,
-                start_pose=prev_pose,
-                relative_samples=relative,
-                end_joints=end_joints,
-                end_pose=end_pose,
-                duration_s=duration_s,
-            ))
-            prev_joints = end_joints
-            prev_pose = end_pose
-
-        return cache
+    @staticmethod
+    def _initial_motion_cache_entry(
+        motion: RobotProgramMotion,
+        initial_sample: ProgramSimulationSample,
+        joints_deg: list[float],
+        pose_base: Pose6,
+        ext_snapshot: tuple[float, ...],
+    ) -> _MotionSimCacheEntry:
+        """Entrée de cache pour la première motion (saut initial, durée nulle)."""
+        return _MotionSimCacheEntry(
+            signature=_motion_signature(motion),
+            start_joints=tuple(joints_deg),
+            start_pose=pose_base.copy(),
+            start_ext_values=ext_snapshot,
+            relative_samples=[initial_sample],
+            end_joints=tuple(joints_deg),
+            end_pose=pose_base.copy(),
+            duration_s=0.0,
+        )
 
     def _simulate_incremental(
         self,
@@ -268,18 +233,27 @@ class ProgramSimulator:
         current_time_s = 0.0
         all_samples: list[ProgramSimulationSample] = []
 
+        current_ext: tuple[float, ...] = self._initial_ext_snapshot
+
         # Redimensionner le cache si le nombre de motions a changé
         while len(self._motion_cache) < len(motions):
             self._motion_cache.append(_MotionSimCacheEntry(
-                signature="", start_joints=(), start_pose=Pose6.zeros(),
+                signature="", start_joints=(), start_pose=Pose6.zeros(), start_ext_values=(),
                 relative_samples=[], end_joints=(), end_pose=Pose6.zeros(), duration_s=0.0,
             ))
 
+        new_cache: list[_MotionSimCacheEntry] = []
         if start_state.initial_sample_motion is not None:
             initial_tool = self._tool_from_pose(start_state.initial_sample_motion.tool_pose)
-            all_samples.append(self._build_sample(0.0, start_state.initial_sample_motion, current_joints, initial_tool))
-
-        new_cache: list[_MotionSimCacheEntry] = []
+            initial_sample = self._build_sample(0.0, start_state.initial_sample_motion, current_joints, initial_tool)
+            all_samples.append(initial_sample)
+            new_cache.append(self._initial_motion_cache_entry(
+                start_state.initial_sample_motion,
+                initial_sample,
+                current_joints,
+                current_pose,
+                current_ext,
+            ))
 
         for idx, motion in enumerate(start_state.remaining_motions):
             actual_idx = idx + (1 if start_state.initial_sample_motion is not None else 0)
@@ -293,6 +267,7 @@ class ProgramSimulator:
                 and cached.signature == sig
                 and cached.start_joints == start_joints_tuple
                 and cached.start_pose == current_pose
+                and cached.start_ext_values == current_ext
             )
 
             if cache_valid and cached is not None:
@@ -308,15 +283,18 @@ class ProgramSimulator:
                 # Synchroniser l'état des axes externes depuis le dernier sample du cache
                 if cached.relative_samples and cached.relative_samples[-1].ext_axis_values:
                     self._update_ext_axis_state_from_snapshot(cached.relative_samples[-1].ext_axis_values)
+                    current_ext = cached.relative_samples[-1].ext_axis_values
                 new_cache.append(cached)
                 continue
 
             # Resimulation nécessaire
             motion_tool = self._tool_from_pose(motion.tool_pose)
+            self._update_ext_axis_state_from_snapshot(current_ext)
             generated = self._simulate_motion(motion, current_pose, current_joints, current_time_s, motion_tool)
 
             if generated:
-                t0 = float(generated[0].time_s)
+                # Temps relatifs au DÉBUT du mouvement (cohérent avec _simulate_motion_list)
+                t0 = float(current_time_s)
                 relative = [replace(s, time_s=float(s.time_s) - t0) for s in generated]
                 end_joints = tuple(generated[-1].joints_deg.to_list())
                 end_pose = generated[-1].nominal_pose_base
@@ -331,6 +309,7 @@ class ProgramSimulator:
                     signature=sig,
                     start_joints=start_joints_tuple,
                     start_pose=current_pose,
+                    start_ext_values=current_ext,
                     relative_samples=relative,
                     end_joints=end_joints,
                     end_pose=end_pose,
@@ -340,11 +319,13 @@ class ProgramSimulator:
                 current_joints = list(end_joints)
                 current_pose = end_pose
                 current_time_s = float(generated[-1].time_s)
+                current_ext = generated[-1].ext_axis_values
             else:
                 new_entry = _MotionSimCacheEntry(
                     signature=sig,
                     start_joints=start_joints_tuple,
                     start_pose=current_pose,
+                    start_ext_values=current_ext,
                     relative_samples=[],
                     end_joints=start_joints_tuple,
                     end_pose=current_pose,
@@ -457,26 +438,47 @@ class ProgramSimulator:
     # Simulation de la liste de mouvements
     # =========================================================================
 
-    def _simulate_motion_list(self, motions: list[RobotProgramMotion]) -> list[ProgramSimulationSample]:
+    def _simulate_motion_list(
+        self,
+        motions: list[RobotProgramMotion],
+        build_cache: bool = False,
+    ) -> list[ProgramSimulationSample]:
+        """Simulation séquentielle segment par segment.
+
+        build_cache=True : construit le cache incrémental pendant la passe (frontières
+        de segments exactes — l'état robot/TCP/axes externes est connu au début de
+        chaque mouvement, ce qui permet ensuite de ne recalculer que le nécessaire).
+        """
         start_state = self._resolve_program_start_state(motions)
         current_joints_deg = start_state.initial_joints_deg.to_list()
         current_pose_base = start_state.initial_pose_base.copy()
         current_time_s = 0.0
+        current_ext = self._initial_ext_snapshot
         samples: list[ProgramSimulationSample] = []
+        cache: list[_MotionSimCacheEntry] = []
 
         if start_state.initial_sample_motion is not None:
             initial_motion_tool = self._tool_from_pose(start_state.initial_sample_motion.tool_pose)
-            samples.append(
-                self._build_sample(
-                    0.0,
-                    start_state.initial_sample_motion,
-                    current_joints_deg,
-                    initial_motion_tool,
-                )
+            initial_sample = self._build_sample(
+                0.0,
+                start_state.initial_sample_motion,
+                current_joints_deg,
+                initial_motion_tool,
             )
+            samples.append(initial_sample)
+            if build_cache:
+                cache.append(self._initial_motion_cache_entry(
+                    start_state.initial_sample_motion,
+                    initial_sample,
+                    current_joints_deg,
+                    current_pose_base,
+                    current_ext,
+                ))
 
         for motion in start_state.remaining_motions:
             motion_tool = self._tool_from_pose(motion.tool_pose)
+            start_joints_tuple = tuple(current_joints_deg)
+            start_pose = current_pose_base.copy()
             generated_samples = self._simulate_motion(
                 motion,
                 current_pose_base,
@@ -485,11 +487,41 @@ class ProgramSimulator:
                 motion_tool,
             )
             if not generated_samples:
+                if build_cache:
+                    cache.append(_MotionSimCacheEntry(
+                        signature=_motion_signature(motion),
+                        start_joints=start_joints_tuple,
+                        start_pose=start_pose,
+                        start_ext_values=current_ext,
+                        relative_samples=[],
+                        end_joints=start_joints_tuple,
+                        end_pose=start_pose,
+                        duration_s=0.0,
+                    ))
                 continue
+            if build_cache:
+                # Temps relatifs au DÉBUT du mouvement (le premier sample est à start+dt)
+                t0 = float(current_time_s)
+                cache.append(_MotionSimCacheEntry(
+                    signature=_motion_signature(motion),
+                    start_joints=start_joints_tuple,
+                    start_pose=start_pose,
+                    start_ext_values=current_ext,
+                    relative_samples=[
+                        replace(s, time_s=float(s.time_s) - t0) for s in generated_samples
+                    ],
+                    end_joints=tuple(generated_samples[-1].joints_deg.to_list()),
+                    end_pose=generated_samples[-1].nominal_pose_base.copy(),
+                    duration_s=float(generated_samples[-1].time_s) - t0,
+                ))
             samples.extend(generated_samples)
             current_joints_deg = generated_samples[-1].joints_deg.to_list()
             current_pose_base = generated_samples[-1].nominal_pose_base.copy()
             current_time_s = float(generated_samples[-1].time_s)
+            current_ext = generated_samples[-1].ext_axis_values
+
+        if build_cache:
+            self._motion_cache = cache
         return samples
 
     def _resolve_program_start_state(self, motions: list[RobotProgramMotion]) -> _ProgramStartState:
@@ -802,6 +834,9 @@ class ProgramSimulator:
         T_world_robotBase = self._world_robot_base_for(self._current_ext_axis_values)
         T_base_tcp = pose_to_matrix(nominal_pose_base)
         nominal_pose_world = matrix_to_pose(T_world_robotBase @ T_base_tcp)
+        measured_pose_world: Pose6 | None = None
+        if measured_pose_base is not None:
+            measured_pose_world = matrix_to_pose(T_world_robotBase @ pose_to_matrix(measured_pose_base))
         return ProgramSimulationSample(
             time_s=float(time_s),
             motion_mode=motion.mode,
@@ -811,16 +846,20 @@ class ProgramSimulator:
             measured_pose_base=measured_pose_base,
             ext_axis_values=self._build_ext_axis_snapshot(),
             nominal_pose_world=nominal_pose_world,
+            measured_pose_world=measured_pose_world,
         )
 
     def _init_ext_axis_state(self) -> None:
         self._current_ext_axis_values = {}
         if self.external_axes_model is None:
+            self._initial_ext_snapshot = ()
             return
-        # Initialiser à zéro (home programme) pour une simulation déterministe et auto-portée
+        # Les axes externes démarrent à leur position courante (contrairement au robot
+        # qui repart de HOME) : un mouvement EXTERNAL_AXIS part de la position actuelle.
         for axis in self.external_axes_model.get_axes():
-            for joint_idx in range(len(axis.joints)):
-                self._current_ext_axis_values[(axis.id, joint_idx)] = 0.0
+            for joint_idx, joint in enumerate(axis.joints):
+                self._current_ext_axis_values[(axis.id, joint_idx)] = float(joint.value)
+        self._initial_ext_snapshot = self._build_ext_axis_snapshot()
 
     def _build_ext_axis_snapshot(self) -> tuple[float, ...]:
         if self.external_axes_model is None:

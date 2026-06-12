@@ -18,8 +18,10 @@ class ProgramGenerationSettings:
     )
     header_text: str = ""
     default_approximation: MotionApproximation = field(
-        default_factory=MotionApproximation.none
+        default_factory=lambda: MotionApproximation(mode=ApproximationMode.C_DIS, value=1.0)
     )
+    # Vitesse constante imposée le long de la trajectoire (mm/s). None = vitesses du programme.
+    constant_speed_mmps: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -28,11 +30,13 @@ class ProgramGenerationSettings:
             "retract": _approach_retract_to_dict(self.retract),
             "header_text": self.header_text,
             "default_approximation": _approximation_to_dict(self.default_approximation),
+            "constant_speed_mmps": self.constant_speed_mmps,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ProgramGenerationSettings:
         payload = data if isinstance(data, dict) else {}
+        raw_speed = payload.get("constant_speed_mmps")
         return cls(
             home_enabled=bool(payload.get("home_enabled", True)),
             approach=_approach_retract_from_dict(
@@ -42,7 +46,12 @@ class ProgramGenerationSettings:
                 payload.get("retract"), default=ApproachRetractConfig.default_retract()
             ),
             header_text=str(payload.get("header_text", "")),
-            default_approximation=_approximation_from_dict(payload.get("default_approximation")),
+            default_approximation=(
+                _approximation_from_dict(payload["default_approximation"])
+                if "default_approximation" in payload
+                else MotionApproximation(mode=ApproximationMode.C_DIS, value=1.0)
+            ),
+            constant_speed_mmps=float(raw_speed) if raw_speed is not None else None,
         )
 
 

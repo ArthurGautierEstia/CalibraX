@@ -27,6 +27,10 @@ class RobotProgramTargetType(Enum):
 class ProgramBaseSource(str, Enum):
     MANUAL = "MANUAL"
     WORKPIECE = "WORKPIECE"
+    WORLD = "WORLD"
+    ROBOT = "ROBOT"
+    PROGRAM_FILE = "PROGRAM_FILE"
+    EXTERNAL_AXIS = "EXTERNAL_AXIS"
 
 
 class ProgramCompensationOutputMode(Enum):
@@ -99,6 +103,7 @@ class ProgramSimulationSample:
     measured_pose_base: Pose6 | None = None
     ext_axis_values: tuple[float, ...] = field(default_factory=tuple)
     nominal_pose_world: Pose6 | None = None
+    measured_pose_world: Pose6 | None = None
 
 
 @dataclass(frozen=True)

@@ -211,6 +211,21 @@ class ProgramGenerationWidget(QWidget):
         group_layout.addWidget(self._approach_section)
         group_layout.addWidget(self._retract_section)
 
+        speed_box = QGroupBox("Vitesse trajectoire")
+        speed_form = QFormLayout(speed_box)
+        speed_form.setContentsMargins(6, 4, 6, 4)
+        self._cb_constant_speed = QCheckBox("Vitesse constante le long de la trajectoire")
+        self._spin_constant_speed = QDoubleSpinBox()
+        self._spin_constant_speed.setRange(0.1, 10000.0)
+        self._spin_constant_speed.setDecimals(1)
+        self._spin_constant_speed.setSuffix(" mm/s")
+        self._spin_constant_speed.setValue(200.0)
+        self._spin_constant_speed.setKeyboardTracking(False)
+        self._spin_constant_speed.setEnabled(False)
+        speed_form.addRow(self._cb_constant_speed)
+        speed_form.addRow("Vitesse :", self._spin_constant_speed)
+        group_layout.addWidget(speed_box)
+
         approx_box = QGroupBox("Approximation par défaut")
         approx_form = QFormLayout(approx_box)
         approx_form.setContentsMargins(6, 4, 6, 4)
@@ -277,6 +292,12 @@ class ProgramGenerationWidget(QWidget):
         self._spin_approx_value.editingFinished.connect(self._emit_settings_changed)
         self._approach_section.changed.connect(self._emit_settings_changed)
         self._retract_section.changed.connect(self._emit_settings_changed)
+        self._cb_constant_speed.toggled.connect(self._on_constant_speed_toggled)
+        self._spin_constant_speed.valueChanged.connect(self._emit_settings_changed)
+
+    def _on_constant_speed_toggled(self, checked: bool) -> None:
+        self._spin_constant_speed.setEnabled(checked)
+        self._emit_settings_changed()
 
     def _on_header_toggled(self, checked: bool) -> None:
         self._header_zone.setVisible(checked)
@@ -310,6 +331,11 @@ class ProgramGenerationWidget(QWidget):
                 mode=ApproximationMode(self._combo_approx_mode.currentData()),
                 value=self._spin_approx_value.value(),
             ),
+            constant_speed_mmps=(
+                float(self._spin_constant_speed.value())
+                if self._cb_constant_speed.isChecked()
+                else None
+            ),
         )
 
     def set_settings(self, settings: ProgramGenerationSettings) -> None:
@@ -320,6 +346,10 @@ class ProgramGenerationWidget(QWidget):
             self._retract_section.set_config(settings.retract)
             _set_combo(self._combo_approx_mode, settings.default_approximation.mode.value)
             self._spin_approx_value.setValue(settings.default_approximation.value)
+            self._cb_constant_speed.setChecked(settings.constant_speed_mmps is not None)
+            if settings.constant_speed_mmps is not None:
+                self._spin_constant_speed.setValue(float(settings.constant_speed_mmps))
+            self._spin_constant_speed.setEnabled(settings.constant_speed_mmps is not None)
         finally:
             self._updating = False
 

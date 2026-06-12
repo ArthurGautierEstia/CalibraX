@@ -38,8 +38,6 @@ from utils.mgi import RobotTool
 from utils.aptsource_parser import load_aptsource_program
 from utils.catnc_parser import load_catnc_program
 from utils.robot_program_kuka import export_kuka_src_program, generate_program_to_path, load_kuka_src_program
-from widgets.program_view.program_base_dialog import ProgramBaseDialog
-from utils.trajectory_keypoint_utils import resolve_keypoint_xyz
 from widgets.program_view.program_target_dialog import ProgramTargetDialog
 from widgets.program_view.program_keypoints_widget import ProgramKeypointsWidget
 from widgets.program_view.program_playback_widget import ProgramPlaybackWidget
@@ -114,6 +112,15 @@ class ProgramController:
             workspace_model=self.workspace_model,
             workpiece_model=self.workpiece_controller.workpiece_model,
         )
+        # Simulateur dédié aux variantes dérivées (mode opposé, compensation) pour
+        # préserver le cache incrémental du simulateur principal.
+        self._derived_simulator = ProgramSimulator(
+            self.robot_model,
+            self.tool_model,
+            self.external_axes_model,
+            workspace_model=self.workspace_model,
+            workpiece_model=self.workpiece_controller.workpiece_model,
+        )
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
 
@@ -135,8 +142,16 @@ class ProgramController:
         self._base_source: ProgramBaseSource = ProgramBaseSource.MANUAL
         self._base_offset: Pose6 = Pose6.zeros()
         self._manual_base: Pose6 = Pose6.zeros()
-        self._tool_source: str = "CURRENT"
+        self._file_base_pose: Pose6 = Pose6.zeros()  # base lue dans le fichier programme
+        self._base_ext_axis_id: str | None = None    # axe externe choisi comme référence base
+        self._tool_source: str = "CURRENT"           # CURRENT | PROGRAM | CUSTOM
+        self._custom_tool_pose: Pose6 = Pose6.zeros()
         self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
+        # Indices des motions modifiés depuis la dernière simulation (None = tout resimuler)
+        self._dirty_motion_indices: set[int] | None = None
+        # Guard : True pendant l'application d'un état de playback (les signaux
+        # axes externes / pièce ne doivent alors PAS invalider la simulation)
+        self._suppress_context_invalidation = False
         self._nominal_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._measured_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         self._compensated_segments_cache: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
@@ -184,12 +199,12 @@ class ProgramController:
         self.config_widget.add_requested.connect(self._on_program_add_requested)
         self.config_widget.edit_requested.connect(self._on_program_edit_requested)
         self.config_widget.delete_requested.connect(self._on_program_delete_requested)
-        self.config_widget.editProgramBaseRequested.connect(self._on_edit_program_base_requested)
         self.config_widget.editToolOrientationRequested.connect(self._on_edit_tool_orientation_requested)
         self.config_widget.programSettingsRequested.connect(self._on_program_settings_requested)
         self.config_widget.cartesianDisplayFrameChanged.connect(self._on_program_display_frame_changed)
-        self.config_widget.toolSourceChanged.connect(self._on_tool_source_changed)
         self.config_widget.motionModeChanged.connect(self._on_motion_mode_changed)
+        self.settings_dialog.base_section.baseConfigChanged.connect(self._on_settings_base_changed)
+        self.settings_dialog.tool_section.toolConfigChanged.connect(self._on_settings_tool_changed)
         self.config_widget.targetModeChanged.connect(self._on_target_mode_changed)
         self.viewer3d_controller.accent_color_changed.connect(self._on_accent_color_changed)
         self.graphs_widget.error_graph_visibility_changed.connect(self._on_error_graph_visibility_changed)
@@ -284,11 +299,18 @@ class ProgramController:
         if self.current_program is None:
             return
         try:
-            generation_settings = getattr(self, "_generation_settings", None)
+            generation = self._program_for_generation()
+            if generation is None:
+                return
+            generation_program, base_for_krl = generation
+            external_axes_order = [axis.id for axis in self.external_axes_model.get_axes()]
             generate_program_to_path(
                 file_path,
-                self.current_program,
-                generation_settings,
+                generation_program,
+                self._generation_settings,
+                external_axes_order,
+                tool_pose=self._generation_tool_pose(),
+                base_pose=base_for_krl,
             )
         except OSError as exc:
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible d'enregistrer le programme.\n{exc}")
@@ -313,17 +335,18 @@ class ProgramController:
                 loaded = load_kuka_src_program(file_path)
 
             is_imported = loaded.origin in {ProgramOrigin.IMPORTED_APT, ProgramOrigin.IMPORTED_CATNC}
+            self._file_base_pose = loaded.program_base_pose.copy()
 
             if is_imported:
                 # Programmes FAO : base pièce, outil courant
                 self._base_source = ProgramBaseSource.WORKPIECE
                 self._tool_source = "CURRENT"
-                self.config_widget.set_tool_source("CURRENT", emit_signal=False)
                 self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
             else:
+                # Programmes KRL : base et outil lus dans le fichier
+                self._base_source = ProgramBaseSource.PROGRAM_FILE
                 self._manual_base = loaded.program_base_pose.copy()
                 self._tool_source = "PROGRAM"
-                self.config_widget.set_tool_source("PROGRAM", emit_signal=False)
                 self.config_widget.set_cartesian_display_frame(ReferenceFrame.PROGRAM.value, emit_signal=False)
 
             effective = self._compute_effective_base()
@@ -335,7 +358,9 @@ class ProgramController:
             self._program_dirty = False
             self._clean_status_text = ProgramController.STATUS_LOADED
             self._apply_program_tool()
-            self._recompute_current_program()
+            self._sync_settings_dialog()
+            # Import des cibles uniquement : la trajectoire n'est calculée qu'au clic "Simuler"
+            self._reset_for_loaded_program()
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self.program_view, "Programme robot", f"Impossible de charger le programme.\n{exc}")
             return
@@ -350,6 +375,22 @@ class ProgramController:
             self._recompute_current_program(reset_modes=False)
         finally:
             self.viewer3d_controller.end_loading_feedback()
+
+    def _reset_for_loaded_program(self) -> None:
+        """Après import : affiche les cibles (table + viewer) SANS calculer la trajectoire.
+
+        La simulation n'est lancée qu'au clic "Simuler".
+        """
+        self._stop_playback()
+        self._current_time_s = 0.0
+        self._dirty_motion_indices = None
+        self._invalidate_simulation_results()
+        self.config_widget.set_target_mode("THEORETICAL", emit_signal=False)
+        self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
+            self._build_display_keypoints()
+        )
+        self._refresh_view()
+        self._krl_preview_timer.start()
 
     
 
@@ -404,9 +445,10 @@ class ProgramController:
             self._refresh_view()
             return
 
-        if self._base_source == ProgramBaseSource.WORKPIECE:
-            effective = self._compute_effective_base()
-            self._update_program_base_pose(effective)
+        # Base effective recalculée au moment de la simulation (position courante
+        # des axes externes / de la pièce au démarrage)
+        effective = self._compute_effective_base()
+        self._update_program_base_pose(effective)
 
         simulation_program = self._get_simulation_program()
         if simulation_program is None:
@@ -422,28 +464,27 @@ class ProgramController:
 
         program_type = self._detect_program_type()
 
-        if program_type == "CARTESIAN":
-            self._nominal_cartesian_result = self.program_simulator.simulate_program(
+        # Simulation principale : incrémentale si seuls quelques mouvements ont changé,
+        # complète sinon. Le résultat du mode opposé (articulaire/cartésien) est calculé
+        # à la demande lors du changement de mode (lazy) pour ne pas doubler le coût.
+        if self._dirty_motion_indices is None:
+            main_result = self.program_simulator.simulate_program(
                 simulation_program, include_compensation=False
             )
-            self._articular_program = self._build_articular_program(simulation_program)
-            if self._articular_program:
-                self._nominal_articular_result = self.program_simulator.simulate_program(
-                    self._articular_program, include_compensation=False
-                )
-            else:
-                self._nominal_articular_result = None
         else:
-            self._nominal_articular_result = self.program_simulator.simulate_program(
-                simulation_program, include_compensation=False
+            main_result = self.program_simulator.simulate_program_incremental(
+                simulation_program, sorted(self._dirty_motion_indices)
             )
-            self._cartesian_program = self._build_cartesian_program(simulation_program)
-            if self._cartesian_program:
-                self._nominal_cartesian_result = self.program_simulator.simulate_program(
-                    self._cartesian_program, include_compensation=False
-                )
-            else:
-                self._nominal_cartesian_result = None
+        self._dirty_motion_indices = set()
+
+        if program_type == "CARTESIAN":
+            self._nominal_cartesian_result = main_result
+            self._nominal_articular_result = None
+            self._articular_program = None
+        else:
+            self._nominal_articular_result = main_result
+            self._nominal_cartesian_result = None
+            self._cartesian_program = None
 
         self._compensated_cartesian_result = None
         self._compensated_articular_result = None
@@ -461,6 +502,12 @@ class ProgramController:
             active_motion_mode = self.config_widget.get_motion_mode()
             active_target_mode = self.config_widget.get_target_mode()
 
+        # Si le mode affiché ne correspond pas au type du programme, dériver le
+        # résultat manquant maintenant (sinon affichage vide).
+        self._simulation_dirty = False
+        if active_motion_mode != program_type:
+            self._ensure_motion_mode_results(active_motion_mode)
+
         self._update_current_result_from_modes(active_target_mode, active_motion_mode)
 
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
@@ -468,14 +515,12 @@ class ProgramController:
         )
 
         _theo_samples = self._get_samples_for_modes("THEORETICAL", active_motion_mode)
-        _inv_base = self._inv_robot_base_matrix()
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             _theo_samples,
             self._get_nominal_color(),
             self.MEASURED_COLOR,
-            inv_robot_base_matrix=_inv_base,
         )
-        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples, _inv_base)
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples)
         self._compensated_segments_cache = []
         self._simulation_dirty = False
 
@@ -514,7 +559,6 @@ class ProgramController:
             self.actions_widget.set_export_enabled(False)
             self.actions_widget.set_simulation_enabled(False)
             self.actions_widget.set_compensation_enabled(False)
-            self.config_widget.set_program_base_edit_enabled(False)
             self.config_widget.set_tool_orientation_edit_enabled(False)
             return
 
@@ -542,7 +586,6 @@ class ProgramController:
         self.actions_widget.set_compensated_checkbox_enabled(
             measured_model_available and self._compensation_computed
         )
-        self.config_widget.set_program_base_edit_enabled(True)
         self.config_widget.set_tool_orientation_edit_enabled(
             self._count_linear_cartesian_targets(self.current_program) > 0
         )
@@ -551,11 +594,14 @@ class ProgramController:
 
     def _update_ext_axes_table_columns(self) -> None:
         col_headers: list[str] = []
+        axes_for_dialog: list[tuple[str, str]] = []
         for axis in self.external_axes_model.get_axes():
+            axes_for_dialog.append((axis.id, axis.name))
             for joint_idx, joint in enumerate(axis.joints):
                 label = f"{axis.name} J{joint_idx + 1} ({joint.unit()})"
                 col_headers.append(label)
         self.config_widget.setup_external_axes_columns(col_headers)
+        self.settings_dialog.base_section.set_external_axes(axes_for_dialog)
 
     def _refresh_keypoint_table(self) -> None:
 
@@ -726,44 +772,42 @@ class ProgramController:
             segments.extend(self._compensated_segments_cache)
 
         if segments:
-            self.viewer3d_controller.set_trajectory_path_segments(segments)
+            self.viewer3d_controller.set_trajectory_path_segments(segments, in_world=True)
         else:
             self.viewer3d_controller.clear_trajectory_path()
 
 
 
     def _refresh_viewer_keypoints(self) -> None:
-
+        """Affiche les cibles en repère MONDE (position actuelle des axes externes)."""
         if not self._display_keypoints:
             self.viewer3d_controller.clear_trajectory_keypoints()
             return
 
         points_xyz: list[list[float]] = []
-        robot_base_transform = self.workspace_model.get_robot_base_transform_world()
+        T_world_robot = self._robot_base_world_matrix()
 
         for row, (keypoint, keypoint_tool) in enumerate(zip(self._display_keypoints, self._display_keypoint_tools)):
-            resolved_keypoint = self._viewer_keypoint_for_row(row, keypoint)
-            point_xyz = resolve_keypoint_xyz(
-                self.robot_model,
-                resolved_keypoint,
-                tool=keypoint_tool,
-                robot_base_pose_world=robot_base_transform,
+            if keypoint.target_type == KeypointTargetType.JOINT:
+                fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target.to_list(), tool=keypoint_tool)
+                if fk_result is None:
+                    continue
+                pose_base = fk_result.dh_pose
+            else:
+                pose_base = self._target_pose_base_for_row(row)
+                if pose_base is None:
+                    continue
 
-            )
-
-            if point_xyz is None:
-
-                continue
-
-            points_xyz.append(point_xyz.to_list())
+            world_xyz = T_world_robot @ np.array([pose_base.x, pose_base.y, pose_base.z, 1.0], dtype=float)
+            points_xyz.append([float(world_xyz[0]), float(world_xyz[1]), float(world_xyz[2])])
 
         if not points_xyz:
-
             self.viewer3d_controller.clear_trajectory_keypoints()
-
             return
 
-        self.viewer3d_controller.set_trajectory_keypoints(points_xyz, self._selected_keypoint_index, None)
+        self.viewer3d_controller.set_trajectory_keypoints(
+            points_xyz, self._selected_keypoint_index, None, in_world=True
+        )
 
 
 
@@ -868,15 +912,20 @@ class ProgramController:
         sample_index = self._sample_index_at_time(self._current_time_s)
         sample = samples[sample_index]
         self.robot_model.set_joints(sample.joints_deg.to_list())
-        # Animer les axes externes depuis les valeurs stockées dans le sample
+        # Animer les axes externes depuis les valeurs stockées dans le sample.
+        # Guard : ces mutations ne doivent pas invalider la simulation en cours de lecture.
         if sample.ext_axis_values:
-            axes = self.external_axes_model.get_axes()
-            idx = 0
-            for axis in axes:
-                for joint_idx in range(len(axis.joints)):
-                    if idx < len(sample.ext_axis_values):
-                        self.external_axes_model.set_axis_joint_value(axis.id, joint_idx, sample.ext_axis_values[idx])
-                    idx += 1
+            self._suppress_context_invalidation = True
+            try:
+                axes = self.external_axes_model.get_axes()
+                idx = 0
+                for axis in axes:
+                    for joint_idx in range(len(axis.joints)):
+                        if idx < len(sample.ext_axis_values):
+                            self.external_axes_model.set_axis_joint_value(axis.id, joint_idx, sample.ext_axis_values[idx])
+                        idx += 1
+            finally:
+                self._suppress_context_invalidation = False
         # Mise à jour directe du viewer (chemin léger, bypasse _refresh_robot_state_items)
         if self.viewer3d_controller.is_playback_active():
             self.viewer3d_controller.update_robot_poses_for_playback()
@@ -1079,8 +1128,12 @@ class ProgramController:
             ref = self._display_target_refs[row]
             motion = self.current_program.motions[ref.motion_index]
             if motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS and motion.external_axis_target is not None:
-                for jv in motion.external_axis_target.values:
-                    self.external_axes_model.set_axis_joint_value(jv.axis_id, jv.joint_index, jv.value)
+                self._suppress_context_invalidation = True
+                try:
+                    for jv in motion.external_axis_target.values:
+                        self.external_axes_model.set_axis_joint_value(jv.axis_id, jv.joint_index, jv.value)
+                finally:
+                    self._suppress_context_invalidation = False
                 return
 
         keypoint = self._display_keypoints[row]
@@ -1133,25 +1186,37 @@ class ProgramController:
 
 
 
-    def _get_simulation_program(self) -> RobotProgram | None:
-        if self.current_program is None:
+    def _effective_tool_pose(self) -> Pose6 | None:
+        """Pose outil effective (flange → TCP). None = conserver l'outil du programme."""
+        if self._tool_source == "CURRENT":
+            return self.program_simulator._tool_to_pose(self.tool_model.get_tool())
+        if self._tool_source == "CUSTOM":
+            return self._custom_tool_pose.copy()
+        return None  # PROGRAM
 
+    def _get_simulation_program(self) -> RobotProgram | None:
+        """Programme prêt pour la simulation : outil effectif + vitesse constante éventuelle."""
+        if self.current_program is None:
             return None
 
-        
-
-        if self._tool_source == "CURRENT":
-            current_tool = self.tool_model.get_tool()
-            tool_pose = self.program_simulator._tool_to_pose(current_tool)
-            if tool_pose is None:
-                return self.current_program
-            motions_with_robot_tool = []
-            for motion in self.current_program.motions:
-                updated_motion = replace(motion, tool_pose=tool_pose)
-                motions_with_robot_tool.append(updated_motion)
-            return replace(self.current_program, motions=motions_with_robot_tool)
-        else:
+        tool_pose = self._effective_tool_pose()
+        constant_speed_mmps = self._generation_settings.constant_speed_mmps
+        if tool_pose is None and constant_speed_mmps is None:
             return self.current_program
+
+        updated_motions: list[RobotProgramMotion] = []
+        for motion in self.current_program.motions:
+            updated_motion = motion
+            if tool_pose is not None:
+                updated_motion = replace(updated_motion, tool_pose=tool_pose.copy())
+            if (
+                constant_speed_mmps is not None
+                and motion.role == MotionRole.NORMAL
+                and motion.mode in {RobotProgramMotionMode.LINEAR, RobotProgramMotionMode.CIRCULAR}
+            ):
+                updated_motion = replace(updated_motion, cp_speed_mps=float(constant_speed_mmps) / 1000.0)
+            updated_motions.append(updated_motion)
+        return replace(self.current_program, motions=updated_motions)
 
 
 
@@ -1259,47 +1324,41 @@ class ProgramController:
         next_row = min(row, len(self._display_target_refs) - 1)
         self.config_widget.select_row(next_row)
 
-    def _on_edit_program_base_requested(self) -> None:
+    def _sync_settings_dialog(self) -> None:
+        """Pousse l'état courant (base, outil) vers les sections du dialog paramètres."""
+        self.settings_dialog.base_section.set_base_config(
+            self._base_source, self._base_ext_axis_id, self._manual_base, self._base_offset
+        )
+        self.settings_dialog.tool_section.set_tool_config(self._tool_source, self._custom_tool_pose)
+
+    def _on_settings_base_changed(self) -> None:
+        prev_effective = self._compute_effective_base()
+        source, ext_axis_id, manual_base, offset = self.settings_dialog.base_section.get_base_config()
+        self._base_source = source
+        self._base_ext_axis_id = ext_axis_id
+        self._manual_base = manual_base
+        self._base_offset = offset
 
         if self.current_program is None:
             return
 
-        prev_effective = self._compute_effective_base()
-
-        T_wp_robot = self.workpiece_controller.compute_workpiece_frame_in_robot()
-        workpiece_in_robot = matrix_to_pose(np.array(T_wp_robot, dtype=float))
-        dialog = ProgramBaseDialog(
-            base_source=self._base_source,
-            manual_base=self._manual_base,
-            base_offset=self._base_offset,
-            workpiece_frame_in_robot=workpiece_in_robot,
-            parent=self.program_view,
-        )
-        dialog.base_pose_preview_changed.connect(self._on_program_base_preview_changed)
-
-        if dialog.exec() != dialog.DialogCode.Accepted:
-            self._update_program_base_preview(prev_effective)
-
-            return
-
-        new_source, new_manual_base, new_offset = dialog.get_base_config()
-        self._base_source = new_source
-        self._manual_base = new_manual_base
-        self._base_offset = new_offset
         updated_base_pose = self._compute_effective_base()
-
         if updated_base_pose == prev_effective:
-
             return
 
-        self._invalidate_simulation_results()
+        # Mise à jour live des cibles dans le viewer pendant l'édition (dialog non bloquant)
+        self._update_program_base_preview(updated_base_pose)
         self._program_dirty = True
+        self._mark_simulation_dirty()
         self._refresh_status()
         self._refresh_program_save_status()
+        self._krl_preview_timer.start()
 
-    def _on_program_base_preview_changed(self, base_pose: Pose6) -> None:
-
-        self._update_program_base_preview(base_pose)
+    def _on_settings_tool_changed(self) -> None:
+        tool_source, custom_pose = self.settings_dialog.tool_section.get_tool_config()
+        self._custom_tool_pose = custom_pose
+        self._on_tool_source_changed(tool_source)
+        self._krl_preview_timer.start()
 
     def _on_edit_tool_orientation_requested(self) -> None:
 
@@ -1342,6 +1401,7 @@ class ProgramController:
         self._refresh_program_save_status()
 
     def _on_program_settings_requested(self) -> None:
+        self._sync_settings_dialog()
         self.settings_dialog.show()
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
@@ -1443,45 +1503,16 @@ class ProgramController:
         )
 
     def _refresh_program_after_target_change(self, dirty_indices: list[int] | None = None) -> None:
-        _ = dirty_indices  # le recalcul incrémental n'est plus déclenché à l'édition
+        # Pas de recalcul à l'édition : on mémorise les indices modifiés pour que le
+        # prochain clic "Simuler" ne recalcule que les segments nécessaires.
         self._program_dirty = True
-        self._mark_simulation_dirty()
+        self._mark_simulation_dirty(dirty_indices)
         self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = self._build_display_keypoints()
         self._refresh_keypoint_table()
         self._refresh_viewer_keypoints()
         self._refresh_status()
         self._refresh_program_save_status()
         self._refresh_program_info()
-
-    def _run_incremental_recompute(self, dirty_indices: list[int]) -> None:
-        if self.current_program is None:
-            return
-        self._stop_playback()
-        self._current_time_s = 0.0
-        simulation_program = self._get_simulation_program()
-        if simulation_program is None:
-            return
-        incremental_result = self.program_simulator.simulate_program_incremental(
-            simulation_program, dirty_indices
-        )
-        self._nominal_cartesian_result = incremental_result
-        self._nominal_articular_result = None
-        self._compensated_cartesian_result = None
-        self._compensated_articular_result = None
-        self._compensation_computed = False
-        self.actions_widget.set_compensated_checkbox_enabled(False)
-        self.current_result = incremental_result
-        _theo_samples = incremental_result.nominal_samples
-        _inv_base = self._inv_robot_base_matrix()
-        self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
-            _theo_samples, self._get_nominal_color(), self.MEASURED_COLOR,
-            inv_robot_base_matrix=_inv_base,
-        )
-        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples, _inv_base)
-        self._compensated_segments_cache = []
-        self._simulation_dirty = False
-        self.actions_widget.set_compensation_enabled(self.current_program is not None)
-        self._refresh_viewer_segments()
 
     def _insertion_motion_index_for_selected_row(self) -> int | None:
 
@@ -1709,41 +1740,12 @@ class ProgramController:
 
 
 
-    def _viewer_keypoint_for_row(self, row: int, keypoint: TrajectoryKeypoint) -> TrajectoryKeypoint:
-
-        if keypoint.target_type != KeypointTargetType.CARTESIAN or keypoint.cartesian_frame != ReferenceFrame.PROGRAM:
-
-            return keypoint
-
-        target_pose_base = self._target_pose_base_for_row(row)
-
-        if target_pose_base is None:
-
-            return keypoint
-
-        viewer_keypoint = keypoint.clone()
-
-        viewer_keypoint.cartesian_target = target_pose_base
-
-        viewer_keypoint.cartesian_frame = ReferenceFrame.ROBOT
-
-        return viewer_keypoint
-
     def _display_motion_tool(self, motion: RobotProgramMotion) -> RobotTool:
-
-        current_tool = self.tool_model.get_tool()
-
-        if self._tool_source != "PROGRAM":
-
-            return current_tool
-
-        program_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
-
-        if program_tool is not None:
-
-            return program_tool
-
-        return current_tool
+        if self._tool_source == "PROGRAM":
+            return self.program_simulator._tool_from_pose(motion.tool_pose)
+        if self._tool_source == "CUSTOM":
+            return self.program_simulator._tool_from_pose(self._custom_tool_pose)
+        return self.tool_model.get_tool()
 
     def _program_base_pose(self) -> Pose6 | None:
 
@@ -1754,16 +1756,50 @@ class ProgramController:
         return self.current_program.program_base_pose.copy()
 
     def _compute_effective_base(self) -> Pose6:
-        if self._base_source == ProgramBaseSource.WORKPIECE:
-            T_source = self.workpiece_controller.compute_workpiece_frame_in_robot()
-        else:
+        """Base programme effective exprimée dans le repère base robot.
+
+        L'offset est appliqué par multiplication de matrices (T_source @ T_offset) :
+        les rotations sont composées avant les translations de l'offset.
+        """
+        source = self._base_source
+        if source == ProgramBaseSource.WORKPIECE:
+            T_source = np.asarray(self.workpiece_controller.compute_workpiece_frame_in_robot(), dtype=float)
+        elif source == ProgramBaseSource.WORLD:
+            T_source = np.linalg.inv(self._robot_base_world_matrix())
+        elif source == ProgramBaseSource.ROBOT:
+            T_source = np.eye(4, dtype=float)
+        elif source == ProgramBaseSource.PROGRAM_FILE:
+            T_source = pose_to_matrix(self._file_base_pose)
+        elif source == ProgramBaseSource.EXTERNAL_AXIS:
+            T_source = self._external_axis_frame_in_robot(self._base_ext_axis_id)
+        else:  # MANUAL
             T_source = pose_to_matrix(self._manual_base)
         offset = self._base_offset
         if offset == Pose6.zeros():
             return matrix_to_pose(T_source)
         return matrix_to_pose(T_source @ pose_to_matrix(offset))
 
+    def _external_axis_frame_in_robot(self, axis_id: str | None) -> np.ndarray:
+        """Repère de sortie d'un axe externe exprimé dans le repère base robot."""
+        if axis_id is None:
+            return np.eye(4, dtype=float)
+        transforms = self.external_axes_model.compute_world_transforms_for({})
+        entry = transforms.get(axis_id)
+        if entry is None:
+            return np.eye(4, dtype=float)
+        T_world_axis = np.asarray(entry["end"], dtype=float)
+        return np.linalg.inv(self._robot_base_world_matrix()) @ T_world_axis
+
+    # Sources de base dépendantes de la chaîne axes externes / pièce
+    _CHAIN_DEPENDENT_BASE_SOURCES = frozenset({
+        ProgramBaseSource.WORKPIECE,
+        ProgramBaseSource.WORLD,
+        ProgramBaseSource.EXTERNAL_AXIS,
+    })
+
     def _on_workpiece_changed(self) -> None:
+        if self._suppress_context_invalidation:
+            return
         if self._base_source != ProgramBaseSource.WORKPIECE or self.current_program is None:
             return
         effective = self._compute_effective_base()
@@ -1771,9 +1807,11 @@ class ProgramController:
         self._mark_simulation_dirty()
 
     def _on_external_chain_changed(self, *_args) -> None:
+        if self._suppress_context_invalidation:
+            return
         if self.current_program is None:
             return
-        if self._base_source != ProgramBaseSource.WORKPIECE:
+        if self._base_source not in self._CHAIN_DEPENDENT_BASE_SOURCES:
             return
         new_base = self._compute_effective_base()
         self._update_program_base_preview(new_base)
@@ -1784,6 +1822,10 @@ class ProgramController:
         return {
             "base_source": self._base_source.value,
             "base_offset": self._base_offset.to_list(),
+            "base_ext_axis_id": self._base_ext_axis_id,
+            "manual_base": self._manual_base.to_list(),
+            "tool_source": self._tool_source,
+            "custom_tool": self._custom_tool_pose.to_list(),
         }
 
     def load_base_config_state(self, state: dict) -> None:
@@ -1792,12 +1834,24 @@ class ProgramController:
             self._base_source = ProgramBaseSource(source_str)
         except ValueError:
             self._base_source = ProgramBaseSource.MANUAL
-        raw_offset = state.get("base_offset", [0.0] * 6)
-        self._base_offset = (
-            Pose6.from_values(raw_offset)
-            if isinstance(raw_offset, list) and len(raw_offset) == 6
-            else Pose6.zeros()
-        )
+
+        def _pose_from_state(key: str) -> Pose6:
+            raw = state.get(key, [0.0] * 6)
+            return (
+                Pose6.from_values(raw)
+                if isinstance(raw, list) and len(raw) == 6
+                else Pose6.zeros()
+            )
+
+        self._base_offset = _pose_from_state("base_offset")
+        self._manual_base = _pose_from_state("manual_base")
+        self._custom_tool_pose = _pose_from_state("custom_tool")
+        raw_axis_id = state.get("base_ext_axis_id")
+        self._base_ext_axis_id = str(raw_axis_id) if raw_axis_id else None
+        tool_source = state.get("tool_source", "CURRENT")
+        if tool_source in {"CURRENT", "PROGRAM", "CUSTOM"}:
+            self._tool_source = tool_source
+        self._sync_settings_dialog()
 
     @staticmethod
     def _count_linear_cartesian_targets(program: RobotProgram | None) -> int:
@@ -1937,16 +1991,24 @@ class ProgramController:
         self.actions_widget.set_compensation_enabled(False)
         self.viewer3d_controller.clear_trajectory_path()
 
-    def _mark_simulation_dirty(self) -> None:
+    def _mark_simulation_dirty(self, dirty_indices: list[int] | None = None) -> None:
+        """Marque la simulation à refaire.
+
+        dirty_indices : indices des motions modifiés (recalcul incrémental au prochain
+        clic Simuler). None = tout resimuler (changement de contexte global).
+        """
         if self.current_program is None:
             return
+        if dirty_indices is None:
+            self._dirty_motion_indices = None
+        elif self._dirty_motion_indices is not None:
+            self._dirty_motion_indices.update(int(i) for i in dirty_indices)
         self._invalidate_simulation_results()
 
-    def _inv_robot_base_matrix(self) -> np.ndarray:
-        """Inverse de T_world_robotBase courant, pour convertir pose-monde → repère base viewer."""
+    def _robot_base_world_matrix(self) -> np.ndarray:
+        """T_world_robotBase courant (axes externes inclus)."""
         from utils.external_axes_kinematics import get_effective_robot_base_in_world
-        T = get_effective_robot_base_in_world(self.workspace_model, self.external_axes_model)
-        return np.linalg.inv(T)
+        return get_effective_robot_base_in_world(self.workspace_model, self.external_axes_model)
 
     def _refresh_program_save_status(self) -> None:
         if self.current_program is None:
@@ -2067,11 +2129,13 @@ class ProgramController:
             )
 
         if display_frame == ReferenceFrame.PROGRAM:
-
             display_pose = target.cartesian_pose.copy()
-
+        elif display_frame == ReferenceFrame.WORLD:
+            pose_robot_base = self.program_simulator._pose_from_program_base_to_robot_base(
+                target.cartesian_pose, motion.base_pose
+            )
+            display_pose = matrix_to_pose(self._robot_base_world_matrix() @ pose_to_matrix(pose_robot_base))
         else:
-
             display_pose = self.program_simulator._pose_from_program_base_to_robot_base(target.cartesian_pose, motion.base_pose)
 
         mode = KeypointMotionMode.LINEAR if (motion.mode.value != "PTP" or is_circular) else KeypointMotionMode.PTP
@@ -2242,23 +2306,25 @@ class ProgramController:
             self._compensation_computed = False
             return
 
+        # Simulations de compensation via le simulateur dédié : le cache incrémental
+        # du programme principal reste valide.
         cartesian_prog = self._get_program_for_mode("CARTESIAN") or self.current_program
-        cartesian_comp_program = self.program_simulator._build_compensated_program(
+        cartesian_comp_program = self._derived_simulator._build_compensated_program(
             cartesian_prog, ProgramCompensationOutputMode.CARTESIAN, measured_dh
         )
         if cartesian_comp_program:
             self._compensated_cartesian_program = cartesian_comp_program
-            self._compensated_cartesian_result = self.program_simulator.simulate_program(
+            self._compensated_cartesian_result = self._derived_simulator.simulate_program(
                 cartesian_comp_program, include_compensation=False
             )
 
         articular_prog = self._cartesian_program or self.current_program
-        articular_comp_program = self.program_simulator._build_compensated_program(
+        articular_comp_program = self._derived_simulator._build_compensated_program(
             articular_prog, ProgramCompensationOutputMode.ARTICULAR, measured_dh
         )
         if articular_comp_program:
             self._compensated_articular_program = articular_comp_program
-            self._compensated_articular_result = self.program_simulator.simulate_program(
+            self._compensated_articular_result = self._derived_simulator.simulate_program(
                 articular_comp_program, include_compensation=False
             )
 
@@ -2319,9 +2385,36 @@ class ProgramController:
             warnings.extend(self.current_program.warnings)
         return list(dict.fromkeys(warnings))
 
+    def _ensure_motion_mode_results(self, motion_mode: str) -> None:
+        """Calcule à la demande le résultat du mode opposé (lazy, via un simulateur dédié
+        pour ne pas invalider le cache incrémental du programme principal)."""
+        if self.current_program is None or self._simulation_dirty:
+            return
+        simulation_program = self._get_simulation_program()
+        if simulation_program is None:
+            return
+        if motion_mode == "ARTICULAR" and self._nominal_articular_result is None:
+            self._articular_program = self._build_articular_program(simulation_program)
+            if self._articular_program:
+                self._nominal_articular_result = self._derived_simulator.simulate_program(
+                    self._articular_program, include_compensation=False
+                )
+        elif motion_mode != "ARTICULAR" and self._nominal_cartesian_result is None:
+            self._cartesian_program = self._build_cartesian_program(simulation_program)
+            if self._cartesian_program:
+                self._nominal_cartesian_result = self._derived_simulator.simulate_program(
+                    self._cartesian_program, include_compensation=False
+                )
+
     def _on_motion_mode_changed(self, motion_mode: str) -> None:
         if self.current_program is None:
             return
+
+        self.viewer3d_controller.begin_loading_feedback("Calcul du mode de restitution ...")
+        try:
+            self._ensure_motion_mode_results(motion_mode)
+        finally:
+            self.viewer3d_controller.end_loading_feedback()
 
         target_mode = self.config_widget.get_target_mode()
         self._update_current_result_from_modes(target_mode, motion_mode)
@@ -2331,14 +2424,12 @@ class ProgramController:
         )
 
         _theo_samples_2 = self._get_samples_for_modes("THEORETICAL", motion_mode)
-        _inv_base2 = self._inv_robot_base_matrix()
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             _theo_samples_2,
             self._get_nominal_color(),
             self.MEASURED_COLOR,
-            inv_robot_base_matrix=_inv_base2,
         )
-        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples_2, _inv_base2)
+        self._nom_seg_pts, self._nom_seg_times = self._build_nom_segs_np(_theo_samples_2)
         self._compensated_segments_cache = self._build_segments(
             self._get_samples_for_modes("COMPENSATED", motion_mode),
             self.COMPENSATED_COLOR,
@@ -2409,7 +2500,9 @@ class ProgramController:
 
         for motion_index, motion in enumerate(program.motions):
             if self._tool_source == "PROGRAM":
-                motion_tool = self.program_simulator._tool_from_pose(motion.tool_pose) or robot_tool
+                motion_tool = self.program_simulator._tool_from_pose(motion.tool_pose)
+            elif self._tool_source == "CUSTOM":
+                motion_tool = self.program_simulator._tool_from_pose(self._custom_tool_pose)
             else:
                 motion_tool = robot_tool
 
@@ -2459,11 +2552,15 @@ class ProgramController:
         done_nominal_color: tuple[float, float, float, float] | None = None,
         done_measured_color: tuple[float, float, float, float] | None = None,
         split_time_s: float | None = None,
-        inv_robot_base_matrix: np.ndarray | None = None,
     ) -> tuple[
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
     ]:
+        """Construit les segments d'affichage en repère MONDE (poses world des samples).
+
+        Les samples EXTERNAL_AXIS sont exclus : le déplacement du TCP induit par un
+        positionnement d'axe externe ne fait pas partie de la trajectoire affichée.
+        """
         nominal_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         measured_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
 
@@ -2488,16 +2585,20 @@ class ProgramController:
                 measured_segments.append((meas_points[:], color))
 
         def _nom_xyz(sample: ProgramSimulationSample) -> list[float]:
-            if inv_robot_base_matrix is not None and sample.nominal_pose_world is not None:
-                p = sample.nominal_pose_world
-                v = inv_robot_base_matrix @ np.array([p.x, p.y, p.z, 1.0], dtype=float)
-                return [float(v[0]), float(v[1]), float(v[2])]
-            nom = sample.nominal_pose_base
+            nom = sample.nominal_pose_world if sample.nominal_pose_world is not None else sample.nominal_pose_base
             return [nom.x, nom.y, nom.z]
 
         for sample in samples:
+            if sample.motion_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                # Coupure de segment : la trajectoire reprend après le positionnement
+                _flush_nom(current_nom_is_done)
+                _flush_meas(current_meas_is_done)
+                nom_points = []
+                meas_points = []
+                current_key = None
+                continue
             nom_pose = sample.nominal_pose_base
-            meas_pose = sample.measured_pose_base
+            meas_pose = sample.measured_pose_world if sample.measured_pose_world is not None else sample.measured_pose_base
             if nom_pose is None and meas_pose is None:
                 continue
 
@@ -2544,12 +2645,11 @@ class ProgramController:
     @staticmethod
     def _build_nom_segs_np(
         samples: list[ProgramSimulationSample],
-        inv_robot_base_matrix: np.ndarray | None = None,
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        """Pré-construit les segments nominaux comme numpy arrays.
+        """Pré-construit les segments nominaux comme numpy arrays, en repère MONDE.
 
         Retourne deux listes parallèles :
-        - pts_segs  : (K, 3) float64 par segment (dans le repère base robot pour le viewer)
+        - pts_segs  : (K, 3) float64 par segment
         - time_segs : (K,)   float64 par segment
         """
         pts_segs: list[np.ndarray] = []
@@ -2564,14 +2664,16 @@ class ProgramController:
                 time_segs.append(np.array(cur_times, dtype=np.float64))
 
         def _nom_xyz(sample: ProgramSimulationSample) -> list[float]:
-            if inv_robot_base_matrix is not None and sample.nominal_pose_world is not None:
-                p = sample.nominal_pose_world
-                v = inv_robot_base_matrix @ np.array([p.x, p.y, p.z, 1.0], dtype=float)
-                return [float(v[0]), float(v[1]), float(v[2])]
-            nom = sample.nominal_pose_base
+            nom = sample.nominal_pose_world if sample.nominal_pose_world is not None else sample.nominal_pose_base
             return [nom.x, nom.y, nom.z]
 
         for sample in samples:
+            if sample.motion_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                _flush()
+                cur_pts = []
+                cur_times = []
+                cur_key = None
+                continue
             if sample.nominal_pose_base is None:
                 continue
             key = (sample.motion_mode.value, int(sample.source_line))
@@ -2596,7 +2698,13 @@ class ProgramController:
         current_key: tuple[str, int] | None = None
 
         for sample in samples:
-            pose = sample.measured_pose_base
+            if sample.motion_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                if len(current_points) >= 2:
+                    segments.append((current_points, color))
+                current_points = []
+                current_key = None
+                continue
+            pose = sample.measured_pose_world if sample.measured_pose_world is not None else sample.measured_pose_base
             if pose is None:
                 continue
             motion_key = (sample.motion_mode.value, int(sample.source_line))
@@ -2669,6 +2777,54 @@ class ProgramController:
         self._generation_settings.header_text = loaded
         self.generation_widget.set_header_text(loaded)
 
+    def _program_for_generation(self) -> tuple[RobotProgram, Pose6] | None:
+        """Programme dont les cibles cartésiennes sont ré-exprimées dans le repère
+        sélectionné dans la table. Retourne (programme, pose $BASE associée)."""
+        if self.current_program is None:
+            return None
+        frame = ReferenceFrame.from_value(
+            self.config_widget.get_cartesian_display_frame(), ReferenceFrame.PROGRAM
+        )
+        program = self.current_program
+        if frame == ReferenceFrame.PROGRAM:
+            return program, program.program_base_pose.copy()
+
+        if frame == ReferenceFrame.WORLD:
+            base_for_krl = matrix_to_pose(np.linalg.inv(self._robot_base_world_matrix()))
+        else:  # ROBOT
+            base_for_krl = Pose6.zeros()
+
+        T_frame_in_robot = pose_to_matrix(base_for_krl)
+        T_robot_in_frame = np.linalg.inv(T_frame_in_robot)
+
+        def _convert(target: RobotProgramTarget | None, motion_base: Pose6) -> RobotProgramTarget | None:
+            if target is None or target.target_type != RobotProgramTargetType.CARTESIAN:
+                return target
+            T_target_robot = pose_to_matrix(motion_base) @ pose_to_matrix(target.cartesian_pose)
+            return replace(target, cartesian_pose=matrix_to_pose(T_robot_in_frame @ T_target_robot))
+
+        converted_motions = [
+            replace(
+                motion,
+                target=_convert(motion.target, motion.base_pose),
+                via_target=_convert(motion.via_target, motion.base_pose),
+                base_pose=base_for_krl.copy(),
+            )
+            for motion in program.motions
+        ]
+        return replace(program, motions=converted_motions, program_base_pose=base_for_krl.copy()), base_for_krl
+
+    def _generation_tool_pose(self) -> Pose6:
+        """Pose $TOOL pour la génération KRL."""
+        effective = self._effective_tool_pose()
+        if effective is not None:
+            return effective
+        if self.current_program is not None:
+            for motion in self.current_program.motions:
+                if motion.tool_pose != Pose6.zeros():
+                    return motion.tool_pose.copy()
+        return Pose6.zeros()
+
     def _refresh_krl_preview(self) -> None:
         if self.current_program is None:
             self.generation_widget.set_krl_preview_text("")
@@ -2678,8 +2834,18 @@ class ProgramController:
         settings.header_text = self.generation_widget.get_header_text()
         external_axes_order = [axis.id for axis in self.external_axes_model.get_axes()]
         try:
+            generation = self._program_for_generation()
+            if generation is None:
+                self.generation_widget.set_krl_preview_text("")
+                return
+            generation_program, base_for_krl = generation
             text = generate_kuka_src_text(
-                self.current_program, settings.header_text, settings, external_axes_order
+                generation_program,
+                settings.header_text,
+                settings,
+                external_axes_order,
+                tool_pose=self._generation_tool_pose(),
+                base_pose=base_for_krl,
             )
         except Exception:
             text = "Erreur lors de la génération KRL."

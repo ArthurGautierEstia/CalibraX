@@ -1315,6 +1315,10 @@ class Viewer3DWidget(QWidget):
         self._traj_cache_base_rev: int = -1
         self._traj_cache_override_id: int = -1
         self._traj_cache_pts_ids: list[int] = []
+        # True : les points fournis sont déjà en repère monde (pas de re-transformation
+        # quand la base robot bouge, ex. robot sur rail)
+        self._trajectory_path_in_world: bool = False
+        self._trajectory_keypoints_in_world: bool = False
         self._trajectory_keypoint_points: np.ndarray | None = None
         self._trajectory_keypoint_selected_index: int | None = None
         self._trajectory_keypoint_editing_index: int | None = None
@@ -3534,6 +3538,7 @@ class Viewer3DWidget(QWidget):
     def set_trajectory_path_segments(
         self,
         segments: list[tuple[list[list[float]] | np.ndarray, tuple[float, float, float, float] | np.ndarray]],
+        in_world: bool = False,
     ) -> None:
         parsed: list[tuple[np.ndarray, tuple[float, float, float, float] | np.ndarray]] = []
         for points_xyz, color in segments:
@@ -3541,6 +3546,9 @@ class Viewer3DWidget(QWidget):
             if len(pts) < 2:
                 continue
             parsed.append((pts, color))
+        if self._trajectory_path_in_world != bool(in_world):
+            self._traj_cache_pts_ids = []
+        self._trajectory_path_in_world = bool(in_world)
         self._trajectory_path_segments = parsed if parsed else None
         self._render_trajectory_overlay()
 
@@ -3559,11 +3567,13 @@ class Viewer3DWidget(QWidget):
         points_xyz: list[list[float]],
         selected_index: int | None = None,
         editing_index: int | None = None,
+        in_world: bool = False,
     ) -> None:
         if not points_xyz:
             self._trajectory_keypoint_points = None
         else:
             self._trajectory_keypoint_points = np.array([p[:3] for p in points_xyz], dtype=float)
+        self._trajectory_keypoints_in_world = bool(in_world)
         self._trajectory_keypoint_selected_index = selected_index
         self._trajectory_keypoint_editing_index = editing_index
         self._render_trajectory_overlay()
@@ -3643,18 +3653,34 @@ class Viewer3DWidget(QWidget):
         """Fournit les positions world des éléments de trajectoire pour le picking du viewer."""
         keypoints_world = None
         if self._trajectory_keypoint_points is not None and len(self._trajectory_keypoint_points) > 0:
-            keypoints_world = self._transform_robot_points_to_world(self._trajectory_keypoint_points)
+            if self._trajectory_keypoints_in_world:
+                keypoints_world = self._trajectory_keypoint_points
+            else:
+                keypoints_world = self._transform_robot_points_to_world(self._trajectory_keypoint_points)
 
         path_segments_world = None
         if self._trajectory_path_segments is not None and len(self._trajectory_path_segments) > 0:
-            path_segments_world = [
-                self._transform_robot_points_to_world(pts)
-                for pts, _ in self._trajectory_path_segments
-            ]
+            if self._trajectory_path_in_world:
+                path_segments_world = [pts for pts, _ in self._trajectory_path_segments]
+            else:
+                path_segments_world = [
+                    self._transform_robot_points_to_world(pts)
+                    for pts, _ in self._trajectory_path_segments
+                ]
 
         return keypoints_world, path_segments_world
 
     def _rebuild_traj_world_cache(self, path_segs: list) -> None:
+        if self._trajectory_path_in_world:
+            # Points déjà en monde : indépendants de la base robot
+            pts_ids = [id(pts) for pts, _ in path_segs]
+            if self._traj_cache_pts_ids == pts_ids:
+                return
+            self._traj_world_pts_cache = [pts for pts, _ in path_segs]
+            self._traj_cache_pts_ids = pts_ids
+            self._traj_cache_base_rev = -1
+            self._traj_cache_override_id = -1
+            return
         base_rev = self._robot_base_transform_world.revision
         override_id = id(self._external_robot_base_override)
         pts_ids = [id(pts) for pts, _ in path_segs]
@@ -3727,9 +3753,13 @@ class Viewer3DWidget(QWidget):
             if editing_idx is not None and 0 <= editing_idx < len(points):
                 mask[editing_idx] = False
 
+            kp_to_world = (
+                (lambda pts: pts) if self._trajectory_keypoints_in_world
+                else self._transform_robot_points_to_world
+            )
             base_points = points[mask]
             if len(base_points) > 0:
-                world_base_points = self._transform_robot_points_to_world(base_points)
+                world_base_points = kp_to_world(base_points)
                 self._trajectory_keypoints_item = gl.GLScatterPlotItem(
                     pos=world_base_points,
                     color=(0.95, 0.95, 0.95, 1.0),
@@ -3740,7 +3770,7 @@ class Viewer3DWidget(QWidget):
                 self.viewer.addItem(self._trajectory_keypoints_item)
 
             if selected_idx is not None and 0 <= selected_idx < len(points):
-                selected_points = self._transform_robot_points_to_world(np.array([points[selected_idx]], dtype=float))
+                selected_points = kp_to_world(np.array([points[selected_idx]], dtype=float))
                 self._trajectory_keypoint_selected_item = gl.GLScatterPlotItem(
                     pos=selected_points,
                     color=(0.1, 0.85, 1.0, 1.0),
@@ -3751,7 +3781,7 @@ class Viewer3DWidget(QWidget):
                 self.viewer.addItem(self._trajectory_keypoint_selected_item)
 
             if editing_idx is not None and 0 <= editing_idx < len(points):
-                editing_points = self._transform_robot_points_to_world(np.array([points[editing_idx]], dtype=float))
+                editing_points = kp_to_world(np.array([points[editing_idx]], dtype=float))
                 self._trajectory_keypoint_editing_item = gl.GLScatterPlotItem(
                     pos=editing_points,
                     color=(1.0, 0.35, 0.1, 1.0),

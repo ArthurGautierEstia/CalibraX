@@ -449,8 +449,9 @@ class Viewer3DController(QObject):
     def set_trajectory_path_segments(
         self,
         segments: list,
+        in_world: bool = False,
     ) -> None:
-        self.viewer_3d_widget.set_trajectory_path_segments(segments)
+        self.viewer_3d_widget.set_trajectory_path_segments(segments, in_world=in_world)
 
     def clear_trajectory_path(self) -> None:
         self.viewer_3d_widget.clear_trajectory_path()
@@ -467,8 +468,9 @@ class Viewer3DController(QObject):
         points_xyz: list[list[float]],
         selected_index: int | None = None,
         editing_index: int | None = None,
+        in_world: bool = False,
     ) -> None:
-        self.viewer_3d_widget.set_trajectory_keypoints(points_xyz, selected_index, editing_index)
+        self.viewer_3d_widget.set_trajectory_keypoints(points_xyz, selected_index, editing_index, in_world=in_world)
 
     def clear_trajectory_keypoints(self) -> None:
         self.viewer_3d_widget.clear_trajectory_keypoints()
