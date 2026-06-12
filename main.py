@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QApplication
 
 _fmt = QSurfaceFormat()
 _fmt.setSamples(4)
-_fmt.setDepthBufferSize(24)
+_fmt.setDepthBufferSize(23)
 QSurfaceFormat.setDefaultFormat(_fmt)
 
 from controllers.main_controller import MainController
