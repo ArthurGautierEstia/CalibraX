@@ -19,6 +19,7 @@ from models.types import Pose6
 from widgets.program_view.program_generation_widget import ProgramGenerationWidget
 
 _AXIS_LABELS = ("X", "Y", "Z", "A", "B", "C")
+_ORIENT_LABELS = ("A", "B", "C")
 _EXT_AXIS_PREFIX = "EXT:"
 
 
@@ -65,6 +66,42 @@ class _PoseEditRow(QWidget):
     def set_enabled_all(self, enabled: bool) -> None:
         for spinbox in self._spinboxes:
             spinbox.setEnabled(enabled)
+
+
+class _OrientationEditRow(QWidget):
+    """Ligne compacte de 3 spinboxes ABC (deg)."""
+
+    committed = pyqtSignal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(0)
+        self._spinboxes: list[QDoubleSpinBox] = []
+        for index, label in enumerate(_ORIENT_LABELS):
+            grid.addWidget(QLabel(label), 0, index, alignment=Qt.AlignmentFlag.AlignHCenter)
+            spinbox = QDoubleSpinBox(self)
+            spinbox.setRange(-360.0, 360.0)
+            spinbox.setSingleStep(0.1)
+            spinbox.setDecimals(3)
+            spinbox.setKeyboardTracking(False)
+            spinbox.valueChanged.connect(self._on_value_committed)
+            grid.addWidget(spinbox, 1, index)
+            self._spinboxes.append(spinbox)
+
+    def _on_value_committed(self, _value: float) -> None:
+        self.committed.emit()
+
+    def get_orientation(self) -> tuple[float, float, float]:
+        return (float(self._spinboxes[0].value()), float(self._spinboxes[1].value()), float(self._spinboxes[2].value()))
+
+    def set_orientation(self, a: float, b: float, c: float) -> None:
+        for spinbox, value in zip(self._spinboxes, (a, b, c)):
+            spinbox.blockSignals(True)
+            spinbox.setValue(value)
+            spinbox.blockSignals(False)
 
 
 class ProgramBaseSectionWidget(QGroupBox):
@@ -176,7 +213,8 @@ class ProgramBaseSectionWidget(QGroupBox):
 
 class ProgramToolSectionWidget(QGroupBox):
     """Section outil : outil courant de la config, outil lu dans le programme,
-    ou outil spécifique XYZABC (par rapport au flange)."""
+    ou outil spécifique XYZABC (par rapport au flange). Avec option d'override
+    d'orientation pour toutes les cibles cartésiennes."""
 
     toolConfigChanged = pyqtSignal()
 
@@ -193,34 +231,77 @@ class ProgramToolSectionWidget(QGroupBox):
         form.addRow("Source :", self._source_combo)
         layout.addLayout(form)
 
-        layout.addWidget(QLabel("Outil personnalisé (flange → TCP) :"))
+        self._custom_label = QLabel("Outil personnalisé (flange → TCP) :")
         self._custom_row = _PoseEditRow(self)
-        self._custom_row.set_enabled_all(False)
+        self._custom_label.setVisible(False)
+        self._custom_row.setVisible(False)
+        layout.addWidget(self._custom_label)
         layout.addWidget(self._custom_row)
+
+        # QGroupBox checkable : le titre-checkbox est séparé physiquement des spinboxes,
+        # ce qui évite les toggles accidentels quand l'utilisateur clique à côté d'une spinbox.
+        self._orientation_group = QGroupBox("Définir l'orientation outil")
+        self._orientation_group.setCheckable(True)
+        self._orientation_group.setChecked(False)
+        orient_layout = QVBoxLayout(self._orientation_group)
+        self._orientation_label = QLabel("Orientation appliquée aux cibles (A, B, C, deg) :")
+        self._orientation_row = _OrientationEditRow(self._orientation_group)
+        self._orientation_label.setVisible(False)
+        self._orientation_row.setVisible(False)
+        orient_layout.addWidget(self._orientation_label)
+        orient_layout.addWidget(self._orientation_row)
+        layout.addWidget(self._orientation_group)
 
         self._source_combo.currentIndexChanged.connect(self._on_source_changed)
         self._custom_row.committed.connect(self._emit_changed)
+        self._orientation_group.toggled.connect(self._on_orientation_toggled)
+        self._orientation_row.committed.connect(self._emit_changed)
 
     def _on_source_changed(self, _index: int) -> None:
-        self._custom_row.set_enabled_all(self._source_combo.currentData() == "CUSTOM")
+        is_custom = self._source_combo.currentData() == "CUSTOM"
+        self._custom_label.setVisible(is_custom)
+        self._custom_row.setVisible(is_custom)
+        self._emit_changed()
+
+    def _on_orientation_toggled(self, checked: bool) -> None:
+        self._orientation_label.setVisible(checked)
+        self._orientation_row.setVisible(checked)
         self._emit_changed()
 
     def _emit_changed(self) -> None:
         if not self._updating:
             self.toolConfigChanged.emit()
 
-    def get_tool_config(self) -> tuple[str, Pose6]:
-        """Retourne (source, pose_outil_personnalisé)."""
-        return str(self._source_combo.currentData()), self._custom_row.get_pose()
+    def get_tool_config(self) -> tuple[str, Pose6, Pose6 | None]:
+        """Retourne (source, pose_outil_personnalisé, orientation_override_ou_None)."""
+        source = str(self._source_combo.currentData())
+        custom_pose = self._custom_row.get_pose()
+        if self._orientation_group.isChecked():
+            a, b, c = self._orientation_row.get_orientation()
+            orientation_override: Pose6 | None = Pose6(x=0.0, y=0.0, z=0.0, a=a, b=b, c=c)
+        else:
+            orientation_override = None
+        return source, custom_pose, orientation_override
 
-    def set_tool_config(self, source: str, custom_pose: Pose6) -> None:
+    def set_tool_config(self, source: str, custom_pose: Pose6, orientation_override: Pose6 | None = None) -> None:
         self._updating = True
         try:
             index = self._source_combo.findData(source)
             if index >= 0:
                 self._source_combo.setCurrentIndex(index)
             self._custom_row.set_pose(custom_pose)
-            self._custom_row.set_enabled_all(source == "CUSTOM")
+            is_custom = source == "CUSTOM"
+            self._custom_label.setVisible(is_custom)
+            self._custom_row.setVisible(is_custom)
+
+            has_orientation = orientation_override is not None
+            self._orientation_group.blockSignals(True)
+            self._orientation_group.setChecked(has_orientation)
+            self._orientation_group.blockSignals(False)
+            if has_orientation and orientation_override is not None:
+                self._orientation_row.set_orientation(orientation_override.a, orientation_override.b, orientation_override.c)
+            self._orientation_label.setVisible(has_orientation)
+            self._orientation_row.setVisible(has_orientation)
         finally:
             self._updating = False
 

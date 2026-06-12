@@ -145,6 +145,7 @@ class ProgramController:
         self._base_ext_axis_id: str | None = None    # axe externe choisi comme référence base
         self._tool_source: str = "CURRENT"           # CURRENT | PROGRAM | CUSTOM
         self._custom_tool_pose: Pose6 = Pose6.zeros()
+        self._orientation_override: Pose6 | None = None  # Override orientation (ABC) sur cibles cartésiennes
         self._saved_robot_tool: RobotTool | None = None  # Sauvegarde du tool robot original
         # Indices des motions modifiés depuis la dernière simulation (None = tout resimuler)
         self._dirty_motion_indices: set[int] | None = None
@@ -355,7 +356,10 @@ class ProgramController:
                 self.current_program = program_with_base
             self._program_dirty = False
             self._clean_status_text = ProgramController.STATUS_LOADED
-            self._apply_program_tool()
+            if not is_imported:
+                self._apply_program_tool()
+            else:
+                self._restore_robot_tool()
             self._sync_settings_dialog()
             # Import des cibles uniquement : la trajectoire n'est calculée qu'au clic "Simuler"
             self._reset_for_loaded_program()
@@ -1189,13 +1193,14 @@ class ProgramController:
         return None  # PROGRAM
 
     def _get_simulation_program(self) -> RobotProgram | None:
-        """Programme prêt pour la simulation : outil effectif + vitesse constante éventuelle."""
+        """Programme prêt pour la simulation : outil effectif + vitesse constante éventuelle + override orientation."""
         if self.current_program is None:
             return None
 
         tool_pose = self._effective_tool_pose()
         constant_speed_mmps = self._generation_settings.constant_speed_mmps
-        if tool_pose is None and constant_speed_mmps is None:
+        orientation_override = self._orientation_override
+        if tool_pose is None and constant_speed_mmps is None and orientation_override is None:
             return self.current_program
 
         updated_motions: list[RobotProgramMotion] = []
@@ -1209,6 +1214,16 @@ class ProgramController:
                 and motion.mode in {RobotProgramMotionMode.LINEAR, RobotProgramMotionMode.CIRCULAR}
             ):
                 updated_motion = replace(updated_motion, cp_speed_mps=float(constant_speed_mmps) / 1000.0)
+            if (
+                orientation_override is not None
+                and motion.target.target_type == RobotProgramTargetType.CARTESIAN
+            ):
+                cp = motion.target.cartesian_pose
+                overridden_pose = Pose6(
+                    x=cp.x, y=cp.y, z=cp.z,
+                    a=orientation_override.a, b=orientation_override.b, c=orientation_override.c,
+                )
+                updated_motion = replace(updated_motion, target=replace(motion.target, cartesian_pose=overridden_pose))
             updated_motions.append(updated_motion)
         return replace(self.current_program, motions=updated_motions)
 
@@ -1323,7 +1338,7 @@ class ProgramController:
         self.settings_dialog.base_section.set_base_config(
             self._base_source, self._base_ext_axis_id, self._manual_base, self._base_offset
         )
-        self.settings_dialog.tool_section.set_tool_config(self._tool_source, self._custom_tool_pose)
+        self.settings_dialog.tool_section.set_tool_config(self._tool_source, self._custom_tool_pose, self._orientation_override)
 
     def _on_settings_base_changed(self) -> None:
         prev_effective = self._compute_effective_base()
@@ -1349,8 +1364,9 @@ class ProgramController:
         self._krl_preview_timer.start()
 
     def _on_settings_tool_changed(self) -> None:
-        tool_source, custom_pose = self.settings_dialog.tool_section.get_tool_config()
+        tool_source, custom_pose, orientation_override = self.settings_dialog.tool_section.get_tool_config()
         self._custom_tool_pose = custom_pose
+        self._orientation_override = orientation_override
         self._on_tool_source_changed(tool_source)
         self._krl_preview_timer.start()
 
@@ -1780,6 +1796,7 @@ class ProgramController:
             "manual_base": self._manual_base.to_list(),
             "tool_source": self._tool_source,
             "custom_tool": self._custom_tool_pose.to_list(),
+            "orientation_override": self._orientation_override.to_list() if self._orientation_override is not None else None,
         }
 
     def load_base_config_state(self, state: dict) -> None:
@@ -1805,6 +1822,11 @@ class ProgramController:
         tool_source = state.get("tool_source", "CURRENT")
         if tool_source in {"CURRENT", "PROGRAM", "CUSTOM"}:
             self._tool_source = tool_source
+        raw_orientation = state.get("orientation_override")
+        if isinstance(raw_orientation, list) and len(raw_orientation) == 6:
+            self._orientation_override = Pose6.from_values(raw_orientation)
+        else:
+            self._orientation_override = None
         self._sync_settings_dialog()
 
     @staticmethod
@@ -2384,19 +2406,37 @@ class ProgramController:
                 motion_tool = robot_tool
 
             if motion.mode == RobotProgramMotionMode.CIRCULAR and motion.via_target is not None:
-                via_keypoint = self._motion_target_to_keypoint(motion, motion.via_target, is_circular=True, display_frame=display_frame)
+                via_keypoint = self._motion_target_to_keypoint(
+                    motion,
+                    self._apply_orientation_override_to_target(motion.via_target),
+                    is_circular=True,
+                    display_frame=display_frame,
+                )
                 if via_keypoint is not None:
                     keypoints.append(via_keypoint)
                     keypoint_tools.append(motion_tool)
                     target_refs.append(_ProgramTargetRef(motion_index=motion_index, is_via_target=True))
 
-            keypoint = self._motion_target_to_keypoint(motion, motion.target, is_circular=False, display_frame=display_frame)
+            keypoint = self._motion_target_to_keypoint(
+                motion,
+                self._apply_orientation_override_to_target(motion.target),
+                is_circular=False,
+                display_frame=display_frame,
+            )
             if keypoint is not None:
                 keypoints.append(keypoint)
                 keypoint_tools.append(motion_tool)
                 target_refs.append(_ProgramTargetRef(motion_index=motion_index, is_via_target=False))
 
         return keypoints, keypoint_tools, target_refs
+
+    def _apply_orientation_override_to_target(self, target: RobotProgramTarget) -> RobotProgramTarget:
+        """Retourne une cible avec ABC remplacés par l'override, ou la cible inchangée."""
+        if self._orientation_override is None or target.target_type != RobotProgramTargetType.CARTESIAN:
+            return target
+        cp = target.cartesian_pose
+        ov = self._orientation_override
+        return replace(target, cartesian_pose=Pose6(x=cp.x, y=cp.y, z=cp.z, a=ov.a, b=ov.b, c=ov.c))
 
     def _build_display_keypoints(self) -> tuple[list[TrajectoryKeypoint], list[RobotTool], list[_ProgramTargetRef]]:
         motion_mode = self.config_widget.get_motion_mode()
