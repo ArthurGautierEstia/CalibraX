@@ -15,7 +15,7 @@ from models.types.pose6 import Pose6
 from models.workspace_model import WorkspaceModel
 from models.workpiece_model import WorkpieceModel
 from utils.external_axes_kinematics import get_effective_robot_base_in_world
-from utils.math_utils import pose_zyx_to_matrix
+from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
 from views.workpiece_view import WorkpieceView
 from widgets.workpiece_view.tooling_panel_widget import ToolingPanelWidget
 from widgets.workpiece_view.workpiece_config_widget import WorkpieceConfigWidget
@@ -340,7 +340,7 @@ class WorkpieceController(QObject):
         T_piece_world = self._compute_piece_world_transform()
         T_frame_world = T_piece_world @ pose_zyx_to_matrix(self.workpiece_model.get_workpiece_frame_pose())
         T_robot_world = get_effective_robot_base_in_world(self.workspace_model, self.external_axes_model)
-        T_robot_world_inv = np.linalg.inv(T_robot_world)
+        T_robot_world_inv = invert_homogeneous_transform(T_robot_world)
         return T_robot_world_inv @ T_frame_world
 
     # ------------------------------------------------------------------

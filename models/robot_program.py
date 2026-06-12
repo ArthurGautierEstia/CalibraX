@@ -33,6 +33,22 @@ class ProgramBaseSource(str, Enum):
     EXTERNAL_AXIS = "EXTERNAL_AXIS"
 
 
+@dataclass(frozen=True)
+class ProgramBaseSpec:
+    """Descripteur du repère base programme évaluable à un état d'axes externes donné.
+
+    Contrairement à ``base_pose`` (la base bakée en repère robot à l'instant du clic
+    Simuler), ce descripteur conserve l'IDENTITÉ de l'élément source. Il permet au
+    simulateur de ré-évaluer le repère source à l'état d'axes *simulé* (suivi pièce /
+    positionneur pendant le programme). L'offset utilisateur reste baké dans
+    ``base_pose`` : il accompagne rigidement la source.
+    """
+    source: ProgramBaseSource
+    ext_axis_id: str | None = None
+    manual_pose: Pose6 = field(default_factory=Pose6.zeros)
+    file_pose: Pose6 = field(default_factory=Pose6.zeros)
+
+
 class ProgramCompensationOutputMode(Enum):
     CARTESIAN = "CARTESIAN"
     ARTICULAR = "ARTICULAR"

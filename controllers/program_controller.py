@@ -26,12 +26,13 @@ from models.robot_program import (
 from models.external_axes_model import ExternalAxesModel
 from models.program_generation_settings import ProgramGenerationSettings
 from models.robot_model import RobotModel
-from models.robot_program import MotionRole, ProgramBaseSource, ProgramOrigin
+from models.robot_program import MotionRole, ProgramBaseSource, ProgramBaseSpec, ProgramOrigin
 from models.tool_model import ToolModel
 from models.types.approach_retract import ApproachAxisRef
 from models.trajectory_keypoint import KeypointMotionMode, KeypointTargetType, TrajectoryKeypoint
 from models.types import JointAngles6, Pose6
 from models.workspace_model import WorkspaceModel
+from utils.math_utils import invert_homogeneous_transform
 from utils.reference_frame_utils import matrix_to_pose, pose_to_matrix
 from utils.program_simulator import ProgramSimulator
 from utils.mgi import RobotTool
@@ -1725,6 +1726,15 @@ class ProgramController:
 
         return self.current_program.program_base_pose.copy()
 
+    def _build_base_spec(self) -> ProgramBaseSpec:
+        """Descripteur de la source de base programme (identité de l'élément, hors offset)."""
+        return ProgramBaseSpec(
+            source=self._base_source,
+            ext_axis_id=self._base_ext_axis_id,
+            manual_pose=self._manual_base.copy(),
+            file_pose=self._file_base_pose.copy(),
+        )
+
     def _compute_effective_base(self) -> Pose6:
         """Base programme effective exprimée dans le repère base robot.
 
@@ -1735,7 +1745,7 @@ class ProgramController:
         if source == ProgramBaseSource.WORKPIECE:
             T_source = np.asarray(self.workpiece_controller.compute_workpiece_frame_in_robot(), dtype=float)
         elif source == ProgramBaseSource.WORLD:
-            T_source = np.linalg.inv(self._robot_base_world_matrix())
+            T_source = invert_homogeneous_transform(self._robot_base_world_matrix())
         elif source == ProgramBaseSource.ROBOT:
             T_source = np.eye(4, dtype=float)
         elif source == ProgramBaseSource.PROGRAM_FILE:
@@ -1758,7 +1768,7 @@ class ProgramController:
         if entry is None:
             return np.eye(4, dtype=float)
         T_world_axis = np.asarray(entry["end"], dtype=float)
-        return np.linalg.inv(self._robot_base_world_matrix()) @ T_world_axis
+        return invert_homogeneous_transform(self._robot_base_world_matrix()) @ T_world_axis
 
     # Sources de base dépendantes de la chaîne axes externes / pièce
     _CHAIN_DEPENDENT_BASE_SOURCES = frozenset({
@@ -1850,6 +1860,11 @@ class ProgramController:
             return
 
         updated_base_pose = base_pose.copy()
+        # Transmettre le descripteur de source aux simulateurs : il leur permet de suivre
+        # l'élément source (pièce / axe externe) quand les axes bougent pendant le programme.
+        base_spec = self._build_base_spec()
+        self.program_simulator._base_spec = base_spec
+        self._derived_simulator._base_spec = base_spec
         self.current_program = self._program_with_updated_base_pose(self.current_program, updated_base_pose)
         self._articular_program = self._program_with_updated_base_pose(self._articular_program, updated_base_pose)
         self._cartesian_program = self._program_with_updated_base_pose(self._cartesian_program, updated_base_pose)
@@ -2707,12 +2722,12 @@ class ProgramController:
             return program, program.program_base_pose.copy()
 
         if frame == ReferenceFrame.WORLD:
-            base_for_krl = matrix_to_pose(np.linalg.inv(self._robot_base_world_matrix()))
+            base_for_krl = matrix_to_pose(invert_homogeneous_transform(self._robot_base_world_matrix()))
         else:  # ROBOT
             base_for_krl = Pose6.zeros()
 
         T_frame_in_robot = pose_to_matrix(base_for_krl)
-        T_robot_in_frame = np.linalg.inv(T_frame_in_robot)
+        T_robot_in_frame = invert_homogeneous_transform(T_frame_in_robot)
 
         def _convert(target: RobotProgramTarget | None, motion_base: Pose6) -> RobotProgramTarget | None:
             if target is None or target.target_type != RobotProgramTargetType.CARTESIAN:

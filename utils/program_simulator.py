@@ -11,6 +11,8 @@ import numpy as np
 
 import utils.math_utils as math_utils
 from models.robot_program import (
+    ProgramBaseSource,
+    ProgramBaseSpec,
     ProgramCompensationOutputMode,
     ProgramSimulationResult,
     ProgramSimulationSample,
@@ -117,6 +119,10 @@ class ProgramSimulator:
         self._current_ext_axis_values: dict[tuple[str, int], float] = {}
         # Snapshot des axes externes au démarrage de la passe (validation du cache incrémental)
         self._initial_ext_snapshot: tuple[float, ...] = ()
+        # État d'axes externes au démarrage de la passe (== état de bakage de base_pose)
+        self._initial_ext_axis_values: dict[tuple[str, int], float] = {}
+        # Descripteur du repère base programme (None = base bakée seulement, pas de suivi live)
+        self._base_spec: ProgramBaseSpec | None = None
 
     def simulate_program(self, program: RobotProgram, include_compensation: bool = True) -> ProgramSimulationResult:
         if program.brand != RobotProgramBrand.KUKA:
@@ -853,6 +859,7 @@ class ProgramSimulator:
         self._current_ext_axis_values = {}
         if self.external_axes_model is None:
             self._initial_ext_snapshot = ()
+            self._initial_ext_axis_values = {}
             return
         # Les axes externes démarrent à leur position courante (contrairement au robot
         # qui repart de HOME) : un mouvement EXTERNAL_AXIS part de la position actuelle.
@@ -860,6 +867,8 @@ class ProgramSimulator:
             for joint_idx, joint in enumerate(axis.joints):
                 self._current_ext_axis_values[(axis.id, joint_idx)] = float(joint.value)
         self._initial_ext_snapshot = self._build_ext_axis_snapshot()
+        # État de référence == état au bakage de base_pose côté contrôleur (positions live).
+        self._initial_ext_axis_values = dict(self._current_ext_axis_values)
 
     def _build_ext_axis_snapshot(self) -> tuple[float, ...]:
         if self.external_axes_model is None:
@@ -1229,16 +1238,63 @@ class ProgramSimulator:
     def _target_pose_base(self, motion: RobotProgramMotion, target: RobotProgramTarget, motion_tool: RobotTool) -> Pose6:
         if target.target_type == RobotProgramTargetType.JOINT:
             return self._fk_nominal_pose_base(target.joint_angles.to_list(), motion_tool)
-        # Chemin monde : cible en repère pièce → monde → base robot courant
-        T_world_pieceFrame = self._piece_frame_world_for(self._current_ext_axis_values)
-        if T_world_pieceFrame is None:
-            # Sans modèle pièce/workspace : chemin legacy (base_pose statique)
-            return self._pose_from_program_base_to_robot_base(target.cartesian_pose, motion.base_pose)
-        T_world_robotBase = self._world_robot_base_for(self._current_ext_axis_values)
-        T_robotBase_world = invert_homogeneous_transform(T_world_robotBase)
-        T_target_in_piece = pose_to_matrix(target.cartesian_pose)
-        T_target_in_base = T_robotBase_world @ T_world_pieceFrame @ T_target_in_piece
+
+        T_target_in_program = pose_to_matrix(target.cartesian_pose)
+        # base_pose = repère base programme bakée en repère robot (source + offset),
+        # recalculée par le contrôleur à l'état d'axes courant au clic Simuler.
+        # C'est exactement la transformation utilisée pour l'affichage des cibles.
+        T_robotBase_programBase = pose_to_matrix(motion.base_pose)
+
+        # Sans descripteur de base, ou tant que les axes externes n'ont pas bougé par
+        # rapport à l'état de bakage : la base bakée est exacte → résultat == affichage.
+        if self._base_spec is None or self._current_ext_axis_values == self._initial_ext_axis_values:
+            return matrix_to_pose(T_robotBase_programBase @ T_target_in_program)
+
+        # Suivi live : l'élément source de la base a bougé avec les axes externes.
+        # On applique le déplacement monde de la source (inverser un T_world, multiplier
+        # par l'autre) à la base bakée, puis on revient en repère base robot courant.
+        T_src_now = self._base_source_world_for(self._current_ext_axis_values)
+        T_src_start = self._base_source_world_for(self._initial_ext_axis_values)
+        T_robotBase_world_start = self._world_robot_base_for(self._initial_ext_axis_values)
+        T_robotBase_world_now = self._world_robot_base_for(self._current_ext_axis_values)
+
+        base_start_world = T_robotBase_world_start @ T_robotBase_programBase
+        base_now_world = T_src_now @ invert_homogeneous_transform(T_src_start) @ base_start_world
+        T_target_in_base = invert_homogeneous_transform(T_robotBase_world_now) @ base_now_world @ T_target_in_program
         return matrix_to_pose(T_target_in_base)
+
+    def _base_source_world_for(self, ext_values: dict[tuple[str, int], float]) -> np.ndarray:
+        """T_world du repère SOURCE de la base programme (offset exclu) à un état d'axes.
+
+        Reflète l'élément de cellule dont dépend la base : pièce, extrémité d'axe externe,
+        base robot (rail inclus), ou repère fixe monde. Permet de suivre la source quand
+        les axes bougent pendant le programme.
+        """
+        spec = self._base_spec
+        if spec is None or spec.source == ProgramBaseSource.WORLD:
+            return np.eye(4, dtype=float)
+        T_world_robotBase = self._world_robot_base_for(ext_values)
+        if spec.source == ProgramBaseSource.WORKPIECE:
+            T_world_pieceFrame = self._piece_frame_world_for(ext_values)
+            return T_world_pieceFrame if T_world_pieceFrame is not None else T_world_robotBase
+        if spec.source == ProgramBaseSource.EXTERNAL_AXIS:
+            return self._axis_end_world_for(ext_values, spec.ext_axis_id)
+        if spec.source == ProgramBaseSource.ROBOT:
+            return T_world_robotBase
+        if spec.source == ProgramBaseSource.PROGRAM_FILE:
+            return T_world_robotBase @ pose_to_matrix(spec.file_pose)
+        # MANUAL : base définie dans le repère robot.
+        return T_world_robotBase @ pose_to_matrix(spec.manual_pose)
+
+    def _axis_end_world_for(self, ext_values: dict[tuple[str, int], float], axis_id: str | None) -> np.ndarray:
+        """T_world de l'extrémité d'un axe externe à un état d'axes simulé."""
+        if axis_id is None or self.external_axes_model is None:
+            return np.eye(4, dtype=float)
+        transforms = self.external_axes_model.compute_world_transforms_for(ext_values)
+        entry = transforms.get(axis_id)
+        if entry is None:
+            return np.eye(4, dtype=float)
+        return np.array(entry["end"], dtype=float)
 
     @staticmethod
     def _pose_from_program_base_to_robot_base(pose_program_base: Pose6, base_pose: Pose6) -> Pose6:
@@ -1247,7 +1303,7 @@ class ProgramSimulator:
 
     @staticmethod
     def _pose_from_robot_base_to_program_base(pose_robot_base: Pose6, base_pose: Pose6) -> Pose6:
-        transform = np.linalg.inv(pose_to_matrix(base_pose)) @ pose_to_matrix(pose_robot_base)
+        transform = invert_homogeneous_transform(pose_to_matrix(base_pose)) @ pose_to_matrix(pose_robot_base)
         return matrix_to_pose(transform)
 
     @staticmethod
