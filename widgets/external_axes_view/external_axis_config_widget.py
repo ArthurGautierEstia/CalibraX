@@ -177,6 +177,21 @@ class _JointSectionWidget(QGroupBox):
         lim_layout.addWidget(self._max_spin)
         limits_layout.addRow("Limites :", lim_row)
         limits_layout.addRow("Offset (zéro) :", self._offset_spin)
+
+        # Vitesses (mm/s si prismatique, °/s si rotoïde). La vitesse par défaut est
+        # proposée dans les mouvements programme ; la vitesse max les plafonne.
+        self._default_speed_spin = self._make_speed_spin(500.0)
+        self._max_speed_spin = self._make_speed_spin(2000.0)
+        self._default_speed_spin.editingFinished.connect(self._on_speeds_changed)
+        self._max_speed_spin.editingFinished.connect(self._on_speeds_changed)
+        speed_row = QWidget()
+        speed_layout = QHBoxLayout(speed_row)
+        speed_layout.setContentsMargins(0, 0, 0, 0)
+        speed_layout.addWidget(QLabel("Défaut"))
+        speed_layout.addWidget(self._default_speed_spin)
+        speed_layout.addWidget(QLabel("Max"))
+        speed_layout.addWidget(self._max_speed_spin)
+        limits_layout.addRow("Vitesse (/s) :", speed_row)
         layout.addWidget(limits_box)
 
         # ── CAO pièce mobile ──────────────────────────────────────────
@@ -221,6 +236,20 @@ class _JointSectionWidget(QGroupBox):
     def _on_limits_changed(self) -> None:
         self._q_min = self._min_spin.value()
         self._q_max = self._max_spin.value()
+        self._emit()
+
+    def _make_speed_spin(self, default: float) -> QDoubleSpinBox:
+        sb = QDoubleSpinBox()
+        sb.setRange(0.01, 99999.0)
+        sb.setDecimals(2)
+        sb.setSingleStep(10.0)
+        sb.setValue(default)
+        return sb
+
+    def _on_speeds_changed(self) -> None:
+        # La vitesse par défaut ne peut pas dépasser la vitesse max
+        if self._default_speed_spin.value() > self._max_speed_spin.value():
+            self._default_speed_spin.setValue(self._max_speed_spin.value())
         self._emit()
 
     def _browse_cad(self) -> None:
@@ -268,6 +297,8 @@ class _JointSectionWidget(QGroupBox):
             q_max=self._max_spin.value(),
             offset=self._offset_spin.value(),
             value=0.0,
+            default_speed=self._default_speed_spin.value(),
+            max_speed=self._max_speed_spin.value(),
         )
 
     def set_data(
@@ -296,6 +327,8 @@ class _JointSectionWidget(QGroupBox):
         self._offset_spin.setValue(joint.offset)
         self._q_min = joint.q_min
         self._q_max = joint.q_max
+        self._max_speed_spin.setValue(joint.max_speed)
+        self._default_speed_spin.setValue(joint.default_speed)
 
         self._cad_line.setText(joint.cad_model)
         rgba = list(joint.cad_color)

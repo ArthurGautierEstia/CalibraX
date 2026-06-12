@@ -11,6 +11,8 @@ class ExternalAxisJointValue:
     joint_index: int
     value: float  # mm si LINEAR, degrés si ROTARY
     joint_type: ExternalAxisJointType
+    # mm/s si LINEAR, deg/s si ROTARY. None = default_speed du joint configuré.
+    speed: float | None = None
 
 
 @dataclass(frozen=True)

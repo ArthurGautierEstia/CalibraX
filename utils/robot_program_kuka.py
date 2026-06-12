@@ -359,8 +359,14 @@ def generate_kuka_src_text(
         lines.append(resolved_header.rstrip("\n"))
         lines.append("")
 
-    lines.append(f"DEF {program_name}()")
-    lines.append("")
+    # Le header par défaut contient déjà le DEF (avec l'init KUKA à l'intérieur) ;
+    # n'émettre un DEF que si le header personnalisé n'en définit pas.
+    header_has_def = any(
+        line.strip().upper().startswith("DEF ") for line in resolved_header.splitlines()
+    )
+    if not header_has_def:
+        lines.append(f"DEF {program_name}()")
+        lines.append("")
 
     default_approx = settings.default_approximation if settings is not None else MotionApproximation.none()
     apo_line = _format_apo_line(default_approx)

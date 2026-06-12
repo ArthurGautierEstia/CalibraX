@@ -1,0 +1,88 @@
+Bonjour je veux faire un refactoring de ma simulation dans le mode programme pour optimiser les calculs et ajouter la possibilité de faire des mouvements programmé avec les axes externes. J'ai essayé d'implémenter ça mais sans succès. Soit l'affichage de la trajectoire est bonne mais ensuite le playback bloque dès les départ (problèmes d'événement je crois car dès que le rail bouge ça demandait de re simuler la trajectoire), ou alors la trajectoire est bien réalisée par le robot et les axes externes mais l'affichage des éléments visuels ne fonctionne pas (ils étaient translaté en même temps que le robot).
+
+Cela est du car on a commencé cet onglet sans compter les axes externes donc on faisait tout par rapport au robot mais maintenant qu'il y a des axes externes ça ne fonctionne plus (ça fonctionnait uniquement si je positionnais mes axes avant de simuler un programme, mais je peux pas les faire bouger pendant). Je pense que la chaine de calcul n'est pas bonne et qu'il faut tout revoir pour mettre bien au propre.
+
+Selon moi il faudrait plusieurs choses.
+
+Pour chaque cible, il faut bien distinguer les coordonnées d'affichage et les coordoonées de calcul. Les coordonnées d'affichage doivent être dans le repère monde à la fin car ça définira où se trouve le point dans l'espace. Attention, Dans un programme, on doit pouvoir choisir le repère de référence que l'on souhaite pour importer les coordonnées des cibles (on doit pouvoir choisir un repère de référence parmi repère monde repère robot ou le repère lu dans le fichier programme s'il existe, ou les repères d'axes externes si présents). Puis on doit pouvoir choisir les offsets XYZABC par rapport à ce repère pour la rotation, pour prendre en compte ces offsets il faut à chaque fois définir la matrice de transformation associée aux offset puis la multiplier (comme ça les rotations sont bien appliquées avant les translations).
+
+Bien, une fois que nos cibles sont importées et visibles dans la table (par ailleurs dans la table on doit pouvoir choisir dans quel repère on veut exprimer ces cibles, ce doit être simplement ça et pas autre chose, la sélection d'un repère de modifie pas l'emplacement des cibles de la trajectoire, c'est juste l'expression des coordonnées qui change naturellement). Le repère sélectionné ici sera utilisé pour la génération du krl, en définissant la base dans le programme avec "$BASE = ".
+
+Ensuite je voudrais que l'edit de la base programme et l'edit outil se fasse tous les deux dans le dialog non bloquant "paramètres", il faut qu'on est un grand dialog de base pour avoir la place pour tout les élements :
+- je veux une première section en haut pour l'edit de la base, c'est là où on choisit justement le repère de référence et les offsets. C'est très important que le dialog ne bloque pas l'interaction avec le viewer car lors de cet ajustement je veux voir les cibles s'actualiser. Attention je veux pas actualiser dès que j'écris un chiffre dans la spinbox, il faut que j'aie fini d'écrire ou que j'appuie sur entrée, etc.. 
+- ensuite en dessous je veux une deuxième section pour l'edit de l'outil. On doit pouvoir choisir le tool courant de la config, le tool lu dans le programme si un tool non nul a été lu, ou alors définir un tool spécifique avec XYZABC (par rapport au flange bien sur). Ce tool là sera utilisé dans la génération du krl et défini avec l'instruction "$TOOL =".
+- Ensuite dans une nouvelle section je veux avoir le paramétrage de vitesse de trajectoire en mm/s si on veut une vitesse constante le long de la trajectoire. Par défaut la vitesse sera celle lue dans le programme.
+- Ensuite dans une nouvelle section on doit pouvoir gérer le paramètre d'approximation (par défaut C_DIS à 1) ça doit pouvoir être soit C_DIS soit C_VEL et on peut écrire la valeur associée. Ce paramètres sera définit dans la génération KRL par "$APO.CDIS =" ou "$APO.CVEL=" puis la mention de C_DIS ou C_VEL après chaque instruction de mouvement sur la même ligne (pour les mouvement LIN/CIRC).
+- Ensuite on doit avoir la section pour gérer les stratégies d'approche et de retrait comme c'est déjà le cas ici
+- Puis la section personnalisation HEADER et la preview KRL. Attention ce que j'appelle header c'est toute la partie avant le début du premier mouvement  dont voici un exemple : "&ACCESS RVP
+&REL 1
+&PARAM TEMPLATE = C:\KRC\Roboter\Template\vorgabe
+&PARAM EDITMASK = *
+DEF P1COR0G1 ( )
+
+
+; GLOBAL INTERRUPT DECL 3 WHEN $STOPMESS==TRUE DO IR_STOPM ( )
+; INTERRUPT ON 3
+
+;FOLD Initialise and set default speed
+BAS (#INITMOV,0)
+BAS (#VEL_PTP,20)
+BAS (#ACC_PTP,20)
+$VEL.CP=0.2
+BAS (#TOOL,0)
+BAS (#BASE,0)
+;ENDFOLD
+
+;;FOLD STARTPOS
+;$BWDSTART = FALSE
+;PDAT_ACT = PDEFAULT
+;BAS(#PTP_DAT)
+;FDAT_ACT = {TOOL_NO 0,BASE_NO 0,IPO_FRAME #BASE}
+;BAS(#FRAMES)
+;;ENDFOLD
+
+$ADVANCE = 5
+
+;FOLD ---- Quickly skip BCO ----
+; PTP $AXIS_ACT
+;ENDFOLD
+
+;FOLD ---- GO HOME ----
+PTP {A1 -90.000, A2 -90.000, A3 90.000, A4 0.000, A5 45.000, A6 0.000, E1 0, E2 0, E3 0, E4 0, E5 0, E6 0}
+;ENDFOLD
+
+
+; Program generated by RoboDK v5.9.2 for KUKA KR 240 R2900 ultra on 15/12/2025 15:45:40
+; Using nominal kinematics.
+$APO.CPTP = 1
+$APO.CDIS = 1.000
+$VEL.CP = 0.25000
+; ---- Setting reference (Base) ----
+$BASE = {FRAME: X 0.000,Y 2000.000,Z 1200.000,A 0.000,B 0.000,C 90.000}
+; --------------------------
+; ---- Setting tool (TCP) ----
+$TOOL = {FRAME: X 69.861,Y -0.294,Z 410.813,A 0.068,B 44.871,C 0.129}
+; --------------------------"
+
+Le DEF doit avoir le même nom que le programme pour que ça fonctionne.
+
+Pas de fioriture pour ce dialog je veux que ce soit simple et efficace.
+
+
+Maintenant si on passe à la partie simulation et calcule.
+
+Selon moi il faut qu'une trajectoire de simulation soit composée de segments, un segments est tout simplement un mouvement entre deux points (sauf pour le circ où là il y a le point de passage + le point d'arrivée). L'ordre de calcul doit se faire dans l'ordre sequentiel des cibles.
+
+Pour les mouvements de robot quand la cible est cartésienne il faut calculer la position de la cible dans le repère robot au moment du début du mouvement afin que ces coordonnées puissent être utilisées pour le calcul avec le mgi. Pour les mouvements articulaire c'est facile on affiche directement le mgd sur l'interpolation des angles entre la postion articulaire au début et à la cible articulaire (comme ce qui est fait actuellement). 
+
+Pour les mouvements d'axes externes, nous on viendra désafficher la trajectoire car elle n'est pas importante vu qu'on est en axe positionné. On effectue le mouvement d'axe directement (pour un rail on fait avancer le chariot etc..) De toute manière si on veut ajouter des mouvement d'axes externe il faut venir renseigner la position souhaitée. Par défaut quand on clique sur simuler on prend la position actuelle de l'axe externe (à l'inverse du robot où lui on part de la position home).
+
+Ducoup prenons un exemple pour la séquence : 
+j'importe un programme avec ces cibles attention je ne veux pas caluler automatiquement la trajectoire directement, seulement l'importe des cibles (visibles dans le viewer donc, mais pas de lignes qui signifirait une trajectoire). Le calcul de trajectoire se fait seulement quand je clique sur simuler ! les cibles doivent s'afficher dans mon tableau. Je peux venir dans paramètres pour faire ma personnalisation de base outil approche etc.. 
+Ensuite je vais rajouter un mouvement d'axe externe rail depuis la positon actuelle à 2000mm et du positionneur depuis la positon actuelle à 90°. pour la fin je refait un mouvement pour ramener les axes externes à 0. Je clique sur simuler, le vois la trajectoire qui sera effectuée une fois le positionnement des axes externes effectués. quand je fais play le robot avance et rejoint le point de départ de la trajectoire, puis le posi tourne et enfin le robot se met à bouger et joue sa trajectoire puis il finit, revient en position home, et les axes reviennent ensuite à 0.
+
+C'est hyper important de calculer segment par segment pour savoir où est le robot  et où est le tcp avant d'effectuer son mouvement. Cela permet de recalculer que les segments nécessaire si je rajoute/supprime/modifie un mouvement. par exemple si je modifie un mouvement lin, normalement il faut recalculer uniquement ce segment et le suivant.
+
+Fais en sorte que tout soit bien optimisé et prêt pour migrer en c++, utilise du typage de données dès que c'est possible.
+
+Je sais que tu consommes beaucoup et il me reste que 67% dans ma session de 5h (plan pro) alors fais en sorte de tout faire avec ce prompt et d'utiliser 50% max, si jamais tu dois t'arreter, fais un résumé des changements réalisés  et ce qu'il reste à faire en générant un fichier md dans /docs, avec le prompt a redonner à la prochaine session.

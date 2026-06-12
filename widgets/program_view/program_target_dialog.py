@@ -52,6 +52,7 @@ class ProgramTargetDialog(QDialog):
         self._allow_motion_type_editing = bool(allow_motion_type_editing)
         self._external_axes_model = external_axes_model
         self._ext_axis_spinboxes: list[tuple[str, int, str, QDoubleSpinBox]] = []  # (axis_id, joint_idx, unit, spinbox)
+        self._ext_axis_speed_spinboxes: dict[tuple[str, int], QDoubleSpinBox] = {}
         self._current_frame = ReferenceFrame.PROGRAM
 
         self.target_type_label = QLabel()
@@ -121,21 +122,40 @@ class ProgramTargetDialog(QDialog):
     def _build_ext_axis_widget(self) -> None:
         form = QFormLayout(self.ext_axis_widget)
         self._ext_axis_spinboxes = []
+        self._ext_axis_speed_spinboxes = {}
         if self._external_axes_model is None:
             return
+        # Valeurs/vitesses du mouvement édité, si déjà renseignées
+        existing: dict[tuple[str, int], ExternalAxisJointValue] = {}
+        if self._motion.external_axis_target is not None:
+            existing = {(jv.axis_id, jv.joint_index): jv for jv in self._motion.external_axis_target.values}
         for axis in self._external_axes_model.get_axes():
             for joint_idx, joint in enumerate(axis.joints):
+                is_linear = joint.joint_type.value == "linear"
                 spinbox = QDoubleSpinBox()
                 spinbox.setDecimals(3)
-                if joint.joint_type.value == "linear":
-                    spinbox.setRange(-9999.0, 9999.0)
-                    spinbox.setSuffix(" mm")
+                spinbox.setRange(float(joint.q_min), float(joint.q_max))
+                spinbox.setSuffix(" mm" if is_linear else " °")
+                speed_spinbox = QDoubleSpinBox()
+                speed_spinbox.setDecimals(2)
+                speed_spinbox.setRange(0.01, float(joint.max_speed))
+                speed_spinbox.setSuffix(" mm/s" if is_linear else " °/s")
+                jv = existing.get((axis.id, joint_idx))
+                if jv is not None:
+                    spinbox.setValue(float(jv.value))
+                    speed_spinbox.setValue(float(jv.speed) if jv.speed is not None else float(joint.default_speed))
                 else:
-                    spinbox.setRange(-360.0, 360.0)
-                    spinbox.setSuffix(" °")
-                spinbox.setValue(float(self._external_axes_model.get_axis_joint_value(axis.id, joint_idx)))
-                form.addRow(f"{axis.name} J{joint_idx + 1} ({joint.unit()})", spinbox)
+                    spinbox.setValue(float(self._external_axes_model.get_axis_joint_value(axis.id, joint_idx)))
+                    speed_spinbox.setValue(float(joint.default_speed))
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.addWidget(spinbox, 1)
+                row_layout.addWidget(QLabel("Vitesse"))
+                row_layout.addWidget(speed_spinbox, 1)
+                form.addRow(f"{axis.name} J{joint_idx + 1} ({joint.unit()})", row)
                 self._ext_axis_spinboxes.append((axis.id, joint_idx, joint.unit(), spinbox))
+                self._ext_axis_speed_spinboxes[(axis.id, joint_idx)] = speed_spinbox
 
     def _setup_connections(self) -> None:
         ok_button = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
@@ -299,11 +319,13 @@ class ProgramTargetDialog(QDialog):
         values = []
         for axis_id, joint_idx, unit, spinbox in self._ext_axis_spinboxes:
             joint_type = ExternalAxisJointType.LINEAR if unit == "mm" else ExternalAxisJointType.ROTARY
+            speed_spinbox = self._ext_axis_speed_spinboxes.get((axis_id, joint_idx))
             values.append(ExternalAxisJointValue(
                 axis_id=axis_id,
                 joint_index=joint_idx,
                 value=spinbox.value(),
                 joint_type=joint_type,
+                speed=speed_spinbox.value() if speed_spinbox is not None else None,
             ))
         return ExternalAxisProgramTarget.from_list(values) if values else None
 

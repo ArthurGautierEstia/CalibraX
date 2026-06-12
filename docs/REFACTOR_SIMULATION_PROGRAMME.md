@@ -75,6 +75,32 @@ Commit : `3212fbc` — Refactoring simulation programme : axes externes, afficha
   `$APO.CDIS = x` ou `$APO.CVEL = x`, `$VEL.CP`, `$BASE = {FRAME: ...}`,
   `$TOOL = {FRAME: ...}`, mention ` C_DIS`/` C_VEL` après chaque LIN/CIRC.
 
+## Corrections session 2 (2026-06-12, après vérification)
+
+La vérification du code a confirmé que tout le « fait » ci-dessus existe bien, MAIS la
+session 1 avait laissé une fonctionnalité à moitié implémentée (vitesses d'axes externes)
+et des oublis. Corrigés :
+
+1. **Crash `'ExternalAxisJointValue' object has no attribute 'speed'`** à la simulation
+   avec axe externe : le simulateur lisait `jv.speed` / `joint.default_speed` /
+   `joint.max_speed` qui n'existaient que côté `ExternalAxisJoint`. Ajout du champ
+   `speed: float | None` à `ExternalAxisJointValue` (None = default_speed du joint).
+2. **Vitesses configurables par joint d'axe externe** : champs « Vitesse Défaut / Max »
+   dans `_JointSectionWidget` (onglet Axes externes, get_joint/set_data), défaut clampé
+   au max. `JointEditorWidget` (code mort, jamais importé) supprimé.
+3. **Dialog mouvement axe externe** (`ProgramTargetDialog`) : spinbox valeur bornée
+   [q_min, q_max] du joint, spinbox vitesse bornée à max_speed et initialisée à
+   default_speed (ou à la valeur du mouvement édité — le pré-remplissage depuis
+   `motion.external_axis_target` manquait aussi).
+4. **Bouton « Editer l'orientation de l'outil » supprimé** (widget + signal + handler +
+   helpers + `program_tool_orientation_dialog.py`), remplacé par la section Outil du
+   dialog Paramètres.
+5. **Header KRL par défaut complet** (`DEFAULT_KUKA_HEADER` dans
+   `program_generation_settings.py`) : &ACCESS/&REL/&PARAM, `DEF {PROGRAM_NAME} ( )`,
+   FOLD init BAS, STARTPOS, $ADVANCE, skip BCO — conforme à l'exemple RoboDK. Un header
+   vide persisté retombe sur ce défaut ; le générateur n'émet plus son propre `DEF` si
+   le header en contient un.
+
 ## Reste à faire / à vérifier en lançant l'app
 
 1. **Test manuel complet** (rien n'a été validé en GUI) :

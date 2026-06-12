@@ -42,7 +42,6 @@ class ProgramKeypointsWidget(QWidget):
     delete_requested = pyqtSignal()
     targetModeChanged = pyqtSignal(str)
     motionModeChanged = pyqtSignal(str)
-    editToolOrientationRequested = pyqtSignal()
     programSettingsRequested = pyqtSignal()
 
     def __init__(
@@ -65,7 +64,6 @@ class ProgramKeypointsWidget(QWidget):
         self.cartesian_display_frame_combo = QComboBox()
         self.target_mode_combo = QComboBox()
         self.motion_mode_combo = QComboBox()
-        self.btn_edit_tool_orientation = QPushButton("Editer l'orientation de l'outil")
         self.btn_program_settings = QPushButton("Paramètres")
 
         self._keypoints: list[TrajectoryKeypoint] = []
@@ -130,9 +128,8 @@ class ProgramKeypointsWidget(QWidget):
         layout.addLayout(selectors_row)
 
         base_actions_row = QHBoxLayout()
-        base_actions_row.addWidget(self.btn_edit_tool_orientation, 1)
         base_actions_row.addWidget(self.btn_program_settings, 1)
-        base_actions_row.addStretch(2)
+        base_actions_row.addStretch(3)
         layout.addLayout(base_actions_row)
 
         self.keypoints_table.setHorizontalHeaderLabels(
@@ -180,7 +177,6 @@ class ProgramKeypointsWidget(QWidget):
         self.motion_mode_combo.currentIndexChanged.connect(self._on_motion_mode_changed)
         self.keypoints_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.keypoints_table.itemDoubleClicked.connect(self._on_table_item_double_clicked)
-        self.btn_edit_tool_orientation.clicked.connect(self.editToolOrientationRequested.emit)
         self.btn_program_settings.clicked.connect(self.programSettingsRequested.emit)
 
     def _emit_selection_changed(self) -> None:
@@ -445,6 +441,3 @@ class ProgramKeypointsWidget(QWidget):
             self.target_mode_combo.model().item(index_compensated).setEnabled(enabled)
         if not enabled and self.get_target_mode() == "COMPENSATED":
             self.set_target_mode("THEORETICAL", emit_signal=True)
-
-    def set_tool_orientation_edit_enabled(self, enabled: bool) -> None:
-        self.btn_edit_tool_orientation.setEnabled(enabled)
