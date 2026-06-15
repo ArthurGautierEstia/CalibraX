@@ -930,7 +930,7 @@ class ProgramController:
         # Mise à jour directe du viewer (chemin léger, bypasse _refresh_robot_state_items)
         if self.viewer3d_controller.is_playback_active():
             self.viewer3d_controller.update_robot_poses_for_playback()
-        # Met à jour la portion "réalisée" si l'index de split a changé (throttlé à ~30 Hz).
+        # Met à jour la portion "réalisée" et les overlays programme (throttlé à ~30 Hz).
         new_split_index = sample_index if self._current_time_s > 1e-9 else -1
         if new_split_index != self._last_split_sample_index:
             self._last_split_sample_index = new_split_index
@@ -938,8 +938,23 @@ class ProgramController:
             if now - self._last_traj_refresh_wall_s >= self._TRAJ_REFRESH_INTERVAL_S:
                 self._last_traj_refresh_wall_s = now
                 self._refresh_viewer_segments()
+                if self.viewer3d_controller.is_playback_active():
+                    self._refresh_program_overlays_for_playback()
 
 
+
+    def _refresh_program_overlays_for_playback(self) -> None:
+        """Pendant la lecture : recale cibles et repère programme sur la pose courante des axes."""
+        if self.current_program is None:
+            return
+        if self._base_source in self._CHAIN_DEPENDENT_BASE_SOURCES:
+            new_base = self._compute_effective_base()
+            self._update_program_base_pose(new_base)
+            self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
+                self._build_display_keypoints()
+            )
+        self._refresh_viewer_keypoints()
+        self._refresh_program_frame()
 
     def _sample_index_at_time(self, time_s: float) -> int:
 
@@ -2499,11 +2514,7 @@ class ProgramController:
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
         list[tuple[list[list[float]], tuple[float, float, float, float]]],
     ]:
-        """Construit les segments d'affichage en repère MONDE (poses world des samples).
-
-        Les samples EXTERNAL_AXIS sont exclus : le déplacement du TCP induit par un
-        positionnement d'axe externe ne fait pas partie de la trajectoire affichée.
-        """
+        """Construit les segments d'affichage en repère MONDE (poses world des samples)."""
         nominal_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
         measured_segments: list[tuple[list[list[float]], tuple[float, float, float, float]]] = []
 
@@ -2532,14 +2543,6 @@ class ProgramController:
             return [nom.x, nom.y, nom.z]
 
         for sample in samples:
-            if sample.motion_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
-                # Coupure de segment : la trajectoire reprend après le positionnement
-                _flush_nom(current_nom_is_done)
-                _flush_meas(current_meas_is_done)
-                nom_points = []
-                meas_points = []
-                current_key = None
-                continue
             nom_pose = sample.nominal_pose_base
             meas_pose = sample.measured_pose_world if sample.measured_pose_world is not None else sample.measured_pose_base
             if nom_pose is None and meas_pose is None:
@@ -2611,13 +2614,7 @@ class ProgramController:
             return [nom.x, nom.y, nom.z]
 
         for sample in samples:
-            if sample.motion_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
-                _flush()
-                cur_pts = []
-                cur_times = []
-                cur_key = None
-                continue
-            if sample.nominal_pose_base is None:
+            if sample.nominal_pose_base is None and sample.nominal_pose_world is None:
                 continue
             key = (sample.motion_mode.value, int(sample.source_line))
             if cur_key is not None and key != cur_key:
@@ -2641,12 +2638,6 @@ class ProgramController:
         current_key: tuple[str, int] | None = None
 
         for sample in samples:
-            if sample.motion_mode == RobotProgramMotionMode.EXTERNAL_AXIS:
-                if len(current_points) >= 2:
-                    segments.append((current_points, color))
-                current_points = []
-                current_key = None
-                continue
             pose = sample.measured_pose_world if sample.measured_pose_world is not None else sample.measured_pose_base
             if pose is None:
                 continue

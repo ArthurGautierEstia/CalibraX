@@ -62,8 +62,8 @@
                     "q_min": 0.0,
                     "q_max": 4000.0,
                     "offset": -2000.0,
-                    "default_speed": 500.0,
-                    "max_speed": 2000.0
+                    "default_speed": 250.0,
+                    "max_speed": 500.0
                 }
             ]
         },
@@ -129,8 +129,8 @@
                     "q_min": -180.0,
                     "q_max": 180.0,
                     "offset": 0.0,
-                    "default_speed": 500.0,
-                    "max_speed": 2000.0
+                    "default_speed": 20.0,
+                    "max_speed": 30.0
                 }
             ]
         }
