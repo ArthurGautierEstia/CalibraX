@@ -140,6 +140,7 @@ class ProgramController:
         self._display_keypoints: list[TrajectoryKeypoint] = []
         self._display_keypoint_tools: list[RobotTool] = []
         self._display_target_refs: list[_ProgramTargetRef] = []
+        self._motion_end_world_xyz: dict[int, tuple[float, float, float]] = {}
         self._selected_keypoint_index: int | None = None
         self._base_source: ProgramBaseSource = ProgramBaseSource.MANUAL
         self._base_offset: Pose6 = Pose6.zeros()
@@ -441,6 +442,7 @@ class ProgramController:
             self._display_keypoints = []
             self._display_keypoint_tools = []
             self._display_target_refs = []
+            self._motion_end_world_xyz = {}
             self._nominal_segments_cache = []
             self._measured_segments_cache = []
             self._compensated_segments_cache = []
@@ -464,6 +466,7 @@ class ProgramController:
             self._display_keypoints = []
             self._display_keypoint_tools = []
             self._display_target_refs = []
+            self._motion_end_world_xyz = {}
             self._refresh_view()
             return
 
@@ -520,6 +523,18 @@ class ProgramController:
         )
 
         _theo_samples = self._get_samples_for_modes("THEORETICAL", active_motion_mode)
+
+        self._motion_end_world_xyz = {}
+        for _mi, _motion in enumerate(simulation_program.motions):
+            if _motion.mode == RobotProgramMotionMode.EXTERNAL_AXIS:
+                _last_s: ProgramSimulationSample | None = None
+                for _s in _theo_samples:
+                    if _s.source_line == _motion.line_number:
+                        _last_s = _s
+                if _last_s is not None and _last_s.nominal_pose_world is not None:
+                    _p = _last_s.nominal_pose_world
+                    self._motion_end_world_xyz[_mi] = (_p.x, _p.y, _p.z)
+
         self._nominal_segments_cache, self._measured_segments_cache = self._build_nominal_and_measured_segments(
             _theo_samples,
             self._get_nominal_color(),
@@ -786,9 +801,19 @@ class ProgramController:
             return
 
         points_xyz: list[list[float]] = []
+        # Cibles normales : projetées avec la base robot VIVANTE (la pose_base par mouvement
+        # est recalculée en lecture pour suivre le posi/rail ; la composante rail s'annule
+        # ici). Le point cible de fin de mouvement d'axe externe utilise une position monde
+        # figée (voir _motion_end_world_xyz).
         T_world_robot = self._robot_base_world_matrix()
 
         for row, (keypoint, keypoint_tool) in enumerate(zip(self._display_keypoints, self._display_keypoint_tools)):
+            ref = self._display_target_refs[row]
+            if not ref.is_via_target and ref.motion_index in self._motion_end_world_xyz:
+                xyz = self._motion_end_world_xyz[ref.motion_index]
+                points_xyz.append(list(xyz))
+                continue
+
             if keypoint.target_type == KeypointTargetType.JOINT:
                 fk_result = self.robot_model.compute_fk_joints(keypoint.joint_target.to_list(), tool=keypoint_tool)
                 if fk_result is None:
@@ -950,9 +975,6 @@ class ProgramController:
         if self._base_source in self._CHAIN_DEPENDENT_BASE_SOURCES:
             new_base = self._compute_effective_base()
             self._update_program_base_pose(new_base)
-            self._display_keypoints, self._display_keypoint_tools, self._display_target_refs = (
-                self._build_display_keypoints()
-            )
         self._refresh_viewer_keypoints()
         self._refresh_program_frame()
 
