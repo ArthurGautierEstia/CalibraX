@@ -111,6 +111,7 @@ class ProgramController:
             self.external_axes_model,
             workspace_model=self.workspace_model,
             workpiece_model=self.workpiece_controller.workpiece_model,
+            tooling_model=self.workpiece_controller.tooling_model,
         )
         # Simulateur dédié aux variantes dérivées (mode opposé, compensation) pour
         # préserver le cache incrémental du simulateur principal.
@@ -120,6 +121,7 @@ class ProgramController:
             self.external_axes_model,
             workspace_model=self.workspace_model,
             workpiece_model=self.workpiece_controller.workpiece_model,
+            tooling_model=self.workpiece_controller.tooling_model,
         )
         self.current_program: RobotProgram | None = None
         self.current_result: ProgramSimulationResult | None = None
@@ -1343,6 +1345,7 @@ class ProgramController:
 
     def _on_settings_base_changed(self) -> None:
         prev_effective = self._compute_effective_base()
+        prev_config = (self._base_source, self._base_ext_axis_id, self._manual_base, self._base_offset)
         source, ext_axis_id, manual_base, offset = self.settings_dialog.base_section.get_base_config()
         self._base_source = source
         self._base_ext_axis_id = ext_axis_id
@@ -1353,11 +1356,19 @@ class ProgramController:
             return
 
         updated_base_pose = self._compute_effective_base()
-        if updated_base_pose == prev_effective:
+        config_changed = prev_config != (source, ext_axis_id, manual_base, offset)
+        if updated_base_pose == prev_effective and not config_changed:
             return
 
-        # Mise à jour live des cibles dans le viewer pendant l'édition (dialog non bloquant)
-        self._update_program_base_preview(updated_base_pose)
+        if updated_base_pose == prev_effective:
+            # The numeric base can stay identical at the initial axis state while
+            # the source identity changes. The simulator still needs the new
+            # ProgramBaseSpec so later segments follow moved scene elements.
+            self._update_program_base_pose(updated_base_pose)
+            self._refresh_program_frame()
+        else:
+            # Mise à jour live des cibles dans le viewer pendant l'édition (dialog non bloquant)
+            self._update_program_base_preview(updated_base_pose)
         self._program_dirty = True
         self._mark_simulation_dirty()
         self._refresh_status()

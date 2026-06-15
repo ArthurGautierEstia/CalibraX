@@ -26,10 +26,11 @@ from models.robot_program import (
 from models.external_axes_model import ExternalAxesModel
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
+from models.tooling_model import ToolingModel
 from models.types import JointAngles6, Pose6
 from models.workpiece_model import WorkpieceModel
 from models.workspace_model import WorkspaceModel
-from utils.external_axes_kinematics import piece_frame_world
+from utils.external_axes_kinematics import piece_frame_world, tooling_frame_world
 from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
 from utils.mgi import MGI, MgiAxisLimits, MgiConfigurationFilter, MgiGeometricParams, MgiParams, RobotTool
 from utils.reference_frame_utils import pose_to_matrix, matrix_to_pose
@@ -100,12 +101,14 @@ class ProgramSimulator:
         external_axes_model: ExternalAxesModel | None = None,
         workspace_model: WorkspaceModel | None = None,
         workpiece_model: WorkpieceModel | None = None,
+        tooling_model: ToolingModel | None = None,
     ) -> None:
         self.robot_model = robot_model
         self.tool_model = tool_model
         self.external_axes_model = external_axes_model
         self.workspace_model = workspace_model
         self.workpiece_model = workpiece_model
+        self.tooling_model = tooling_model
         # Lot A.1 : cache DH mesuré valide pendant une passe de simulate_program
         self._cached_measured_dh: list[list[float]] | None = None
         # Lot F : arrays numpy pré-extraits pour FK mesuré vectorisé
@@ -817,7 +820,26 @@ class ProgramSimulator:
         world_transforms: dict[str, dict] = {}
         if self.external_axes_model is not None:
             world_transforms = self.external_axes_model.compute_world_transforms_for(ext_values)
-        # Pour les repères workspace (PREFIX_WS), on ne les a pas ici — fallback identité
+
+        workspace_frames: dict[str, np.ndarray] = {
+            elem.name: pose_zyx_to_matrix(elem.pose)
+            for elem in self.workspace_model.get_workspace_cad_elements()
+            if elem.name
+        }
+
+        tooling_matrix: np.ndarray | None = None
+        if (
+            self.tooling_model is not None
+            and self.workpiece_model.get_parent_frame_id() == WorkpieceModel.FRAME_TOOLING
+        ):
+            tooling_matrix = tooling_frame_world(
+                tooling_parent_id=self.tooling_model.get_parent_frame_id(),
+                elements=self.tooling_model.get_elements(),
+                world_transforms=world_transforms,
+                world_robot_base_matrix=world_base,
+                workspace_frames=workspace_frames,
+            )
+
         return piece_frame_world(
             piece_parent_id=self.workpiece_model.get_parent_frame_id(),
             world_transforms=world_transforms,
@@ -825,6 +847,7 @@ class ProgramSimulator:
             piece_frame_pose=self.workpiece_model.get_workpiece_frame_pose(),
             workspace_robot_base_matrix=workspace_base,
             world_robot_base_matrix=world_base,
+            tooling_frame_matrix=tooling_matrix,
         )
 
     def _build_sample(

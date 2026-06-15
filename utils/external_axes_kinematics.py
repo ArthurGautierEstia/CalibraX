@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 
 from models.external_axes_model import ExternalAxesModel
+from models.tooling_element import ToolingElement
 from models.types.pose6 import Pose6
 from models.workspace_model import WorkspaceModel
 from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
@@ -15,6 +16,7 @@ from utils.math_utils import invert_homogeneous_transform, pose_zyx_to_matrix
 PREFIX_EXT = "ext:"
 PREFIX_WS = "ws:"
 FRAME_ROBOT = "robot"
+FRAME_TOOLING = "tooling"  # mirrors WorkpieceModel.FRAME_TOOLING
 
 
 def world_robot_base(
@@ -64,6 +66,42 @@ def world_workpiece(
     return T_local
 
 
+def tooling_frame_world(
+    tooling_parent_id: str,
+    elements: list[ToolingElement],
+    world_transforms: dict[str, dict],
+    world_robot_base_matrix: np.ndarray,
+    workspace_frames: dict[str, np.ndarray] | None = None,
+) -> np.ndarray:
+    """Retourne T_world du repère du dernier élément d'outillage (chaîne pure).
+
+    Reproduit la logique contrôleur (_get_parent_world_transform +
+    _compute_tooling_world_transforms + _get_tooling_frame) mais paramétrée
+    par world_transforms (état d'axes simulé) pour le suivi live en simulation.
+    """
+    if tooling_parent_id == "" or tooling_parent_id is None:
+        T_parent = np.eye(4, dtype=float)
+    elif tooling_parent_id == FRAME_ROBOT:
+        T_parent = world_robot_base_matrix
+    elif tooling_parent_id.startswith(PREFIX_EXT):
+        axis_id = tooling_parent_id[len(PREFIX_EXT):]
+        t = world_transforms.get(axis_id)
+        T_parent = t["end"] if t is not None else np.eye(4, dtype=float)
+    elif tooling_parent_id.startswith(PREFIX_WS):
+        elem_name = tooling_parent_id[len(PREFIX_WS):]
+        T_parent = (workspace_frames or {}).get(elem_name, np.eye(4, dtype=float))
+    else:
+        T_parent = np.eye(4, dtype=float)
+
+    T_prev = T_parent
+    for elem in elements:
+        T_cao = T_prev @ pose_zyx_to_matrix(elem.pose_in_prev)
+        T_frame = T_cao @ pose_zyx_to_matrix(elem.element_frame_pose)
+        T_prev = T_frame
+
+    return T_prev
+
+
 def piece_frame_world(
     piece_parent_id: str,
     world_transforms: dict[str, dict],
@@ -71,6 +109,7 @@ def piece_frame_world(
     piece_frame_pose: Pose6,
     workspace_robot_base_matrix: np.ndarray,
     world_robot_base_matrix: np.ndarray,
+    tooling_frame_matrix: np.ndarray | None = None,
 ) -> np.ndarray:
     """Retourne T_world_pieceFrame pour un état d'axes simulé.
 
@@ -81,6 +120,8 @@ def piece_frame_world(
         piece_frame_pose: repère pièce dans la CAO pièce.
         workspace_robot_base_matrix: T_world_robotBase issue du workspace (statique).
         world_robot_base_matrix: T_world_robotBase effectif (avec rail si présent).
+        tooling_frame_matrix: T_world_toolingFrame préalablement calculé via
+            tooling_frame_world(), requis quand piece_parent_id == FRAME_TOOLING.
     """
     T_pose = pose_zyx_to_matrix(piece_pose_in_parent)
     T_frame = pose_zyx_to_matrix(piece_frame_pose)
@@ -89,6 +130,8 @@ def piece_frame_world(
         T_parent = np.eye(4, dtype=float)
     elif piece_parent_id == FRAME_ROBOT:
         T_parent = world_robot_base_matrix
+    elif piece_parent_id == FRAME_TOOLING:
+        T_parent = tooling_frame_matrix if tooling_frame_matrix is not None else np.eye(4, dtype=float)
     elif piece_parent_id.startswith(PREFIX_EXT):
         axis_id = piece_parent_id[len(PREFIX_EXT):]
         t = world_transforms.get(axis_id)
