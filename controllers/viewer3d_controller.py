@@ -57,7 +57,8 @@ class Viewer3DController(QObject):
         self._overlay_joints_controller = JointsController(
             self.robot_model,
             self.viewer_3d_widget.get_overlay_joints_widget(),
-            self,
+            external_axes_model=self.external_axes_model,
+            parent=self,
         )
         self._overlay_cartesian_controller = CartesianWidgetController(
             self.robot_model,

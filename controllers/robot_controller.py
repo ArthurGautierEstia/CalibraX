@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PyQt6.QtCore import QObject, pyqtSignal
 from models.robot_model import RobotModel
 from models.tool_model import ToolModel
@@ -8,6 +10,10 @@ from controllers.robot_view.robot_mgi_configuration_controller import RobotMgiCo
 from controllers.tool_controller import ToolController
 from controllers.calibration_view.measurement_controller import MeasurementController
 from controllers.viewer3d_controller import Viewer3DController
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.external_axes_model import ExternalAxesModel
 
 
 class RobotController(QObject):
@@ -20,6 +26,7 @@ class RobotController(QObject):
         robot_view: RobotView,
         tool_view: ToolView,
         viewer3d_controller: Viewer3DController | None = None,
+        external_axes_model: ExternalAxesModel | None = None,
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -39,6 +46,7 @@ class RobotController(QObject):
             self.robot_view.get_configuration_widget(),
             tool_controller=self.tool_controller,
             viewer3d_controller=self.viewer3d_controller,
+            external_axes_model=external_axes_model,
         )
         self.mgi_configuration_controller = RobotMgiConfigurationController(
             self.robot_model,

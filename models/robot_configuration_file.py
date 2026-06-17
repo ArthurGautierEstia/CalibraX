@@ -109,9 +109,9 @@ class RobotConfigurationFile:
     axis_reversed: list[int] = field(default_factory=lambda: [1] * 6)
     joint_weights: list[float] = field(default_factory=lambda: [1.0] * 6)
     allowed_configs: set[MgiConfigKey] = field(default_factory=lambda: set(MgiConfigKey))
-    home_position: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 90.0, 0.0])
-    position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0])
-    position_calibration: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0])
+    home_position: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 90.0, 0.0, 0.0, 0.0])
+    position_zero: list[float] = field(default_factory=lambda: [0.0, -90.0, 90.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    position_calibration: list[float] = field(default_factory=lambda: [0.0, -105.0, 156.0, 0.0, 120.0, 0.0, 0.0, 0.0])
     robot_cad_models: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_MODELS))
     robot_cad_colors: list[str] = field(default_factory=lambda: list(DEFAULT_ROBOT_CAD_COLORS))
     default_tool_profile: str = ""
@@ -429,9 +429,9 @@ class RobotConfigurationFile:
             axis_reversed=cls._parse_axis_reversed(data.get("axis_reversed")),
             joint_weights=cls._parse_float_list(data.get("joint_weights"), 6, 1.0),
             allowed_configs=allowed_configs,
-            home_position=cls._parse_float_list(data.get("home_position"), 6, 0.0),
-            position_zero=cls._parse_float_list(data.get("position_zero"), 6, 0.0),
-            position_calibration=cls._parse_float_list(data.get("position_calibration"), 6, 0.0),
+            home_position=cls._parse_float_list(data.get("home_position"), 8, 0.0),
+            position_zero=cls._parse_float_list(data.get("position_zero"), 8, 0.0),
+            position_calibration=cls._parse_float_list(data.get("position_calibration"), 8, 0.0),
             robot_cad_models=cls._parse_string_list(
                 data.get("robot_cad_models", data.get("robot_cad_files")),
                 DEFAULT_ROBOT_CAD_MODELS,
@@ -464,9 +464,9 @@ class RobotConfigurationFile:
             "axis_reversed": self.axis_reversed[:6],
             "joint_weights": self.joint_weights[:6],
             "allowed_configs": [cfg.name for cfg in MgiConfigKey if cfg in self.allowed_configs],
-            "home_position": self.home_position[:6],
-            "position_zero": self.position_zero[:6],
-            "position_calibration": self.position_calibration[:6],
+            "home_position": self.home_position[:8],
+            "position_zero": self.position_zero[:8],
+            "position_calibration": self.position_calibration[:8],
             "robot_cad_models": [str(path) for path in self.robot_cad_models],
             "robot_cad_colors": list(self.robot_cad_colors[:7]),
             "default_tool_profile": self.default_tool_profile,

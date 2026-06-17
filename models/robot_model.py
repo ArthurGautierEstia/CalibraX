@@ -46,12 +46,12 @@ class RobotModel(QObject):
     UNCONFIGURED_CARTESIAN_SLIDER_LIMITS_XYZ: List[Tuple[float, float]] = list(DEFAULT_CARTESIAN_SLIDER_LIMITS_XYZ)
     DEFAULT_ROBOT_CAD_MODELS: List[str] = [""] * 7
     DEFAULT_ROBOT_CAD_COLOR_HEX_VALUES: List[str] = [""] * 7
-    DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0]
-    UNCONFIGURED_HOME_POSITION: List[float] = [0.0] * 6
-    POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0]
-    UNCONFIGURED_POSITION_ZERO: List[float] = [0.0] * 6
-    POSITION_CALIBRATION: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0]
-    UNCONFIGURED_POSITION_CALIBRATION: List[float] = [0.0] * 6
+    DEFAULT_HOME_POSITION: List[float] = [0.0, -90.0, 90.0, 0.0, 90.0, 0.0, 0.0, 0.0]
+    UNCONFIGURED_HOME_POSITION: List[float] = [0.0] * 8
+    POSITION_ZERO: List[float] = [0.0, -90.0, 90.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    UNCONFIGURED_POSITION_ZERO: List[float] = [0.0] * 8
+    POSITION_CALIBRATION: List[float] = [0.0, -105.0, 156.0, 0.0, 120.0, 0.0, 0.0, 0.0]
+    UNCONFIGURED_POSITION_CALIBRATION: List[float] = [0.0] * 8
     
     # ============================================================================
     # SIGNAUX
@@ -658,7 +658,8 @@ class RobotModel(QObject):
     def set_home_position(self, home_pos: list[float]):
         """Définit la position home"""
         if len(home_pos) >= 6:
-            self.home_position = list(home_pos[:6])
+            padded = list(home_pos[:8]) + [0.0] * max(0, 8 - len(home_pos))
+            self.home_position = padded[:8]
     
     def go_to_home_position(self):
         """Move joints to home position."""
@@ -671,7 +672,8 @@ class RobotModel(QObject):
     def set_position_zero(self, position_zero: list[float]):
         """Définit la position 0"""
         if len(position_zero) >= 6:
-            self.position_zero = list(position_zero[:6])
+            padded = list(position_zero[:8]) + [0.0] * max(0, 8 - len(position_zero))
+            self.position_zero = padded[:8]
 
     def go_to_position_zero(self):
         """Déplace les joints à la position 0 (fixe)"""
@@ -684,7 +686,8 @@ class RobotModel(QObject):
     def set_position_calibration(self, position_calibration: list[float]):
         """Définit la position calibration"""
         if len(position_calibration) >= 6:
-            self.position_calibration = list(position_calibration[:6])
+            padded = list(position_calibration[:8]) + [0.0] * max(0, 8 - len(position_calibration))
+            self.position_calibration = padded[:8]
 
     def go_to_position_calibration(self):
         """Déplace les joints à la position de calibration (fixe)"""

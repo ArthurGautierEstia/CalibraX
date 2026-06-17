@@ -69,7 +69,8 @@ class RobotConfigurationWidget(QWidget):
     COL_POS_ZERO = 0
     COL_POS_HOME = 1
     COL_POS_CALIBRATION = 2
-    POSITION_JOINT_COUNT = 6
+    POSITION_JOINT_COUNT = 8
+    POSITION_EXT_AXIS_START = 6
     POSITION_ACTION_ROW = POSITION_JOINT_COUNT
 
     COL_AXIS_COLLIDER_ENABLED = 0
@@ -230,9 +231,12 @@ class RobotConfigurationWidget(QWidget):
             self._apply_current_configuration_label_style()
 
     def _apply_current_configuration_label_style(self) -> None:
-        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent_hex = palette.color(QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorRole.Mid).name()
         self.current_config_name_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent_hex};"
         )
 
     def add_tab(self, widget: QWidget, title: str) -> None:
@@ -370,9 +374,9 @@ class RobotConfigurationWidget(QWidget):
         positions_layout = QVBoxLayout(positions_group)
         self.table_positions = QTableWidget(RobotConfigurationWidget.POSITION_JOINT_COUNT + 1, 3)
         self.table_positions.setHorizontalHeaderLabels(["Position 0", "Position home", "Position de calibration"])
-        self.table_positions.setVerticalHeaderLabels(
-            [f"q{i + 1}" for i in range(RobotConfigurationWidget.POSITION_JOINT_COUNT)] + ["Aller à"]
-        )
+        joint_labels = [f"q{i + 1}" for i in range(RobotConfigurationWidget.POSITION_EXT_AXIS_START)]
+        ext_labels = [f"e{i + 1}" for i in range(RobotConfigurationWidget.POSITION_JOINT_COUNT - RobotConfigurationWidget.POSITION_EXT_AXIS_START)]
+        self.table_positions.setVerticalHeaderLabels(joint_labels + ext_labels + ["Aller à"])
         self.table_positions.horizontalHeader().setDefaultSectionSize(180)
         self.table_positions.itemChanged.connect(self._on_positions_item_changed)
 
@@ -461,7 +465,8 @@ class RobotConfigurationWidget(QWidget):
         self._emit_axis_colliders_config_changed()
 
     def _on_positions_item_changed(self, item: QTableWidgetItem) -> None:
-        self._format_table_item_with_unit(self.table_positions, item, RobotConfigurationWidget.UNIT_DEG, True)
+        unit = RobotConfigurationWidget.UNIT_MM if item.row() >= RobotConfigurationWidget.POSITION_EXT_AXIS_START else RobotConfigurationWidget.UNIT_DEG
+        self._format_table_item_with_unit(self.table_positions, item, unit, True)
         self.positions_config_changed.emit(self.get_home_position(), self.get_position_zero(), self.get_position_calibration())
 
     def _on_go_to_position_clicked(self, column: int) -> None:
@@ -939,9 +944,10 @@ class RobotConfigurationWidget(QWidget):
                 zero_value = position_zero[row] if row < len(position_zero) else 0.0
                 calibration_value = position_calibration[row] if row < len(position_calibration) else 0.0
                 home_value = home_position[row] if row < len(home_position) else 0.0
-                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_ZERO, zero_value, RobotConfigurationWidget.UNIT_DEG)
-                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_CALIBRATION, calibration_value, RobotConfigurationWidget.UNIT_DEG)
-                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_HOME, home_value, RobotConfigurationWidget.UNIT_DEG)
+                unit = RobotConfigurationWidget.UNIT_MM if row >= RobotConfigurationWidget.POSITION_EXT_AXIS_START else RobotConfigurationWidget.UNIT_DEG
+                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_ZERO, zero_value, unit)
+                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_CALIBRATION, calibration_value, unit)
+                self._set_table_item_with_unit(self.table_positions, row, RobotConfigurationWidget.COL_POS_HOME, home_value, unit)
         finally:
             self.table_positions.blockSignals(False)
 

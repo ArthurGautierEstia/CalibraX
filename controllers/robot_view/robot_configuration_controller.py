@@ -18,6 +18,7 @@ from widgets.robot_view.robot_configuration_widget import RobotConfigurationWidg
 if TYPE_CHECKING:
     from controllers.tool_controller import ToolController
     from controllers.viewer3d_controller import Viewer3DController
+    from models.external_axes_model import ExternalAxesModel
 
 
 class RobotConfigurationController(QObject):
@@ -39,6 +40,7 @@ class RobotConfigurationController(QObject):
         robot_configuration_widget: RobotConfigurationWidget,
         tool_controller: ToolController | None = None,
         viewer3d_controller: Viewer3DController | None = None,
+        external_axes_model: ExternalAxesModel | None = None,
         parent: QObject = None,
     ):
         super().__init__(parent)
@@ -46,6 +48,7 @@ class RobotConfigurationController(QObject):
         self.robot_configuration_widget = robot_configuration_widget
         self.tool_controller = tool_controller
         self.viewer3d_controller = viewer3d_controller
+        self.external_axes_model = external_axes_model
         self._default_tool_profile = ""
         self._default_tool_auto_load_on_startup = False
         self._saved_snapshot: str | None = None
@@ -179,6 +182,12 @@ class RobotConfigurationController(QObject):
         if len(joint_values) < 6:
             return
         self.robot_model.set_joints([float(value) for value in joint_values[:6]])
+        if self.external_axes_model is not None and len(joint_values) >= 8:
+            axes = self.external_axes_model.get_axes()
+            for i, axis in enumerate(axes[:2]):
+                ext_value = float(joint_values[6 + i])
+                if axis.joints:
+                    self.external_axes_model.set_axis_joint_value(axis.id, 0, ext_value)
 
     def _on_view_robot_cad_models_changed(self, robot_cad_models: list[str]) -> None:
         self.robot_model.set_robot_cad_models(robot_cad_models)

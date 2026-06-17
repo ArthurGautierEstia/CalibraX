@@ -112,9 +112,10 @@ class MainController(QObject):
             main_window.get_robot_view(),
             main_window.get_tool_view(),
             self.viewer3d_controller,
+            external_axes_model=external_axes_model,
         )
         self.calibration_controller = CalibrationController(robot_model, tool_model, main_window.get_calibration_view())
-        self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view())
+        self.joint_control_controller = JointControlController(robot_model, main_window.get_joint_control_view(), external_axes_model=external_axes_model)
         self.mgi_controller = MgiController(
             robot_model,
             main_window.get_mgi_solutions_widget(),
