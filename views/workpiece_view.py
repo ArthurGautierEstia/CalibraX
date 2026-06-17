@@ -178,7 +178,10 @@ class WorkpieceView(QWidget):
     def _apply_current_config_label_style(self) -> None:
         if self.current_config_label is None:
             return
-        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent = palette.color(QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorRole.Mid).name()
         self.current_config_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent};"
         )

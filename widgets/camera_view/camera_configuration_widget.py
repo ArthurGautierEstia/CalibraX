@@ -764,9 +764,12 @@ class CameraConfigurationWidget(QWidget):
             self._apply_current_config_label_style()
 
     def _apply_current_config_label_style(self) -> None:
-        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent = palette.color(QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorRole.Mid).name()
         self.current_config_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent};"
         )
 
     def set_current_file_path(self, file_path: str) -> None:

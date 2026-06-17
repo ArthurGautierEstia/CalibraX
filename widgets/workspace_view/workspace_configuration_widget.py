@@ -360,6 +360,10 @@ class WorkspaceConfigurationWidget(QWidget):
         name = str(configuration_name or "").strip()
         self.current_config_label.setText(name or "Aucune configuration")
 
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._apply_current_config_label_style()
+
     def changeEvent(self, event) -> None:  # type: ignore[override]
         super().changeEvent(event)
         if event.type() == event.Type.PaletteChange:
@@ -368,9 +372,12 @@ class WorkspaceConfigurationWidget(QWidget):
     def _apply_current_config_label_style(self) -> None:
         if self.current_config_label is None:
             return
-        accent = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Mid).name()
         self.current_config_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent};"
         )
 
     def set_workspace_directory(self, directory: str) -> None:

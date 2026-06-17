@@ -108,9 +108,12 @@ class ProgramConfigWidget(QWidget):
         apply_status_badge(self.status_label, text, color)
 
     def _apply_current_program_label_style(self) -> None:
-        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent_hex = palette.color(QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorRole.Mid).name()
         self.lbl_program.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent_hex};"
         )
 
     @staticmethod

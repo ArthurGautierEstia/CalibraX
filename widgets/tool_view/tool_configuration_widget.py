@@ -177,9 +177,12 @@ class ToolConfigurationWidget(QWidget):
     def _apply_current_tool_profile_label_style(self) -> None:
         if self.current_tool_profile_label is None:
             return
-        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent_hex = palette.color(QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorRole.Mid).name()
         self.current_tool_profile_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent_hex};"
         )
 
     def _build_configuration_tab(self) -> QWidget:

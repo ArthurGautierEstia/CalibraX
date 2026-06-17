@@ -413,9 +413,12 @@ class MeasurementWidget(QWidget):
             self._apply_reference_item_style()
 
     def _apply_file_label_style(self) -> None:
-        accent_hex = self.palette().color(QPalette.ColorRole.Highlight).name()
+        palette = self.palette()
+        accent_hex = palette.color(QPalette.ColorRole.Highlight).name()
+        bg_hex = palette.color(QPalette.ColorRole.Base).name()
+        border_hex = palette.color(QPalette.ColorRole.Mid).name()
         self.file_label.setStyleSheet(
-            f"border: 1px solid #555; padding: 2px; background-color: #2a2a2a; color: {accent_hex};"
+            f"border: 1px solid {border_hex}; padding: 2px; background-color: {bg_hex}; color: {accent_hex};"
         )
 
     def display_repere_data(self, delta_T: np.ndarray) -> None:
