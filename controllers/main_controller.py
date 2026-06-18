@@ -5,6 +5,7 @@ import re
 
 from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -200,6 +201,7 @@ class MainController(QObject):
         self.main_window.main_tabs_visibility_changed.connect(self._schedule_session_save)
         self.main_window.show_keyboard_shortcuts_requested.connect(self._on_show_keyboard_shortcuts_requested)
         self.main_window.show_about_requested.connect(self._on_show_about_requested)
+        self.main_window.close_requested.connect(self._on_close_requested)
         self.calibration_controller.apply_measured_dh_requested.connect(self._on_apply_measured_dh_requested)
 
         self.tool_model.tool_changed.connect(self._on_tool_changed)
@@ -208,6 +210,7 @@ class MainController(QObject):
         self.tool_model.tool_colliders_changed.connect(self._schedule_session_save)
         self.workspace_model.workspace_changed.connect(self._schedule_session_save)
         self.main_window.get_viewer3d().display_state_changed.connect(self._schedule_session_save)
+        self.main_window.get_viewer3d().stl_load_errors_changed.connect(self._on_stl_load_errors)
         self.main_window.get_cartesian_control_view().get_cartesian_control_widget().reference_frame_changed.connect(
             self._schedule_session_save
         )
@@ -219,6 +222,21 @@ class MainController(QObject):
         self._session_save_timer.stop()
         self.flush_session()
         self.trajectory_controller.shutdown()
+
+    def _on_close_requested(self) -> None:
+        if self.project_controller._confirm_discard_unsaved_project():
+            self.shutdown()
+            QApplication.quit()
+
+    def _on_stl_load_errors(self, missing_paths: list) -> None:
+        if not missing_paths:
+            return
+        paths_text = "\n".join(f"• {p}" for p in missing_paths)
+        QMessageBox.warning(
+            self.main_window,
+            "Fichiers CAO manquants",
+            f"Les fichiers STL suivants n'ont pas pu être chargés :\n\n{paths_text}",
+        )
 
     def _on_apply_measured_dh_requested(self) -> None:
         measured_dh = self.calibration_controller.measurement_controller.get_selected_measured_dh_params()

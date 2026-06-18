@@ -1280,6 +1280,7 @@ class Viewer3DWidget(QWidget):
     """Widget pour la visualisation 3D avec PyQtGraph"""
     display_state_changed = pyqtSignal(object)
     accent_color_changed = pyqtSignal()
+    stl_load_errors_changed = pyqtSignal(list)
     CAD_SHADER_NAME = "calibrax_bright_shaded"
 
     # Couches de rendu — valeurs de depthValue (ordre croissant = dessiné plus tard)
@@ -4555,6 +4556,7 @@ class Viewer3DWidget(QWidget):
     def load_cad(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
         self._robot_model = robot_model
         self._tool_model = tool_model
+        self._missing_mesh_paths.clear()
         self.begin_loading_feedback("Chargement CAO robot...")
         try:
             dh_matrices, corrected_matrices = self._resolve_robot_matrices(robot_model, tool_model)
@@ -4567,6 +4569,8 @@ class Viewer3DWidget(QWidget):
             self._clear_and_refresh()
         finally:
             self.end_loading_feedback()
+        if self._missing_mesh_paths:
+            self.stl_load_errors_changed.emit(sorted(self._missing_mesh_paths))
 
     def reload_tool_cad(self, robot_model: RobotModel, tool_model: ToolModel | None = None):
         self._robot_model = robot_model

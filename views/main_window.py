@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QTimer, Qt, QSize, QRectF
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QSizePolicy, QSplitter, QTabBar, QTabWidget, QVBoxLayout, QWidget
 
 from models.robot_model import RobotModel
@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
     main_tabs_visibility_changed = pyqtSignal()
     show_keyboard_shortcuts_requested = pyqtSignal()
     show_about_requested = pyqtSignal()
+    close_requested = pyqtSignal()
 
     ROBOT_TAB_INDEX = 0
     TOOL_TAB_INDEX = 1
@@ -62,6 +63,15 @@ class MainWindow(QMainWindow):
     WORKSPACE_TAB_INDEX = 3
     WORKPIECE_TAB_INDEX = 4
     CAMERA_TAB_INDEX = 5
+
+    _VALIDATED_TAB_TOOLTIPS = {
+        ROBOT_TAB_INDEX: "Configuration robot chargée et validée",
+        TOOL_TAB_INDEX: "Configuration outil chargée et validée",
+        EXTERNAL_AXES_TAB_INDEX: "Axes externes configurés et validés",
+        WORKSPACE_TAB_INDEX: "Configuration scène chargée et validée",
+        WORKPIECE_TAB_INDEX: "Configuration pièce chargée et validée",
+        CAMERA_TAB_INDEX: "Configuration caméra chargée et validée",
+    }
 
     def __init__(
         self,
@@ -380,6 +390,8 @@ class MainWindow(QMainWindow):
             tab_index,
             self._get_validated_tab_icon() if is_validated else self._empty_tab_icon,
         )
+        tooltip = self._VALIDATED_TAB_TOOLTIPS.get(tab_index, "") if is_validated else ""
+        self.cell_configuration_tabs.tabBar().setTabToolTip(tab_index, tooltip)
 
     def _get_validated_tab_icon(self) -> QIcon:
         if self._validated_tab_icon is None:
@@ -439,6 +451,10 @@ class MainWindow(QMainWindow):
             if current_icon.isNull():
                 continue
             self.cell_configuration_tabs.setTabIcon(tab_index, self._get_validated_tab_icon())
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        event.ignore()
+        self.close_requested.emit()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)

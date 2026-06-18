@@ -8,7 +8,7 @@ import time
 import numpy as np
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QProgressDialog
 
 from controllers.viewer3d_controller import Viewer3DController
 from models.reference_frame import ReferenceFrame
@@ -475,14 +475,22 @@ class ProgramController:
         # Simulation principale : incrémentale si seuls quelques mouvements ont changé,
         # complète sinon. Le résultat du mode opposé (articulaire/cartésien) est calculé
         # à la demande lors du changement de mode (lazy) pour ne pas doubler le coût.
-        if self._dirty_motion_indices is None:
-            main_result = self.program_simulator.simulate_program(
-                simulation_program, include_compensation=False
-            )
-        else:
-            main_result = self.program_simulator.simulate_program_incremental(
-                simulation_program, sorted(self._dirty_motion_indices)
-            )
+        progress = QProgressDialog("Simulation en cours…", None, 0, 0, self.program_view)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(300)
+        progress.setValue(0)
+        QApplication.processEvents()
+        try:
+            if self._dirty_motion_indices is None:
+                main_result = self.program_simulator.simulate_program(
+                    simulation_program, include_compensation=False
+                )
+            else:
+                main_result = self.program_simulator.simulate_program_incremental(
+                    simulation_program, sorted(self._dirty_motion_indices)
+                )
+        finally:
+            progress.close()
         self._dirty_motion_indices = set()
 
         if program_type == "CARTESIAN":

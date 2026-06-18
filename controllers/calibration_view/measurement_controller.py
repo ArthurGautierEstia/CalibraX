@@ -7,6 +7,7 @@ from models.tool_model import ToolModel
 from widgets.calibration_view.measurement_widget import MeasurementWidget
 
 from utils.file_io import FileIOHandler
+from utils.popup import show_error_popup, show_warning_popup
 import utils.math_utils as math_utils
 import numpy as np
 import os
@@ -72,17 +73,17 @@ class MeasurementController(QObject):
             return
 
         if not file_path.lower().endswith('.csv'):
-            print("Format de fichier non supporte. Utiliser un CSV.")
+            show_warning_popup("Import impossible", "Format non supporté. Utilisez un fichier CSV.")
             return
 
         try:
             data = self._parse_csv_measurements(file_path)
         except Exception as e:
-            print(f"Erreur lors de l'import du fichier: {e}")
+            show_error_popup("Erreur de lecture", f"Impossible de lire le fichier : {e}")
             return
 
         if not data or not isinstance(data, list):
-            print("Aucune mesure trouvee dans le fichier")
+            show_warning_popup("Fichier vide", "Aucune mesure trouvée dans le fichier.")
             return
 
         # Reset existing measurements
@@ -180,14 +181,14 @@ class MeasurementController(QObject):
                                 }
                                 measurements.append(measurement)
                             else:
-                                print(f"Erreur: matrice incomplete pour {repere_name}")
+                                show_warning_popup("Mesure invalide", f"Matrice incomplète pour le repère '{repere_name}' (attendu 16 éléments).")
                         except (ValueError, IndexError) as e:
-                            print(f"Erreur lors du parsing du repere: {e}")
+                            show_warning_popup("Ligne invalide", f"Erreur de lecture d'une ligne CSV : {e}")
 
                     i += 1
 
         except IOError as e:
-            print(f"Erreur lors de la lecture du fichier CSV: {e}")
+            show_error_popup("Erreur fichier", f"Impossible de lire le fichier CSV : {e}")
             return []
 
         return measurements
@@ -210,7 +211,7 @@ class MeasurementController(QObject):
     def _on_view_set_as_reference_requested(self) -> None:
         current_item = self.measurement_widget.tree.currentItem()
         if not current_item:
-            print("Aucun repère sélectionné")
+            show_warning_popup("Repère manquant", "Veuillez sélectionner un repère de référence.")
             return
 
         ref_repere_name = current_item.text(0)
@@ -222,7 +223,7 @@ class MeasurementController(QObject):
                 break
 
         if ref_measurement is None:
-            print(f"Repère {ref_repere_name} non trouvé")
+            show_warning_popup("Repère introuvable", f"Le repère '{ref_repere_name}' n'existe pas dans les mesures.")
             return
 
         try:
@@ -254,10 +255,8 @@ class MeasurementController(QObject):
             else:
                 self._on_view_repere_selected(ref_repere_name)
 
-            print(f"Repère '{ref_repere_name}' défini comme référence.")
-
         except (ValueError, TypeError, np.linalg.LinAlgError) as e:
-            print(f"Erreur lors de la définition de la référence: {e}")
+            show_error_popup("Erreur calcul", f"Erreur lors du calcul de référence : {e}")
     
     def _on_view_repere_selected(self, repere_name: str) -> None:
         # Chercher la mesure correspondante dans le widget
@@ -503,7 +502,7 @@ class MeasurementController(QObject):
         """Compute and display measured DH parameters in table_dh_measured."""
         dh_measured = self.calculate_measured_dh_parameters()
         if not dh_measured:
-            print("Aucune mesure DH calculée")
+            show_warning_popup("Calibration incomplète", "Aucun paramètre DH calculé. Vérifiez que les mesures contiennent au moins un repère robot (R1, R2...).")
             self._update_tcp_offsets_from_selection()
             return
         self.measurement_widget.populate_dh_measured_deviations(dh_measured)

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 import numpy as np
 from typing import Tuple, Optional
 
@@ -16,6 +16,7 @@ from utils.reference_frame_utils import convert_pose_from_base_frame
 
 class JogController(QObject):
     """Contrôleur pour la vue Jog - gère les interactions de jog articulaire et cartésien avec jog continu"""
+    jog_error = pyqtSignal(str)
 
     def __init__(
         self,
@@ -232,7 +233,7 @@ class JogController(QObject):
                     self.robot_model.set_joints(best_solution[1].joints)
 
         except Exception as e:
-            print(f"Erreur lors du jog cartésien: {e}")
+            self.jog_error.emit(f"Erreur lors du jog cartésien : {e}")
 
     def _on_base_tool_changed(self, reference: str) -> None:
         """Appelé quand l'utilisateur change de référentiel (Base/Tool)"""
